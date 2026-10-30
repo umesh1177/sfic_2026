@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand Teal Palette from Reference */
+  --primary: #095c54;
+  --primary-dark: #05443e;
+  --primary-gradient: linear-gradient(135deg, #095c54 0%, #0d6e65 50%, #10b981 100%);
+  --primary-soft: #e6f4f1;
+  --primary-border: #b8e0d7;
+
+  /* Accent & Feedback */
+  --accent: #d97706;
+  --accent-soft: #fef3c7;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --success: #10b981;
+  --success-soft: #ecfdf5;
+
+  /* Surfaces & Backgrounds */
+  --bg: #f8faf9;
+  --surface: #ffffff;
+  --surface-alt: #f0f6f4;
+  --border: #e2e8f0;
+
+  /* Typography */
+  --text: #0f2925;
+  --text-muted: #64748b;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(9, 92, 84, 0.04);
+  --shadow-md: 0 10px 30px rgba(9, 92, 84, 0.08);
+  --shadow-lg: 0 20px 40px rgba(5, 68, 62, 0.14);
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Custom button classes from reference website */
+.btn-primary-custom {
+  background: var(--primary-gradient);
+  color: #ffffff !important;
+  font-weight: 700;
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 4px 16px rgba(9, 92, 84, 0.25);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-primary-custom:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(9, 92, 84, 0.35);
+}
+
+.btn-outline-custom {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  font-weight: 700;
+  border-radius: 12px;
+  transition: all 0.25s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-outline-custom:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background-color: var(--primary-soft);
+}
+
+.glass-nav {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+}
+
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: 1px solid var(--primary-border);
+}
+
+.badge-dot {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+  animation: pulseDot 2s infinite;
+}
+
+@keyframes pulseDot {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* Accessibility high-contrast support */
+body.high-contrast {
+  --bg: #000000;
+  --surface: #121212;
+  --surface-alt: #1e1e1e;
+  --border: #3b3b3b;
+  --text: #ffffff;
+  --text-muted: #a1a1aa;
+}
+
+/* Hide scrollbar for clean mobile tabs */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

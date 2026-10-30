@@ -1,0 +1,16 @@
+{
+  "short_name": "Clean Navsari",
+  "name": "My Clean Navsari - NMC Citizen Dashboard",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f8faf9",
+  "theme_color": "#095c54",
+  "display": "standalone",
+  "orientation": "portrait"
+}
