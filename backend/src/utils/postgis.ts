@@ -240,32 +240,27 @@ export function isPointInPolygon(point: [number, number], vs: [number, number][]
   return inside;
 }
 
-// Find ward for given coordinates
-export function findWardByCoordinates(lat: number, lng: number): Ward | null {
+// Find ward for given coordinates - gracefully assigns closest ward even for out-of-bounds locations
+export function findWardByCoordinates(lat: number, lng: number): Ward {
   for (const ward of NAVSARI_WARDS) {
     if (isPointInPolygon([lng, lat], ward.boundary_coordinates)) {
       return ward;
     }
   }
 
-  // Broad Navsari Municipal Corporation Bounding Box Fallback (lat 20.88 to 20.98, lng 72.87 to 72.98)
-  if (lat >= 20.8800 && lat <= 20.9800 && lng >= 72.8700 && lng <= 72.9800) {
-    // If inside broad NMC limits but on the edge of a ward boundary, snap to closest ward center
-    let closestWard: Ward = NAVSARI_WARDS[0];
-    let minDistance = Infinity;
-    for (const ward of NAVSARI_WARDS) {
-      const centerLng = (ward.boundary_coordinates[0][0] + ward.boundary_coordinates[2][0]) / 2;
-      const centerLat = (ward.boundary_coordinates[0][1] + ward.boundary_coordinates[2][1]) / 2;
-      const dist = calculateDistanceMeters(lat, lng, centerLat, centerLng);
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestWard = ward;
-      }
+  // Find closest ward center
+  let closestWard: Ward = NAVSARI_WARDS[2]; // Ward 3 Dudhiya Talao default
+  let minDistance = Infinity;
+  for (const ward of NAVSARI_WARDS) {
+    const centerLng = (ward.boundary_coordinates[0][0] + ward.boundary_coordinates[2][0]) / 2;
+    const centerLat = (ward.boundary_coordinates[0][1] + ward.boundary_coordinates[2][1]) / 2;
+    const dist = calculateDistanceMeters(lat, lng, centerLat, centerLng);
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestWard = ward;
     }
-    return closestWard;
   }
-
-  return null;
+  return closestWard;
 }
 
 // Haversine distance formula in meters

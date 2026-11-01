@@ -3,13 +3,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.app = void 0;
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const api_js_1 = require("./routes/api.js");
+const db_js_1 = require("./data/db.js");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
+exports.app = app;
 const PORT = process.env.PORT || 5000;
 // Enable CORS for frontend Vite dev server (e.g. localhost:5173 / localhost:3000)
 app.use((0, cors_1.default)({
@@ -36,7 +39,7 @@ app.use('/api', apiLimiter);
 app.get('/api/health', (_req, res) => {
     res.status(200).json({
         status: 'healthy',
-        service: 'My Clean Navsari - Municipal Citizen Backend',
+        service: 'Swachh Setu - Municipal Citizen Backend',
         sih_problem_statement: 'PS000089',
         timestamp: new Date().toISOString()
     });
@@ -58,11 +61,12 @@ app.use((err, _req, res, _next) => {
         error: process.env.NODE_ENV === 'production' ? 'Internal municipal server error' : err.message
     });
 });
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`================================================================`);
-    console.log(`  MY CLEAN NAVSARI CITIZEN BACKEND (SIH PS000089)`);
+    console.log(`  SWACHH SETU CITIZEN BACKEND (SIH PS000089)`);
     console.log(`  Navsari Municipal Corporation, Gujarat`);
     console.log(`  Server listening on: http://localhost:${PORT}`);
     console.log(`  Health Check: http://localhost:${PORT}/api/health`);
     console.log(`================================================================`);
+    await (0, db_js_1.checkDatabaseConnection)();
 });

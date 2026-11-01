@@ -2,9 +2,9 @@ export type Language = 'en' | 'gu' | 'hi';
 
 export const translations = {
   en: {
-    app_title: 'My Clean Navsari',
+    app_title: 'Swachh Setu',
     app_subtitle: 'Navsari Municipal Corporation (NMC)',
-    tagline: 'Citizen-Led Digital Cleanliness & Action Platform',
+    tagline: 'Connecting Citizens & Navsari Municipal Corporation for a Cleaner City',
     
     // Navigation
     nav_home: 'Home',
@@ -14,8 +14,9 @@ export const translations = {
     nav_more: 'More',
     nav_drives: 'Cleanliness Drives',
     nav_challenges: 'Community Challenges',
-    nav_rewards: 'Rewards & Badges',
+    nav_rewards: 'Community Wall',
     nav_support: 'Feedback & Support',
+    nav_notifications: 'Notifications',
     nav_profile: 'My Profile',
     nav_login: 'Login / Register',
     nav_logout: 'Sign Out',
@@ -130,8 +131,9 @@ export const translations = {
     nav_more: 'વધુ સેવાઓ',
     nav_drives: 'સફાઈ અભિયાન',
     nav_challenges: 'સામુદાયિક પડકારો',
-    nav_rewards: 'પુરસ્કારો અને બેજ',
+    nav_rewards: 'કમ્યુનિટી વૉલ',
     nav_support: 'પ્રતિસાદ અને સહાય',
+    nav_notifications: 'સૂચનાઓ',
     nav_profile: 'મારી પ્રોફાઇલ',
     nav_login: 'પ્રવેશ / નોંધણી',
     nav_logout: 'લૉગ આઉટ',
@@ -246,8 +248,9 @@ export const translations = {
     nav_more: 'अधिक सेवाएं',
     nav_drives: 'स्वच्छता अभियान',
     nav_challenges: 'सामुदायिक चुनौतियां',
-    nav_rewards: 'पुरस्कार व बैज',
+    nav_rewards: 'कम्युनिटी वॉल',
     nav_support: 'प्रतिक्रिया व सहायता',
+    nav_notifications: 'सूचनाएं',
     nav_profile: 'मेरी प्रोफ़ाइल',
     nav_login: 'लॉग इन / रजिस्टर',
     nav_logout: 'लॉग आउट',

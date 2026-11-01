@@ -9,6 +9,7 @@ import {
   Trophy,
   Award,
   HelpCircle,
+  Bell,
   User,
   X
 } from 'lucide-react';
@@ -37,7 +38,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
     setMoreSheetOpen(false);
   };
 
-  const isMoreTabActive = ['drives', 'challenges', 'rewards', 'support', 'profile'].includes(currentTab);
+  const isMoreTabActive = ['drives', 'challenges', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
 
   return (
     <>
@@ -192,7 +193,25 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 </div>
                 <div>
                   <span className="block font-bold text-xs">{t.nav_rewards}</span>
-                  <span className="block text-[10px] text-[#64748b]">Karma & Badges</span>
+                  <span className="block text-[10px] text-[#64748b]">Honors & Recognition</span>
+                </div>
+              </button>
+
+              {/* Notifications & Civic Alerts */}
+              <button
+                onClick={() => handleSelectTab('notifications')}
+                className={`p-4 rounded-2xl border text-left flex flex-col gap-2 transition ${
+                  currentTab === 'notifications'
+                    ? 'border-[#095c54] bg-[#e6f4f1]/60 text-[#095c54]'
+                    : 'border-[#e2e8f0] bg-white text-[#0f2925] hover:border-[#b8e0d7]'
+                }`}
+              >
+                <div className="w-9 h-9 rounded-xl bg-[#ecfdf5] text-[#095c54] flex items-center justify-center">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="block font-bold text-xs">{t.nav_notifications}</span>
+                  <span className="block text-[10px] text-[#64748b]">Civic Alerts & Status</span>
                 </div>
               </button>
 

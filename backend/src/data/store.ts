@@ -105,6 +105,62 @@ const initialProfiles: Profile[] = [
     role: 'citizen',
     created_at: '2026-10-15T09:00:00Z',
     updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'c0000000-0000-0000-0000-000000000099',
+    full_name: 'Rajesh Varma',
+    phone: '+919825100099',
+    email: 'rajesh.varma@navsarigreen.org',
+    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: '12, Green Avenue, Dudhiya Talao',
+    locality: 'Dudhiya Talao Ward 3',
+    is_active: true,
+    role: 'community_head',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'f1000000-0000-0000-0000-000000000001',
+    full_name: 'Kanti Solanki',
+    phone: '+919825120001',
+    email: 'kanti.solanki@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'gu',
+    address: 'Quarter 14, Municipal Staff Quarters, Dudhiya Talao',
+    locality: 'Dudhiya Talao Ward 3',
+    is_active: true,
+    role: 'sanitation_worker',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'f1000000-0000-0000-0000-000000000002',
+    full_name: 'Suresh Vaghela',
+    phone: '+919825120002',
+    email: 'suresh.vaghela@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'gu',
+    address: 'B-12, Shanti Nagar, Near Railway Station',
+    locality: 'Dudhiya Talao Ward 3',
+    is_active: true,
+    role: 'sanitation_worker',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'w0000000-0000-0000-0000-000000000003',
+    full_name: 'Ramesh Patel',
+    phone: '+919825130003',
+    email: 'ramesh.patel@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: 'NMC Ward 3 Administrative Office, Dudhiya Talao',
+    locality: 'Dudhiya Talao Ward 3',
+    is_active: true,
+    role: 'ward_officer',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
   }
 ];
 
@@ -509,6 +565,50 @@ export const store: DataStore = {
       user_id: defaultCitizenId,
       mobile_number: '+919876543210',
       password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s', // Default hashed pass 'Admin@123'
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-99',
+      user_id: 'c0000000-0000-0000-0000-000000000099',
+      mobile_number: '+919825100099',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w1',
+      user_id: 'f1000000-0000-0000-0000-000000000001',
+      mobile_number: '+919825120001',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w2',
+      user_id: 'f1000000-0000-0000-0000-000000000002',
+      mobile_number: '+919825120002',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w3',
+      user_id: 'w0000000-0000-0000-0000-000000000003',
+      mobile_number: '+919825130003',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
       mobile_verified: true,
       verification_completed_at: '2026-10-15T09:00:00Z',
       account_status: 'active',

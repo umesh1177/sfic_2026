@@ -451,3 +451,76 @@ CREATE INDEX IF NOT EXISTS idx_challenge_participants_citizen ON challenge_parti
 CREATE INDEX IF NOT EXISTS idx_wards_boundary_gist ON wards USING GIST(boundary);
 CREATE INDEX IF NOT EXISTS idx_localities_location_gist ON localities USING GIST(location);
 CREATE INDEX IF NOT EXISTS idx_complaint_locations_point_gist ON complaint_locations USING GIST(location_point);
+
+-- ==============================================================================
+-- 9. POSTGIS SPATIAL FUNCTIONS (POINT-IN-POLYGON & WARD DETECTION)
+-- ==============================================================================
+
+-- Identify Ward for a given coordinate using PostGIS ST_Contains
+CREATE OR REPLACE FUNCTION fn_identify_ward_for_point(p_lat NUMERIC, p_lng NUMERIC)
+RETURNS TABLE (
+    ward_id UUID,
+    ward_number INT,
+    ward_name VARCHAR(100),
+    ward_name_gu VARCHAR(100),
+    ward_officer_name VARCHAR(100),
+    cleanliness_score NUMERIC(3, 1),
+    is_inside_boundary BOOLEAN
+) AS $$
+DECLARE
+    v_point GEOMETRY(Point, 4326);
+BEGIN
+    v_point := ST_SetSRID(ST_MakePoint(p_lng, p_lat), 4326);
+
+    RETURN QUERY
+    SELECT 
+        w.id AS ward_id,
+        w.ward_number,
+        w.ward_name,
+        w.ward_name_gu,
+        w.ward_officer_name,
+        w.cleanliness_score,
+        TRUE AS is_inside_boundary
+    FROM wards w
+    WHERE w.is_active = TRUE
+      AND ST_Contains(w.boundary, v_point)
+    LIMIT 1;
+
+    -- If no exact polygon matched but point is within broad Navsari limits, snap to closest ward
+    IF NOT FOUND AND (p_lat BETWEEN 20.8700 AND 20.9900) AND (p_lng BETWEEN 72.8600 AND 72.9900) THEN
+        RETURN QUERY
+        SELECT 
+            w.id AS ward_id,
+            w.ward_number,
+            w.ward_name,
+            w.ward_name_gu,
+            w.ward_officer_name,
+            w.cleanliness_score,
+            TRUE AS is_inside_boundary
+        FROM wards w
+        WHERE w.is_active = TRUE
+        ORDER BY ST_Distance(w.boundary, v_point) ASC
+        LIMIT 1;
+    END IF;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- Check if point is inside Navsari Municipal Corporation bounds
+CREATE OR REPLACE FUNCTION fn_is_inside_nmc_boundary(p_lat NUMERIC, p_lng NUMERIC)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_point GEOMETRY(Point, 4326);
+    v_exists BOOLEAN;
+BEGIN
+    v_point := ST_SetSRID(ST_MakePoint(p_lng, p_lat), 4326);
+    
+    SELECT EXISTS (
+        SELECT 1 FROM wards 
+        WHERE is_active = TRUE AND ST_Contains(boundary, v_point)
+    ) OR (
+        p_lat BETWEEN 20.8700 AND 20.9900 AND p_lng BETWEEN 72.8600 AND 72.9900
+    ) INTO v_exists;
+
+    RETURN v_exists;
+END;
+$$ LANGUAGE plpgsql STABLE;

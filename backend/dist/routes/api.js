@@ -8,6 +8,9 @@ const complaintsController_js_1 = require("../controllers/complaintsController.j
 const mapController_js_1 = require("../controllers/mapController.js");
 const drivesController_js_1 = require("../controllers/drivesController.js");
 const communityController_js_1 = require("../controllers/communityController.js");
+const communityHeadController_js_1 = require("../controllers/communityHeadController.js");
+const workerController_js_1 = require("../controllers/workerController.js");
+const wardOfficerController_js_1 = require("../controllers/wardOfficerController.js");
 const supportController_js_1 = require("../controllers/supportController.js");
 const notificationsController_js_1 = require("../controllers/notificationsController.js");
 const auth_js_1 = require("../middleware/auth.js");
@@ -53,6 +56,7 @@ exports.apiRouter.post('/complaints/validate-location', softAuthenticate, compla
 exports.apiRouter.post('/complaints', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.createComplaint);
 exports.apiRouter.get('/complaints/my', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.getMyComplaints);
 exports.apiRouter.get('/complaints/:id', softAuthenticate, complaintsController_js_1.ComplaintsController.getComplaintById);
+exports.apiRouter.delete('/complaints/:id', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.deleteComplaint);
 exports.apiRouter.post('/complaints/:id/feedback', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.submitFeedback);
 exports.apiRouter.post('/complaints/:id/reopen', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.reopenComplaint);
 exports.apiRouter.post('/complaints/:id/follow', softAuthenticate, complaintsController_js_1.ComplaintsController.toggleFollow);
@@ -74,6 +78,11 @@ exports.apiRouter.get('/challenges', softAuthenticate, communityController_js_1.
 exports.apiRouter.post('/challenges/:id/join', auth_js_1.authenticate, communityController_js_1.CommunityController.joinChallenge);
 exports.apiRouter.get('/rewards/my', softAuthenticate, communityController_js_1.CommunityController.getMyRewards);
 exports.apiRouter.get('/rewards/leaderboard', communityController_js_1.CommunityController.getLeaderboard);
+// Community Recognition Posts (LinkedIn-Style Wall)
+exports.apiRouter.get('/community/recognition-posts', softAuthenticate, communityController_js_1.CommunityController.getRecognitionPosts);
+exports.apiRouter.post('/community/recognition-posts', auth_js_1.authenticate, communityController_js_1.CommunityController.createRecognitionPost);
+exports.apiRouter.post('/community/recognition-posts/:id/like', auth_js_1.authenticate, communityController_js_1.CommunityController.togglePostLike);
+exports.apiRouter.post('/community/recognition-posts/:id/comments', auth_js_1.authenticate, communityController_js_1.CommunityController.addPostComment);
 // 8. Notifications
 exports.apiRouter.get('/notifications', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.getNotifications);
 exports.apiRouter.patch('/notifications/:id/read', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.markAsRead);
@@ -83,3 +92,87 @@ exports.apiRouter.post('/support/tickets', auth_js_1.authenticate, supportContro
 exports.apiRouter.get('/support/tickets', auth_js_1.authenticate, supportController_js_1.SupportController.getTickets);
 exports.apiRouter.get('/support/tickets/:id', auth_js_1.authenticate, supportController_js_1.SupportController.getTicketById);
 exports.apiRouter.post('/support/tickets/:id/messages', auth_js_1.authenticate, supportController_js_1.SupportController.addMessage);
+// 10. Community Head Dashboard (SIH PS000089)
+// Profile
+exports.apiRouter.get('/community/my', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getMyCommunity);
+exports.apiRouter.put('/community/:id', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.updateCommunity);
+// Activities
+exports.apiRouter.get('/community/activities', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getActivities);
+exports.apiRouter.post('/community/activities', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.createActivity);
+exports.apiRouter.get('/community/activities/:id', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getActivity);
+exports.apiRouter.put('/community/activities/:id', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.updateActivity);
+exports.apiRouter.delete('/community/activities/:id', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.deleteActivity);
+exports.apiRouter.post('/community/activities/:id/submit', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.submitForApproval);
+exports.apiRouter.post('/community/activities/:id/publish', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.publishActivity);
+exports.apiRouter.post('/community/activities/:id/open-registration', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.openRegistration);
+exports.apiRouter.post('/community/activities/:id/close-registration', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.closeRegistration);
+exports.apiRouter.post('/community/activities/:id/reopen-registration', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.reopenRegistration);
+exports.apiRouter.post('/community/activities/:id/cancel', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.cancelActivity);
+exports.apiRouter.get('/community/activities/:id/approvals', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getActivityApprovals);
+exports.apiRouter.post('/community/activities/:id/officer-review', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.officerReview);
+// Registrations
+exports.apiRouter.get('/community/activities/:id/registrations', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getRegistrations);
+exports.apiRouter.get('/community/activities/:id/registrations/export', softAuthenticate, communityHeadController_js_1.CommunityHeadController.exportRegistrationsCsv);
+exports.apiRouter.patch('/community/registrations/:id', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.updateAttendance);
+// Citizen Questions (AI Answer Suggestions & Review)
+exports.apiRouter.post('/activities/:id/questions', softAuthenticate, communityHeadController_js_1.CommunityHeadController.createQuestion);
+exports.apiRouter.get('/community/questions', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getQuestions);
+exports.apiRouter.get('/community/questions/:id', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getQuestion);
+exports.apiRouter.post('/community/questions/:id/generate-suggestion', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.generateAiSuggestion);
+exports.apiRouter.post('/community/questions/:id/respond', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.respondToQuestion);
+exports.apiRouter.post('/community/questions/:id/close', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.closeQuestion);
+// Event Announcements & Targeted Notifications
+exports.apiRouter.get('/community/announcements', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getAnnouncements);
+exports.apiRouter.post('/community/activities/:id/announcements', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.createAnnouncement);
+// Gallery & Evidence
+exports.apiRouter.get('/community/activities/:id/evidence', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getEvidence);
+exports.apiRouter.post('/community/activities/:id/evidence', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.uploadEvidence);
+exports.apiRouter.post('/community/activities/:id/evidence/submit', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.submitEvidence);
+exports.apiRouter.post('/community/activities/:id/evidence/review', auth_js_1.authenticate, communityHeadController_js_1.CommunityHeadController.reviewEvidence);
+// AI Features
+exports.apiRouter.post('/community/ai/generate-description', communityHeadController_js_1.CommunityHeadController.generateDescription);
+exports.apiRouter.post('/community/ai/check-evidence-quality', communityHeadController_js_1.CommunityHeadController.checkEvidenceQuality);
+exports.apiRouter.post('/community/ai/compare-evidence', communityHeadController_js_1.CommunityHeadController.compareEvidence);
+exports.apiRouter.get('/community/ai/activity-insights', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getActivityInsights);
+// Dashboard Overview Summary
+exports.apiRouter.get('/community/dashboard/summary', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getDashboardSummary);
+// ============================================================================
+// WORKER DASHBOARD ROUTES (Navsari Municipal Corporation)
+// ============================================================================
+// 1. Profile & Dashboard Summary
+exports.apiRouter.get('/worker/profile', softAuthenticate, workerController_js_1.WorkerController.getProfile);
+exports.apiRouter.get('/worker/dashboard/summary', softAuthenticate, workerController_js_1.WorkerController.getDashboardSummary);
+// 2. Assignments
+exports.apiRouter.get('/worker/assignments', softAuthenticate, workerController_js_1.WorkerController.getAssignments);
+exports.apiRouter.get('/worker/assignments/:id', softAuthenticate, workerController_js_1.WorkerController.getAssignmentDetails);
+exports.apiRouter.post('/worker/assignments/:id/acknowledge', softAuthenticate, workerController_js_1.WorkerController.acknowledgeAssignment);
+// 3. Location-Validated Attendance (GPS geofencing)
+exports.apiRouter.post('/worker/attendance/mark', softAuthenticate, workerController_js_1.WorkerController.markAttendance);
+exports.apiRouter.post('/worker/attendance/exception', softAuthenticate, workerController_js_1.WorkerController.requestAttendanceException);
+exports.apiRouter.get('/worker/attendance/history', softAuthenticate, workerController_js_1.WorkerController.getAttendanceHistory);
+// 4. Progress Updates
+exports.apiRouter.post('/worker/assignments/:id/progress', softAuthenticate, workerController_js_1.WorkerController.addProgress);
+// 5. Before & After Evidence
+exports.apiRouter.get('/worker/assignments/:id/evidence', softAuthenticate, workerController_js_1.WorkerController.getEvidence);
+exports.apiRouter.post('/worker/assignments/:id/evidence', softAuthenticate, workerController_js_1.WorkerController.uploadEvidence);
+// 6. Temporary Team Leader Actions (Strictly Authorized)
+exports.apiRouter.post('/worker/assignments/:id/completion-report', softAuthenticate, workerController_js_1.WorkerController.submitCompletionReport);
+exports.apiRouter.get('/worker/assignments/:id/team', softAuthenticate, workerController_js_1.WorkerController.getTeamManagement);
+// 7. Directory & Designations (NMC & Ward)
+exports.apiRouter.get('/worker/meta/designations', softAuthenticate, workerController_js_1.WorkerController.getDesignations);
+exports.apiRouter.get('/worker/directory', softAuthenticate, workerController_js_1.WorkerController.getWorkersDirectory);
+// ============================================================================
+// WARD OFFICER DASHBOARD ROUTES (Navsari Municipal Corporation - Ward 3)
+// ============================================================================
+exports.apiRouter.get('/ward/dashboard/summary', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getDashboardSummary);
+exports.apiRouter.get('/ward/complaints', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getComplaints);
+exports.apiRouter.get('/ward/complaints/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getComplaintDetails);
+exports.apiRouter.post('/ward/complaints/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenComplaint);
+exports.apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, wardOfficerController_js_1.WardOfficerController.assignComplaint);
+exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);
+exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);
+exports.apiRouter.get('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getWorkers);
+exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
+exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
+exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
+exports.apiRouter.get('/ward/reports', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getReports);

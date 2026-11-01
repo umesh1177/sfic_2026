@@ -11,6 +11,7 @@ import {
   X,
   Volume2
 } from 'lucide-react';
+import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile, AppNotification } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
 
@@ -64,21 +65,18 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           
           {/* Logo & Brand Identity */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentTab('home')}>
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-[#095c54] via-[#0d6e65] to-[#10b981] flex items-center justify-center text-white shadow-md shadow-[#095c54]/25 transform transition hover:scale-105">
-              <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+            <div className="shrink-0 transition-transform hover:scale-105 duration-200">
+              <SwachhSetuIcon size={38} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg sm:text-xl tracking-tight text-[#095c54]">
-                  {t.app_title}
-                </span>
-                <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#e6f4f1] text-[#05443e] border border-[#b8e0d7]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
-                  NMC Civic
+            <div className="leading-tight min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-[#095c54] text-base tracking-tight">Swachh Setu</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0]">
+                  NMC
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs text-[#64748b] font-medium leading-none hidden xs:block">
-                {t.app_subtitle}
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Citizen Portal
               </p>
             </div>
           </div>
@@ -236,33 +234,53 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                       ))
                     )}
                   </div>
+                  <div className="p-2.5 bg-[#f8faf9] border-t border-[#e2e8f0] text-center">
+                    <button
+                      onClick={() => {
+                        setShowNotifications(false);
+                        setCurrentTab('notifications');
+                      }}
+                      className="text-xs font-extrabold text-[#095c54] hover:underline"
+                    >
+                      View All Notifications & Alerts →
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Profile or Login Trigger */}
+            {/* Profile or Login Trigger (Matching Citizen Design Standard) */}
             {user ? (
               <div
                 onClick={() => setCurrentTab('profile')}
-                className="flex items-center gap-2 pl-1 cursor-pointer group"
+                className="flex items-center gap-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs group"
               >
-                {user.avatar_url ? (
-                  <img
-                    src={user.avatar_url}
-                    alt={user.full_name}
-                    className="w-8 h-8 rounded-full object-cover border-2 border-[#095c54]"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-bold text-xs">
-                    {user.full_name.charAt(0)}
-                  </div>
-                )}
-                <div className="hidden xl:block text-left">
-                  <span className="block text-xs font-extrabold text-[#0f2925] group-hover:text-[#095c54]">
-                    {user.full_name.split(' ')[0]}
+                <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+                  {user.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt={user.full_name}
+                      className="w-full h-full object-cover rounded-xl"
+                    />
+                  ) : (
+                    user.full_name ? user.full_name.slice(0, 2).toUpperCase() : 'CT'
+                  )}
+                </div>
+                <div className="text-left min-w-0">
+                  <span className="block text-xs font-black text-[#095c54] truncate max-w-[110px] sm:max-w-[140px]">
+                    {user.full_name}
                   </span>
-                  <span className="block text-[10px] text-[#64748b]">
-                    Citizen
+                  <span className="block text-[10px] font-bold text-[#047857] flex items-center gap-1 truncate">
+                    {user.role === 'worker' || (user.role as any) === 'sanitation_worker' ? (
+                      <>🛠️ Field Worker</>
+                    ) : user.role === 'community_head' ? (
+                      <>🏛️ Community Head</>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+                        <span>120 Karma Pts</span>
+                      </>
+                    )}
                   </span>
                 </div>
               </div>

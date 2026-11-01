@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { store } from '../data/store.js';
 import { calculateDistanceMeters } from '../utils/postgis.js';
+import { DbRepository } from '../data/dbRepository.js';
 
 export class MapController {
   /**
@@ -46,13 +47,11 @@ export class MapController {
     try {
       const { category_id, status, ward_number } = req.query;
 
-      let list = store.complaints;
-      if (category_id) {
-        list = list.filter(c => c.category_id === category_id);
-      }
-      if (status && status !== 'all') {
-        list = list.filter(c => c.status === status);
-      }
+      let list = await DbRepository.getComplaints({
+        category_id: category_id as string,
+        status: status as string
+      });
+
       if (ward_number) {
         list = list.filter(c => c.location.ward_number === Number(ward_number));
       }
@@ -161,7 +160,8 @@ export class MapController {
         return;
       }
 
-      const nearby = store.complaints.filter(c => {
+      const allComplaints = await DbRepository.getComplaints();
+      const nearby = allComplaints.filter(c => {
         const dist = calculateDistanceMeters(latitude, longitude, c.location.latitude, c.location.longitude);
         return dist <= radius;
       }).map(c => ({

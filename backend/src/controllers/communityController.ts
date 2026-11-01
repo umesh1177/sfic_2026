@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { store } from '../data/store.js';
+import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
 export class CommunityController {
@@ -160,5 +161,119 @@ export class CommunityController {
       success: true,
       data: leaderboard
     });
+  }
+
+  /**
+   * GET /api/community/recognition-posts
+   */
+  public static async getRecognitionPosts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const citizenId = req.user?.id;
+      const posts = await DbRepository.getRecognitionPosts(citizenId);
+      res.status(200).json({
+        success: true,
+        data: posts
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * POST /api/community/recognition-posts/:id/like
+   */
+  public static async togglePostLike(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      const result = await DbRepository.togglePostLike(id, req.user.id);
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * POST /api/community/recognition-posts/:id/comments
+   */
+  public static async addPostComment(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      const { comment_text } = req.body;
+      if (!comment_text || !comment_text.trim()) {
+        res.status(400).json({ success: false, error: 'Comment text is required' });
+        return;
+      }
+
+      const comment = await DbRepository.addPostComment(id, req.user.id, req.user.full_name || 'Citizen', comment_text.trim());
+      res.status(201).json({
+        success: true,
+        data: comment
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * POST /api/community/recognition-posts
+   */
+  public static async createRecognitionPost(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const {
+        hero_name,
+        hero_role,
+        badge_title,
+        title,
+        description,
+        ward_number,
+        ward_name,
+        achievement_stats,
+        image_url
+      } = req.body;
+
+      if (!hero_name || !title || !description) {
+        res.status(400).json({ success: false, error: 'Hero name, title, and description are required' });
+        return;
+      }
+
+      const newPost = await DbRepository.createRecognitionPost({
+        author_name: req.user.full_name || 'Navsari Municipal Corporation',
+        author_role: 'NMC Swachhata Cell & Citizen Community',
+        ward_number: Number(ward_number || 3),
+        ward_name: ward_name || 'Ward 3 - Dudhiya Talao',
+        hero_name,
+        hero_role: hero_role || 'Civic Cleanliness Champion',
+        badge_title: badge_title || 'Community Spotlight',
+        title,
+        description,
+        achievement_stats: achievement_stats || 'Civic Transformation Milestone',
+        image_url: image_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80'
+      });
+
+      res.status(201).json({
+        success: true,
+        data: newPost
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   }
 }

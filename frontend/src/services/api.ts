@@ -6,7 +6,32 @@ import {
   Challenge,
   RewardDefinition,
   AppNotification,
-  SupportTicket
+  SupportTicket,
+  CommunityRecognitionPost,
+  RecognitionComment,
+  Community,
+  CommunityActivity,
+  ActivityRegistration,
+  ActivityAiSuggestion,
+  ActivityQuestion,
+  ActivityAnnouncement,
+  ActivityEvidence,
+  ActivityApprovalLog,
+  CommunityDashboardSummary,
+  WorkerProfile,
+  WorkerDesignation,
+  WorkAssignment,
+  WorkAssignmentMember,
+  WorkerAttendance,
+  AttendanceException,
+  WorkProgressUpdate,
+  WorkEvidence,
+  WorkCompletionReport,
+  WorkerDashboardSummary,
+  WardDashboardSummary,
+  WardHotspot,
+  WardCleanlinessScore,
+  WardApprovalItem
 } from '../types/index.js';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -180,7 +205,7 @@ class ApiService {
     return this.request<{ success: boolean; data: ComplaintCategory[] }>('/complaint-categories');
   }
 
-  async validateContent(text: string, fileSize?: number, mimeType?: string) {
+  async validateContent(text: string, fileSize?: number, mimeType?: string, imageBase64?: string) {
     return this.request<{
       success: boolean;
       data: {
@@ -189,11 +214,11 @@ class ApiService {
       };
     }>('/complaints/validate-content', {
       method: 'POST',
-      body: JSON.stringify({ text, file_size: fileSize, mime_type: mimeType })
+      body: JSON.stringify({ text, file_size: fileSize, mime_type: mimeType, image_base64: imageBase64 })
     });
   }
 
-  async classifyImage(fileName: string, fileSize: number) {
+  async classifyImage(fileName: string, fileSize: number, description?: string, imageBase64?: string) {
     return this.request<{
       success: boolean;
       data: {
@@ -207,7 +232,7 @@ class ApiService {
       };
     }>('/complaints/classify-image', {
       method: 'POST',
-      body: JSON.stringify({ file_name: fileName, file_size: fileSize })
+      body: JSON.stringify({ file_name: fileName, file_size: fileSize, description, image_base64: imageBase64 })
     });
   }
 
@@ -299,6 +324,13 @@ class ApiService {
     );
   }
 
+  async deleteComplaint(complaintId: string) {
+    return this.request<{ success: boolean; message: string }>(
+      `/complaints/${complaintId}`,
+      { method: 'DELETE' }
+    );
+  }
+
   async toggleFollow(complaintId: string) {
     return this.request<{ success: boolean; data: { is_following: boolean; followers_count: number } }>(
       `/complaints/${complaintId}/follow`,
@@ -367,6 +399,49 @@ class ApiService {
     return this.request<{ success: boolean; data: any[] }>('/rewards/leaderboard');
   }
 
+  // --- COMMUNITY RECOGNITION WALL (LINKEDIN-STYLE POSTS) ---
+
+  async getRecognitionPosts() {
+    return this.request<{ success: boolean; data: CommunityRecognitionPost[] }>('/community/recognition-posts');
+  }
+
+  async togglePostLike(id: string) {
+    return this.request<{ success: boolean; data: { is_liked: boolean; likes_count: number } }>(
+      `/community/recognition-posts/${id}/like`,
+      { method: 'POST' }
+    );
+  }
+
+  async addPostComment(id: string, commentText: string) {
+    return this.request<{ success: boolean; data: RecognitionComment }>(
+      `/community/recognition-posts/${id}/comments`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ comment_text: commentText })
+      }
+    );
+  }
+
+  async createRecognitionPost(payload: {
+    hero_name: string;
+    hero_role?: string;
+    badge_title?: string;
+    title: string;
+    description: string;
+    ward_number?: number;
+    ward_name?: string;
+    achievement_stats?: string;
+    image_url?: string;
+  }) {
+    return this.request<{ success: boolean; data: CommunityRecognitionPost }>(
+      '/community/recognition-posts',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
   // --- NOTIFICATIONS & SUPPORT ---
 
   async getNotifications() {
@@ -403,6 +478,435 @@ class ApiService {
         body: JSON.stringify({ message })
       }
     );
+  }
+
+  // =========================================================================
+  // COMMUNITY HEAD DASHBOARD APIS (SIH PS000089)
+  // =========================================================================
+
+  async getCommunityDashboardSummary() {
+    return this.request<{ success: boolean; data: CommunityDashboardSummary }>('/community/dashboard/summary');
+  }
+
+  async getMyCommunity() {
+    return this.request<{ success: boolean; data: Community }>('/community/my');
+  }
+
+  async updateCommunity(id: string, data: Partial<Community>) {
+    return this.request<{ success: boolean; data: Community }>(`/community/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  // Activities
+  async getCommunityActivities(params?: { status?: string; search?: string }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.append('status', params.status);
+    if (params?.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<{ success: boolean; data: CommunityActivity[] }>(`/community/activities${qs}`);
+  }
+
+  async getCommunityActivity(id: string) {
+    return this.request<{ success: boolean; data: CommunityActivity }>(`/community/activities/${id}`);
+  }
+
+  async createCommunityActivity(data: Partial<CommunityActivity>) {
+    return this.request<{ success: boolean; data: CommunityActivity }>('/community/activities', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateCommunityActivity(id: string, data: Partial<CommunityActivity>) {
+    return this.request<{ success: boolean; data: CommunityActivity }>(`/community/activities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteCommunityActivity(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/community/activities/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async submitActivityForApproval(id: string, notes?: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ notes })
+    });
+  }
+
+  async publishActivity(id: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/publish`, {
+      method: 'POST'
+    });
+  }
+
+  async openActivityRegistration(id: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/open-registration`, {
+      method: 'POST'
+    });
+  }
+
+  async closeActivityRegistration(id: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/close-registration`, {
+      method: 'POST'
+    });
+  }
+
+  async reopenActivityRegistration(id: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/reopen-registration`, {
+      method: 'POST'
+    });
+  }
+
+  async cancelCommunityActivity(id: string, cancellation_reason: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ cancellation_reason })
+    });
+  }
+
+  async getActivityApprovals(id: string) {
+    return this.request<{ success: boolean; data: ActivityApprovalLog[] }>(`/community/activities/${id}/approvals`);
+  }
+
+  async officerReviewActivity(id: string, decision: 'approved' | 'rejected' | 'changes_requested', comments: string) {
+    return this.request<{ success: boolean; message: string; data: CommunityActivity }>(`/community/activities/${id}/officer-review`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, comments })
+    });
+  }
+
+  // Registrations
+  async getActivityRegistrations(activityId: string, page = 1, limit = 20, status?: string) {
+    const query = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    if (status) query.append('status', status);
+    return this.request<{ success: boolean; data: { registrations: ActivityRegistration[]; total: number; page: number; limit: number } }>(
+      `/community/activities/${activityId}/registrations?${query.toString()}`
+    );
+  }
+
+  getRegistrationCsvUrl(activityId: string): string {
+    return `${API_BASE_URL}/community/activities/${activityId}/registrations/export`;
+  }
+
+  async updateRegistrationAttendance(id: string, attendance_status: 'present' | 'absent', attendance_notes?: string) {
+    return this.request<{ success: boolean; message: string }>(`/community/registrations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ attendance_status, attendance_notes })
+    });
+  }
+
+  // Citizen Questions (AI-assisted)
+  async askActivityQuestion(activityId: string, question_text: string, question_language = 'en') {
+    return this.request<{ success: boolean; message: string; data: ActivityQuestion }>(`/activities/${activityId}/questions`, {
+      method: 'POST',
+      body: JSON.stringify({ question_text, question_language })
+    });
+  }
+
+  async getCommunityQuestions(params?: { activity_id?: string; status?: string; search?: string }) {
+    const query = new URLSearchParams();
+    if (params?.activity_id) query.append('activity_id', params.activity_id);
+    if (params?.status) query.append('status', params.status);
+    if (params?.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<{ success: boolean; data: ActivityQuestion[] }>(`/community/questions${qs}`);
+  }
+
+  async getCommunityQuestion(id: string) {
+    return this.request<{ success: boolean; data: ActivityQuestion }>(`/community/questions/${id}`);
+  }
+
+  async generateAiQuestionSuggestion(questionId: string) {
+    return this.request<{ success: boolean; data: ActivityAiSuggestion }>(`/community/questions/${questionId}/generate-suggestion`, {
+      method: 'POST'
+    });
+  }
+
+  async respondToQuestion(questionId: string, response_text: string, suggestion_id?: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/community/questions/${questionId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ response_text, suggestion_id })
+    });
+  }
+
+  async closeQuestion(questionId: string) {
+    return this.request<{ success: boolean; message: string }>(`/community/questions/${questionId}/close`, {
+      method: 'POST'
+    });
+  }
+
+  // Announcements
+  async getCommunityAnnouncements(activityId?: string) {
+    const qs = activityId ? `?activity_id=${activityId}` : '';
+    return this.request<{ success: boolean; data: ActivityAnnouncement[] }>(`/community/announcements${qs}`);
+  }
+
+  async createActivityAnnouncement(activityId: string, data: { title: string; message: string; target_audience?: string; priority?: string; channels?: string[] }) {
+    return this.request<{ success: boolean; message: string; data: ActivityAnnouncement }>(`/community/activities/${activityId}/announcements`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  // Evidence & Gallery
+  async getActivityEvidence(activityId: string) {
+    return this.request<{ success: boolean; data: ActivityEvidence[] }>(`/community/activities/${activityId}/evidence`);
+  }
+
+  async uploadActivityEvidence(activityId: string, data: { image_url: string; stage: 'before' | 'during' | 'after'; caption?: string; file_size_bytes?: number }) {
+    return this.request<{ success: boolean; message: string; data: ActivityEvidence }>(`/community/activities/${activityId}/evidence`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async submitActivityEvidence(activityId: string, notes?: string) {
+    return this.request<{ success: boolean; message: string }>(`/community/activities/${activityId}/evidence/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ notes })
+    });
+  }
+
+  async reviewActivityEvidence(activityId: string, decision: 'verified_complete' | 'rejected', review_comments: string) {
+    return this.request<{ success: boolean; message: string }>(`/community/activities/${activityId}/evidence/review`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, review_comments })
+    });
+  }
+
+  // AI Helpers
+  async aiGenerateDescription(data: { title: string; activity_type: string; target_area: string; planned_tasks?: string[] }) {
+    return this.request<{ success: boolean; data: { short_description: string; detailed_description: string; volunteer_instructions: string; equipment_needed: string[] } }>(
+      '/community/ai/generate-description',
+      {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }
+    );
+  }
+
+  async aiCheckEvidenceQuality(image_base64_or_url: string) {
+    return this.request<{ success: boolean; data: { passes_quality: boolean; blur_score: number; brightness_score: number; is_blurry: boolean; is_too_dark: boolean; is_too_bright: boolean; feedback_message: string } }>(
+      '/community/ai/check-evidence-quality',
+      {
+        method: 'POST',
+        body: JSON.stringify({ image_base64_or_url })
+      }
+    );
+  }
+
+  async aiCompareEvidence(before_image_url: string, after_image_url: string) {
+    return this.request<{ success: boolean; data: { visual_change_score: number; improvement_detected: boolean; confidence: number; summary: string } }>(
+      '/community/ai/compare-evidence',
+      {
+        method: 'POST',
+        body: JSON.stringify({ before_image_url, after_image_url })
+      }
+    );
+  }
+
+  async aiGetActivityInsights() {
+    return this.request<{ success: boolean; data: { key_insights: string[]; recommendations: string[]; sentiment_score: number; predicted_next_turnout: number } }>(
+      '/community/ai/activity-insights'
+    );
+  }
+
+  // --- WORKER DASHBOARD APIS ---
+  async getWorkerProfile() {
+    return this.request<{ success: boolean; data: WorkerProfile }>('/worker/profile');
+  }
+
+  async getWorkerDashboardSummary() {
+    return this.request<{ success: boolean; data: WorkerDashboardSummary }>('/worker/dashboard/summary');
+  }
+
+  async getWorkerAssignments(status?: string) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request<{ success: boolean; data: WorkAssignment[]; count: number }>(`/worker/assignments${query}`);
+  }
+
+  async getWorkerAssignment(id: string) {
+    return this.request<{ success: boolean; data: WorkAssignment & { team_members: WorkAssignmentMember[] } }>(`/worker/assignments/${id}`);
+  }
+
+  async acknowledgeWorkerAssignment(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/worker/assignments/${id}/acknowledge`, {
+      method: 'POST'
+    });
+  }
+
+  async markWorkerAttendance(data: {
+    assignment_id: string;
+    latitude: number;
+    longitude: number;
+    gps_accuracy_meters?: number;
+  }) {
+    return this.request<{ success: boolean; message: string; data: WorkerAttendance }>('/worker/attendance/mark', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async requestAttendanceException(data: {
+    assignment_id: string;
+    reason: string;
+    evidence_photo_url?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: AttendanceException }>('/worker/attendance/exception', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getWorkerAttendanceHistory() {
+    return this.request<{ success: boolean; data: WorkerAttendance[] }>('/worker/attendance/history');
+  }
+
+  async addWorkProgress(assignmentId: string, data: { comment: string; stage?: string; photo_url?: string }) {
+    return this.request<{ success: boolean; message: string; data: WorkProgressUpdate }>(`/worker/assignments/${assignmentId}/progress`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async uploadWorkEvidence(assignmentId: string, data: {
+    stage: 'before' | 'during' | 'after';
+    photo_url: string;
+    description?: string;
+    latitude?: number;
+    longitude?: number;
+    gps_accuracy?: number;
+  }) {
+    return this.request<{ success: boolean; message: string; data: WorkEvidence }>(`/worker/assignments/${assignmentId}/evidence`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getWorkEvidence(assignmentId: string) {
+    return this.request<{ success: boolean; data: WorkEvidence[] }>(`/worker/assignments/${assignmentId}/evidence`);
+  }
+
+  async submitWorkCompletionReport(assignmentId: string, data: {
+    completion_description: string;
+    actual_start_time?: string;
+    actual_end_time?: string;
+    waste_quantity?: string;
+    waste_disposal_destination?: string;
+    equipment_used?: string[];
+    issues_encountered?: string;
+    pending_work?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: WorkCompletionReport }>(`/worker/assignments/${assignmentId}/completion-report`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getTemporaryLeaderTeam(assignmentId: string) {
+    return this.request<{ success: boolean; data: { assignment: WorkAssignment; team_members: WorkAssignmentMember[] } }>(`/worker/assignments/${assignmentId}/team`);
+  }
+
+  async getWorkerDesignations() {
+    return this.request<{ success: boolean; data: WorkerDesignation[] }>('/worker/meta/designations');
+  }
+
+  async getWorkersDirectory(filters?: { ward_id?: string; designation_id?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.ward_id) params.append('ward_id', filters.ward_id);
+    if (filters?.designation_id) params.append('designation_id', filters.designation_id);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ success: boolean; data: WorkerProfile[] }>(`/worker/directory${qs}`);
+  }
+
+  // =========================================================================
+  // WARD OFFICER DASHBOARD (Navsari Municipal Corporation - Ward 3)
+  // =========================================================================
+  async getWardDashboardSummary() {
+    return this.request<{ success: boolean; data: WardDashboardSummary }>('/ward/dashboard/summary');
+  }
+
+  async getWardComplaints(params?: Record<string, any>) {
+    const qs = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
+      });
+    }
+    const qStr = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<{ success: boolean; data: any[]; pagination: { page: number; limit: number; total: number; total_pages: number } }>(`/ward/complaints${qStr}`);
+  }
+
+  async getWardComplaintDetails(id: string) {
+    return this.request<{ success: boolean; data: any }>(`/ward/complaints/${id}`);
+  }
+
+  async reopenWardComplaint(id: string, data: {
+    reopen_reason: string;
+    description?: string;
+    urgency?: string;
+    supporting_evidence?: string;
+    team_option?: 'previous' | 'new';
+    selected_worker_ids?: string[];
+    temporary_leader_id?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async assignWardComplaint(id: string, data: {
+    worker_ids?: string[];
+    temporary_leader_id?: string;
+    instructions?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getWardHotspots(filters?: { category?: string; frequency?: string; ward?: number }) {
+    const qs = new URLSearchParams();
+    if (filters?.category) qs.append('category', filters.category);
+    if (filters?.frequency) qs.append('frequency', filters.frequency);
+    if (filters?.ward) qs.append('ward', String(filters.ward));
+    const qStr = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<{ success: boolean; data: WardHotspot[]; meta: any }>(`/ward/hotspots${qStr}`);
+  }
+
+  async getWardAssignments(filters?: any) {
+    return this.request<{ success: boolean; data: any[] }>('/ward/assignments');
+  }
+
+  async getWardWorkers() {
+    return this.request<{ success: boolean; data: any[] }>('/ward/workers');
+  }
+
+  async getWardApprovals() {
+    return this.request<{ success: boolean; data: WardApprovalItem[] }>('/ward/approvals');
+  }
+
+  async reviewWardApproval(id: string, action: 'approve' | 'changes_requested' | 'reject', comments?: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/approvals/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ action, comments })
+    });
+  }
+
+  async getWardCleanlinessScore() {
+    return this.request<{ success: boolean; data: WardCleanlinessScore }>('/ward/cleanliness-score');
+  }
+
+  async getWardReports(reportType: string = 'complaints') {
+    return this.request<{ success: boolean; data: any }>(`/ward/reports?report_type=${reportType}`);
   }
 }
 

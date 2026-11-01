@@ -13,7 +13,10 @@ import {
   AlertCircle,
   Flame,
   Award,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  Map as MapIcon,
+  Users
 } from 'lucide-react';
 import { Profile } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
@@ -35,355 +38,282 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
 }) => {
   const t = translations[lang];
   const stats = dashboardData?.stats || { total_submitted: 0, pending: 0, in_progress: 0, resolved: 0 };
-  const municipalStats = dashboardData?.municipal_stats || {
-    city_total_complaints: 142,
-    city_resolved_complaints: 118,
-    city_average_resolution_hours: 18.5,
-    total_active_drives: 3,
-    active_volunteers: 480
-  };
   const nearbyIssues = dashboardData?.nearby_issues || [];
   const wardScores = dashboardData?.ward_scores || [];
-  const communityImpact = dashboardData?.community_impact || {
-    drives_joined: 1,
-    rewards_earned: 3,
-    active_challenges: 1,
-    civic_points: 850
-  };
 
   const currentDateFormatted = new Date().toLocaleDateString(
     lang === 'gu' ? 'gu-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN',
-    { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }
+    { weekday: 'short', day: 'numeric', month: 'short' }
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 animate-fadeIn">
       {/* ======================================================== */}
-      {/* 1. HERO & WELCOME BANNER                                 */}
+      {/* 1. CLEAN CIVIC OVERVIEW HEADER                           */}
       {/* ======================================================== */}
-      <div className="relative rounded-3xl bg-gradient-to-r from-[#095c54] via-[#0d6e65] to-[#10b981] p-6 sm:p-8 text-white shadow-xl shadow-[#095c54]/15 overflow-hidden">
-        {/* Decorative circle glow */}
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-2xl space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-bold text-[#e6f4f1]">
-            <span className="w-2 h-2 rounded-full bg-[#10b981] animate-ping" />
-            NMC Swachhata Command Center · Navsari
-          </div>
-
-          <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
             {t.welcome_back} {user?.full_name ? user.full_name.split(' ')[0] : 'Citizen'}!
           </h1>
-
-          <p className="text-xs sm:text-sm text-[#e6f4f1] font-medium leading-relaxed">
-            Together we monitor, report, and maintain the cleanliness of all 13 Navsari wards. Check your civic action summary for <span className="font-bold underline decoration-[#a7f3d0]">{currentDateFormatted}</span>.
+          <p className="text-xs text-[#64748b] mt-0.5">
+            Navsari 13-Ward Civic Action & Cleanliness Overview · {currentDateFormatted}
           </p>
+        </div>
 
-          <div className="pt-2 flex flex-wrap gap-2.5">
-            <button
-              onClick={onOpenReport}
-              className="px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-xs sm:text-sm shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition flex items-center gap-2"
-            >
-              <Camera className="w-4 h-4 text-[#10b981]" />
-              <span>{t.action_report}</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('complaints')}
-              className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
-            >
-              <FileText className="w-4 h-4" />
-              <span>{t.action_track}</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenReport}
+            className="btn-primary-custom px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 shadow-xs"
+          >
+            <Camera className="w-4 h-4 text-white" />
+            <span>{t.action_report}</span>
+          </button>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* 2. STATS BANNER: DYNAMIC DATABASE COUNTS                */}
+      {/* 2. STATS OVERVIEW: CLEAN MINIMALIST CARDS                */}
       {/* ======================================================== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Submitted */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:shadow-md hover:border-[#b8e0d7] transition cursor-pointer"
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#b8e0d7] hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748b]">
-            <span>{t.stats_total}</span>
-            <div className="p-2 rounded-xl bg-[#e6f4f1] text-[#095c54]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold text-[#64748b]">Total Reports</span>
+            <div className="p-2 rounded-xl bg-[#e6f4f1] text-[#095c54] group-hover:scale-110 transition-transform">
               <FileText className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-[#0f2925] mt-2">
             {stats.total_submitted}
           </div>
-          <span className="text-[11px] font-bold text-[#095c54] mt-1 block">
-            Your personal reports
+          <span className="text-[10px] font-bold text-[#095c54] mt-1 block">
+            All submitted issues
           </span>
         </div>
 
         {/* Pending Review */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:shadow-md hover:border-[#fde68a] transition cursor-pointer"
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#fde68a] hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748b]">
-            <span>{t.stats_pending}</span>
-            <div className="p-2 rounded-xl bg-[#fef3c7] text-[#d97706]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold text-[#64748b]">Pending</span>
+            <div className="p-2 rounded-xl bg-[#fef3c7] text-[#d97706] group-hover:scale-110 transition-transform">
               <Clock className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-[#d97706] mt-2">
             {stats.pending}
           </div>
-          <span className="text-[11px] font-bold text-[#b45309] mt-1 block">
-            Awaiting ward officer review
+          <span className="text-[10px] font-bold text-[#b45309] mt-1 block">
+            Awaiting officer review
           </span>
         </div>
 
         {/* In Progress */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:shadow-md hover:border-[#bae6fd] transition cursor-pointer"
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#bae6fd] hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748b]">
-            <span>{t.stats_in_progress}</span>
-            <div className="p-2 rounded-xl bg-[#e0f2fe] text-[#0284c7]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold text-[#64748b]">In Progress</span>
+            <div className="p-2 rounded-xl bg-[#f0f9ff] text-[#0284c7] group-hover:scale-110 transition-transform">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-[#0284c7] mt-2">
             {stats.in_progress}
           </div>
-          <span className="text-[11px] font-bold text-[#0369a1] mt-1 block">
-            Sanitation units dispatched
+          <span className="text-[10px] font-bold text-[#0369a1] mt-1 block">
+            Sanitation crew dispatched
           </span>
         </div>
 
         {/* Resolved */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:shadow-md hover:border-[#a7f3d0] transition cursor-pointer"
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#a7f3d0] hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748b]">
-            <span>{t.stats_resolved}</span>
-            <div className="p-2 rounded-xl bg-[#ecfdf5] text-[#10b981]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold text-[#64748b]">Resolved</span>
+            <div className="p-2 rounded-xl bg-[#ecfdf5] text-[#10b981] group-hover:scale-110 transition-transform">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-[#10b981] mt-2">
             {stats.resolved}
           </div>
-          <span className="text-[11px] font-bold text-[#047857] mt-1 block">
-            Cleaned and verified
+          <span className="text-[10px] font-bold text-[#047857] mt-1 block">
+            Verified cleaned spots
           </span>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* 3. QUICK ACTIONS GRID                                    */}
+      {/* 3. QUICK CIVIC ACCESS CHIPS                              */}
       {/* ======================================================== */}
-      <div>
-        <h2 className="text-xs font-extrabold uppercase tracking-wider text-[#095c54] mb-3">
-          {t.quick_actions}
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Action 1: Report */}
-          <button
-            onClick={onOpenReport}
-            className="p-4 rounded-2xl bg-white border border-[#e2e8f0] hover:border-[#095c54] hover:shadow-md transition text-left group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center group-hover:scale-105 transition">
-              <Camera className="w-5 h-5" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <button
+          onClick={() => onNavigateTab('map')}
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center font-bold">
+              <MapIcon className="w-5 h-5" />
             </div>
-            <span className="block font-bold text-xs sm:text-sm text-[#0f2925] mt-2.5">
-              {t.action_report}
-            </span>
-            <span className="block text-[11px] text-[#64748b] mt-0.5">
-              AI camera & GPS
-            </span>
-          </button>
+            <div>
+              <div className="text-xs font-black text-[#0f2925]">Cleanliness Map</div>
+              <div className="text-[10px] text-[#64748b]">13 Ward GIS & Hotspots</div>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />
+        </button>
 
-          {/* Action 2: Track */}
-          <button
-            onClick={() => onNavigateTab('complaints')}
-            className="p-4 rounded-2xl bg-white border border-[#e2e8f0] hover:border-[#095c54] hover:shadow-md transition text-left group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#f0f6f4] text-[#095c54] flex items-center justify-center group-hover:scale-105 transition">
-              <FileText className="w-5 h-5" />
+        <button
+          onClick={() => onNavigateTab('drives')}
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#ecfdf5] text-[#10b981] flex items-center justify-center font-bold">
+              <Users className="w-5 h-5" />
             </div>
-            <span className="block font-bold text-xs sm:text-sm text-[#0f2925] mt-2.5">
-              {t.action_track}
-            </span>
-            <span className="block text-[11px] text-[#64748b] mt-0.5">
-              View live progress
-            </span>
-          </button>
+            <div>
+              <div className="text-xs font-black text-[#0f2925]">Cleanliness Drives</div>
+              <div className="text-[10px] text-[#64748b]">Join Volunteer Action</div>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />
+        </button>
 
-          {/* Action 3: Cleanliness Map */}
-          <button
-            onClick={() => onNavigateTab('map')}
-            className="p-4 rounded-2xl bg-white border border-[#e2e8f0] hover:border-[#095c54] hover:shadow-md transition text-left group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#e0f2fe] text-[#0284c7] flex items-center justify-center group-hover:scale-105 transition">
-              <MapPin className="w-5 h-5" />
+        <button
+          onClick={() => onNavigateTab('challenges')}
+          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center font-bold">
+              <Trophy className="w-5 h-5" />
             </div>
-            <span className="block font-bold text-xs sm:text-sm text-[#0f2925] mt-2.5">
-              {t.action_map}
-            </span>
-            <span className="block text-[11px] text-[#64748b] mt-0.5">
-              13 Wards & Hotspots
-            </span>
-          </button>
-
-          {/* Action 4: Cleanliness Drives */}
-          <button
-            onClick={() => onNavigateTab('drives')}
-            className="p-4 rounded-2xl bg-white border border-[#e2e8f0] hover:border-[#095c54] hover:shadow-md transition text-left group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center group-hover:scale-105 transition">
-              <Calendar className="w-5 h-5" />
+            <div>
+              <div className="text-xs font-black text-[#0f2925]">Civic Challenges</div>
+              <div className="text-[10px] text-[#64748b]">Earn Karma & Badges</div>
             </div>
-            <span className="block font-bold text-xs sm:text-sm text-[#0f2925] mt-2.5">
-              {t.action_drives}
-            </span>
-            <span className="block text-[11px] text-[#64748b] mt-0.5">
-              Volunteer RSVP
-            </span>
-          </button>
-        </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />
+        </button>
       </div>
 
       {/* ======================================================== */}
-      {/* 4. SPLIT PANEL: RECENT REPORTS & WARD LEADERBOARD        */}
+      {/* 4. RECENT REPORTS & WARD SCORES (TWO COLUMNS)            */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left: Recent Public Cleanliness Reports in Navsari */}
-        <div className="lg:col-span-2 bg-white p-5 rounded-3xl border border-[#e2e8f0] shadow-sm space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Recent Cleanliness Reports */}
+        <div className="lg:col-span-2 bg-white p-5 rounded-3xl border border-[#e2e8f0] shadow-sm space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-extrabold text-sm sm:text-base text-[#095c54] flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-[#10b981]" />
-              {t.nearby_issues_title}
-            </h3>
+            <div>
+              <h3 className="font-extrabold text-sm text-[#095c54]">
+                Recent Reports in Navsari
+              </h3>
+              <p className="text-[11px] text-[#64748b]">
+                Real-time citizen reporting across wards
+              </p>
+            </div>
             <button
-              onClick={() => onNavigateTab('map')}
-              className="text-xs font-bold text-[#095c54] hover:underline flex items-center gap-1"
+              onClick={() => onNavigateTab('complaints')}
+              className="text-xs font-extrabold text-[#095c54] hover:underline"
             >
-              Explore Map <ArrowRight className="w-3.5 h-3.5" />
+              View All →
             </button>
-          </div>
-
-          <div className="divide-y divide-[#e2e8f0]">
-            {nearbyIssues.map((issue: any) => (
-              <div
-                key={issue.id}
-                onClick={() => onNavigateTab('complaints')}
-                className="py-3 flex items-center justify-between hover:bg-slate-50 p-2 rounded-2xl transition cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <img
-                    src={issue.image_url}
-                    alt={issue.category_name}
-                    className="w-12 h-12 rounded-xl object-cover border border-[#e2e8f0]"
-                  />
-                  <div>
-                    <div className="font-extrabold text-xs text-[#0f2925]">
-                      {issue.category_name}
-                    </div>
-                    <div className="text-[11px] text-[#64748b]">
-                      📍 {issue.ward_name} · {issue.address}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    issue.status === 'resolved' ? 'bg-[#ecfdf5] text-[#10b981]' : 'bg-[#e6f4f1] text-[#095c54]'
-                  }`}>
-                    {issue.status}
-                  </span>
-                  <span className="block text-[10px] text-[#94a3b8] mt-1">
-                    {new Date(issue.submitted_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: Ward Cleanliness Scores */}
-        <div className="bg-white p-5 rounded-3xl border border-[#e2e8f0] shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-extrabold text-sm text-[#095c54] flex items-center gap-1.5">
-              <Trophy className="w-4 h-4 text-[#d97706]" />
-              {t.ward_scores_title}
-            </h3>
-            <span className="text-[11px] text-[#64748b]">Out of 10</span>
           </div>
 
           <div className="space-y-2.5">
-            {wardScores.slice(0, 5).map((w: any) => (
-              <div key={w.ward_number} className="flex items-center justify-between text-xs">
-                <div>
-                  <div className="font-bold text-[#0f2925]">
-                    Ward {w.ward_number}: {w.ward_name.split('-')[0]}
+            {nearbyIssues.slice(0, 3).map((issue: any) => (
+              <div
+                key={issue.id}
+                className="p-3.5 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] hover:border-[#b8e0d7] transition flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-slate-200 overflow-hidden shrink-0">
+                    <img
+                      src={issue.image_url || 'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=400&q=80'}
+                      alt="report"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
-                  <div className="text-[10px] text-[#64748b]">
-                    Officer: {w.officer}
+                  <div className="min-w-0">
+                    <div className="text-xs font-extrabold text-[#0f2925] truncate">
+                      {issue.category_name}
+                    </div>
+                    <div className="text-[11px] text-[#64748b] truncate">
+                      📍 {issue.address}
+                    </div>
                   </div>
                 </div>
-                <span className="font-black text-xs px-2.5 py-0.5 rounded-lg bg-[#e6f4f1] text-[#095c54]">
-                  {w.score} ★
-                </span>
+
+                <div className="text-right shrink-0">
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full capitalize ${
+                    issue.status === 'resolved'
+                      ? 'bg-[#ecfdf5] text-[#047857]'
+                      : issue.status === 'in_progress'
+                      ? 'bg-[#f0f9ff] text-[#0284c7]'
+                      : 'bg-[#fef3c7] text-[#b45309]'
+                  }`}>
+                    ● {issue.status.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Ward Cleanliness Index Leaderboard */}
+        <div className="bg-white p-5 rounded-3xl border border-[#e2e8f0] shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-extrabold text-sm text-[#095c54]">
+                Cleanliness Index
+              </h3>
+              <p className="text-[11px] text-[#64748b]">
+                Top rated wards this week
+              </p>
+            </div>
+            <span className="p-1.5 rounded-xl bg-[#ecfdf5] text-[#10b981]">
+              <Award className="w-4 h-4" />
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {wardScores.slice(0, 4).map((w: any, idx: number) => (
+              <div key={w.ward_number} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#0f2925]">
+                    #{idx + 1} Ward {w.ward_number}: {w.ward_name.split(' - ')[0]}
+                  </span>
+                  <span className="font-black text-[#10b981]">
+                    {w.score}/10
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-[#10b981] h-full rounded-full"
+                    style={{ width: `${(w.score / 10) * 100}%` }}
+                  />
+                </div>
               </div>
             ))}
           </div>
 
-          <div className="pt-2 border-t border-[#e2e8f0]">
+          <div className="pt-2 text-center">
             <button
               onClick={() => onNavigateTab('map')}
-              className="w-full text-center text-xs font-bold text-[#095c54] hover:underline"
+              className="text-xs font-extrabold text-[#095c54] hover:underline"
             >
-              View all 13 Ward Scores & Officers →
+              Explore Full Ward Ranking →
             </button>
           </div>
-        </div>
-
-      </div>
-
-      {/* ======================================================== */}
-      {/* 5. COMMUNITY IMPACT SUMMARY                              */}
-      {/* ======================================================== */}
-      <div className="bg-[#f0f6f4] p-5 rounded-3xl border border-[#b8e0d7] flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="font-extrabold text-sm text-[#095c54] flex items-center gap-1.5">
-            <Award className="w-4 h-4 text-[#10b981]" />
-            {t.community_impact_title}
-          </h3>
-          <p className="text-xs text-[#0d6e65] mt-0.5">
-            Your verified contributions to Navsari cleanliness initiatives.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="text-center">
-            <span className="text-[10px] font-bold text-[#64748b] block">Drives Joined</span>
-            <span className="text-lg font-black text-[#095c54]">{communityImpact.drives_joined}</span>
-          </div>
-          <div className="text-center">
-            <span className="text-[10px] font-bold text-[#64748b] block">Badges</span>
-            <span className="text-lg font-black text-[#095c54]">{communityImpact.rewards_earned}</span>
-          </div>
-          <div className="text-center">
-            <span className="text-[10px] font-bold text-[#64748b] block">{t.points_earned}</span>
-            <span className="text-lg font-black text-[#d97706]">{communityImpact.civic_points}</span>
-          </div>
-          <button
-            onClick={() => onNavigateTab('rewards')}
-            className="btn-primary-custom px-3 py-1.5 text-xs font-bold"
-          >
-            View Badges
-          </button>
         </div>
       </div>
     </div>

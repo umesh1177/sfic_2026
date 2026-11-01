@@ -5,6 +5,9 @@ import { ComplaintsController } from '../controllers/complaintsController.js';
 import { MapController } from '../controllers/mapController.js';
 import { DrivesController } from '../controllers/drivesController.js';
 import { CommunityController } from '../controllers/communityController.js';
+import { CommunityHeadController } from '../controllers/communityHeadController.js';
+import { WorkerController } from '../controllers/workerController.js';
+import { WardOfficerController } from '../controllers/wardOfficerController.js';
 import { SupportController } from '../controllers/supportController.js';
 import { NotificationsController } from '../controllers/notificationsController.js';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth.js';
@@ -55,6 +58,7 @@ apiRouter.post('/complaints/validate-location', softAuthenticate, ComplaintsCont
 apiRouter.post('/complaints', authenticate, ComplaintsController.createComplaint);
 apiRouter.get('/complaints/my', authenticate, ComplaintsController.getMyComplaints);
 apiRouter.get('/complaints/:id', softAuthenticate, ComplaintsController.getComplaintById);
+apiRouter.delete('/complaints/:id', authenticate, ComplaintsController.deleteComplaint);
 apiRouter.post('/complaints/:id/feedback', authenticate, ComplaintsController.submitFeedback);
 apiRouter.post('/complaints/:id/reopen', authenticate, ComplaintsController.reopenComplaint);
 apiRouter.post('/complaints/:id/follow', softAuthenticate, ComplaintsController.toggleFollow);
@@ -80,6 +84,12 @@ apiRouter.post('/challenges/:id/join', authenticate, CommunityController.joinCha
 apiRouter.get('/rewards/my', softAuthenticate, CommunityController.getMyRewards);
 apiRouter.get('/rewards/leaderboard', CommunityController.getLeaderboard);
 
+// Community Recognition Posts (LinkedIn-Style Wall)
+apiRouter.get('/community/recognition-posts', softAuthenticate, CommunityController.getRecognitionPosts);
+apiRouter.post('/community/recognition-posts', authenticate, CommunityController.createRecognitionPost);
+apiRouter.post('/community/recognition-posts/:id/like', authenticate, CommunityController.togglePostLike);
+apiRouter.post('/community/recognition-posts/:id/comments', authenticate, CommunityController.addPostComment);
+
 // 8. Notifications
 apiRouter.get('/notifications', authenticate, NotificationsController.getNotifications);
 apiRouter.patch('/notifications/:id/read', authenticate, NotificationsController.markAsRead);
@@ -90,3 +100,105 @@ apiRouter.post('/support/tickets', authenticate, SupportController.createTicket)
 apiRouter.get('/support/tickets', authenticate, SupportController.getTickets);
 apiRouter.get('/support/tickets/:id', authenticate, SupportController.getTicketById);
 apiRouter.post('/support/tickets/:id/messages', authenticate, SupportController.addMessage);
+
+// 10. Community Head Dashboard (SIH PS000089)
+// Profile
+apiRouter.get('/community/my', softAuthenticate, CommunityHeadController.getMyCommunity);
+apiRouter.put('/community/:id', authenticate, CommunityHeadController.updateCommunity);
+
+// Activities
+apiRouter.get('/community/activities', softAuthenticate, CommunityHeadController.getActivities);
+apiRouter.post('/community/activities', authenticate, CommunityHeadController.createActivity);
+apiRouter.get('/community/activities/:id', softAuthenticate, CommunityHeadController.getActivity);
+apiRouter.put('/community/activities/:id', authenticate, CommunityHeadController.updateActivity);
+apiRouter.delete('/community/activities/:id', authenticate, CommunityHeadController.deleteActivity);
+apiRouter.post('/community/activities/:id/submit', authenticate, CommunityHeadController.submitForApproval);
+apiRouter.post('/community/activities/:id/publish', authenticate, CommunityHeadController.publishActivity);
+apiRouter.post('/community/activities/:id/open-registration', authenticate, CommunityHeadController.openRegistration);
+apiRouter.post('/community/activities/:id/close-registration', authenticate, CommunityHeadController.closeRegistration);
+apiRouter.post('/community/activities/:id/reopen-registration', authenticate, CommunityHeadController.reopenRegistration);
+apiRouter.post('/community/activities/:id/cancel', authenticate, CommunityHeadController.cancelActivity);
+apiRouter.get('/community/activities/:id/approvals', softAuthenticate, CommunityHeadController.getActivityApprovals);
+apiRouter.post('/community/activities/:id/officer-review', authenticate, CommunityHeadController.officerReview);
+
+// Registrations
+apiRouter.get('/community/activities/:id/registrations', softAuthenticate, CommunityHeadController.getRegistrations);
+apiRouter.get('/community/activities/:id/registrations/export', softAuthenticate, CommunityHeadController.exportRegistrationsCsv);
+apiRouter.patch('/community/registrations/:id', authenticate, CommunityHeadController.updateAttendance);
+
+// Citizen Questions (AI Answer Suggestions & Review)
+apiRouter.post('/activities/:id/questions', softAuthenticate, CommunityHeadController.createQuestion);
+apiRouter.get('/community/questions', softAuthenticate, CommunityHeadController.getQuestions);
+apiRouter.get('/community/questions/:id', softAuthenticate, CommunityHeadController.getQuestion);
+apiRouter.post('/community/questions/:id/generate-suggestion', authenticate, CommunityHeadController.generateAiSuggestion);
+apiRouter.post('/community/questions/:id/respond', authenticate, CommunityHeadController.respondToQuestion);
+apiRouter.post('/community/questions/:id/close', authenticate, CommunityHeadController.closeQuestion);
+
+// Event Announcements & Targeted Notifications
+apiRouter.get('/community/announcements', softAuthenticate, CommunityHeadController.getAnnouncements);
+apiRouter.post('/community/activities/:id/announcements', authenticate, CommunityHeadController.createAnnouncement);
+
+// Gallery & Evidence
+apiRouter.get('/community/activities/:id/evidence', softAuthenticate, CommunityHeadController.getEvidence);
+apiRouter.post('/community/activities/:id/evidence', authenticate, CommunityHeadController.uploadEvidence);
+apiRouter.post('/community/activities/:id/evidence/submit', authenticate, CommunityHeadController.submitEvidence);
+apiRouter.post('/community/activities/:id/evidence/review', authenticate, CommunityHeadController.reviewEvidence);
+
+// AI Features
+apiRouter.post('/community/ai/generate-description', CommunityHeadController.generateDescription);
+apiRouter.post('/community/ai/check-evidence-quality', CommunityHeadController.checkEvidenceQuality);
+apiRouter.post('/community/ai/compare-evidence', CommunityHeadController.compareEvidence);
+apiRouter.get('/community/ai/activity-insights', softAuthenticate, CommunityHeadController.getActivityInsights);
+
+// Dashboard Overview Summary
+apiRouter.get('/community/dashboard/summary', softAuthenticate, CommunityHeadController.getDashboardSummary);
+
+// ============================================================================
+// WORKER DASHBOARD ROUTES (Navsari Municipal Corporation)
+// ============================================================================
+// 1. Profile & Dashboard Summary
+apiRouter.get('/worker/profile', softAuthenticate, WorkerController.getProfile);
+apiRouter.get('/worker/dashboard/summary', softAuthenticate, WorkerController.getDashboardSummary);
+
+// 2. Assignments
+apiRouter.get('/worker/assignments', softAuthenticate, WorkerController.getAssignments);
+apiRouter.get('/worker/assignments/:id', softAuthenticate, WorkerController.getAssignmentDetails);
+apiRouter.post('/worker/assignments/:id/acknowledge', softAuthenticate, WorkerController.acknowledgeAssignment);
+
+// 3. Location-Validated Attendance (GPS geofencing)
+apiRouter.post('/worker/attendance/mark', softAuthenticate, WorkerController.markAttendance);
+apiRouter.post('/worker/attendance/exception', softAuthenticate, WorkerController.requestAttendanceException);
+apiRouter.get('/worker/attendance/history', softAuthenticate, WorkerController.getAttendanceHistory);
+
+// 4. Progress Updates
+apiRouter.post('/worker/assignments/:id/progress', softAuthenticate, WorkerController.addProgress);
+
+// 5. Before & After Evidence
+apiRouter.get('/worker/assignments/:id/evidence', softAuthenticate, WorkerController.getEvidence);
+apiRouter.post('/worker/assignments/:id/evidence', softAuthenticate, WorkerController.uploadEvidence);
+
+// 6. Temporary Team Leader Actions (Strictly Authorized)
+apiRouter.post('/worker/assignments/:id/completion-report', softAuthenticate, WorkerController.submitCompletionReport);
+apiRouter.get('/worker/assignments/:id/team', softAuthenticate, WorkerController.getTeamManagement);
+
+// 7. Directory & Designations (NMC & Ward)
+apiRouter.get('/worker/meta/designations', softAuthenticate, WorkerController.getDesignations);
+apiRouter.get('/worker/directory', softAuthenticate, WorkerController.getWorkersDirectory);
+
+// ============================================================================
+// WARD OFFICER DASHBOARD ROUTES (Navsari Municipal Corporation - Ward 3)
+// ============================================================================
+apiRouter.get('/ward/dashboard/summary', softAuthenticate, WardOfficerController.getDashboardSummary);
+apiRouter.get('/ward/complaints', softAuthenticate, WardOfficerController.getComplaints);
+apiRouter.get('/ward/complaints/:id', softAuthenticate, WardOfficerController.getComplaintDetails);
+apiRouter.post('/ward/complaints/:id/reopen', softAuthenticate, WardOfficerController.reopenComplaint);
+apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, WardOfficerController.assignComplaint);
+apiRouter.get('/ward/hotspots', softAuthenticate, WardOfficerController.getHotspots);
+apiRouter.get('/ward/assignments', softAuthenticate, WardOfficerController.getAssignments);
+apiRouter.get('/ward/workers', softAuthenticate, WardOfficerController.getWorkers);
+apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getApprovals);
+apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
+apiRouter.get('/ward/cleanliness-score', softAuthenticate, WardOfficerController.getCleanlinessScore);
+apiRouter.get('/ward/reports', softAuthenticate, WardOfficerController.getReports);
+
+

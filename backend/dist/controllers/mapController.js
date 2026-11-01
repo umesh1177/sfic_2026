@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MapController = void 0;
 const store_js_1 = require("../data/store.js");
 const postgis_js_1 = require("../utils/postgis.js");
+const dbRepository_js_1 = require("../data/dbRepository.js");
 class MapController {
     /**
      * GET /api/map/wards
@@ -45,13 +46,10 @@ class MapController {
     static async getPublicComplaints(req, res) {
         try {
             const { category_id, status, ward_number } = req.query;
-            let list = store_js_1.store.complaints;
-            if (category_id) {
-                list = list.filter(c => c.category_id === category_id);
-            }
-            if (status && status !== 'all') {
-                list = list.filter(c => c.status === status);
-            }
+            let list = await dbRepository_js_1.DbRepository.getComplaints({
+                category_id: category_id,
+                status: status
+            });
             if (ward_number) {
                 list = list.filter(c => c.location.ward_number === Number(ward_number));
             }
@@ -152,7 +150,8 @@ class MapController {
                 res.status(400).json({ success: false, error: 'Valid latitude and longitude required' });
                 return;
             }
-            const nearby = store_js_1.store.complaints.filter(c => {
+            const allComplaints = await dbRepository_js_1.DbRepository.getComplaints();
+            const nearby = allComplaints.filter(c => {
                 const dist = (0, postgis_js_1.calculateDistanceMeters)(latitude, longitude, c.location.latitude, c.location.longitude);
                 return dist <= radius;
             }).map(c => ({

@@ -1,0 +1,16 @@
+node_modules/
+**/node_modules/
+backend/node_modules/
+frontend/node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+ml-service/venv/
+ml-service/__pycache__/
+__pycache__/
+*.pyc
+.DS_Store
+database/pgdata/
+.gemini/

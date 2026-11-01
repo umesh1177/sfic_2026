@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationsController = void 0;
-const store_js_1 = require("../data/store.js");
+const dbRepository_js_1 = require("../data/dbRepository.js");
 class NotificationsController {
     /**
      * GET /api/notifications
@@ -12,7 +12,7 @@ class NotificationsController {
                 res.status(401).json({ success: false, error: 'Unauthorized' });
                 return;
             }
-            const notifs = store_js_1.store.notifications.filter(n => n.user_id === req.user.id);
+            const notifs = await dbRepository_js_1.DbRepository.getNotifications(req.user.id);
             res.status(200).json({
                 success: true,
                 data: notifs
@@ -28,13 +28,10 @@ class NotificationsController {
     static async markAsRead(req, res) {
         try {
             const { id } = req.params;
-            const notif = store_js_1.store.notifications.find(n => n.id === id);
-            if (notif) {
-                notif.is_read = true;
-            }
+            await dbRepository_js_1.DbRepository.markNotificationRead(id);
             res.status(200).json({
                 success: true,
-                message: 'Notification marked as read'
+                message: 'Notification marked as read in database'
             });
         }
         catch (err) {
@@ -50,12 +47,10 @@ class NotificationsController {
                 res.status(401).json({ success: false, error: 'Unauthorized' });
                 return;
             }
-            store_js_1.store.notifications
-                .filter(n => n.user_id === req.user.id)
-                .forEach(n => { n.is_read = true; });
+            await dbRepository_js_1.DbRepository.markAllNotificationsRead(req.user.id);
             res.status(200).json({
                 success: true,
-                message: 'All notifications marked as read'
+                message: 'All notifications marked as read in database'
             });
         }
         catch (err) {

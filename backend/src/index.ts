@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { apiRouter } from './routes/api.js';
+import { checkDatabaseConnection } from './data/db.js';
 
 dotenv.config();
 
@@ -38,7 +39,7 @@ app.use('/api', apiLimiter);
 app.get('/api/health', (_req, res) => {
   res.status(200).json({
     status: 'healthy',
-    service: 'My Clean Navsari - Municipal Citizen Backend',
+    service: 'Swachh Setu - Municipal Citizen Backend',
     sih_problem_statement: 'PS000089',
     timestamp: new Date().toISOString()
   });
@@ -64,11 +65,14 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`================================================================`);
-  console.log(`  MY CLEAN NAVSARI CITIZEN BACKEND (SIH PS000089)`);
+  console.log(`  SWACHH SETU CITIZEN BACKEND (SIH PS000089)`);
   console.log(`  Navsari Municipal Corporation, Gujarat`);
   console.log(`  Server listening on: http://localhost:${PORT}`);
   console.log(`  Health Check: http://localhost:${PORT}/api/health`);
   console.log(`================================================================`);
+  await checkDatabaseConnection();
 });
+
+export { app };

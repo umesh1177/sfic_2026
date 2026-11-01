@@ -2,30 +2,18 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CitizenController = void 0;
 const store_js_1 = require("../data/store.js");
+const dbRepository_js_1 = require("../data/dbRepository.js");
 class CitizenController {
     /**
      * GET /api/citizen/dashboard
      */
     static async getDashboard(req, res) {
         try {
-            const citizenId = req.user?.id;
-            const citizenComplaints = citizenId ? store_js_1.store.complaints.filter(c => c.citizen_id === citizenId) : [];
-            const stats = {
-                total_submitted: citizenComplaints.length,
-                pending: citizenComplaints.filter(c => c.status === 'submitted' || c.status === 'under_review').length,
-                in_progress: citizenComplaints.filter(c => c.status === 'assigned' || c.status === 'in_progress' || c.status === 'awaiting_verification').length,
-                resolved: citizenComplaints.filter(c => c.status === 'resolved').length
-            };
-            // City-wide statistics for Navsari
-            const municipalStats = {
-                city_total_complaints: store_js_1.store.complaints.length,
-                city_resolved_complaints: store_js_1.store.complaints.filter(c => c.status === 'resolved').length,
-                city_average_resolution_hours: 18.5,
-                total_active_drives: store_js_1.store.drives.filter(d => d.status === 'upcoming' || d.status === 'ongoing').length,
-                active_volunteers: 480
-            };
-            // Nearby cleanliness issues around Navsari center
-            const nearbyIssues = store_js_1.store.complaints.slice(0, 5).map(c => ({
+            const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
+            const dashboardStats = await dbRepository_js_1.DbRepository.getDashboardStats(citizenId);
+            const complaints = await dbRepository_js_1.DbRepository.getComplaints({});
+            // Nearby cleanliness issues around Navsari
+            const nearbyIssues = complaints.slice(0, 5).map(c => ({
                 id: c.id,
                 complaint_number: c.complaint_number,
                 category_name: c.category_name,
@@ -52,15 +40,14 @@ class CitizenController {
                 active_challenges: userChallenges.length,
                 civic_points: userRewards.length * 250 + userDrives.length * 100
             };
-            // Recent notifications preview
-            const notifications = citizenId
-                ? store_js_1.store.notifications.filter(n => n.user_id === citizenId).slice(0, 4)
-                : [];
+            // Recent notifications preview from PostgreSQL
+            const allNotifs = await dbRepository_js_1.DbRepository.getNotifications(citizenId);
+            const notifications = allNotifs.slice(0, 4);
             res.status(200).json({
                 success: true,
                 data: {
-                    stats,
-                    municipal_stats: municipalStats,
+                    stats: dashboardStats.stats,
+                    municipal_stats: dashboardStats.municipal_stats,
                     nearby_issues: nearbyIssues,
                     ward_scores: wardScores,
                     community_impact: communityImpact,

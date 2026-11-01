@@ -12,6 +12,7 @@ import {
   Eye,
   ChevronRight,
   ShieldAlert,
+  Trash2,
   ArrowRight
 } from 'lucide-react';
 import { api } from '../services/api.js';
@@ -94,6 +95,18 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
       }
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  const handleDelete = async (complaintId: string) => {
+    if (!window.confirm('Are you sure you want to delete this complaint record from the database?')) return;
+    try {
+      await api.deleteComplaint(complaintId);
+      setSelectedComplaint(null);
+      setActionSuccess('Complaint record permanently deleted from database.');
+      fetchComplaints();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete complaint');
     }
   };
 
@@ -363,8 +376,8 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                 </div>
               </div>
 
-              {/* Citizen Actions: Feedback & Reopen */}
-              <div className="pt-2 border-t border-[#e2e8f0] flex flex-wrap gap-2">
+              {/* Citizen Actions: Feedback, Reopen & Delete */}
+              <div className="pt-2 border-t border-[#e2e8f0] flex flex-wrap gap-2 items-center">
                 {selectedComplaint.status === 'resolved' && !selectedComplaint.feedback && (
                   <button
                     onClick={() => setIsSubmittingFeedback(true)}
@@ -382,6 +395,16 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                     <RotateCcw className="w-3.5 h-3.5" /> Reopen Unresolved Issue
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => handleDelete(selectedComplaint.id)}
+                  className="btn-outline-custom py-2 px-3 text-xs font-bold text-[#dc2626] border-[#fca5a5] hover:bg-[#fee2e2] transition ml-auto"
+                  title="Delete this complaint from database"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
               </div>
 
               {/* Feedback Form Section */}

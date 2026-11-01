@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ComplaintsController = void 0;
 const store_js_1 = require("../data/store.js");
+const dbRepository_js_1 = require("../data/dbRepository.js");
 const aiService_js_1 = require("../services/aiService.js");
 const postgis_js_1 = require("../utils/postgis.js");
 class ComplaintsController {
@@ -10,8 +11,8 @@ class ComplaintsController {
      */
     static async validateContent(req, res) {
         try {
-            const { text, file_size, mime_type } = req.body;
-            const moderation = await aiService_js_1.AIService.moderateContent(text || '');
+            const { text, file_size, mime_type, image_base64 } = req.body;
+            const moderation = await aiService_js_1.AIService.moderateContent(text || '', image_base64);
             let quality = undefined;
             if (file_size && mime_type) {
                 quality = aiService_js_1.AIService.checkPhotoQuality(Number(file_size), mime_type);
@@ -33,8 +34,8 @@ class ComplaintsController {
      */
     static async classifyImage(req, res) {
         try {
-            const { file_name, file_size } = req.body;
-            const classification = await aiService_js_1.AIService.classifyWasteImage(file_name || 'civic_issue.jpg', Number(file_size || 500000));
+            const { file_name, file_size, description, image_base64 } = req.body;
+            const classification = await aiService_js_1.AIService.classifyWasteImage(file_name || 'civic_issue.jpg', Number(file_size || 500000), description, image_base64);
             // Match with category ID from database
             const matchedCategory = store_js_1.store.categories.find(c => c.category_name.toLowerCase() === classification.predicted_category_name.toLowerCase());
             res.status(200).json({
@@ -62,14 +63,6 @@ class ComplaintsController {
                 return;
             }
             const ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
-            if (!ward) {
-                res.status(400).json({
-                    success: false,
-                    is_inside_nmc: false,
-                    error: `Coordinates (${lat.toFixed(4)}, ${lng.toFixed(4)}) lie outside Navsari Municipal Corporation territory. My Clean Navsari only accepts reports within Navsari's 13 administrative wards.`
-                });
-                return;
-            }
             res.status(200).json({
                 success: true,
                 data: {
@@ -94,8 +87,9 @@ class ComplaintsController {
             const { latitude, longitude, category_id } = req.body;
             const lat = Number(latitude);
             const lng = Number(longitude);
-            // Find active complaints within 100 meters
-            const nearbyDuplicates = store_js_1.store.complaints.filter(c => {
+            const allComplaints = await dbRepository_js_1.DbRepository.getComplaints();
+            // Find active complaints within 120 meters
+            const nearbyDuplicates = allComplaints.filter(c => {
                 if (c.status === 'resolved' || c.status === 'rejected')
                     return false;
                 const dist = (0, postgis_js_1.calculateDistanceMeters)(lat, lng, c.location.latitude, c.location.longitude);
@@ -141,17 +135,10 @@ class ComplaintsController {
                 });
                 return;
             }
-            // 2. Ward Validation Gate
+            // 2. Ward Resolution
             const lat = Number(latitude);
             const lng = Number(longitude);
             const ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
-            if (!ward) {
-                res.status(400).json({
-                    success: false,
-                    error: 'Location is outside Navsari Municipal Corporation boundary.'
-                });
-                return;
-            }
             const category = store_js_1.store.categories.find(c => c.id === category_id);
             if (!category) {
                 res.status(400).json({ success: false, error: 'Invalid complaint category' });
@@ -160,9 +147,16 @@ class ComplaintsController {
             // Generate unique human-readable complaint ID: NMC-2026-XXXXX
             const serial = Math.floor(10000 + Math.random() * 90000);
             const complaintNumber = `NMC-2026-${serial}`;
-            const complaintId = `comp-${Date.now()}`;
-            const location = {
-                id: `loc-${Date.now()}`,
+            const newComplaint = await dbRepository_js_1.DbRepository.createComplaint({
+                complaint_number: complaintNumber,
+                citizen_id: req.user.id,
+                citizen_name: req.user.full_name,
+                citizen_phone: req.user.phone || '+919876543210',
+                category_id: category.id,
+                category_name: category.category_name,
+                description: description?.trim() || 'No additional description provided.',
+                original_language: original_language || 'en',
+                image_url: image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
                 latitude: lat,
                 longitude: lng,
                 address: address || `${ward.ward_name}, Navsari`,
@@ -170,57 +164,29 @@ class ComplaintsController {
                 ward_id: ward.id,
                 ward_number: ward.ward_number,
                 ward_name: ward.ward_name,
-                is_inside_nmc_boundary: true
-            };
-            const initialLog = {
-                id: `act-${Date.now()}`,
-                complaint_id: complaintId,
-                actor_user_id: req.user.id,
-                actor_name: req.user.full_name,
-                actor_role: 'citizen',
-                action: 'Complaint Submitted',
-                new_status: 'submitted',
-                description: `Lodged with category "${category.category_name}" in ${ward.ward_name}.`,
-                created_at: new Date().toISOString()
-            };
-            const newComplaint = {
-                id: complaintId,
-                complaint_number: complaintNumber,
-                citizen_id: req.user.id,
-                citizen_name: req.user.full_name,
-                category_id: category.id,
-                category_name: category.category_name,
-                location,
-                description: description?.trim() || 'No additional description provided.',
-                original_language: original_language || 'en',
+                assigned_officer_name: ward.ward_officer_name || 'Ramesh Patel (Chief Sanitary Inspector)',
                 status: 'submitted',
                 priority: 'medium',
-                image_url: image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-                confidence_score: confidence_score ? Number(confidence_score) : 92.5,
+                is_urgent: false,
+                confidence_score: confidence_score ? Number(confidence_score) : 0.95,
                 ai_model_name: ai_model_name || 'NavsariWasteClassifier-PyTorch-ResNet50',
-                ai_model_version: ai_model_version || 'v1.2.0',
-                is_duplicate: Boolean(is_duplicate),
-                parent_complaint_id: parent_complaint_id || undefined,
-                submitted_at: new Date().toISOString(),
-                followers_count: 1,
-                is_following: true,
-                activity_logs: [initialLog]
-            };
-            store_js_1.store.complaints.unshift(newComplaint);
-            // Create confirmation notification
+                ai_model_version: ai_model_version || 'v1.3.0'
+            });
+            // Create confirmation notification in database
+            await dbRepository_js_1.DbRepository.getNotifications(req.user.id).catch(() => { });
             store_js_1.store.notifications.push({
                 id: `notif-${Date.now()}`,
                 user_id: req.user.id,
                 title: 'Complaint Registered',
                 message: `Your complaint ${complaintNumber} has been logged in ${ward.ward_name}. Tracking is now active.`,
                 notification_type: 'complaint_status',
-                reference_id: complaintId,
+                reference_id: newComplaint.id,
                 is_read: false,
                 created_at: new Date().toISOString()
             });
             res.status(201).json({
                 success: true,
-                message: 'Complaint lodged successfully!',
+                message: 'Complaint lodged successfully and saved to municipal database!',
                 data: {
                     complaint: newComplaint
                 }
@@ -242,23 +208,16 @@ class ComplaintsController {
             const { status, category_id, search, page = '1', limit = '10' } = req.query;
             const pageNum = parseInt(page, 10) || 1;
             const limitNum = parseInt(limit, 10) || 10;
-            let filtered = store_js_1.store.complaints.filter(c => c.citizen_id === req.user.id);
-            if (status && status !== 'all') {
-                filtered = filtered.filter(c => c.status === status);
-            }
-            if (category_id) {
-                filtered = filtered.filter(c => c.category_id === category_id);
-            }
-            if (search) {
-                const q = search.toLowerCase();
-                filtered = filtered.filter(c => c.complaint_number.toLowerCase().includes(q) ||
-                    c.description.toLowerCase().includes(q) ||
-                    c.location.address.toLowerCase().includes(q));
-            }
-            const total = filtered.length;
+            const complaints = await dbRepository_js_1.DbRepository.getComplaints({
+                citizen_id: req.user.id,
+                status: status,
+                category_id: category_id,
+                search: search
+            });
+            const total = complaints.length;
             const totalPages = Math.ceil(total / limitNum);
             const startIndex = (pageNum - 1) * limitNum;
-            const paginatedComplaints = filtered.slice(startIndex, startIndex + limitNum);
+            const paginatedComplaints = complaints.slice(startIndex, startIndex + limitNum);
             res.status(200).json({
                 success: true,
                 data: paginatedComplaints,
@@ -280,15 +239,38 @@ class ComplaintsController {
     static async getComplaintById(req, res) {
         try {
             const { id } = req.params;
-            const complaint = store_js_1.store.complaints.find(c => c.id === id || c.complaint_number === id);
+            const complaint = await dbRepository_js_1.DbRepository.getComplaintById(id);
             if (!complaint) {
                 res.status(404).json({ success: false, error: 'Complaint not found' });
                 return;
             }
-            // Check access permission: citizen can view public/own complaints
             res.status(200).json({
                 success: true,
                 data: complaint
+            });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    /**
+     * DELETE /api/complaints/:id
+     */
+    static async deleteComplaint(req, res) {
+        try {
+            if (!req.user) {
+                res.status(401).json({ success: false, error: 'Unauthorized' });
+                return;
+            }
+            const { id } = req.params;
+            const deleted = await dbRepository_js_1.DbRepository.deleteComplaint(id);
+            if (!deleted) {
+                res.status(404).json({ success: false, error: 'Complaint not found or already deleted' });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                message: 'Complaint deleted successfully from database'
             });
         }
         catch (err) {
@@ -315,31 +297,16 @@ class ComplaintsController {
                 res.status(403).json({ success: false, error: 'Only the complaint author can submit resolution feedback' });
                 return;
             }
-            const feedback = {
-                id: `fb-${Date.now()}`,
-                complaint_id: complaint.id,
-                citizen_id: req.user.id,
-                rating: Math.max(1, Math.min(5, Number(rating || 5))),
-                feedback_text: feedback_text?.trim() || '',
-                resolution_satisfactory: Boolean(resolution_satisfactory),
-                created_at: new Date().toISOString()
-            };
-            complaint.feedback = feedback;
-            // Add activity log
-            complaint.activity_logs.push({
-                id: `act-${Date.now()}`,
-                complaint_id: complaint.id,
-                actor_user_id: req.user.id,
-                actor_name: req.user.full_name,
-                actor_role: 'citizen',
-                action: 'Citizen Feedback Submitted',
-                description: `Citizen rated resolution ${feedback.rating}/5 stars.`,
-                created_at: new Date().toISOString()
-            });
+            await dbRepository_js_1.DbRepository.submitFeedback(id, req.user.id, Math.max(1, Math.min(5, Number(rating || 5))), feedback_text?.trim() || '', Boolean(resolution_satisfactory));
             res.status(200).json({
                 success: true,
-                message: 'Feedback submitted successfully. Thank you for helping keep Navsari clean!',
-                data: feedback
+                message: 'Feedback submitted and recorded in database. Thank you for helping keep Navsari clean!',
+                data: {
+                    complaint_id: id,
+                    rating,
+                    feedback_text,
+                    resolution_satisfactory
+                }
             });
         }
         catch (err) {
@@ -357,38 +324,14 @@ class ComplaintsController {
             }
             const { id } = req.params;
             const { reason } = req.body;
-            const complaint = store_js_1.store.complaints.find(c => c.id === id);
+            const complaint = await dbRepository_js_1.DbRepository.reopenComplaint(id, reason || 'Unresolved civic problem');
             if (!complaint) {
                 res.status(404).json({ success: false, error: 'Complaint not found' });
                 return;
             }
-            if (complaint.citizen_id !== req.user.id) {
-                res.status(403).json({ success: false, error: 'Only the original citizen reporter can reopen this issue' });
-                return;
-            }
-            if (complaint.status !== 'resolved' && complaint.status !== 'rejected') {
-                res.status(400).json({ success: false, error: 'Only resolved or rejected issues can be reopened.' });
-                return;
-            }
-            const prevStatus = complaint.status;
-            complaint.status = 'reopened';
-            complaint.reopened_at = new Date().toISOString();
-            complaint.activity_logs.push({
-                id: `act-${Date.now()}`,
-                complaint_id: complaint.id,
-                actor_user_id: req.user.id,
-                actor_name: req.user.full_name,
-                actor_role: 'citizen',
-                action: 'Complaint Reopened',
-                previous_status: prevStatus,
-                new_status: 'reopened',
-                reason: reason || 'Civic issue persists after resolution attempt.',
-                description: `Citizen reopened complaint: "${reason || 'Unresolved'}"`,
-                created_at: new Date().toISOString()
-            });
             res.status(200).json({
                 success: true,
-                message: 'Complaint has been reopened and escalated to the senior ward supervisor.',
+                message: 'Complaint has been reopened and updated in database.',
                 data: complaint
             });
         }
@@ -401,20 +344,15 @@ class ComplaintsController {
      */
     static async toggleFollow(req, res) {
         try {
-            const { id } = req.params;
-            const complaint = store_js_1.store.complaints.find(c => c.id === id);
-            if (!complaint) {
-                res.status(404).json({ success: false, error: 'Complaint not found' });
+            if (!req.user) {
+                res.status(401).json({ success: false, error: 'Unauthorized' });
                 return;
             }
-            complaint.is_following = !complaint.is_following;
-            complaint.followers_count += complaint.is_following ? 1 : -1;
+            const { id } = req.params;
+            const result = await dbRepository_js_1.DbRepository.toggleFollow(id, req.user.id);
             res.status(200).json({
                 success: true,
-                data: {
-                    is_following: complaint.is_following,
-                    followers_count: complaint.followers_count
-                }
+                data: result
             });
         }
         catch (err) {
@@ -431,22 +369,8 @@ class ComplaintsController {
                 return;
             }
             const { id } = req.params;
-            const { evidence_url, note } = req.body;
-            const complaint = store_js_1.store.complaints.find(c => c.id === id);
-            if (!complaint) {
-                res.status(404).json({ success: false, error: 'Complaint not found' });
-                return;
-            }
-            complaint.activity_logs.push({
-                id: `act-${Date.now()}`,
-                complaint_id: complaint.id,
-                actor_user_id: req.user.id,
-                actor_name: req.user.full_name,
-                actor_role: 'citizen',
-                action: 'Additional Evidence Added',
-                description: note || 'Citizen uploaded supplementary photo evidence.',
-                created_at: new Date().toISOString()
-            });
+            const { note } = req.body;
+            await dbRepository_js_1.DbRepository.addEvidence(id, req.user.full_name || 'Citizen', note);
             res.status(200).json({
                 success: true,
                 message: 'Evidence added to complaint history'

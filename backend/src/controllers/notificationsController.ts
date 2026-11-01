@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { store } from '../data/store.js';
+import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
 export class NotificationsController {
@@ -13,7 +14,7 @@ export class NotificationsController {
         return;
       }
 
-      const notifs = store.notifications.filter(n => n.user_id === req.user!.id);
+      const notifs = await DbRepository.getNotifications(req.user.id);
       res.status(200).json({
         success: true,
         data: notifs
@@ -29,14 +30,11 @@ export class NotificationsController {
   public static async markAsRead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const notif = store.notifications.find(n => n.id === id);
-      if (notif) {
-        notif.is_read = true;
-      }
+      await DbRepository.markNotificationRead(id);
 
       res.status(200).json({
         success: true,
-        message: 'Notification marked as read'
+        message: 'Notification marked as read in database'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -53,13 +51,11 @@ export class NotificationsController {
         return;
       }
 
-      store.notifications
-        .filter(n => n.user_id === req.user!.id)
-        .forEach(n => { n.is_read = true; });
+      await DbRepository.markAllNotificationsRead(req.user.id);
 
       res.status(200).json({
         success: true,
-        message: 'All notifications marked as read'
+        message: 'All notifications marked as read in database'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

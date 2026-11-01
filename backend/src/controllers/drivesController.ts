@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { store } from '../data/store.js';
+import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
 export class DrivesController {
@@ -9,10 +10,7 @@ export class DrivesController {
   public static async getDrives(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const citizenId = req.user?.id;
-      const drivesWithStatus = store.drives.map(d => ({
-        ...d,
-        is_registered: citizenId ? store.driveRegistrations.some(r => r.drive_id === d.id && r.citizen_id === citizenId) : false
-      }));
+      const drivesWithStatus = await DbRepository.getDrives(citizenId);
 
       res.status(200).json({
         success: true,
@@ -29,22 +27,18 @@ export class DrivesController {
   public static async getDriveById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const drive = store.drives.find(d => d.id === id);
+      const citizenId = req.user?.id;
+      const drives = await DbRepository.getDrives(citizenId);
+      const drive = drives.find(d => d.id === id);
+
       if (!drive) {
         res.status(404).json({ success: false, error: 'Cleanliness drive not found' });
         return;
       }
 
-      const isRegistered = req.user
-        ? store.driveRegistrations.some(r => r.drive_id === drive.id && r.citizen_id === req.user!.id)
-        : false;
-
       res.status(200).json({
         success: true,
-        data: {
-          ...drive,
-          is_registered: isRegistered
-        }
+        data: drive
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -63,52 +57,14 @@ export class DrivesController {
       }
 
       const { id } = req.params;
-      const drive = store.drives.find(d => d.id === id);
-      if (!drive) {
-        res.status(404).json({ success: false, error: 'Drive not found' });
-        return;
-      }
-
-      // Check duplicate
-      const alreadyRegistered = store.driveRegistrations.some(
-        r => r.drive_id === drive.id && r.citizen_id === req.user!.id
-      );
-
-      if (alreadyRegistered) {
-        res.status(400).json({
-          success: false,
-          error: 'You are already registered for this cleanliness drive.'
-        });
-        return;
-      }
-
-      store.driveRegistrations.push({
-        drive_id: drive.id,
-        citizen_id: req.user.id,
-        registered_at: new Date().toISOString()
-      });
-
-      drive.registered_volunteers_count += 1;
-
-      // Add in-app notification
-      store.notifications.push({
-        id: `notif-${Date.now()}`,
-        user_id: req.user.id,
-        title: 'Drive RSVP Confirmed',
-        message: `You successfully registered for "${drive.title}" on ${new Date(drive.start_time).toLocaleDateString()}. Thank you for volunteering!`,
-        notification_type: 'drive_reminder',
-        reference_id: drive.id,
-        is_read: false,
-        created_at: new Date().toISOString()
-      });
+      await DbRepository.registerForDrive(id, req.user.id);
 
       res.status(200).json({
         success: true,
-        message: 'Successfully registered for this cleanliness drive!',
+        message: 'Successfully registered for this cleanliness drive and recorded in database!',
         data: {
-          drive_id: drive.id,
-          is_registered: true,
-          total_volunteers: drive.registered_volunteers_count
+          drive_id: id,
+          is_registered: true
         }
       });
     } catch (err: any) {
@@ -127,28 +83,14 @@ export class DrivesController {
       }
 
       const { id } = req.params;
-      const drive = store.drives.find(d => d.id === id);
-      if (!drive) {
-        res.status(404).json({ success: false, error: 'Drive not found' });
-        return;
-      }
-
-      const initialLen = store.driveRegistrations.length;
-      store.driveRegistrations = store.driveRegistrations.filter(
-        r => !(r.drive_id === drive.id && r.citizen_id === req.user!.id)
-      );
-
-      if (store.driveRegistrations.length < initialLen) {
-        drive.registered_volunteers_count = Math.max(0, drive.registered_volunteers_count - 1);
-      }
+      await DbRepository.cancelDriveRegistration(id, req.user.id);
 
       res.status(200).json({
         success: true,
-        message: 'Registration cancelled',
+        message: 'Registration cancelled successfully in database.',
         data: {
-          drive_id: drive.id,
-          is_registered: false,
-          total_volunteers: drive.registered_volunteers_count
+          drive_id: id,
+          is_registered: false
         }
       });
     } catch (err: any) {
@@ -166,13 +108,8 @@ export class DrivesController {
         return;
       }
 
-      const registeredDriveIds = store.driveRegistrations
-        .filter(r => r.citizen_id === req.user!.id)
-        .map(r => r.drive_id);
-
-      const registeredDrives = store.drives
-        .filter(d => registeredDriveIds.includes(d.id))
-        .map(d => ({ ...d, is_registered: true }));
+      const drives = await DbRepository.getDrives(req.user.id);
+      const registeredDrives = drives.filter(d => d.is_registered);
 
       res.status(200).json({
         success: true,

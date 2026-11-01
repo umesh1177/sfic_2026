@@ -1,18 +1,18 @@
 """
 FastAPI Microservice for Navsari AI/ML Integrations
-SIH Problem Statement: PS000089
+SIH Problem Statement: PS000089 - My Clean Navsari
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from model import WasteClassifierInference
 
 app = FastAPI(
     title="My Clean Navsari - AI/ML Microservice",
-    description="Waste image classification, content moderation and NLP service for Navsari Municipal Corporation",
-    version="1.2.0"
+    description="Deep learning waste image classification, multi-lingual content moderation and civic NLP service for Navsari Municipal Corporation",
+    version="1.3.0"
 )
 
 app.add_middleware(
@@ -26,8 +26,10 @@ app.add_middleware(
 classifier = WasteClassifierInference()
 
 class PredictRequest(BaseModel):
-    filename: str
+    filename: Optional[str] = "civic_issue.jpg"
     file_size: Optional[int] = 500000
+    description: Optional[str] = ""
+    image_base64: Optional[str] = None
 
 class ModerateRequest(BaseModel):
     text: str
@@ -38,25 +40,49 @@ def health():
     return {
         "status": "healthy",
         "service": "My Clean Navsari AI Engine",
-        "has_gpu": False,
-        "model_version": classifier.model_version
+        "model_name": classifier.model_name,
+        "model_version": classifier.model_version,
+        "has_weights": classifier.has_weights
     }
 
 @app.post("/predict")
 def predict(req: PredictRequest):
-    return classifier.predict(req.filename, req.file_size)
+    return classifier.predict(
+        filename=req.filename or "issue.jpg",
+        file_size=req.file_size or 500000,
+        description=req.description or "",
+        image_base64=req.image_base64
+    )
 
 @app.post("/moderate")
 def moderate(req: ModerateRequest):
-    prohibited = ["abuse", "kill", "hate", "harass", "ગાળ", "ગાલી", "corrupt bastard"]
+    prohibited = [
+        "fuck", "fucking", "fucker", "bitch", "bastard", "asshole", "shit", "bullshit", "dick", "pussy",
+        "moron", "retard", "idiot", "kill you", "murder", "terrorist", "bomb", "corrupt bastard",
+        "madarchod", "maderchod", "bhenchod", "behenchod", "bhosdike", "bhosdi", "bsdk",
+        "chutiya", "chutiye", "gandu", "gaand", "harami", "haramkhor", "kamina", "kamine",
+        "kutta", "kutte", "saala", "sala", "randi", "raand", "lodu", "lauda", "lawda", "lavde",
+        "jhant", "bhadwa", "bhadwe", "tatti", "bakwas",
+        "मादरचोद", "बहनचोद", "भोसड़ीके", "चूतिया", "गांडू", "हरामी", "कमीना", "कुत्ता", "साला", "रांड", "लौड़ा",
+        "ગાળ", "હરામી", "કમીના", "કમીનો", "કુતરો", "સાળો", "રાંડ", "ભોસડી", "લવડા", "ચુતિયા", "માદરચોદ", "બેનચોદ", "હરામખોર"
+    ]
     lower = req.text.lower()
     for word in prohibited:
         if word in lower:
             return {
                 "status": "UNSAFE",
                 "is_safe": False,
-                "reason": "Prohibited abusive or offensive terminology detected."
+                "reason": "The description contains prohibited abusive or offensive language. Please describe the civic cleanliness issue constructively."
             }
+
+    # Minimum detail check
+    if len(req.text.strip()) > 0 and len(req.text.strip()) < 4:
+        return {
+            "status": "UNCERTAIN",
+            "is_safe": True,
+            "reason": "Description is very brief. Adding a little more context helps municipal workers find the spot faster."
+        }
+
     return {
         "status": "SAFE",
         "is_safe": True,
@@ -65,4 +91,4 @@ def moderate(req: ModerateRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8008, reload=True)

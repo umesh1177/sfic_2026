@@ -21,6 +21,7 @@ import confetti from 'canvas-confetti';
 import { api, DraftStore } from '../services/api.js';
 import { ComplaintCategory, Complaint } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { MiniMapLocationPicker } from './MiniMapLocationPicker.js';
 
 interface ReportIssueModalProps {
   isOpen: boolean;
@@ -483,49 +484,57 @@ export const ReportIssueModal: React.FC<ReportIssueModalProps> = ({
           {/* STEP 5: NAVSARI LOCATION & POSTGIS WARD DETECTION       */}
           {/* ======================================================== */}
           {currentStep === 5 && (
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-[#f0f6f4] border border-[#b8e0d7]">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-extrabold text-[#095c54] flex items-center gap-1">
-                    <MapPin className="w-4 h-4" />
-                    Navsari PostGIS Ward Identifier
-                  </span>
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#10b981] text-white">
-                    GPS Accurate
-                  </span>
-                </div>
-                {detectedWard ? (
-                  <div className="text-xs font-bold text-[#05443e]">
-                    Ward {detectedWard.ward_number}: {detectedWard.ward_name} ({detectedWard.ward_name_gu})
-                  </div>
-                ) : (
-                  <div className="text-xs text-[#dc2626] font-bold">
-                    {locationError || 'Coordinates outside Navsari boundary'}
-                  </div>
-                )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-[#095c54] mb-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-[#095c54]" />
+                  Verified Navsari GPS & Ward Identification
+                </label>
+                <MiniMapLocationPicker
+                  initialLat={latitude}
+                  initialLng={longitude}
+                  onLocationChange={(newLat, newLng, ward, snippet) => {
+                    setLatitude(newLat);
+                    setLongitude(newLng);
+                    setDetectedWard(ward);
+                    setLocationValid(true);
+                    setLocationError('');
+                    if (snippet && !locationAddress) {
+                      setLocationAddress(snippet);
+                    }
+                  }}
+                  onValidityChange={isValid => {
+                    setLocationValid(isValid);
+                    if (!isValid) {
+                      setLocationError('Selected point is outside Navsari Municipal Corporation bounds');
+                    }
+                  }}
+                />
               </div>
 
               {/* Address & Landmark Inputs */}
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div>
                   <label className="block text-xs font-bold text-[#0f2925] mb-1">
-                    Street Address / Spot
+                    Street Address / Spot Description
                   </label>
                   <input
                     type="text"
                     value={locationAddress}
                     onChange={e => setLocationAddress(e.target.value)}
+                    placeholder="e.g. Near Dudhia Talav Gate 2, Station Road"
                     className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold focus:border-[#095c54] outline-none"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-[#0f2925] mb-1">
-                    Nearby Landmark
+                    Nearby Landmark (Optional)
                   </label>
                   <input
                     type="text"
                     value={landmark}
                     onChange={e => setLandmark(e.target.value)}
+                    placeholder="e.g. Opposite Sayaji Library"
                     className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold focus:border-[#095c54] outline-none"
                   />
                 </div>
@@ -541,7 +550,7 @@ export const ReportIssueModal: React.FC<ReportIssueModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setCurrentStep(3)}
