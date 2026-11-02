@@ -14,7 +14,10 @@ import {
   ChevronLeft,
   ChevronRight,
   UserPlus,
-  Award
+  Award,
+  Pencil,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 
@@ -36,6 +39,60 @@ export const WorkerManagementView: React.FC = () => {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [actionSuccess, setActionSuccess] = useState<string>('');
   const [actionError, setActionError] = useState<string>('');
+
+  // Edit Worker Modal State
+  const [editingWorker, setEditingWorker] = useState<any | null>(null);
+  const [editFullName, setEditFullName] = useState<string>('');
+  const [editPhone, setEditPhone] = useState<string>('');
+  const [editDesignation, setEditDesignation] = useState<string>('Sanitation Worker');
+  const [editAvailability, setEditAvailability] = useState<string>('available');
+  const [editSkills, setEditSkills] = useState<string[]>([]);
+  const [submittingEdit, setSubmittingEdit] = useState<boolean>(false);
+
+  const handleOpenEditModal = (worker: any) => {
+    setEditingWorker(worker);
+    setEditFullName(worker.full_name);
+    setEditPhone(worker.phone);
+    setEditDesignation(worker.designation || 'Sanitation Worker');
+    setEditAvailability(worker.availability_status || 'available');
+    setEditSkills(Array.isArray(worker.skills) ? [...worker.skills] : ['Litter Abatement']);
+  };
+
+  const handleUpdateWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingWorker) return;
+    setSubmittingEdit(true);
+    setActionError('');
+    try {
+      const res = await api.updateWardWorker(editingWorker.id, {
+        full_name: editFullName,
+        phone: editPhone,
+        designation: editDesignation,
+        availability_status: editAvailability,
+        skills: editSkills
+      });
+      setActionSuccess(res.message || 'Worker updated successfully');
+      setEditingWorker(null);
+      fetchWorkers();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to update worker');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
+  const handleDeleteWorker = async (workerId: string, workerName: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${workerName} from Ward 3 field roster?`)) {
+      return;
+    }
+    try {
+      const res = await api.deleteWardWorker(workerId);
+      setActionSuccess(res.message || `Worker ${workerName} removed successfully`);
+      setWorkers(prev => prev.filter(w => w.id !== workerId));
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to remove worker');
+    }
+  };
 
   const allSkillsList = [
     'Bin Clearance',
@@ -215,7 +272,7 @@ export const WorkerManagementView: React.FC = () => {
                 <th className="py-3 px-4">Certified Skills</th>
                 <th className="py-3 px-4">Availability</th>
                 <th className="py-3 px-4">Today's Deployment</th>
-                <th className="py-3 px-4 text-right">Contact</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -299,15 +356,31 @@ export const WorkerManagementView: React.FC = () => {
                       )}
                     </td>
 
-                    {/* Contact */}
+                    {/* Actions: Call, Edit, Delete */}
                     <td className="py-3.5 px-4 text-right">
-                      <a
-                        href={`tel:${worker.phone}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#095c54] text-slate-700 hover:text-white font-bold text-[11px] transition"
-                      >
-                        <Phone className="w-3 h-3" />
-                        <span>{worker.phone}</span>
-                      </a>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <a
+                          href={`tel:${worker.phone}`}
+                          className="p-1.5 rounded-xl bg-slate-100 hover:bg-[#095c54] text-slate-700 hover:text-white transition"
+                          title={`Call ${worker.phone}`}
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          onClick={() => handleOpenEditModal(worker)}
+                          className="p-1.5 rounded-xl bg-emerald-50 hover:bg-[#095c54] text-[#095c54] hover:text-white transition border border-emerald-200"
+                          title="Edit Worker Profile"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteWorker(worker.id, worker.full_name)}
+                          className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white transition border border-rose-200"
+                          title="Remove Worker"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -474,6 +547,117 @@ export const WorkerManagementView: React.FC = () => {
                 >
                   {submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                   <span>Save Worker</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT WORKER MODAL */}
+      {editingWorker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#0f2925]">
+                    Edit Worker Profile: {editingWorker.full_name}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-mono">
+                    Code: {editingWorker.worker_code} · Ward 3
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingWorker(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateWorker} className="space-y-4 text-xs">
+              <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editFullName}
+                  onChange={e => setEditFullName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={editPhone}
+                  onChange={e => setEditPhone(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                    Designation
+                  </label>
+                  <select
+                    value={editDesignation}
+                    onChange={e => setEditDesignation(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden"
+                  >
+                    <option value="Sanitation Worker">Sanitation Worker</option>
+                    <option value="Drainage Cleaning Worker">Drainage Cleaning Worker</option>
+                    <option value="Street Cleaning Worker">Street Cleaning Worker</option>
+                    <option value="Waste Collection Worker">Waste Collection Worker</option>
+                    <option value="Waste Segregation Worker">Waste Segregation Worker</option>
+                    <option value="Garbage Vehicle Operator">Garbage Vehicle Operator</option>
+                    <option value="Public Toilet Maintenance Worker">Public Toilet Maintenance Worker</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                    Availability Status
+                  </label>
+                  <select
+                    value={editAvailability}
+                    onChange={e => setEditAvailability(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden"
+                  >
+                    <option value="available">Available (Standby)</option>
+                    <option value="on_duty">On Duty</option>
+                    <option value="on_leave">On Leave</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingWorker(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEdit}
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
+                >
+                  {submittingEdit ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>Save Changes</span>
                 </button>
               </div>
             </form>

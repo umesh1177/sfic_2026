@@ -173,10 +173,16 @@ exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_
 exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);
 exports.apiRouter.get('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getWorkers);
 exports.apiRouter.post('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addWorker);
+exports.apiRouter.put('/ward/workers/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateWorker);
+exports.apiRouter.delete('/ward/workers/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteWorker);
 exports.apiRouter.get('/ward/teams', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getTeams);
 exports.apiRouter.post('/ward/teams', softAuthenticate, wardOfficerController_js_1.WardOfficerController.createTeam);
+exports.apiRouter.put('/ward/teams/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateTeam);
+exports.apiRouter.delete('/ward/teams/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteTeam);
 exports.apiRouter.get('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunities);
 exports.apiRouter.post('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunity);
+exports.apiRouter.put('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateCommunity);
+exports.apiRouter.delete('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunity);
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);

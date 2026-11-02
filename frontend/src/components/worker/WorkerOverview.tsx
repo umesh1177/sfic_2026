@@ -68,14 +68,14 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
 
           <div className="pt-2 flex flex-wrap gap-2.5">
             <button
-              onClick={() => onNavigateTab('attendance')}
+              onClick={() => onNavigateTab('assign_work')}
               className="px-4 sm:px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-xs sm:text-sm shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition flex items-center gap-2"
             >
               <Clock className="w-4 h-4 text-[#10b981]" />
               <span>Mark GPS Attendance</span>
             </button>
             <button
-              onClick={() => onNavigateTab('daily_work')}
+              onClick={() => onNavigateTab('assign_work')}
               className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
             >
               <Calendar className="w-4 h-4" />

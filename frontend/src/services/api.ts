@@ -910,6 +910,25 @@ class ApiService {
     });
   }
 
+  async updateWardWorker(id: string, data: {
+    full_name?: string;
+    phone?: string;
+    designation?: string;
+    skills?: string[];
+    availability_status?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/workers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteWardWorker(id: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/workers/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   async getWardTeams() {
     return this.request<{ success: boolean; data: any[] }>('/ward/teams');
   }
@@ -922,6 +941,23 @@ class ApiService {
     return this.request<{ success: boolean; message: string; data: any }>('/ward/teams', {
       method: 'POST',
       body: JSON.stringify(data)
+    });
+  }
+
+  async updateWardTeam(id: string, data: {
+    team_name?: string;
+    worker_ids?: string[];
+    temporary_leader_id?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/teams/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteWardTeam(id: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/teams/${id}`, {
+      method: 'DELETE'
     });
   }
 
@@ -941,6 +977,27 @@ class ApiService {
     return this.request<{ success: boolean; message: string; data: any }>('/ward/communities', {
       method: 'POST',
       body: JSON.stringify(data)
+    });
+  }
+
+  async updateWardCommunity(id: string, data: {
+    community_name?: string;
+    head_name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    locality?: string;
+    organisation_type?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/communities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteWardCommunity(id: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/communities/${id}`, {
+      method: 'DELETE'
     });
   }
 

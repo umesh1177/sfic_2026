@@ -1338,6 +1338,67 @@ export class WardOfficerController {
     }
   }
 
+  public static async updateWorker(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { full_name, phone, designation, availability_status, skills } = req.body;
+
+      const workerIndex = (store.workers || []).findIndex(w => w.id === id);
+      if (workerIndex === -1) {
+        res.status(404).json({ success: false, error: 'Worker not found' });
+        return;
+      }
+
+      const existing = store.workers[workerIndex];
+      const updated = {
+        ...existing,
+        full_name: full_name?.trim() || existing.full_name,
+        phone: phone?.trim() || existing.phone,
+        designation: designation?.trim() || existing.designation,
+        primary_designation: designation?.trim() || existing.primary_designation,
+        availability_status: availability_status || existing.availability_status,
+        skills: Array.isArray(skills) ? skills : existing.skills,
+        updated_at: new Date().toISOString()
+      };
+
+      store.workers[workerIndex] = updated;
+
+      res.status(200).json({
+        success: true,
+        message: `Worker ${updated.full_name} profile updated successfully.`,
+        data: updated
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async deleteWorker(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const workerIndex = (store.workers || []).findIndex(w => w.id === id);
+      if (workerIndex === -1) {
+        res.status(404).json({ success: false, error: 'Worker not found' });
+        return;
+      }
+
+      const deleted = store.workers.splice(workerIndex, 1)[0];
+
+      // Remove from any teams
+      (store.teams || []).forEach(team => {
+        team.worker_ids = (team.worker_ids || []).filter((wId: string) => wId !== id);
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Worker ${deleted.full_name} (${deleted.worker_code}) removed from active directory.`,
+        data: deleted
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   // =========================================================================
   // 8B. Team Management (Form Units, Temporary Leadership)
   // =========================================================================
@@ -1378,6 +1439,63 @@ export class WardOfficerController {
         success: true,
         message: `Team "${newTeam.team_name}" created with temporary leader ${newTeam.temporary_leader_name}.`,
         data: newTeam
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async updateTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { team_name, worker_ids, temporary_leader_id } = req.body;
+
+      const teamIndex = (store.teams || []).findIndex(t => t.id === id);
+      if (teamIndex === -1) {
+        res.status(404).json({ success: false, error: 'Team not found' });
+        return;
+      }
+
+      const existing = store.teams[teamIndex];
+      const newWorkerIds = worker_ids || existing.worker_ids;
+      const leaderWorker = (store.workers || []).find(w => w.id === temporary_leader_id) || (store.workers || []).find(w => w.id === newWorkerIds[0]);
+
+      const updated = {
+        ...existing,
+        team_name: team_name?.trim() || existing.team_name,
+        worker_ids: newWorkerIds,
+        temporary_leader_id: leaderWorker?.id || existing.temporary_leader_id,
+        temporary_leader_name: leaderWorker?.full_name || existing.temporary_leader_name,
+        updated_at: new Date().toISOString()
+      };
+
+      store.teams[teamIndex] = updated;
+
+      res.status(200).json({
+        success: true,
+        message: `Team "${updated.team_name}" updated successfully.`,
+        data: updated
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async deleteTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const teamIndex = (store.teams || []).findIndex(t => t.id === id);
+      if (teamIndex === -1) {
+        res.status(404).json({ success: false, error: 'Team not found' });
+        return;
+      }
+
+      const deleted = store.teams.splice(teamIndex, 1)[0];
+
+      res.status(200).json({
+        success: true,
+        message: `Team "${deleted.team_name}" disbandment complete.`,
+        data: deleted
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1434,6 +1552,63 @@ export class WardOfficerController {
         success: true,
         message: `Community "${newCommunity.community_name}" registered in Ward 3.`,
         data: newCommunity
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async updateCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { community_name, head_name, phone, email, address, locality, organisation_type } = req.body;
+
+      const commIndex = (store.communities || []).findIndex(c => c.id === id);
+      if (commIndex === -1) {
+        res.status(404).json({ success: false, error: 'Community not found' });
+        return;
+      }
+
+      const existing = store.communities[commIndex];
+      const updated = {
+        ...existing,
+        community_name: community_name?.trim() || existing.community_name,
+        head_name: head_name?.trim() || existing.head_name,
+        phone: phone?.trim() || existing.phone,
+        email: email?.trim() || existing.email,
+        address: address?.trim() || existing.address,
+        locality: locality?.trim() || existing.locality,
+        organisation_type: organisation_type || existing.organisation_type,
+        updated_at: new Date().toISOString()
+      };
+
+      store.communities[commIndex] = updated;
+
+      res.status(200).json({
+        success: true,
+        message: `Community "${updated.community_name}" details updated successfully.`,
+        data: updated
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async deleteCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const commIndex = (store.communities || []).findIndex(c => c.id === id);
+      if (commIndex === -1) {
+        res.status(404).json({ success: false, error: 'Community not found' });
+        return;
+      }
+
+      const deleted = store.communities.splice(commIndex, 1)[0];
+
+      res.status(200).json({
+        success: true,
+        message: `Community "${deleted.community_name}" removed from Ward 3 directory.`,
+        data: deleted
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

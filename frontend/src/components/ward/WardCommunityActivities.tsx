@@ -16,7 +16,9 @@ import {
   Plus,
   Building,
   Phone,
-  Mail
+  Mail,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 
@@ -39,6 +41,68 @@ export const WardCommunityActivities: React.FC = () => {
   const [locality, setLocality] = useState<string>('Dudhiya Talao');
   const [submittingCommunity, setSubmittingCommunity] = useState<boolean>(false);
   const [communityError, setCommunityError] = useState<string>('');
+
+  // Edit Community State
+  const [editingCommunity, setEditingCommunity] = useState<any | null>(null);
+  const [editCommunityName, setEditCommunityName] = useState<string>('');
+  const [editHeadName, setEditHeadName] = useState<string>('');
+  const [editPhone, setEditPhone] = useState<string>('');
+  const [editEmail, setEditEmail] = useState<string>('');
+  const [editAddress, setEditAddress] = useState<string>('');
+  const [editLocality, setEditLocality] = useState<string>('Dudhiya Talao');
+  const [editOrgType, setEditOrgType] = useState<string>('Resident Welfare Association');
+  const [submittingEditCommunity, setSubmittingEditCommunity] = useState<boolean>(false);
+
+  const handleOpenEditCommunity = (com: any) => {
+    setEditingCommunity(com);
+    setEditCommunityName(com.community_name);
+    setEditHeadName(com.head_name);
+    setEditPhone(com.phone || '');
+    setEditEmail(com.email || '');
+    setEditAddress(com.address || '');
+    setEditLocality(com.locality || 'Dudhiya Talao');
+    setEditOrgType(com.organisation_type || 'Resident Welfare Association');
+  };
+
+  const handleUpdateCommunitySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCommunity) return;
+    setSubmittingEditCommunity(true);
+    setCommunityError('');
+    try {
+      const res = await api.updateWardCommunity(editingCommunity.id, {
+        community_name: editCommunityName,
+        head_name: editHeadName,
+        phone: editPhone,
+        email: editEmail,
+        address: editAddress,
+        locality: editLocality,
+        organisation_type: editOrgType
+      });
+      setActionMessage(res.message || 'Community updated successfully');
+      setEditingCommunity(null);
+      fetchData();
+      setTimeout(() => setActionMessage(''), 4000);
+    } catch (err: any) {
+      setCommunityError(err.message || 'Failed to update community');
+    } finally {
+      setSubmittingEditCommunity(false);
+    }
+  };
+
+  const handleDeleteCommunity = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove "${name}" from Ward 3 directory?`)) {
+      return;
+    }
+    try {
+      const res = await api.deleteWardCommunity(id);
+      setActionMessage(res.message || `Community "${name}" removed`);
+      setCommunities(prev => prev.filter(c => c.id !== id));
+      setTimeout(() => setActionMessage(''), 4000);
+    } catch (err: any) {
+      console.error('Delete failed:', err);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -321,6 +385,24 @@ export const WardCommunityActivities: React.FC = () => {
                   <span>{com.address}</span>
                 </p>
               </div>
+
+              {/* Action buttons: Edit & Delete */}
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                <button
+                  onClick={() => handleOpenEditCommunity(com)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#095c54] text-[#095c54] hover:text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-200"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  onClick={() => handleDeleteCommunity(com.id, com.community_name)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white text-xs font-bold transition flex items-center gap-1 border border-rose-200"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -451,6 +533,128 @@ export const WardCommunityActivities: React.FC = () => {
                 >
                   {submittingCommunity ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                   <span>Register Community</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT COMMUNITY MODAL DIALOG */}
+      {editingCommunity && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-[#e2e8f0] space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0f2925]">Edit Community Details</h3>
+                  <p className="text-xs text-slate-500">Update organization or leader details in Ward 3</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingCommunity(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateCommunitySubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Community / RWA Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCommunityName}
+                  onChange={e => setEditCommunityName(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                    Community Head Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editHeadName}
+                    onChange={e => setEditHeadName(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                    Organization Type
+                  </label>
+                  <select
+                    value={editOrgType}
+                    onChange={e => setEditOrgType(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925]"
+                  >
+                    <option value="Resident Welfare Association">Resident Welfare Association (RWA)</option>
+                    <option value="Non-Governmental Organization">Non-Governmental Organization (NGO)</option>
+                    <option value="Youth Volunteer Group">Youth Volunteer Group</option>
+                    <option value="Market Traders Association">Market Traders Association</option>
+                    <option value="Environmental Club">Environmental Club</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Contact Phone</label>
+                  <input
+                    type="tel"
+                    value={editPhone}
+                    onChange={e => setEditPhone(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Contact Email</label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={e => setEditEmail(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">Address & Locality in Ward 3</label>
+                <input
+                  type="text"
+                  value={editAddress}
+                  onChange={e => setEditAddress(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingCommunity(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEditCommunity}
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
+                >
+                  {submittingEditCommunity ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>Save Changes</span>
                 </button>
               </div>
             </form>

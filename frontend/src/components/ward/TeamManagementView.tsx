@@ -12,7 +12,9 @@ import {
   Sparkles,
   RefreshCw,
   X,
-  UserCheck
+  UserCheck,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 
@@ -29,6 +31,54 @@ export const TeamManagementView: React.FC = () => {
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
   const [temporaryLeaderId, setTemporaryLeaderId] = useState<string>('');
   const [submittingTeam, setSubmittingTeam] = useState<boolean>(false);
+
+  // Edit Team State
+  const [editingTeam, setEditingTeam] = useState<any | null>(null);
+  const [editTeamName, setEditTeamName] = useState<string>('');
+  const [editWorkerIds, setEditWorkerIds] = useState<string[]>([]);
+  const [editTemporaryLeaderId, setEditTemporaryLeaderId] = useState<string>('');
+  const [submittingEditTeam, setSubmittingEditTeam] = useState<boolean>(false);
+
+  const handleOpenEditTeam = (team: any) => {
+    setEditingTeam(team);
+    setEditTeamName(team.team_name);
+    setEditWorkerIds(Array.isArray(team.worker_ids) ? [...team.worker_ids] : []);
+    setEditTemporaryLeaderId(team.temporary_leader_id);
+  };
+
+  const handleUpdateTeamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTeam) return;
+    setSubmittingEditTeam(true);
+    setActionError('');
+    try {
+      const res = await api.updateWardTeam(editingTeam.id, {
+        team_name: editTeamName,
+        worker_ids: editWorkerIds,
+        temporary_leader_id: editTemporaryLeaderId
+      });
+      setActionSuccess(res.message || 'Team updated successfully');
+      setEditingTeam(null);
+      fetchData();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to update team');
+    } finally {
+      setSubmittingEditTeam(false);
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string, teamName: string) => {
+    if (!window.confirm(`Are you sure you want to disband team "${teamName}"?`)) {
+      return;
+    }
+    try {
+      const res = await api.deleteWardTeam(teamId);
+      setActionSuccess(res.message || `Team "${teamName}" disbanded`);
+      setTeams(prev => prev.filter(t => t.id !== teamId));
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to delete team');
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -185,7 +235,7 @@ export const TeamManagementView: React.FC = () => {
                 <th className="py-3 px-4">Temporary Team Leader</th>
                 <th className="py-3 px-4">Assigned Members</th>
                 <th className="py-3 px-4">Operational Status</th>
-                <th className="py-3 px-4 text-right">Created</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -238,8 +288,24 @@ export const TeamManagementView: React.FC = () => {
                         </span>
                       </td>
 
-                      <td className="py-3.5 px-4 text-right text-slate-500 text-[11px]">
-                        {team.created_at ? new Date(team.created_at).toLocaleDateString('en-IN') : 'Active'}
+                      {/* Actions: Edit & Delete */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditTeam(team)}
+                            className="p-1.5 rounded-xl bg-emerald-50 hover:bg-[#095c54] text-[#095c54] hover:text-white transition border border-emerald-200"
+                            title="Edit Team"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTeam(team.id, team.team_name)}
+                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white transition border border-rose-200"
+                            title="Disband Team"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -441,6 +507,140 @@ export const TeamManagementView: React.FC = () => {
                 >
                   {submittingTeam ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                   <span>Save & Form Team</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TEAM MODAL */}
+      {editingTeam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#0f2925]">
+                    Edit Team: {editingTeam.team_name}
+                  </h3>
+                  <p className="text-[10px] text-slate-400">
+                    Update team name, roster members, or temporary team leader.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingTeam(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateTeamSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Team Unit Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTeamName}
+                  onChange={e => setEditTeamName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden font-bold"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-extrabold text-slate-700">
+                    Select Team Members ({editWorkerIds.length} Selected)
+                  </label>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    Click crown button to appoint temporary leader
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 max-h-56 overflow-y-auto p-2 rounded-2xl bg-slate-50 border border-slate-200">
+                  {workers.map(worker => {
+                    const isSelected = editWorkerIds.includes(worker.id);
+                    const isLeader = editTemporaryLeaderId === worker.id;
+
+                    return (
+                      <div
+                        key={worker.id}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between transition ${
+                          isSelected
+                            ? 'bg-emerald-50/60 border-emerald-300'
+                            : 'bg-white border-slate-200 opacity-60'
+                        }`}
+                      >
+                        <label className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              if (isSelected) {
+                                if (editWorkerIds.length <= 1) return;
+                                const updated = editWorkerIds.filter(id => id !== worker.id);
+                                setEditWorkerIds(updated);
+                                if (editTemporaryLeaderId === worker.id) {
+                                  setEditTemporaryLeaderId(updated[0]);
+                                }
+                              } else {
+                                setEditWorkerIds([...editWorkerIds, worker.id]);
+                              }
+                            }}
+                            className="rounded text-[#095c54] focus:ring-0"
+                          />
+                          <div className="truncate">
+                            <span className="font-extrabold text-[#0f2925] block truncate">
+                              {worker.full_name}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {worker.worker_code} · {worker.designation}
+                            </span>
+                          </div>
+                        </label>
+
+                        {isSelected && (
+                          <button
+                            type="button"
+                            onClick={() => setEditTemporaryLeaderId(worker.id)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition shrink-0 ${
+                              isLeader
+                                ? 'bg-amber-500 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200'
+                            }`}
+                          >
+                            <Crown className="w-3.5 h-3.5" />
+                            <span>{isLeader ? 'Leader (Active)' : 'Make Leader'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingTeam(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEditTeam}
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
+                >
+                  {submittingEditTeam ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>Save Team</span>
                 </button>
               </div>
             </form>

@@ -126,45 +126,132 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex flex-col font-sans">
-      {/* 1. Municipal Top Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e2e8f0] shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          {/* Logo & Portal Title */}
+    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
+      {/* 1. DESKTOP SIDEBAR (Identical to Ward Officer & Community Head) */}
+      <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-[#e2e8f0] h-screen sticky top-0 z-30 select-none">
+        {/* Brand Header */}
+        <div className="p-5 border-b border-[#f1f5f9] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="shrink-0 transition-transform hover:scale-105 duration-200">
+              <SwachhSetuIcon size={38} />
+            </div>
+            <div className="leading-tight min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-[#095c54] text-base tracking-tight">Swachh Setu</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0]">
+                  NMC
+                </span>
+              </div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Field Worker Portal
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Worker Verified Identity Card */}
+        <div className="p-4 mx-3 my-3 rounded-2xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200/80">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+              {workerProfile?.full_name ? workerProfile.full_name.slice(0, 2).toUpperCase() : 'KW'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-extrabold text-[#0f2925] truncate">
+                {workerProfile?.full_name || 'Kanti Solanki'}
+              </p>
+              <p className="text-[10px] text-[#047857] font-bold truncate">
+                🛠️ {workerProfile?.designation_name || 'Drainage Worker'}
+              </p>
+              <span className="text-[9px] font-mono text-slate-500">
+                {workerProfile?.worker_code || 'NMC-WRK-001'} · Ward 3
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 5 Navigation Tabs List */}
+        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNavigateTab(item.id)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition duration-150 ${
+                  isActive
+                    ? 'bg-[#095c54] text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-300' : 'text-slate-400'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    isActive ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-900'
+                  }`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Sidebar Footer: Switcher & Logout */}
+        <div className="p-4 border-t border-[#f1f5f9] space-y-2">
+          <button
+            onClick={onSwitchToCitizenView}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition border border-slate-200"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
+            <span>Switch to Citizen View</span>
+          </button>
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 text-xs font-bold transition border border-slate-100"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* 2. Main Content Container */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* Top Header */}
+        <header className="h-16 bg-white border-b border-[#e2e8f0] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-[#0f2925] hover:bg-slate-100 focus:outline-none"
-              aria-label="Open menu"
+              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavigateTab('home')}>
-              <div className="shrink-0 transition-transform hover:scale-105 duration-200">
-                <SwachhSetuIcon size={38} />
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <div className="leading-tight">
-                <div className="flex items-center gap-2">
-                  <span className="font-black text-[#095c54] text-base tracking-tight">Swachh Setu</span>
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#047857] bg-[#ecfdf5] border border-[#a7f3d0] px-2 py-0.5 rounded-full">
-                    Field Worker Portal
-                  </span>
-                </div>
-                <p className="text-[10px] text-[#64748b] font-medium hidden sm:block">Navsari Municipal Corporation</p>
+                <span className="text-xs font-black text-[#0f2925] tracking-tight">
+                  Navsari Municipal Corporation
+                </span>
+                <span className="text-[11px] text-slate-500 font-bold hidden sm:inline ml-2">
+                  · Ward 3 Field Worker Operations
+                </span>
               </div>
             </div>
           </div>
 
-          {/* User Details & Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {/* Language Switcher */}
-            <div className="flex items-center bg-[#f8faf9] border border-[#e2e8f0] rounded-xl p-0.5 text-xs font-bold text-[#64748b]">
-              {(['gu', 'hi', 'en'] as const).map(l => (
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+              {(['en', 'gu', 'hi'] as Language[]).map(l => (
                 <button
                   key={l}
                   onClick={() => setLang(l)}
-                  className={`px-2 py-1 rounded-lg uppercase transition-all ${
-                    lang === l ? 'bg-[#095c54] text-white shadow-xs' : 'hover:text-[#0f2925]'
+                  className={`px-2 py-1 rounded-lg uppercase text-[11px] font-black transition ${
+                    lang === l ? 'bg-[#095c54] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   {l}
@@ -172,12 +259,22 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               ))}
             </div>
 
-            {/* Worker Profile Pill (Matching Citizen Gold Standard) */}
+            {/* Notification Bell */}
+            <button
+              onClick={() => handleNavigateTab('notifications')}
+              className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 relative transition"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+            </button>
+
+            {/* Profile Pill */}
             <div
-              onClick={() => handleNavigateTab('profile')}
+              onClick={() => handleNavigateTab('profile_settings')}
               className="flex items-center gap-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs"
             >
-              <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+              <div className="w-7 sm:w-8 h-7 sm:h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
                 {workerProfile?.full_name ? workerProfile.full_name.slice(0, 2).toUpperCase() : 'KW'}
               </div>
               <div className="text-left leading-tight hidden xs:block">
@@ -189,27 +286,8 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 </span>
               </div>
             </div>
-
-            {/* Switch to Citizen View */}
-            <button
-              onClick={onSwitchToCitizenView}
-              className="text-xs font-extrabold text-[#0f2925] hover:text-[#095c54] bg-[#f8faf9] hover:bg-[#e6f4f1] border border-[#e2e8f0] px-3 py-1.5 rounded-2xl flex items-center gap-1.5 transition"
-              title="Return to Citizen Portal"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-              <span className="hidden sm:inline">Citizen View</span>
-            </button>
-
-            {/* Logout */}
-            <button
-              onClick={onLogout}
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
-        </div>
+        </header>
 
         {/* Mobile Horizontal Fast-Switch Tab Strip (<lg) */}
         <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto py-2 px-3 bg-white border-t border-[#e2e8f0] scrollbar-none text-xs">
@@ -237,60 +315,9 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             );
           })}
         </div>
-      </header>
 
-      {/* 2. Main Body with Responsive Layout */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 w-full flex-1 flex gap-6">
-        {/* Desktop Left Sidebar */}
-        <aside className="hidden lg:block w-64 shrink-0 space-y-4">
-          <div className="bg-white rounded-3xl border border-[#e2e8f0] p-3 shadow-xs sticky top-24 space-y-1">
-            <div className="px-3 py-2 text-[11px] font-black uppercase tracking-wider text-[#64748b]">
-              Field Navigation
-            </div>
-
-            {navItems.map(item => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavigateTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-extrabold transition-all ${
-                    isActive
-                      ? 'bg-[#095c54] text-white shadow-sm'
-                      : 'text-[#64748b] hover:bg-[#f8faf9] hover:text-[#0f2925]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-[#64748b]'}`} />
-                    <span className="truncate">{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                      isActive ? 'bg-amber-400 text-slate-950' : 'bg-amber-100 text-amber-900'
-                    }`}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-
-            {/* Quick Contact Box */}
-            <div className="pt-3 mt-3 border-t border-[#e2e8f0] px-3 pb-1 text-xs">
-              <span className="text-[11px] text-[#64748b] font-semibold block">Ward 3 Duty Control</span>
-              <a
-                href="tel:+919825100003"
-                className="font-extrabold text-[#095c54] hover:underline block mt-0.5"
-              >
-                📞 +91 98251 00003
-              </a>
-            </div>
-          </div>
-        </aside>
-
-        {/* Center Content Pane */}
-        <main className="flex-1 min-w-0">
+        {/* Dynamic Main Body */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
           {activeTab === 'home' && (
             <WorkerOverview
               profile={workerProfile}

@@ -97,29 +97,46 @@ export const CommunityOverview: React.FC<CommunityOverviewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. CLEAN COMMUNITY OVERVIEW HEADER (NO HEAVY BOX) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0] text-[11px] font-extrabold mb-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-ping" />
-            NMC Community Action · Ward {comm.ward_number || 3}
+      {/* 1. HERO GREETING BANNER (CITIZEN GOLD STANDARD - MATCHING IMAGE 6) */}
+      <div className="relative rounded-3xl bg-gradient-to-r from-[#095c54] via-[#0d6e65] to-[#10b981] p-5 sm:p-7 text-white shadow-xl shadow-[#095c54]/15 overflow-hidden">
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+
+        <div className="relative z-10 space-y-2.5">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-bold text-[#e6f4f1]">
+            NMC Community Action Command · Navsari
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
+
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-white">
             {comm.community_name}
           </h1>
-          <p className="text-xs text-[#64748b] mt-0.5">
-            {comm.organisation_type} · Ward {comm.ward_number || 3} ({comm.ward_name || 'Dudhiya Talao'}). Coordinate citizen cleanliness drives and community action.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenCreateWizard}
-            className="btn-primary-custom px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 shadow-xs"
-          >
-            <PlusCircle className="w-4 h-4 text-white" />
-            <span>Create New Activity</span>
-          </button>
+          <p className="text-xs sm:text-sm text-[#e6f4f1] font-medium leading-relaxed max-w-2xl">
+            {comm.organisation_type} · Ward {comm.ward_number || 3} ({comm.ward_name || 'Ward 3 - Dudhiya Talao & Ashapuri'}). Coordinate citizen-driven cleanliness drives, volunteer registrations, and environmental action.
+          </p>
+
+          <div className="pt-2 flex flex-wrap gap-2.5">
+            <button
+              onClick={onOpenCreateWizard}
+              className="px-4 sm:px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-xs sm:text-sm shadow-md hover:shadow-lg transition flex items-center gap-2"
+            >
+              <PlusCircle className="w-4 h-4 text-[#10b981]" />
+              <span>Create New Activity</span>
+            </button>
+            <button
+              onClick={() => onNavigateTab('activities')}
+              className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
+            >
+              <Users className="w-4 h-4" />
+              <span>Event Volunteers</span>
+            </button>
+            <button
+              onClick={() => onNavigateTab('activities')}
+              className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Citizen Q&A</span>
+            </button>
+          </div>
         </div>
       </div>
 
