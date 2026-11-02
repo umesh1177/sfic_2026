@@ -59,6 +59,19 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [catalogueFilter, setCatalogueFilter] = useState<any>(undefined);
 
+  // Dynamic Ward & Officer resolution
+  const officerName = user?.full_name || 'Ramesh Patel';
+  const officerInitials = officerName
+    .split(' ')
+    .filter(Boolean)
+    .map(n => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'WO';
+  const wardMatch = user?.locality?.match(/Ward\s*(\d+)/i) || user?.address?.match(/Ward\s*(\d+)/i);
+  const userWardNum = wardMatch ? Number(wardMatch[1]) : 3;
+  const wardArea = user?.locality?.replace(/Ward\s*\d+/i, '').replace(/NMC/i, '').trim() || (userWardNum === 8 ? 'Madhumati - Parsi Wad' : 'Dudhiya Talao');
+
   // Exact 13 items mandated by Prompt Section 3:
   const navItems = [
     { id: 'overview', label: '1. Overview', icon: LayoutDashboard },
@@ -142,12 +155,12 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
         <div className="p-4 border-t border-[#e2e8f0] bg-slate-50/70 space-y-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white font-black text-xs flex items-center justify-center shrink-0">
-              RP
+              {officerInitials}
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-black text-[#0f2925] truncate">Ramesh Patel</p>
+              <p className="text-xs font-black text-[#0f2925] truncate">{officerName}</p>
               <p className="text-[10px] text-slate-500 font-bold truncate">Chief Sanitary Inspector</p>
-              <p className="text-[10px] text-[#095c54] font-extrabold">Ward 3 · Dudhiya Talao</p>
+              <p className="text-[10px] text-[#095c54] font-extrabold truncate">Ward {userWardNum} · {wardArea}</p>
             </div>
           </div>
 
@@ -182,7 +195,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
                   Navsari Municipal Corporation
                 </span>
                 <span className="text-[11px] text-slate-500 font-bold hidden sm:inline ml-2">
-                  · Ward 3 Administrative Officer
+                  · Ward {userWardNum} Administrative Officer
                 </span>
               </div>
             </div>
@@ -233,7 +246,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           )}
 
           {activeTab === 'complaints' && (
-            <ComplaintCatalogue initialFilter={catalogueFilter} />
+            <ComplaintCatalogue initialFilter={catalogueFilter || { ward_number: userWardNum }} />
           )}
 
           {activeTab === 'hotspots' && <HotspotsMap />}

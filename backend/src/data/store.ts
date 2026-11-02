@@ -170,11 +170,68 @@ const initialProfiles: Profile[] = [
     role: 'ward_officer',
     created_at: '2026-10-15T09:00:00Z',
     updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'w0000000-0000-0000-0000-000000000008',
+    full_name: 'Cyrus Contractor',
+    phone: '+919825130008',
+    email: 'cyrus.contractor@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: 'NMC Ward 8 Administrative Office, Heritage Parsi Vad, Navsari',
+    locality: 'Madhumati - Parsi Wad Ward 8',
+    is_active: true,
+    role: 'ward_officer',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
   }
 ];
 
 // Seed sample complaints in Navsari
 const initialComplaints: Complaint[] = [
+  {
+    id: 'comp-w8-01',
+    complaint_number: 'NMC-2026-80012',
+    citizen_id: defaultCitizenId,
+    citizen_name: 'Harshil Mehta',
+    category_id: 'cat-01',
+    category_name: 'Open Garbage Dumping',
+    location: {
+      id: 'loc-w8-01',
+      latitude: 20.9620,
+      longitude: 72.9300,
+      address: 'Heritage Parsi Vad, Near Sohrab Baug, Navsari',
+      landmark: 'Opposite Parsi Agiary Gate',
+      ward_id: 'ward-08',
+      ward_number: 8,
+      ward_name: 'Madhumati - Parsi Wad',
+      is_inside_nmc_boundary: true
+    },
+    description: 'Accumulation of garden waste and dry tree branches near heritage street corner.',
+    original_language: 'en',
+    status: 'submitted',
+    priority: 'medium',
+    image_url: 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+    confidence_score: 96.0,
+    ai_model_name: 'NavsariWasteClassifier-PyTorch-ResNet50',
+    ai_model_version: 'v1.3.0',
+    is_duplicate: false,
+    submitted_at: '2026-11-01T09:15:00Z',
+    updated_at: '2026-11-01T09:15:00Z',
+    upvotes_count: 3,
+    followers_count: 2,
+    activity_logs: [
+      {
+        id: 'log-w8-01',
+        complaint_id: 'comp-w8-01',
+        status: 'submitted',
+        note: 'Complaint lodged by citizen with location and photo evidence.',
+        actor_name: 'Harshil Mehta',
+        actor_role: 'citizen',
+        created_at: '2026-11-01T09:15:00Z'
+      }
+    ]
+  },
   {
     id: 'comp-01',
     complaint_number: 'NMC-2026-10021',
@@ -1020,6 +1077,17 @@ export const store: DataStore = {
       id: 'auth-w3',
       user_id: 'w0000000-0000-0000-0000-000000000003',
       mobile_number: '+919825130003',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w8',
+      user_id: 'w0000000-0000-0000-0000-000000000008',
+      mobile_number: '+919825130008',
       password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
       mobile_verified: true,
       verification_completed_at: '2026-10-15T09:00:00Z',

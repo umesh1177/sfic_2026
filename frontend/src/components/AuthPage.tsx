@@ -195,6 +195,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // Quick Demo Ward 8 Officer (Cyrus Contractor - Ward 8) Login
+  const handleQuickDemoWard8OfficerLogin = async () => {
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await api.login('9825130008', 'Navsari@2026', 'captcha-verified-token');
+      localStorage.setItem('clean_navsari_token', res.data.token);
+      onSuccess(res.data.profile, false);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Demo Ward 8 Officer login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 1. Submit Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -604,10 +619,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 >
                   <div className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-[#065f46]" />
-                    <span>Ward Officer Demo (Ramesh Patel · Ward 3)</span>
+                    <span>Ward 3 Officer Demo (Ramesh Patel · Ward 3)</span>
                   </div>
                   <span className="text-[10px] bg-white border border-[#a7f3d0] text-[#065f46] px-2 py-0.5 rounded-full font-bold">
                     9825130003
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickDemoWard8OfficerLogin}
+                  disabled={loading}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-[#f0fdf4] hover:bg-[#dcfce7] border border-[#86efac] text-xs font-black text-[#166534] transition flex items-center justify-between shadow-xs group"
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-[#166534]" />
+                    <span>Ward 8 Officer Demo (Cyrus Contractor · Ward 8)</span>
+                  </div>
+                  <span className="text-[10px] bg-white border border-[#86efac] text-[#166534] px-2 py-0.5 rounded-full font-bold">
+                    9825130008
                   </span>
                 </button>
               </div>
