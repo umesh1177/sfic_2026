@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   Building,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  ArrowLeft,
+  Upload
 } from 'lucide-react';
 import { CommunityProblem } from '../../types/index.js';
 import { api } from '../../services/api.js';
@@ -91,6 +93,19 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
     );
   };
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setImageUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !description.trim() || !actionPlan.trim()) {
@@ -144,6 +159,223 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
     }
   };
 
+  if (isCreateOpen) {
+    return (
+      <div className="space-y-6 animate-fadeIn pb-12">
+        {/* Full Screen Header */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(false)}
+              className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition flex items-center gap-2 text-xs"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Problems List</span>
+            </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-[#0f2925]">
+                Add Problem for Community Cleanliness Drive
+              </h1>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Flagging civic problem for voluntary Community Head drives in Ward {wardNumber} (Navsari)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {errorMsg && (
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-bold flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {/* Full Screen Form Card */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column: Details */}
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Problem Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g., Heavy Plastic & Silt Dumping along Dudhiya Lake Shore"
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Problem Description *
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="Describe the condition, safety issues, and impact on local residents..."
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase text-emerald-800 tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    What Should Be Done (Action Plan for Community Drive) *
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="e.g., Organize a 30-volunteer morning drive. Clear plastic bottles and wrappers from the pedestrian promenade, bag organic weeds, wash corners with bleaching powder, and plant 10 flowering saplings."
+                    value={actionPlan}
+                    onChange={e => setActionPlan(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border-2 border-emerald-300 bg-emerald-50/40 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                      Location Landmark
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Near Lakeview Gazebo, Gate 2"
+                      value={locationName}
+                      onChange={e => setLocationName(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                      Street Address / Sector
+                    </label>
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={e => setAddress(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Parameters & Evidence */}
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                      Urgency Level
+                    </label>
+                    <select
+                      value={urgency}
+                      onChange={e => setUrgency(e.target.value as any)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
+                    >
+                      <option value="low">Low Priority</option>
+                      <option value="medium">Medium Priority</option>
+                      <option value="high">High Urgency</option>
+                      <option value="critical">🚨 Critical / Health Hazard</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                      Estimated Volunteers Needed
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={150}
+                      value={volunteersNeeded}
+                      onChange={e => setVolunteersNeeded(parseInt(e.target.value, 10) || 15)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-2">
+                    Suggested Equipment & Tools
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {PRESET_EQUIPMENT_OPTIONS.map(item => {
+                      const isSelected = selectedEquipment.includes(item);
+                      return (
+                        <button
+                          type="button"
+                          key={item}
+                          onClick={() => toggleEquipment(item)}
+                          className={`text-xs px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-[#095c54] text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {item}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Problem Evidence Photo
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2 mb-2">
+                    <input
+                      type="url"
+                      value={imageUrl}
+                      onChange={e => setImageUrl(e.target.value)}
+                      placeholder="Enter Image URL or upload below..."
+                      className="flex-1 px-4 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-[#095c54]"
+                    />
+                    <label className="cursor-pointer inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload File</span>
+                      <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+                  {imageUrl && (
+                    <div className="w-full h-48 rounded-2xl overflow-hidden border border-slate-200 bg-slate-50">
+                      <img src={imageUrl} alt="Problem Evidence" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(false)}
+                className="px-6 py-2.5 rounded-2xl border border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-8 py-2.5 rounded-2xl bg-[#095c54] text-white font-black text-sm shadow-md hover:bg-[#074741] transition disabled:opacity-50"
+              >
+                {submitting ? 'Publishing Problem...' : '🚀 Publish Problem for Community Drives'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* 1. Header Banner */}
@@ -195,201 +427,6 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
         <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-bold flex items-center gap-3 animate-fadeIn">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
           <span>{errorMsg}</span>
-        </div>
-      )}
-
-      {/* 2. Create Modal Form */}
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
-              <div>
-                <h2 className="text-xl font-black text-[#0f2925]">Post Problem for Community Drive</h2>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  Published to Community Heads for voluntary clean-up drives in Ward {wardNumber}
-                </p>
-              </div>
-              <button
-                onClick={() => setIsCreateOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Problem Title */}
-              <div>
-                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                  Problem Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g., Heavy Plastic & Silt Dumping along Dudhiya Lake Shore"
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                  Problem Description *
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Describe the condition, safety issues, and impact on local residents..."
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
-                />
-              </div>
-
-              {/* Action Plan: What Should Be Done */}
-              <div>
-                <label className="block text-xs font-black uppercase text-emerald-800 tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  What Should Be Done (Action Plan for Community Drive) *
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="e.g., Organize a 30-volunteer morning drive. Clear plastic bottles and wrappers from the pedestrian promenade, bag organic weeds, wash corners with bleaching powder, and plant 10 flowering saplings."
-                  value={actionPlan}
-                  onChange={e => setActionPlan(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border-2 border-emerald-200 bg-emerald-50/30 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
-                />
-              </div>
-
-              {/* Location & Address */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                    Location Landmark
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Near Lakeview Gazebo, Gate 2"
-                    value={locationName}
-                    onChange={e => setLocationName(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                    Street Address / Sector
-                  </label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={e => setAddress(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
-                  />
-                </div>
-              </div>
-
-              {/* Urgency & Estimated Volunteers */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                    Urgency Level
-                  </label>
-                  <select
-                    value={urgency}
-                    onChange={e => setUrgency(e.target.value as any)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
-                  >
-                    <option value="low">Low Priority</option>
-                    <option value="medium">Medium Priority</option>
-                    <option value="high">High Urgency</option>
-                    <option value="critical">🚨 Critical / Health Hazard</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                    Estimated Volunteers Needed
-                  </label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={150}
-                    value={volunteersNeeded}
-                    onChange={e => setVolunteersNeeded(parseInt(e.target.value, 10) || 15)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
-                  />
-                </div>
-              </div>
-
-              {/* Suggested Equipment Tags */}
-              <div>
-                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-2">
-                  Suggested Equipment & Tools
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {PRESET_EQUIPMENT_OPTIONS.map(item => {
-                    const isSelected = selectedEquipment.includes(item);
-                    return (
-                      <button
-                        type="button"
-                        key={item}
-                        onClick={() => toggleEquipment(item)}
-                        className={`text-xs px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-[#095c54] text-white shadow-2xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
-                        {item}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Photo Evidence URL */}
-              <div>
-                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                  Evidence Photo URL / Civic Proof
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={imageUrl}
-                    onChange={e => setImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/photo-..."
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:border-[#095c54]"
-                  />
-                </div>
-                {imageUrl && (
-                  <div className="mt-2 w-full h-32 rounded-xl overflow-hidden border border-slate-200">
-                    <img src={imageUrl} alt="Problem Preview" className="w-full h-full object-cover" />
-                  </div>
-                )}
-              </div>
-
-              {/* Submit / Cancel Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-6 py-2.5 rounded-xl bg-[#095c54] text-white font-black text-sm shadow-md hover:bg-[#074741] transition disabled:opacity-50"
-                >
-                  {submitting ? 'Publishing...' : 'Publish to Community Heads'}
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
 

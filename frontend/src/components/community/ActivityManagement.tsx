@@ -37,7 +37,7 @@ import {
   RefreshCw,
   Image as ImageIcon
 } from 'lucide-react';
-import { CommunityActivity, ActivityRegistration, ActivityQuestion, ActivityEvidence } from '../../types/index.js';
+import { CommunityActivity, ActivityRegistration, ActivityQuestion, ActivityEvidence, CommunityProblem } from '../../types/index.js';
 import { api } from '../../services/api.js';
 import { MiniMapLocationPicker } from '../MiniMapLocationPicker.js';
 import { checkTextForAbuse } from '../../utils/moderation.js';
@@ -51,6 +51,7 @@ interface ActivityManagementProps {
   initialOpenCreateWizard?: boolean;
   selectedActivityId?: string;
   initialSubTab?: 'registrations' | 'questions' | 'evidence';
+  initialLinkedProblem?: CommunityProblem | null;
 }
 
 export const ActivityManagement: React.FC<ActivityManagementProps> = ({
@@ -58,13 +59,16 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
   onRefreshActivities,
   initialOpenCreateWizard = false,
   selectedActivityId: propSelectedActivityId,
-  initialSubTab = 'registrations'
+  initialSubTab = 'registrations',
+  initialLinkedProblem = null
 }) => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showWizard, setShowWizard] = useState<boolean>(initialOpenCreateWizard);
   const [wizardStep, setWizardStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [communityProblems, setCommunityProblems] = useState<CommunityProblem[]>([]);
+  const [selectedProblemId, setSelectedProblemId] = useState<string>('');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Active Sub-Tab per Activity Card
@@ -591,6 +595,52 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     }
   };
 
+  // Load available Ward Officer problems for linking
+  useEffect(() => {
+    api.getCommunityWardProblems().then(res => {
+      if (res.success && res.data) {
+        setCommunityProblems(res.data);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (initialLinkedProblem) {
+      applyProblemToForm(initialLinkedProblem);
+    }
+  }, [initialLinkedProblem]);
+
+  const applyProblemToForm = (prob: CommunityProblem) => {
+    setSelectedProblemId(prob.id);
+    setWizardForm(prev => ({
+      ...prev,
+      title: prob.title,
+      target_area: prob.location_name || prob.address,
+      meeting_point: prob.address || prob.location_name,
+      ward_number: prob.ward_number || 3,
+      ward_name: prob.ward_name || `Ward ${prob.ward_number || 3}`,
+      ward_id: `ward-0${prob.ward_number || 3}`,
+      short_description: prob.description,
+      detailed_description: `${prob.description}\n\nRecommended Action Plan by Ward Officer:\n${prob.action_plan}`,
+      equipment_needed: prob.suggested_equipment && prob.suggested_equipment.length > 0 ? prob.suggested_equipment : prev.equipment_needed,
+      target_volunteers: prob.estimated_volunteers_needed || 30,
+      max_capacity: Math.max(50, (prob.estimated_volunteers_needed || 30) * 3),
+      linked_problem_id: prob.id
+    }));
+  };
+
+  const handleSelectProblem = (pId: string) => {
+    setSelectedProblemId(pId);
+    if (!pId) {
+      setWizardForm(prev => ({ ...prev, linked_problem_id: undefined }));
+      return;
+    }
+    const prob = communityProblems.find(p => p.id === pId);
+    if (prob) {
+      applyProblemToForm(prob);
+    }
+  };
+
   // =========================================================================
   // 4. WIZARD CREATION LOGIC
   // =========================================================================
@@ -682,6 +732,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         max_capacity: Number(wizardForm.max_capacity) || 500,
         auto_close_on_full: wizardForm.auto_close_on_full,
         waitlist_allowed: wizardForm.waitlist_allowed,
+        linked_problem_id: (wizardForm as any).linked_problem_id || selectedProblemId || undefined,
         save_as_draft: asDraft
       };
 
@@ -797,6 +848,44 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
               {/* STEP 1: Basic Info */}
               {wizardStep === 1 && (
                 <div className="space-y-4">
+                  {/* Problem Dropdown from Ward Officer */}
+                  <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200">
+                    <label className="block font-black text-emerald-900 mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-[#095c54]" />
+                        Link to Civic Problem flagged by Ward Officer
+                      </span>
+                      <span className="text-[10px] text-emerald-700 font-bold bg-white px-2 py-0.5 rounded-full border border-emerald-300">
+                        Officer Recommendation
+                      </span>
+                    </label>
+                    <select
+                      value={selectedProblemId}
+                      onChange={e => handleSelectProblem(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-300 focus:border-[#095c54] text-xs font-bold text-slate-800 outline-none bg-white shadow-2xs"
+                    >
+                      <option value="">-- Standalone Cleanliness Drive (Create New Without Linking) --</option>
+                      {communityProblems.map(p => (
+                        <option key={p.id} value={p.id}>
+                          [Ward {p.ward_number}] {p.title} ({p.urgency.toUpperCase()} Urgency · ~{p.estimated_volunteers_needed} Volunteers Needed)
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedProblemId && (
+                      <div className="mt-2.5 p-3 bg-white/90 rounded-xl border border-emerald-200 text-[11px] text-slate-700 space-y-1">
+                        <p className="font-extrabold text-[#095c54] flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Linked to Problem: "{communityProblems.find(p => p.id === selectedProblemId)?.title}"
+                        </p>
+                        <p className="text-slate-600">
+                          <strong>Ward Officer's Action Plan:</strong>{' '}
+                          {communityProblems.find(p => p.id === selectedProblemId)?.action_plan}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">Activity Title *</label>
                     <input

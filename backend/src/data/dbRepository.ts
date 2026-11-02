@@ -11,7 +11,7 @@ import {
   WorkerProfile, WorkerDesignation, WorkerSkill, WorkAssignment,
   WorkAssignmentMember, WorkerAttendance, AttendanceException,
   WorkProgressUpdate, WorkEvidence, WorkCompletionReport,
-  WorkReviewLog, WorkerDashboardSummary, CommunityProblem
+  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem
 } from '../types/index.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -650,7 +650,7 @@ export class DbRepository {
   // 2. CLEANLINESS DRIVES: FETCH & REGISTER
   // =========================================================================
 
-  public static async getDrives(citizenId?: string): Promise<CleanlinessDrive[]> {
+    public static async getDrives(citizenId?: string): Promise<CleanlinessDrive[]> {
     if (isDbConnected()) {
       try {
         const res = await pool.query('SELECT * FROM cleanliness_drives ORDER BY start_time ASC');
@@ -660,7 +660,48 @@ export class DbRepository {
           registeredDriveIds = new Set(regRes.rows.map(r => r.drive_id));
         }
 
-        return res.rows.map(r => ({
+        const standardDrives: CleanlinessDrive[] = res.rows.map(r => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          ward_id: r.ward_id,
+          ward_name: r.ward_name,
+          location_name: r.location_name,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          registration_deadline: r.registration_deadline,
+          organiser_name: r.organiser_name,
+          status: r.status,
+          banner_url: r.banner_url || r.banner_path,
+          max_volunteers: r.max_volunteers,
+          registered_volunteers_count: r.registered_volunteers_count || 0,
+          is_registered: registeredDriveIds.has(r.id)
+        }));
+
+        // Also retrieve published & approved community activities so citizens can discover and register
+        const actRes = await pool.query(`
+          SELECT 
+            a.id, a.title, COALESCE(a.short_description, a.detailed_description, '') as description,
+            a.ward_id, a.ward_name, COALESCE(a.address, a.landmark, 'Navsari') as location_name,
+            a.proposed_start_at as start_time, a.proposed_end_at as end_time,
+            a.proposed_start_at as registration_deadline,
+            COALESCE(c.community_name, 'Community Organization') as organiser_name,
+            CASE WHEN a.event_status = 'completed' THEN 'completed' ELSE 'upcoming' END as status,
+            COALESCE(a.cover_image_path, 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80') as banner_url,
+            COALESCE(a.maximum_participants, 50) as max_volunteers,
+            COALESCE((SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id), 0) as registered_volunteers_count
+          FROM community_activities a
+          LEFT JOIN communities c ON c.id = a.community_id
+          WHERE a.approval_status IN ('approved', 'ward_approved') AND a.publication_status IN ('published', 'approved')
+        `);
+
+        let registeredActIds: Set<string> = new Set();
+        if (citizenId) {
+          const actRegRes = await pool.query('SELECT activity_id FROM activity_registrations WHERE citizen_id = $1', [citizenId]);
+          registeredActIds = new Set(actRegRes.rows.map(r => r.activity_id));
+        }
+
+        const communityDrives: CleanlinessDrive[] = actRes.rows.map(r => ({
           id: r.id,
           title: r.title,
           description: r.description,
@@ -674,9 +715,17 @@ export class DbRepository {
           status: r.status,
           banner_url: r.banner_url,
           max_volunteers: r.max_volunteers,
-          registered_volunteers_count: r.registered_volunteers_count,
-          is_registered: registeredDriveIds.has(r.id)
+          registered_volunteers_count: parseInt(r.registered_volunteers_count, 10),
+          is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id)
         }));
+
+        const combined = [...communityDrives];
+        for (const sd of standardDrives) {
+          if (!combined.some(c => c.id === sd.id)) {
+            combined.push(sd);
+          }
+        }
+        return combined;
       } catch (err: any) {
         console.error('[DB REPO ERROR - getDrives]:', err.message);
       }
@@ -4135,6 +4184,7 @@ export class DbRepository {
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS username VARCHAR(100);
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS plain_password VARCHAR(100);
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS active_drives_count INTEGER DEFAULT 0;
+        ALTER TABLE community_activities ADD COLUMN IF NOT EXISTS linked_problem_id VARCHAR(100);
 
         CREATE TABLE IF NOT EXISTS community_problems (
           id VARCHAR(100) PRIMARY KEY,
@@ -5026,5 +5076,225 @@ export class DbRepository {
       store.communityProblems = store.communityProblems.filter(p => p.id !== id);
     }
     return true;
+  }
+
+  // =========================================================================
+  // APPROVAL QUEUE DECISIONS (WARD OFFICER APPROVES / REJECTS COMMUNITY DRIVES)
+  // =========================================================================
+  public static async getPendingActivitiesForOfficer(wardNumber?: number): Promise<WardApprovalItem[]> {
+    if (isDbConnected()) {
+      try {
+        let sql = `
+          SELECT 
+            a.id, a.title, a.short_description, a.detailed_description, a.address, a.landmark,
+            a.proposed_start_at, a.maximum_participants, a.safety_guidelines, a.cover_image_path,
+            a.created_at, a.ward_number, a.community_id, a.created_by, a.linked_problem_id,
+            c.community_name, c.head_name,
+            cp.title as problem_title, cp.action_plan as problem_action_plan
+          FROM community_activities a
+          LEFT JOIN communities c ON c.id = a.community_id
+          LEFT JOIN community_problems cp ON (cp.id = a.linked_problem_id OR cp.linked_activity_id = a.id)
+          WHERE a.approval_status IN ('pending_officer_review', 'ward_review', 'pending', 'changes_requested')
+        `;
+        const vals: any[] = [];
+        if (wardNumber && wardNumber > 0) {
+          vals.push(wardNumber);
+          sql += ` AND (a.ward_number = $${vals.length} OR a.ward_number IS NULL)`;
+        }
+        sql += ` ORDER BY a.created_at DESC`;
+
+        const res = await pool.query(sql, vals);
+        return res.rows.map(r => ({
+          id: r.id,
+          type: 'activity',
+          title: r.title,
+          submitted_by_name: r.community_name ? `${r.community_name} (${r.head_name || 'Community Leader'})` : 'Community Head',
+          submitted_by_role: 'Community Head',
+          submission_time: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          ward_number: r.ward_number || 3,
+          status: 'pending',
+          details: {
+            proposed_date: r.proposed_start_at ? new Date(r.proposed_start_at).toLocaleDateString() : 'Upcoming',
+            location: r.address || r.landmark || 'Navsari',
+            expected_volunteers: r.maximum_participants || 30,
+            safety_plan: r.short_description || r.detailed_description || 'Volunteer tools and safety equipment planned.',
+            linked_problem: r.problem_title ? `Flagged Problem: "${r.problem_title}"` : undefined
+          },
+          photos: r.cover_image_path ? [r.cover_image_path] : []
+        }));
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getPendingActivitiesForOfficer]:', err.message);
+      }
+    }
+
+    // In-memory fallback
+    const pending = (store.communityActivities || []).filter(
+      (a: any) => a.approval_status === 'ward_review' || a.approval_status === 'pending_officer_review' || a.approval_status === 'changes_requested' || a.approval_status === 'submitted'
+    );
+    return pending.map((a: any) => ({
+      id: a.id,
+      type: 'activity',
+      title: a.title,
+      submitted_by_name: 'Community Head',
+      submitted_by_role: 'Community Head',
+      submission_time: a.created_at || new Date().toISOString(),
+      ward_number: a.ward_number || 3,
+      status: 'pending',
+      details: {
+        proposed_date: a.proposed_start_at || 'Upcoming',
+        location: a.address || a.landmark || a.target_area || 'Navsari',
+        expected_volunteers: a.maximum_participants || a.target_volunteers || 30,
+        safety_plan: a.short_description || a.detailed_description || 'Cleanliness drive'
+      }
+    }));
+  }
+
+  public static async officerReviewApproval(
+    id: string,
+    action: 'approve' | 'reject' | 'changes_requested',
+    comments: string,
+    officerWardNumber?: number
+  ): Promise<{ success: boolean; message: string }> {
+    // 1. Locate activity in database or memory
+    let act: any = null;
+    if (isDbConnected()) {
+      try {
+        const actRes = await pool.query('SELECT * FROM community_activities WHERE id = $1', [id]);
+        if (actRes.rows.length > 0) {
+          act = actRes.rows[0];
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - finding activity]:', err.message);
+      }
+    }
+    if (!act) {
+      act = (store.communityActivities || []).find(a => a.id === id);
+    }
+
+    if (act) {
+      const isApproved = action === 'approve';
+      const newApprovalStatus = isApproved ? 'approved' : action === 'reject' ? 'rejected' : 'changes_requested';
+      const newPublicationStatus = isApproved ? 'published' : 'rejected';
+      const newRegStatus = isApproved ? 'open' : 'not_open';
+
+      if (isDbConnected()) {
+        try {
+          await pool.query(`
+            UPDATE community_activities
+            SET approval_status = $1,
+                publication_status = $2,
+                registration_status = $3,
+                updated_at = NOW()
+            WHERE id = $4
+          `, [newApprovalStatus, newPublicationStatus, newRegStatus, id]);
+
+          // If approved, insert into cleanliness_drives so citizen dashboard shows it
+          if (isApproved) {
+            const wardId = act.ward_id || `ward-0${act.ward_number || 3}`;
+            const locName = act.address || act.landmark || 'Navsari Ward Area';
+            const startTime = act.proposed_start_at || new Date().toISOString();
+            const endTime = act.proposed_end_at || new Date(Date.now() + 10800000).toISOString();
+            const deadline = act.registration_open_at || startTime;
+            const orgName = 'Community Action Team';
+            const banner = act.cover_image_path || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
+            const maxVol = act.maximum_participants || 50;
+
+            await pool.query(`
+              INSERT INTO cleanliness_drives (
+                id, title, description, ward_id, location_name, start_time, end_time,
+                registration_deadline, organiser_name, status, banner_path, max_volunteers
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'upcoming', $10, $11)
+              ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                status = 'upcoming',
+                updated_at = NOW()
+            `, [
+              id, act.title, act.short_description || act.detailed_description,
+              wardId, locName, startTime, endTime, deadline, orgName, banner, maxVol
+            ]);
+
+            // Update linked problem status to claimed
+            await pool.query(`
+              UPDATE community_problems
+              SET status = 'claimed', linked_activity_id = $1, updated_at = NOW()
+              WHERE id = $2 OR linked_activity_id = $1
+            `, [id, act.linked_problem_id || id]);
+          } else if (action === 'reject') {
+            await pool.query(`DELETE FROM cleanliness_drives WHERE id = $1`, [id]);
+          }
+        } catch (err: any) {
+          console.error('[DB REPO ERROR - officerReviewApproval SQL]:', err.message);
+        }
+      }
+
+      // Memory store sync
+      const memAct = (store.communityActivities || []).find(a => a.id === id);
+      if (memAct) {
+        memAct.approval_status = newApprovalStatus as any;
+        memAct.publication_status = newPublicationStatus as any;
+        memAct.registration_status = newRegStatus as any;
+      }
+      if (isApproved) {
+        if (!store.drives) store.drives = [];
+        const existingDrive = store.drives.find(d => d.id === id);
+        if (!existingDrive) {
+          store.drives.push({
+            id,
+            title: act.title,
+            description: act.short_description || act.detailed_description || '',
+            ward_id: act.ward_id || `ward-0${act.ward_number || 3}`,
+            ward_name: act.ward_name || `Ward ${act.ward_number || 3}`,
+            location_name: act.address || act.landmark || 'Navsari',
+            start_time: act.proposed_start_at || new Date().toISOString(),
+            end_time: act.proposed_end_at || new Date(Date.now() + 10800000).toISOString(),
+            registration_deadline: act.proposed_start_at || new Date().toISOString(),
+            organiser_name: 'Community Organization',
+            status: 'upcoming',
+            banner_url: act.cover_image_path || '',
+            max_volunteers: act.maximum_participants || 50,
+            registered_volunteers_count: 0
+          });
+        }
+      }
+
+      // 4. Send Notification to Community Head!
+      const targetUserId = act.created_by || 'c0000000-0000-0000-0000-000000000099';
+      if (isApproved) {
+        await this.createNotification(
+          targetUserId,
+          'Cleanliness Drive Approved! 🎉',
+          `Your cleanliness drive "${act.title}" has been APPROVED by the Ward ${act.ward_number || 3} Officer. Citizen registration is now open across all citizen dashboards!`,
+          id,
+          'drive_approved'
+        );
+      } else if (action === 'reject') {
+        await this.createNotification(
+          targetUserId,
+          'Cleanliness Drive Rejected ⚠️',
+          `Your cleanliness drive "${act.title}" was REJECTED by Ward ${act.ward_number || 3} Officer. Reason: ${comments || 'Did not meet cleanliness guidelines.'}`,
+          id,
+          'drive_rejected'
+        );
+      } else {
+        await this.createNotification(
+          targetUserId,
+          'Changes Requested for Cleanliness Drive 📝',
+          `Ward ${act.ward_number || 3} Officer requested adjustments for "${act.title}": ${comments}`,
+          id,
+          'drive_changes_requested'
+        );
+      }
+
+      return {
+        success: true,
+        message: `Activity ${id} marked as ${action}. Notification dispatched to Community Head.`
+      };
+    }
+
+    return {
+      success: true,
+      message: `Item ${id} processed as ${action}.`
+    };
   }
 }

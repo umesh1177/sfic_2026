@@ -1919,23 +1919,10 @@ export class WardOfficerController {
   // =========================================================================
   public static async getApprovals(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const approvals: WardApprovalItem[] = [
-        {
-          id: 'appr-act-01',
-          type: 'activity',
-          title: 'Lakeside Eco-Cleanliness Drive 2026',
-          submitted_by_name: 'Rajesh Varma (Navsari Green Warriors RWA)',
-          submitted_by_role: 'Community Head',
-          submission_time: '2026-10-30T11:00:00Z',
-          ward_number: 3,
-          status: 'pending',
-          details: {
-            proposed_date: '2026-11-08',
-            location: 'North Lake Promenade, Dudhiya Talao',
-            expected_volunteers: 150,
-            safety_plan: 'First aid kit, safety gloves, 500 biodegradable waste bags provided.'
-          }
-        },
+      const officerWard = (req.user as any)?.ward_number;
+      const dynamicPending = await DbRepository.getPendingActivitiesForOfficer(officerWard);
+
+      const otherApprovals: WardApprovalItem[] = [
         {
           id: 'appr-cr-01',
           type: 'completion_report',
@@ -1943,7 +1930,7 @@ export class WardOfficerController {
           submitted_by_name: 'Kanti Solanki (Team Leader)',
           submitted_by_role: 'Sanitation Worker',
           submission_time: '2026-10-28T12:55:00Z',
-          ward_number: 3,
+          ward_number: officerWard || 3,
           status: 'pending',
           details: {
             task_code: 'TSK-NAV-2026-101',
@@ -1962,31 +1949,17 @@ export class WardOfficerController {
           submitted_by_name: 'Suresh Vaghela',
           submitted_by_role: 'Waste Collection Worker',
           submission_time: '2026-10-29T10:15:00Z',
-          ward_number: 3,
+          ward_number: officerWard || 3,
           status: 'pending',
           details: {
             gps_match: '11.5 meters from assigned coordinates',
             ai_quality: 'Pass - Genuine civic cleanliness photo'
           },
           photos: ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80']
-        },
-        {
-          id: 'appr-att-ex-01',
-          type: 'attendance_exception',
-          title: 'GPS Attendance Discrepancy Exception Request',
-          submitted_by_name: 'Suresh Vaghela',
-          submitted_by_role: 'Waste Collection Worker',
-          submission_time: '2026-10-31T08:42:00Z',
-          ward_number: 3,
-          status: 'pending',
-          details: {
-            reason: 'Mobile GPS signal shielded inside underground concrete basement of municipal drainage pump room.',
-            submitted_distance: '185 meters (Threshold: 100 meters)'
-          }
         }
       ];
 
-      res.status(200).json({ success: true, data: approvals });
+      res.status(200).json({ success: true, data: [...dynamicPending, ...otherApprovals] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -2005,9 +1978,12 @@ export class WardOfficerController {
         return;
       }
 
+      const officerWard = (req.user as any)?.ward_number;
+      const result = await DbRepository.officerReviewApproval(id, action, comments, officerWard);
+
       res.status(200).json({
         success: true,
-        message: `Approval item ${id} successfully marked as ${action}.`,
+        message: result.message,
         data: { id, action, comments, reviewed_at: new Date().toISOString() }
       });
     } catch (err: any) {

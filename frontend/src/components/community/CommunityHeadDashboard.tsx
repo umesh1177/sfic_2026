@@ -22,7 +22,7 @@ import {
   ExternalLink,
   HeartHandshake
 } from 'lucide-react';
-import { Profile, CommunityDashboardSummary, CommunityActivity } from '../../types/index.js';
+import { Profile, CommunityDashboardSummary, CommunityActivity, CommunityProblem } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
 import { api } from '../../services/api.js';
 import { SwachhSetuLogo, SwachhSetuIcon } from '../SwachhSetuLogo.js';
@@ -110,6 +110,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [openCreateWizardDirectly, setOpenCreateWizardDirectly] = useState<boolean>(false);
+  const [linkedProblemForDrive, setLinkedProblemForDrive] = useState<CommunityProblem | null>(null);
 
   const t = translations[lang];
 
@@ -442,6 +443,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               activities={activities}
               onRefreshActivities={loadData}
               initialOpenCreateWizard={openCreateWizardDirectly}
+              initialLinkedProblem={linkedProblemForDrive}
               selectedActivityId={selectedActivityId || undefined}
               initialSubTab={
                 activeTab === 'questions'
@@ -459,6 +461,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               community={dashboardSummary?.community || null}
               lang={lang}
               onPlanDriveForProblem={problem => {
+                setLinkedProblemForDrive(problem);
                 setActiveTab('activities');
                 setOpenCreateWizardDirectly(true);
               }}

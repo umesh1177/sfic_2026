@@ -29,13 +29,15 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
 }) => {
   const [problems, setProblems] = useState<CommunityProblem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [wardFilter, setWardFilter] = useState<string>('all');
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   const fetchProblems = async () => {
     setLoading(true);
     try {
-      const res = await api.getCommunityWardProblems(community?.ward_number);
+      const targetWard = wardFilter === 'all' ? undefined : parseInt(wardFilter, 10);
+      const res = await api.getCommunityWardProblems(targetWard);
       if (res.success && res.data) {
         setProblems(res.data);
       }
@@ -48,7 +50,7 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
 
   useEffect(() => {
     fetchProblems();
-  }, [community?.ward_number]);
+  }, [wardFilter]);
 
   const handleAdoptAndPlan = async (problem: CommunityProblem) => {
     setClaimingId(problem.id);
@@ -83,12 +85,26 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
             Review the problem, inspect the officer's recommended action plan, and adopt the issue to organize a citizen cleanliness drive.
           </p>
 
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-white/10 rounded-2xl px-3 py-1.5 backdrop-blur-xs border border-white/20">
+              <span className="text-xs font-bold text-emerald-100">Ward Filter:</span>
+              <select
+                value={wardFilter}
+                onChange={e => setWardFilter(e.target.value)}
+                className="bg-emerald-950/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 outline-none border border-white/20"
+              >
+                <option value="all" className="bg-[#095c54] text-white">All Wards (Entire Navsari)</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(w => (
+                  <option key={w} value={String(w)} className="bg-[#095c54] text-white">Ward {w}</option>
+                ))}
+              </select>
+            </div>
+
             <button
               onClick={fetchProblems}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/20 transition backdrop-blur-xs"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition backdrop-blur-xs"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
               Refresh Problems
             </button>
           </div>
@@ -245,3 +261,4 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
     </div>
   );
 };
+

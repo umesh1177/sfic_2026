@@ -916,3 +916,29 @@ export interface CommunityProblem {
   created_at: string;
   updated_at: string;
 }
+
+
+export interface CommunityProblem {
+  id: string;
+  ward_number: number;
+  ward_name: string;
+  title: string;
+  description: string;
+  location_name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  action_plan: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  estimated_volunteers_needed: number;
+  suggested_equipment: string[];
+  image_url?: string;
+  status: 'open' | 'claimed' | 'in_progress' | 'resolved';
+  claimed_by_community_id?: string;
+  claimed_by_community_name?: string;
+  linked_activity_id?: string;
+  created_by?: string;
+  officer_name?: string;
+  created_at: string;
+  updated_at: string;
+}
