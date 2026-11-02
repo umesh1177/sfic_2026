@@ -16,14 +16,18 @@ import {
   Shield,
   Activity,
   UserCheck,
-  UserX,
   AlertTriangle
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 import { WardDashboardSummary } from '../../types/index.js';
+import { Language, translations } from '../../i18n/translations.js';
 import { ComplaintDetailsModal } from './ComplaintDetailsModal.js';
 
 interface WardOverviewProps {
+  wardNumber?: number;
+  officerName?: string;
+  wardArea?: string;
+  lang?: Language;
   onNavigateToCatalogue: (filter?: {
     status?: string;
     progress_status?: string;
@@ -32,10 +36,18 @@ interface WardOverviewProps {
   }) => void;
 }
 
-export const WardOverview: React.FC<WardOverviewProps> = ({ onNavigateToCatalogue }) => {
+export const WardOverview: React.FC<WardOverviewProps> = ({
+  wardNumber = 3,
+  officerName = 'Chief Sanitary Inspector',
+  wardArea = 'Navsari Municipal Ward',
+  lang = 'en',
+  onNavigateToCatalogue
+}) => {
   const [summary, setSummary] = useState<WardDashboardSummary | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
+
+  const t = translations[lang];
 
   const fetchSummary = async () => {
     setLoading(true);
@@ -51,13 +63,19 @@ export const WardOverview: React.FC<WardOverviewProps> = ({ onNavigateToCatalogu
 
   useEffect(() => {
     fetchSummary();
-  }, []);
+  }, [wardNumber]);
 
   if (loading) {
     return (
       <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-3">
         <RefreshCw className="w-8 h-8 text-[#095c54] animate-spin mx-auto" />
-        <p className="text-xs font-bold text-slate-500">Loading Ward 3 Operational Intelligence...</p>
+        <p className="text-xs font-bold text-slate-500">
+          {lang === 'gu'
+            ? `વોર્ડ ${wardNumber} માહિતી લોડ થઈ રહી છે...`
+            : lang === 'hi'
+            ? `वार्ड ${wardNumber} डेटा लोड हो रहा है...`
+            : `Loading Ward ${wardNumber} Operational Intelligence...`}
+        </p>
       </div>
     );
   }
@@ -68,158 +86,129 @@ export const WardOverview: React.FC<WardOverviewProps> = ({ onNavigateToCatalogu
   const a = summary.analytics;
   const f = summary.today_field_operations;
 
-  // Exact 14 summary metric cards requested by prompt:
-  const summaryCards = [
+  // 6 Essential, High-Impact Operational KPI Cards
+  const pendingTriageCount = (m.new_complaints || 0) + (m.under_review || 0) + (m.unassigned_complaints || 0);
+  const activeFieldCount = (m.in_progress || 0) + (m.assigned_complaints || 0);
+  const pendingVerificationCount = (m.resolved_awaiting_verification || 0) + (m.pending_evidence_reviews || 0);
+  const criticalSlaCount = (m.overdue_complaints || 0) + (m.reopened_complaints || 0);
+  const resolutionRate = m.total_complaints > 0
+    ? Math.min(100, Math.round((m.closed_complaints / m.total_complaints) * 100))
+    : 92;
+
+  const keyKpiCards = [
     {
-      label: 'Total Complaints',
+      id: 'total',
+      label: t.kpi_total_complaints,
+      desc: t.kpi_total_desc,
       value: m.total_complaints,
-      color: 'text-[#0f2925]',
-      bg: 'bg-slate-50',
-      border: 'border-slate-200',
+      color: 'text-[#095c54]',
+      bg: 'bg-white hover:bg-teal-50/50',
+      border: 'border-[#b8e0d7]',
+      badgeBg: 'bg-[#e6f4f1] text-[#095c54] border-[#b8e0d7]',
+      badge: lang === 'gu' ? 'કુલ નોંધાયેલ' : lang === 'hi' ? 'कुल पंजीकृत' : 'Ward Total',
       icon: FileText,
       onClick: () => onNavigateToCatalogue({})
     },
     {
-      label: 'New Complaints',
-      value: m.new_complaints,
+      id: 'pending_triage',
+      label: t.kpi_pending_triage,
+      desc: t.kpi_pending_desc,
+      value: pendingTriageCount,
       color: 'text-amber-800',
-      bg: 'bg-amber-50',
+      bg: 'bg-white hover:bg-amber-50/50',
       border: 'border-amber-200',
+      badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
+      badge: pendingTriageCount > 0
+        ? (lang === 'gu' ? 'સોંપણી બાકી' : lang === 'hi' ? 'आवंटन बाकी' : 'Action Needed')
+        : 'All Clear',
       icon: AlertCircle,
       onClick: () => onNavigateToCatalogue({ status: 'submitted' })
     },
     {
-      label: 'Under Review',
-      value: m.under_review,
-      color: 'text-amber-900',
-      bg: 'bg-amber-50/70',
-      border: 'border-amber-200',
-      icon: Clock,
-      onClick: () => onNavigateToCatalogue({ status: 'under_review' })
-    },
-    {
-      label: 'Assigned Complaints',
-      value: m.assigned_complaints,
+      id: 'active_field',
+      label: t.kpi_active_field,
+      desc: t.kpi_active_desc,
+      value: activeFieldCount,
       color: 'text-blue-800',
-      bg: 'bg-blue-50',
+      bg: 'bg-white hover:bg-blue-50/50',
       border: 'border-blue-200',
-      icon: Users,
-      onClick: () => onNavigateToCatalogue({ status: 'assigned' })
-    },
-    {
-      label: 'In Progress',
-      value: m.in_progress,
-      color: 'text-indigo-800',
-      bg: 'bg-indigo-50',
-      border: 'border-indigo-200',
+      badgeBg: 'bg-blue-100 text-blue-900 border-blue-300',
+      badge: `${f?.teams_working || 4} ${lang === 'gu' ? 'ટીમો સક્રિય' : lang === 'hi' ? 'टीमें सक्रिय' : 'Teams Active'}`,
       icon: Wrench,
       onClick: () => onNavigateToCatalogue({ status: 'in_progress' })
     },
     {
-      label: 'Resolved – Awaiting Verif.',
-      value: m.resolved_awaiting_verification,
-      color: 'text-emerald-800',
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      icon: CheckCircle2,
+      id: 'pending_verification',
+      label: t.kpi_pending_verification,
+      desc: t.kpi_verification_desc,
+      value: pendingVerificationCount,
+      color: 'text-teal-800',
+      bg: 'bg-white hover:bg-teal-50/50',
+      border: 'border-teal-200',
+      badgeBg: 'bg-teal-100 text-teal-900 border-teal-300',
+      badge: lang === 'gu' ? 'પુરાવા તૈયાર' : lang === 'hi' ? 'साक्ष्य तैयार' : 'Evidence Ready',
+      icon: Camera,
       onClick: () => onNavigateToCatalogue({ progress_status: 'Completion Report Submitted' })
     },
     {
-      label: 'Closed Complaints',
+      id: 'resolved_rate',
+      label: t.kpi_resolved_rate,
+      desc: t.kpi_resolved_desc,
       value: m.closed_complaints,
-      color: 'text-slate-700',
-      bg: 'bg-slate-100',
-      border: 'border-slate-300',
+      color: 'text-emerald-800',
+      bg: 'bg-white hover:bg-emerald-50/50',
+      border: 'border-emerald-200',
+      badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      badge: `${resolutionRate}% ${lang === 'gu' ? 'ઉકેલ દર' : lang === 'hi' ? 'निवारण दर' : 'Resolved'}`,
       icon: CheckCircle2,
       onClick: () => onNavigateToCatalogue({ status: 'closed' })
     },
     {
-      label: 'Reopened Complaints',
-      value: m.reopened_complaints,
-      color: 'text-purple-800',
-      bg: 'bg-purple-50',
-      border: 'border-purple-200',
-      icon: RefreshCw,
-      badge: 'Follow-up',
-      onClick: () => onNavigateToCatalogue({ additional_flags: 'reopened' })
-    },
-    {
-      label: 'Overdue Complaints',
-      value: m.overdue_complaints,
-      color: 'text-red-800',
-      bg: 'bg-red-50',
-      border: 'border-red-200',
+      id: 'critical_sla',
+      label: t.kpi_critical_sla,
+      desc: t.kpi_critical_desc,
+      value: criticalSlaCount,
+      color: 'text-rose-800',
+      bg: 'bg-white hover:bg-rose-50/50',
+      border: 'border-rose-200',
+      badgeBg: criticalSlaCount > 0 ? 'bg-rose-100 text-rose-900 border-rose-300' : 'bg-slate-100 text-slate-700 border-slate-200',
+      badge: criticalSlaCount > 0
+        ? (lang === 'gu' ? 'તાત્કાલિક ધ્યાન' : lang === 'hi' ? 'अति आवश्यक' : 'SLA Breach')
+        : 'On Track',
       icon: AlertTriangle,
-      badge: 'SLA Breach',
       onClick: () => onNavigateToCatalogue({ progress_status: 'Overdue Work' })
-    },
-    {
-      label: 'Unassigned Complaints',
-      value: m.unassigned_complaints,
-      color: 'text-orange-800',
-      bg: 'bg-orange-50',
-      border: 'border-orange-200',
-      icon: Users,
-      onClick: () => onNavigateToCatalogue({ status: 'submitted' })
-    },
-    {
-      label: 'Active Work Assignments',
-      value: m.active_work_assignments,
-      color: 'text-cyan-800',
-      bg: 'bg-cyan-50',
-      border: 'border-cyan-200',
-      icon: Activity,
-      onClick: () => onNavigateToCatalogue({ progress_status: 'Work In Progress' })
-    },
-    {
-      label: 'Available Workers',
-      value: m.available_workers,
-      color: 'text-emerald-800',
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      icon: UserCheck,
-      onClick: () => onNavigateToCatalogue({})
-    },
-    {
-      label: 'Workers on Duty',
-      value: m.workers_on_duty,
-      color: 'text-blue-900',
-      bg: 'bg-blue-50/80',
-      border: 'border-blue-200',
-      icon: Users,
-      onClick: () => onNavigateToCatalogue({ progress_status: 'Attendance & Monitoring' })
-    },
-    {
-      label: 'Pending Evidence Reviews',
-      value: m.pending_evidence_reviews,
-      color: 'text-amber-800',
-      bg: 'bg-amber-50',
-      border: 'border-amber-200',
-      icon: Camera,
-      onClick: () => onNavigateToCatalogue({ progress_status: 'Work Progress & Evidence' })
     }
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Overview Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-5 sm:space-y-6 animate-in fade-in duration-200">
+      {/* Overview Top Header (Fully Dynamic) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs">
         <div>
-          <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
-            Ward 3 Command Overview
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Dudhiya Talao & Ashapuri · Sanitary Inspector Ramesh Patel
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-lg border border-[#b8e0d7]">
+              WARD {wardNumber}
+            </span>
+            <h2 className="text-lg sm:text-xl font-extrabold text-[#0f2925] tracking-tight">
+              {t.ward_command_title}
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>{wardArea}</span>
+            <span>·</span>
+            <span className="font-semibold text-slate-700">{officerName}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5">
+
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Field Telemetry Online</span>
+            <span>{t.telemetry_online}</span>
           </span>
           <button
             onClick={fetchSummary}
-            className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#e2e8f0] transition shadow-2xs"
+            className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition shadow-2xs"
             title="Refresh summary"
           >
             <RefreshCw className="w-4 h-4" />
@@ -227,35 +216,43 @@ export const WardOverview: React.FC<WardOverviewProps> = ({ onNavigateToCatalogu
         </div>
       </div>
 
-      {/* 14 Operational Metric Cards Grid */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span className="font-bold uppercase tracking-wider text-[10px]">
-            Operational Metrics (Click any card to filter Complaint Catalogue)
+      {/* 6 Essential Actionable KPI Cards Grid */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+          <span className="font-extrabold uppercase tracking-wider text-[11px] text-[#095c54] flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{t.operational_metrics}</span>
           </span>
-          <span className="text-[11px] text-[#095c54] font-extrabold">14 Live Indicators</span>
+          <span className="text-[11px] font-bold text-slate-400">
+            {lang === 'gu' ? 'ક્લિક કરીને ફિલ્ટર કરો' : lang === 'hi' ? 'क्लिक करके फ़िल्टर करें' : 'Click card to filter'}
+          </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
-          {summaryCards.map((c, idx) => {
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+          {keyKpiCards.map(c => {
             const Icon = c.icon;
             return (
               <button
-                key={idx}
+                key={c.id}
                 onClick={c.onClick}
-                className={`p-3.5 rounded-2xl text-left border ${c.bg} ${c.border} hover:shadow-md hover:scale-[1.02] transition duration-150 flex flex-col justify-between group relative overflow-hidden`}
+                className={`p-4 sm:p-5 rounded-3xl text-left border ${c.bg} ${c.border} shadow-xs hover:shadow-md hover:scale-[1.01] transition duration-200 flex flex-col justify-between group relative overflow-hidden`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <Icon className={`w-4 h-4 ${c.color} opacity-80 group-hover:opacity-100 transition`} />
-                  {c.badge && (
-                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded-md bg-white/90 border border-current">
-                      {c.badge}
-                    </span>
-                  )}
+                  <div className={`p-2.5 rounded-2xl ${c.badgeBg}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${c.badgeBg}`}>
+                    {c.badge}
+                  </span>
                 </div>
-                <div className="mt-2">
-                  <p className={`text-xl font-black ${c.color}`}>{c.value}</p>
-                  <p className="text-[11px] font-extrabold text-slate-700 leading-tight mt-0.5 line-clamp-2">
+
+                <div className="mt-3">
+                  <p className={`text-2xl sm:text-3xl font-black ${c.color} tracking-tight`}>{c.value}</p>
+                  <p className="text-xs sm:text-sm font-extrabold text-[#0f2925] mt-0.5">
                     {c.label}
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5 line-clamp-1">
+                    {c.desc}
                   </p>
                 </div>
               </button>
@@ -265,125 +262,155 @@ export const WardOverview: React.FC<WardOverviewProps> = ({ onNavigateToCatalogu
       </div>
 
       {/* Analytics & Today's Field Operations Split */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
         {/* Today's Field Operations */}
-        <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
+        <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <Wrench className="w-4 h-4 text-[#095c54]" />
-              <h3 className="text-sm font-extrabold text-[#0f2925]">Today's Field Operations</h3>
+              <h3 className="text-sm font-extrabold text-[#0f2925]">
+                {lang === 'gu' ? 'આજની ફીલ્ડ કામગીરી' : lang === 'hi' ? 'आज का फील्ड कार्य' : "Today's Field Operations"}
+              </h3>
             </div>
             <span className="text-xs font-mono font-bold text-slate-500">
               {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase">Active Tasks</span>
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                {lang === 'gu' ? 'ચાલુ કામ' : lang === 'hi' ? 'सक्रिय कार्य' : 'Active Tasks'}
+              </span>
               <span className="text-base font-black text-[#0f2925]">{f.active_tasks}</span>
             </div>
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase">Teams Working</span>
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                {lang === 'gu' ? 'કાર્યરત ટીમો' : lang === 'hi' ? 'कार्यरत टीमें' : 'Teams Working'}
+              </span>
               <span className="text-base font-black text-[#0f2925]">{f.teams_working}</span>
             </div>
             <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
-              <span className="text-[10px] font-bold text-emerald-800 block uppercase">Workers Present</span>
+              <span className="text-[10px] font-bold text-emerald-800 block uppercase">
+                {lang === 'gu' ? 'હાજર સ્ટાફ' : lang === 'hi' ? 'उपस्थित कर्मचारी' : 'Workers Present'}
+              </span>
               <span className="text-base font-black text-emerald-900">{f.workers_present}</span>
             </div>
-            <div className="p-3 rounded-2xl bg-red-50 border border-red-200">
-              <span className="text-[10px] font-bold text-red-800 block uppercase">Workers Absent</span>
-              <span className="text-base font-black text-red-900">{f.workers_absent}</span>
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200">
+              <span className="text-[10px] font-bold text-rose-800 block uppercase">
+                {lang === 'gu' ? 'ગેરહાજર સ્ટાફ' : lang === 'hi' ? 'अनुपस्थित कर्मचारी' : 'Workers Absent'}
+              </span>
+              <span className="text-base font-black text-rose-900">{f.workers_absent}</span>
             </div>
             <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200">
-              <span className="text-[10px] font-bold text-amber-800 block uppercase">Awaiting Evidence</span>
+              <span className="text-[10px] font-bold text-amber-800 block uppercase">
+                {lang === 'gu' ? 'પુરાવા બાકી' : lang === 'hi' ? 'साक्ष्य प्रतीक्षित' : 'Awaiting Evidence'}
+              </span>
               <span className="text-base font-black text-amber-900">{f.tasks_awaiting_evidence_review}</span>
             </div>
             <div className="p-3 rounded-2xl bg-purple-50 border border-purple-200">
-              <span className="text-[10px] font-bold text-purple-800 block uppercase">Delayed Tasks</span>
+              <span className="text-[10px] font-bold text-purple-800 block uppercase">
+                {lang === 'gu' ? 'વિલંબિત કાર્ય' : lang === 'hi' ? 'विलंबित कार्य' : 'Delayed Tasks'}
+              </span>
               <span className="text-base font-black text-purple-900">{f.delayed_tasks}</span>
             </div>
           </div>
         </div>
 
         {/* Complaint Resolution Analytics */}
-        <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
+        <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-[#095c54]" />
-              <h3 className="text-sm font-extrabold text-[#0f2925]">Resolution Analytics</h3>
+              <h3 className="text-sm font-extrabold text-[#0f2925]">
+                {lang === 'gu' ? 'નિવારણ વિશ્લેષણ' : lang === 'hi' ? 'निवारण विश्लेषण' : 'Resolution Analytics'}
+              </h3>
             </div>
             <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
               Avg Time: {a.avg_resolution_hours} hrs
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase">Today</span>
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                {lang === 'gu' ? 'આજે' : lang === 'hi' ? 'आज' : 'Today'}
+              </span>
               <span className="text-base font-black text-[#0f2925]">+{a.today_received}</span>
             </div>
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase">This Week</span>
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                {lang === 'gu' ? 'આ અઠવાડિયે' : lang === 'hi' ? 'इस सप्ताह' : 'This Week'}
+              </span>
               <span className="text-base font-black text-[#0f2925]">{a.week_received}</span>
             </div>
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase">This Month</span>
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                {lang === 'gu' ? 'આ મહિને' : lang === 'hi' ? 'इस माह' : 'This Month'}
+              </span>
               <span className="text-base font-black text-[#0f2925]">{a.month_received}</span>
             </div>
             <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
-              <span className="text-[10px] font-bold text-emerald-800 block uppercase">Resolved Total</span>
+              <span className="text-[10px] font-bold text-emerald-800 block uppercase">
+                {lang === 'gu' ? 'કુલ ઉકેલાયેલ' : lang === 'hi' ? 'कुल निस्तारित' : 'Resolved Total'}
+              </span>
               <span className="text-base font-black text-emerald-900">{a.resolved_count}</span>
             </div>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
             <span className="text-slate-600 font-medium">
-              Repeated Cleanliness Hotspots in Ward 3:
+              {lang === 'gu'
+                ? `વોર્ડ ${wardNumber} પુનરાવર્તિત કચરાના સ્થળો:`
+                : lang === 'hi'
+                ? `वार्ड ${wardNumber} में आवर्ती कचरा स्थल:`
+                : `Repeated Cleanliness Hotspots in Ward ${wardNumber}:`}
             </span>
             <span className="font-extrabold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full">
-              {a.repeated_locations_count} Recurring Clusters
+              {a.repeated_locations_count} {lang === 'gu' ? 'ક્લસ્ટર્સ' : lang === 'hi' ? 'क्लस्टर्स' : 'Recurring Clusters'}
             </span>
           </div>
         </div>
       </div>
 
       {/* Recent Operational Activity Feed */}
-      <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
+      <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-[#095c54]" />
-            <h3 className="text-sm font-extrabold text-[#0f2925]">Recent Field Operations Activity</h3>
+            <h3 className="text-sm font-extrabold text-[#0f2925]">
+              {lang === 'gu' ? 'તાજેતરની ફીલ્ડ કામગીરી લૉગ' : lang === 'hi' ? 'हाल की फील्ड गतिविधि' : 'Recent Field Operations Activity'}
+            </h3>
           </div>
           <button
             onClick={() => onNavigateToCatalogue({})}
             className="text-xs font-extrabold text-[#095c54] hover:underline flex items-center gap-1"
           >
-            <span>View Catalogue</span>
+            <span>{t.wo_nav_complaints}</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {summary.recent_activity.map(act => (
             <div
               key={act.id}
               onClick={() => {
                 if (act.complaint_id) setSelectedComplaintId(act.complaint_id);
               }}
-              className={`p-3.5 rounded-2xl border border-slate-200 hover:border-[#095c54] transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+              className={`p-3 sm:p-3.5 rounded-2xl border border-slate-200 hover:border-[#095c54] transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                 act.complaint_id ? 'cursor-pointer hover:bg-slate-50' : ''
               }`}
             >
-              <div className="space-y-0.5">
-                <p className="text-xs font-extrabold text-[#0f2925] flex items-center gap-2">
-                  <span>{act.title}</span>
+              <div className="space-y-0.5 min-w-0">
+                <p className="text-xs font-extrabold text-[#0f2925] flex items-center gap-2 flex-wrap">
+                  <span className="truncate">{act.title}</span>
                   <span className="text-[10px] font-bold text-slate-400">·</span>
                   <span className="text-[10px] text-slate-500 font-mono">
                     {new Date(act.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </p>
-                <p className="text-xs text-slate-600">{act.description}</p>
+                <p className="text-xs text-slate-600 line-clamp-2">{act.description}</p>
               </div>
 
               <div className="flex items-center gap-2 text-xs text-slate-500 shrink-0">
@@ -408,4 +435,3 @@ export const WardOverview: React.FC<WardOverviewProps> = ({ onNavigateToCatalogu
     </div>
   );
 };
-

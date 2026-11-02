@@ -1164,29 +1164,185 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 6. Hotspots Map (Dedicated Navigation Item)
+  // 6. Hotspots Map (Dedicated Navigation Item - Dynamic Clustering)
   // =========================================================================
   public static async getHotspots(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { category, frequency, ward = 3 } = req.query as any;
+      const { category, frequency, ward } = req.query as any;
 
-      let hotspots = [...seedHotspots];
-
-      if (category && category !== 'all') {
-        hotspots = hotspots.filter(h => h.primary_category.toLowerCase().includes(category.toLowerCase()));
+      // Determine target ward
+      let targetWardNum: number | 'all' = 3;
+      if (ward && ward !== 'all') {
+        targetWardNum = Number(ward);
+      } else if (ward === 'all') {
+        targetWardNum = 'all';
+      } else if ((req.user as any)?.ward_number) {
+        targetWardNum = Number((req.user as any).ward_number);
+      } else if (req.user?.locality) {
+        const match = req.user.locality.match(/Ward\s*(\d+)/i);
+        if (match) targetWardNum = Number(match[1]);
       }
 
+      const allComplaints = store.complaints || [];
+      const relevantComplaints = targetWardNum === 'all'
+        ? allComplaints
+        : allComplaints.filter(c => (c.location?.ward_number || 3) === targetWardNum);
+
+      // Dynamic Clustering by proximity (~0.003 deg ~ 300m) or landmark/locality
+      interface ComplaintCluster {
+        centerLat: number;
+        centerLng: number;
+        locality: string;
+        address: string;
+        ward_number: number;
+        complaints: typeof allComplaints;
+      }
+
+      const clusters: ComplaintCluster[] = [];
+
+      for (const comp of relevantComplaints) {
+        const lat = comp.location?.latitude || (20.9250 + ((comp.location?.ward_number || 3) * 0.002));
+        const lng = comp.location?.longitude || (72.9250 + ((comp.location?.ward_number || 3) * 0.0015));
+        const loc = comp.location?.landmark || comp.location?.ward_name || (comp.location as any)?.locality || `Ward ${comp.location?.ward_number || 3}`;
+        const addr = comp.location?.address || `${loc}, Navsari`;
+        const compWard = comp.location?.ward_number || (typeof targetWardNum === 'number' ? targetWardNum : 3);
+
+        let matchedCluster = clusters.find(cl => {
+          const dLat = Math.abs(cl.centerLat - lat);
+          const dLng = Math.abs(cl.centerLng - lng);
+          const distanceDeg = Math.sqrt(dLat * dLat + dLng * dLng);
+          const sameLoc = cl.locality.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(cl.locality.toLowerCase());
+          return distanceDeg < 0.0035 || (sameLoc && distanceDeg < 0.008);
+        });
+
+        if (matchedCluster) {
+          matchedCluster.complaints.push(comp);
+          // Gently update centroid
+          matchedCluster.centerLat = (matchedCluster.centerLat + lat) / 2;
+          matchedCluster.centerLng = (matchedCluster.centerLng + lng) / 2;
+        } else {
+          clusters.push({
+            centerLat: lat,
+            centerLng: lng,
+            locality: loc,
+            address: addr,
+            ward_number: compWard,
+            complaints: [comp]
+          });
+        }
+      }
+
+      // Convert clusters into WardHotspot objects
+      const dynamicHotspots: WardHotspot[] = clusters.map((cl, idx) => {
+        const total = cl.complaints.length;
+        const active = cl.complaints.filter(c => !['resolved', 'closed', 'verified_complete', 'rejected'].includes(c.status)).length;
+        const resolved = cl.complaints.filter(c => ['resolved', 'closed', 'verified_complete'].includes(c.status)).length;
+        const reopened = cl.complaints.filter(c => c.status === 'reopened').length;
+
+        // Determine dominant category
+        const catCounts: Record<string, number> = {};
+        for (const c of cl.complaints) {
+          const cat = c.category_name || (c as any).category || 'General Waste';
+          catCounts[cat] = (catCounts[cat] || 0) + 1;
+        }
+        let dominantCat = 'Overflowing Dustbin & Littering';
+        let maxCount = 0;
+        for (const [cat, cnt] of Object.entries(catCounts)) {
+          if (cnt > maxCount) {
+            maxCount = cnt;
+            dominantCat = cat;
+          }
+        }
+
+        const dates = cl.complaints.map(c => c.submitted_at || (c as any).created_at).filter(Boolean).sort();
+        const firstReported = dates[0] ? dates[0].slice(0, 10) : '2026-10-01';
+        const latestReported = dates[dates.length - 1] ? dates[dates.length - 1].slice(0, 10) : '2026-11-02';
+
+        const freqLevel: 'high' | 'medium' | 'low' = total >= 4 ? 'high' : total >= 2 ? 'medium' : 'low';
+
+        return {
+          id: `hs-dyn-w${cl.ward_number}-${idx + 1}`,
+          hotspot_code: `HOT-NAV-${String(cl.ward_number).padStart(2, '0')}-${String(idx + 1).padStart(2, '0')}`,
+          title: `${cl.locality} Problem Cluster`,
+          locality: cl.locality,
+          address: cl.address,
+          ward_number: cl.ward_number,
+          latitude: Number(cl.centerLat.toFixed(5)),
+          longitude: Number(cl.centerLng.toFixed(5)),
+          total_complaints: total,
+          active_complaints: active,
+          resolved_complaints: resolved,
+          reopened_count: reopened,
+          primary_category: dominantCat,
+          first_reported_date: firstReported,
+          latest_reported_date: latestReported,
+          avg_resolution_days: 1.4,
+          frequency_level: freqLevel,
+          linked_complaint_ids: cl.complaints.map(c => c.id),
+          ai_summary: `AI Geospatial Intelligence: ${total} complaints recorded near ${cl.locality}. Dominant pattern: ${dominantCat}. ${active} issues actively require sanitation team dispatch.`
+        };
+      });
+
+      // Filter seedHotspots if matching ward
+      const relevantSeed = (seedHotspots || []).filter(h => {
+        if (targetWardNum === 'all') return true;
+        return h.ward_number === targetWardNum;
+      });
+
+      // Combine dynamic hotspots first, followed by seed hotspots that don't collide
+      let combined = [...dynamicHotspots];
+      for (const s of relevantSeed) {
+        const collides = combined.some(d => {
+          const dist = Math.sqrt(Math.pow(d.latitude - s.latitude, 2) + Math.pow(d.longitude - s.longitude, 2));
+          return dist < 0.002 || d.locality.toLowerCase() === s.locality.toLowerCase();
+        });
+        if (!collides) {
+          combined.push(s);
+        }
+      }
+
+      // If combined is empty (e.g. brand new ward with no complaints yet), provide a sensible baseline cluster
+      if (combined.length === 0 && targetWardNum !== 'all') {
+        combined.push({
+          id: `hs-w${targetWardNum}-default`,
+          hotspot_code: `HOT-NAV-${String(targetWardNum).padStart(2, '0')}-01`,
+          title: `Ward ${targetWardNum} Municipal Hub Area`,
+          locality: `Ward ${targetWardNum}`,
+          address: `Central Sector, Ward ${targetWardNum}, Navsari`,
+          ward_number: Number(targetWardNum),
+          latitude: 20.9250 + (Number(targetWardNum) * 0.0025),
+          longitude: 72.9250 + (Number(targetWardNum) * 0.002),
+          total_complaints: relevantComplaints.length,
+          active_complaints: relevantComplaints.filter(c => c.status !== 'resolved' && c.status !== 'closed').length,
+          resolved_complaints: relevantComplaints.filter(c => c.status === 'resolved' || c.status === 'closed').length,
+          reopened_count: 0,
+          primary_category: 'Civic Cleanliness',
+          first_reported_date: '2026-10-01',
+          latest_reported_date: '2026-11-02',
+          avg_resolution_days: 1.5,
+          frequency_level: relevantComplaints.length >= 4 ? 'high' : relevantComplaints.length >= 2 ? 'medium' : 'low',
+          linked_complaint_ids: relevantComplaints.map(c => c.id),
+          ai_summary: `Real-time ward monitoring active. ${relevantComplaints.length} registered reports processed.`
+        });
+      }
+
+      // Filter by category
+      if (category && category !== 'all') {
+        combined = combined.filter(h => h.primary_category.toLowerCase().includes(category.toLowerCase()));
+      }
+
+      // Filter by frequency
       if (frequency && frequency !== 'all') {
-        hotspots = hotspots.filter(h => h.frequency_level.toLowerCase() === frequency.toLowerCase());
+        combined = combined.filter(h => h.frequency_level.toLowerCase() === frequency.toLowerCase());
       }
 
       res.status(200).json({
         success: true,
-        data: hotspots,
+        data: combined,
         meta: {
-          ward_number: Number(ward),
-          total_hotspots: hotspots.length,
-          high_frequency_count: hotspots.filter(h => h.frequency_level === 'high').length
+          ward_number: targetWardNum === 'all' ? 0 : Number(targetWardNum),
+          total_hotspots: combined.length,
+          high_frequency_count: combined.filter(h => h.frequency_level === 'high').length
         }
       });
     } catch (err: any) {

@@ -111,23 +111,25 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Strictly 5 Tabs in Main Navigation
+  const isLeader = assignments.some(a => a.is_temporary_leader);
+
+  // Dynamic 5 Tabs in Main Navigation
   const navItems = [
-    { id: 'home', label: 'Home', icon: LayoutDashboard },
+    { id: 'home', label: t.wrk_nav_home, icon: LayoutDashboard },
     {
       id: 'assign_work',
-      label: 'Assign Work',
+      label: t.wrk_nav_assign_work,
       icon: Briefcase,
-      badge: assignments.some(a => a.is_temporary_leader) ? '👑 Leader' : undefined
+      badge: isLeader ? '👑 Leader' : undefined
     },
-    { id: 'work_history', label: 'Work History', icon: FileCheck2 },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'profile_settings', label: 'Profile & Settings', icon: User }
+    { id: 'work_history', label: t.wrk_nav_work_history, icon: FileCheck2 },
+    { id: 'notifications', label: t.wrk_nav_notifications, icon: Bell },
+    { id: 'profile_settings', label: t.wrk_nav_profile, icon: User }
   ];
 
   return (
     <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
-      {/* 1. DESKTOP SIDEBAR (Identical to Ward Officer & Community Head) */}
+      {/* 1. DESKTOP SIDEBAR */}
       <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-[#e2e8f0] h-screen sticky top-0 z-30 select-none">
         {/* Brand Header */}
         <div className="p-5 border-b border-[#f1f5f9] flex items-center justify-between">
@@ -137,13 +139,13 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             </div>
             <div className="leading-tight min-w-0">
               <div className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="font-black text-[#095c54] text-base tracking-tight">Swachh Setu</span>
+                <span className="font-black text-[#095c54] text-base tracking-tight">{t.app_title}</span>
                 <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#dcfce7] text-[#065f46] border border-[#86efac]">
-                  NMC
+                  {t.nmc_label}
                 </span>
               </div>
               <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
-                FIELD WORKER PORTAL
+                {t.field_worker_portal}
               </p>
             </div>
           </div>
@@ -207,14 +209,14 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition border border-slate-200"
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-            <span>Switch to Citizen View</span>
+            <span>{t.action_switch_citizen}</span>
           </button>
           <button
             onClick={onLogout}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 text-xs font-bold transition border border-slate-100"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out</span>
+            <span>{t.nav_logout}</span>
           </button>
         </div>
       </aside>
@@ -222,39 +224,40 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
       {/* 2. Main Content Container */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-[#e2e8f0] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
-          <div className="flex items-center gap-3">
+        <header className="h-16 bg-white border-b border-[#e2e8f0] px-3.5 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100"
+              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 shrink-0"
+              aria-label="Open menu"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <div className="leading-tight">
-                <span className="text-xs font-black text-[#0f2925] tracking-tight">
-                  Navsari Municipal Corporation
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <div className="leading-tight truncate">
+                <span className="text-xs sm:text-sm font-black text-[#0f2925] tracking-tight block sm:inline truncate">
+                  NMC · Field Operations
                 </span>
-                <span className="text-[11px] text-slate-500 font-bold hidden sm:inline ml-2">
-                  · Ward 3 Field Worker Operations
+                <span className="text-[11px] text-slate-500 font-bold hidden md:inline ml-2">
+                  · Ward {workerProfile?.worker_code?.includes('008') ? 8 : 3}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* Language Switcher */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+            <div className="flex items-center bg-slate-100 p-0.5 sm:p-1 rounded-xl text-xs font-bold">
               {(['en', 'gu', 'hi'] as Language[]).map(l => (
                 <button
                   key={l}
                   onClick={() => setLang(l)}
-                  className={`px-2 py-1 rounded-lg uppercase text-[11px] font-black transition ${
+                  className={`px-2 py-0.5 sm:py-1 rounded-lg uppercase text-[10px] sm:text-[11px] font-black transition ${
                     lang === l ? 'bg-[#095c54] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  {l}
+                  {l === 'en' ? 'EN' : l === 'gu' ? 'ગુજ' : 'हिं'}
                 </button>
               ))}
             </div>
@@ -265,59 +268,32 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 relative transition"
               title="Notifications"
             >
-              <Bell className="w-4 h-4" />
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
             </button>
 
             {/* Profile Pill */}
             <div
               onClick={() => handleNavigateTab('profile_settings')}
-              className="flex items-center gap-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs"
+              className="flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs"
             >
-              <div className="w-7 sm:w-8 h-7 sm:h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
                 {workerProfile?.full_name ? workerProfile.full_name.slice(0, 2).toUpperCase() : 'KW'}
               </div>
-              <div className="text-left leading-tight hidden xs:block">
-                <span className="block text-xs font-black text-[#095c54] truncate max-w-[120px]">
+              <div className="text-left leading-tight hidden sm:block">
+                <span className="block text-xs font-black text-[#095c54] truncate max-w-[110px]">
                   {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
                 </span>
                 <span className="block text-[10px] font-bold text-[#047857] truncate">
-                  🛠️ {workerProfile?.designation_name || 'Drainage Worker'}
+                  🛠️ {workerProfile?.designation_name || 'Worker'}
                 </span>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Mobile Horizontal Fast-Switch Tab Strip (<lg) */}
-        <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto py-2 px-3 bg-white border-t border-[#e2e8f0] scrollbar-none text-xs">
-          {navItems.map(item => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNavigateTab(item.id)}
-                className={`whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
-                  isActive
-                    ? 'bg-[#095c54] text-white shadow-xs'
-                    : 'bg-[#f8faf9] text-[#64748b] border border-[#e2e8f0] hover:text-[#0f2925]'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span>{item.label}</span>
-                {item.badge && (
-                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-400 text-slate-900 font-black">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Dynamic Main Body */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
+        {/* Dynamic Main Body (Padded pb-24 for mobile bottom bar) */}
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24 lg:pb-8 space-y-6">
           {activeTab === 'home' && (
             <WorkerOverview
               profile={workerProfile}
@@ -360,6 +336,83 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             />
           )}
         </main>
+
+        {/* Mobile Bottom Navigation (Visible on mobile/tablet <lg) */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] py-1.5 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="flex items-center justify-around max-w-md mx-auto">
+            {/* 1. Home */}
+            <button
+              onClick={() => handleNavigateTab('home')}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
+                activeTab === 'home' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'home' ? 'font-black' : 'font-semibold'}`}>
+                {t.wrk_nav_home}
+              </span>
+            </button>
+
+            {/* 2. Assign Work */}
+            <button
+              onClick={() => handleNavigateTab('assign_work')}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
+                activeTab === 'assign_work' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <div className="relative">
+                <Briefcase className="w-5 h-5" />
+                {isLeader && (
+                  <span className="absolute -top-1 -right-2 text-[8px] bg-amber-400 text-slate-950 font-black px-1 rounded-full">
+                    👑
+                  </span>
+                )}
+              </div>
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'assign_work' ? 'font-black' : 'font-semibold'}`}>
+                {t.wrk_nav_assign_work}
+              </span>
+            </button>
+
+            {/* 3. History */}
+            <button
+              onClick={() => handleNavigateTab('work_history')}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
+                activeTab === 'work_history' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <FileCheck2 className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'work_history' ? 'font-black' : 'font-semibold'}`}>
+                {t.wrk_nav_work_history}
+              </span>
+            </button>
+
+            {/* 4. Notifications */}
+            <button
+              onClick={() => handleNavigateTab('notifications')}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
+                activeTab === 'notifications' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Bell className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'notifications' ? 'font-black' : 'font-semibold'}`}>
+                {t.wrk_nav_notifications}
+              </span>
+            </button>
+
+            {/* 5. Profile */}
+            <button
+              onClick={() => handleNavigateTab('profile_settings')}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
+                activeTab === 'profile_settings' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <User className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'profile_settings' ? 'font-black' : 'font-semibold'}`}>
+                {t.wrk_nav_profile}
+              </span>
+            </button>
+          </div>
+        </nav>
       </div>
 
       {/* 3. Mobile Navigation Drawer (<lg) */}
@@ -376,8 +429,8 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 <div className="flex items-center gap-2.5">
                   <SwachhSetuIcon size={32} />
                   <div className="leading-tight">
-                    <span className="font-black text-[#095c54] text-sm block">Swachh Setu</span>
-                    <span className="text-[9px] font-bold text-[#047857] uppercase tracking-wider">Field Worker Portal</span>
+                    <span className="font-black text-[#095c54] text-sm block">{t.app_title}</span>
+                    <span className="text-[9px] font-bold text-[#047857] uppercase tracking-wider">{t.field_worker_portal}</span>
                   </div>
                 </div>
                 <button
@@ -432,14 +485,14 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 className="w-full py-2.5 bg-[#f8faf9] hover:bg-[#e6f4f1] border border-[#e2e8f0] text-[#0f2925] text-xs font-extrabold rounded-2xl flex items-center justify-center gap-1.5 transition"
               >
                 <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-                <span>Switch to Citizen View</span>
+                <span>{t.action_switch_citizen}</span>
               </button>
               <button
                 onClick={onLogout}
                 className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold rounded-2xl flex items-center justify-center gap-1.5 transition"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span>Logout</span>
+                <span>{t.nav_logout}</span>
               </button>
             </div>
           </div>
@@ -448,4 +501,3 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
     </div>
   );
 };
-
