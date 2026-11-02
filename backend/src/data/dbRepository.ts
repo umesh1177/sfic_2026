@@ -2723,8 +2723,7 @@ export class DbRepository {
   }
 
   public static async getWorkerProfileByUserId(userId: string): Promise<WorkerProfile | null> {
-    const validUserId = this.isValidUUID(userId) ? userId : 'f1000000-0000-0000-0000-000000000001';
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(userId)) {
       try {
         const res = await pool.query(`
           SELECT wp.*, p.full_name, p.phone, p.email, p.avatar_url, p.address as user_address,
@@ -2740,7 +2739,7 @@ export class DbRepository {
           JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
           WHERE wp.user_id = $1
-        `, [validUserId]);
+        `, [userId]);
 
         if (res.rows.length > 0) {
           const r = res.rows[0];
@@ -2776,11 +2775,11 @@ export class DbRepository {
     }
 
     // Resilient Fallback - check in-memory store for newly registered workers first
-    const fromStore = (store.workers || []).find(w => w.user_id === validUserId || w.id === validUserId || w.user_id === userId || w.id === userId);
+    const fromStore = (store.workers || []).find(w => w.user_id === userId || w.id === userId);
     if (fromStore) {
       return {
         id: fromStore.id,
-        user_id: fromStore.user_id || validUserId,
+        user_id: fromStore.user_id || userId,
         worker_code: fromStore.worker_code || 'NMC-WRK-099',
         full_name: fromStore.full_name,
         phone: fromStore.phone,
@@ -2790,7 +2789,7 @@ export class DbRepository {
         designation_code: fromStore.designation?.toLowerCase().replace(/\s+/g, '_') || 'sanitation_worker',
         ward_id: `ward-${String(fromStore.ward_number || 3).padStart(2, '0')}`,
         ward_number: fromStore.ward_number || 3,
-        ward_name: fromStore.ward_name || 'Ward 3 - Dudhiya Talao',
+        ward_name: fromStore.ward_name || `Ward ${fromStore.ward_number || 3}`,
         employment_status: 'permanent',
         joining_date: '2024-01-15',
         experience_years: fromStore.experience_years || 2.0,
@@ -2804,37 +2803,92 @@ export class DbRepository {
       };
     }
 
-    const isKanti = validUserId === 'f1000000-0000-0000-0000-000000000001';
-    return {
-      id: isKanti ? 'f2000000-0000-0000-0000-000000000001' : 'f2000000-0000-0000-0000-000000000002',
-      user_id: validUserId,
-      worker_code: isKanti ? 'NMC-WRK-001' : 'NMC-WRK-002',
-      full_name: isKanti ? 'Kanti Solanki' : 'Suresh Vaghela',
-      phone: isKanti ? '+919825120001' : '+919825120002',
-      email: isKanti ? 'kanti.solanki@navsarimunicipal.gov.in' : 'suresh.vaghela@navsarimunicipal.gov.in',
-      avatar_url: isKanti
-        ? 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80'
-        : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80',
-      designation_name: isKanti ? 'Drainage Cleaning Worker' : 'Sanitation Worker',
-      designation_code: isKanti ? 'drainage_worker' : 'sanitation_worker',
-      ward_id: 'ward-03',
-      ward_number: 3,
-      ward_name: 'Ward 3 - Dudhiya Talao',
-      employment_status: 'permanent',
-      joining_date: '2023-04-01',
-      experience_years: isKanti ? 4.5 : 2.0,
-      availability_status: isKanti ? 'on_duty' : 'available',
-      emergency_contact_name: isKanti ? 'Ramilaben Solanki (Wife)' : 'Geetaben Vaghela (Wife)',
-      emergency_contact_phone: isKanti ? '+919825199001' : '+919825199002',
-      language_preference: 'gu',
-      skills: isKanti ? ['Drainage Desilting', 'Equipment Operation', 'Culvert Flush'] : ['Street Sweeping', 'Waste Collection'],
-      created_at: new Date().toISOString()
-    };
+    // Check profiles store for dynamically registered worker
+    const userProfile = (store.profiles || []).find(p => p.id === userId || p.username === userId);
+    if (userProfile && (userProfile.role === 'worker' || (userProfile as any).role === 'sanitation_worker')) {
+      const wardNum = (userProfile as any).ward_number || 3;
+      return {
+        id: `wrk-${userProfile.id}`,
+        user_id: userProfile.id,
+        worker_code: userProfile.username?.startsWith('WRK') ? userProfile.username : `WRK-${userProfile.id.slice(0, 6)}`,
+        full_name: userProfile.full_name,
+        phone: userProfile.phone,
+        email: userProfile.email || `${userProfile.full_name.toLowerCase().replace(/\s+/g, '.')}@navsarimunicipal.gov.in`,
+        avatar_url: userProfile.avatar_url,
+        designation_name: 'Sanitation Worker',
+        designation_code: 'sanitation_worker',
+        ward_id: `ward-${String(wardNum).padStart(2, '0')}`,
+        ward_number: wardNum,
+        ward_name: `Ward ${wardNum}`,
+        employment_status: 'permanent',
+        joining_date: userProfile.created_at ? userProfile.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        experience_years: 1.0,
+        availability_status: 'available',
+        emergency_contact_name: 'NMC Staff Operations',
+        emergency_contact_phone: '+919825100000',
+        language_preference: userProfile.preferred_language || 'gu',
+        skills: ['Municipal Sanitation', 'Solid Waste Collection'],
+        created_at: userProfile.created_at || new Date().toISOString()
+      };
+    }
+
+    if (!userId || userId === 'f1000000-0000-0000-0000-000000000001') {
+      return {
+        id: 'f2000000-0000-0000-0000-000000000001',
+        user_id: 'f1000000-0000-0000-0000-000000000001',
+        worker_code: 'NMC-WRK-001',
+        full_name: 'Kanti Solanki',
+        phone: '+919825120001',
+        email: 'kanti.solanki@navsarimunicipal.gov.in',
+        avatar_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
+        designation_name: 'Drainage Cleaning Worker',
+        designation_code: 'drainage_worker',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        employment_status: 'permanent',
+        joining_date: '2023-04-01',
+        experience_years: 4.5,
+        availability_status: 'on_duty',
+        emergency_contact_name: 'Ramilaben Solanki (Wife)',
+        emergency_contact_phone: '+919825199001',
+        language_preference: 'gu',
+        skills: ['Drainage Desilting', 'Equipment Operation', 'Culvert Flush'],
+        created_at: new Date().toISOString()
+      };
+    }
+
+    if (userId === 'f1000000-0000-0000-0000-000000000002') {
+      return {
+        id: 'f2000000-0000-0000-0000-000000000002',
+        user_id: 'f1000000-0000-0000-0000-000000000002',
+        worker_code: 'NMC-WRK-002',
+        full_name: 'Suresh Vaghela',
+        phone: '+919825120002',
+        email: 'suresh.vaghela@navsarimunicipal.gov.in',
+        avatar_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80',
+        designation_name: 'Sanitation Worker',
+        designation_code: 'sanitation_worker',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        employment_status: 'permanent',
+        joining_date: '2023-04-01',
+        experience_years: 2.0,
+        availability_status: 'available',
+        emergency_contact_name: 'Geetaben Vaghela (Wife)',
+        emergency_contact_phone: '+919825199002',
+        language_preference: 'gu',
+        skills: ['Street Sweeping', 'Waste Collection'],
+        created_at: new Date().toISOString()
+      };
+    }
+
+    return null;
   }
 
   public static async getWorkerAssignments(workerId: string, filterStatus?: string): Promise<WorkAssignment[]> {
-    const validWorkerId = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(workerId)) {
       try {
         let query = `
           SELECT wa.*, wam.temporary_leader, wam.assignment_status as my_attendance_status,
@@ -2854,7 +2908,7 @@ export class DbRepository {
           JOIN work_assignment_members wam ON wam.assignment_id = wa.id
           WHERE wam.worker_id = $1
         `;
-        const values: any[] = [validWorkerId];
+        const values: any[] = [workerId];
         if (filterStatus && filterStatus !== 'all') {
           query += ` AND wa.status = $2`;
           values.push(filterStatus);
@@ -2906,18 +2960,18 @@ export class DbRepository {
     const allAssignments = store.workAssignments || [];
     return allAssignments
       .filter(a => {
-        const inTeam = (a.team_members || []).some(m => m.worker_id === validWorkerId || m.worker_id === workerId);
-        const isLeader = a.temporary_leader_id === validWorkerId || a.temporary_leader_id === workerId;
-        // Demo fallback for initial seed workers
-        if ((validWorkerId === 'f2000000-0000-0000-0000-000000000001' || validWorkerId === 'f2000000-0000-0000-0000-000000000002') && (a.team_members || []).length === 0) return true;
+        const inTeam = (a.team_members || []).some(m => m.worker_id === workerId);
+        const isLeader = a.temporary_leader_id === workerId;
+        // Demo fallback for initial seed workers only
+        if ((workerId === 'f2000000-0000-0000-0000-000000000001' || workerId === 'f2000000-0000-0000-0000-000000000002') && (a.team_members || []).length === 0) return true;
         return inTeam || isLeader;
       })
       .map(a => {
-        const isLeader = a.temporary_leader_id === validWorkerId || a.temporary_leader_id === workerId || (a.team_members || []).some(m => (m.worker_id === validWorkerId || m.worker_id === workerId) && m.temporary_leader);
+        const isLeader = a.temporary_leader_id === workerId || (a.team_members || []).some(m => m.worker_id === workerId && m.temporary_leader);
         return {
           ...a,
           is_temporary_leader: isLeader,
-          temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Temporary Leader)' : 'Kanti Solanki'),
+          temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Temporary Leader)' : 'Team Leader'),
           my_attendance_status: a.my_attendance_status || 'assigned'
         };
       });
@@ -3042,19 +3096,16 @@ export class DbRepository {
     lon: number,
     accuracy: number
   ): Promise<{ success: boolean; attendance: WorkerAttendance; message: string }> {
-    const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : 'a1000000-0000-0000-0000-000000000001';
-    const validWorker = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
-
     let taskLat = 20.9485;
     let taskLon = 72.9260;
     let geofenceRadius = 100;
 
-    if (isDbConnected() && this.isValidUUID(validAssignment)) {
+    if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
         const taskRes = await pool.query(`
           SELECT latitude, longitude, attendance_radius_meters, title
           FROM work_assignments WHERE id = $1
-        `, [validAssignment]);
+        `, [assignmentId]);
         if (taskRes.rows.length > 0) {
           taskLat = parseFloat(taskRes.rows[0].latitude);
           taskLon = parseFloat(taskRes.rows[0].longitude);
@@ -3084,8 +3135,8 @@ export class DbRepository {
 
     const attendanceRecord: WorkerAttendance = {
       id: `att-${Date.now()}`,
-      assignment_id: validAssignment,
-      worker_id: validWorker,
+      assignment_id: assignmentId,
+      worker_id: workerId,
       attendance_timestamp: new Date().toISOString(),
       latitude: lat,
       longitude: lon,
@@ -3098,7 +3149,7 @@ export class DbRepository {
       created_at: new Date().toISOString()
     };
 
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(workerId)) {
       try {
         const ins = await pool.query(`
           INSERT INTO worker_attendance (
@@ -3109,7 +3160,7 @@ export class DbRepository {
           VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, 'gps')
           RETURNING *
         `, [
-          validAssignment, validWorker, lat, lon, accuracy,
+          assignmentId, workerId, lat, lon, accuracy,
           distanceMeters, geofenceRadius, validationStatus, validationReason
         ]);
 
@@ -3122,18 +3173,23 @@ export class DbRepository {
             UPDATE work_assignment_members
             SET assignment_status = 'present'
             WHERE assignment_id = $1 AND worker_id = $2
-          `, [validAssignment, validWorker]);
+          `, [assignmentId, workerId]);
 
           await pool.query(`
             UPDATE work_assignments
             SET status = 'in_progress', updated_at = NOW()
             WHERE id = $1 AND status = 'assigned'
-          `, [validAssignment]);
+          `, [assignmentId]);
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - recordWorkerAttendance]:', err.message);
       }
     }
+
+    if (!(store as any).workerAttendances) {
+      (store as any).workerAttendances = [];
+    }
+    (store as any).workerAttendances.unshift(attendanceRecord);
 
     return {
       success: isMatch,
@@ -3196,15 +3252,14 @@ export class DbRepository {
   }
 
   public static async getWorkerAttendanceHistory(workerId: string): Promise<WorkerAttendance[]> {
-    const validWorker = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(workerId)) {
       try {
         const res = await pool.query(`
           SELECT wa.*
           FROM worker_attendance wa
           WHERE wa.worker_id = $1
           ORDER BY wa.attendance_timestamp DESC
-        `, [validWorker]);
+        `, [workerId]);
 
         return res.rows.map(r => ({
           id: r.id,
@@ -3219,30 +3274,19 @@ export class DbRepository {
           validation_status: r.validation_status,
           validation_reason: r.validation_reason,
           attendance_method: r.attendance_method,
-          created_at: r.created_at.toISOString()
+          created_at: r.created_at ? r.created_at.toISOString() : new Date().toISOString()
         }));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getWorkerAttendanceHistory]:', err.message);
       }
     }
 
-    return [
-      {
-        id: 'c1',
-        assignment_id: 'a1000000-0000-0000-0000-000000000001',
-        worker_id: validWorker,
-        attendance_timestamp: new Date(Date.now() - 3600000).toISOString(),
-        latitude: 20.94862,
-        longitude: 72.92611,
-        gps_accuracy: 8.5,
-        distance_from_assignment_meters: 17.4,
-        geofence_radius_meters: 100,
-        validation_status: 'verified_match',
-        validation_reason: 'GPS coordinates matched task site within 17.4 meters.',
-        attendance_method: 'gps',
-        created_at: new Date(Date.now() - 3600000).toISOString()
-      }
-    ];
+    if (!(store as any).workerAttendances) {
+      (store as any).workerAttendances = [];
+    }
+    return ((store as any).workerAttendances as WorkerAttendance[]).filter(
+      a => a.worker_id === workerId
+    );
   }
 
   public static async addWorkProgress(
@@ -3642,6 +3686,41 @@ export class DbRepository {
       ? 'Checked-in (GPS Verified)'
       : 'Attendance Pending';
 
+    const onTimeRate = recentAttendance.length > 0
+      ? Math.round((recentAttendance.filter(a => a.validation_status === 'verified_match').length / recentAttendance.length) * 100)
+      : 0;
+
+    const totalHistoricalTasks = completedAssignments.length + inProgressAssignments.length;
+    const verifiedEvidenceRate = totalHistoricalTasks > 0
+      ? Math.round((completedAssignments.length / totalHistoricalTasks) * 100)
+      : 0;
+
+    const dynamicTimeline: any[] = [];
+    if (recentAttendance.length > 0) {
+      recentAttendance.forEach((att, idx) => {
+        dynamicTimeline.push({
+          id: `t-att-${att.id || idx}`,
+          timestamp: new Date(att.attendance_timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          title: att.validation_status === 'verified_match' ? 'GPS Attendance Verified' : 'Attendance Check Discrepancy',
+          description: att.validation_reason || `Recorded distance: ${att.distance_from_assignment_meters}m`,
+          stage: 'attendance',
+          status: att.validation_status === 'verified_match' ? 'completed' : 'pending'
+        });
+      });
+    }
+    if (assignments.length > 0) {
+      assignments.slice(0, 3).forEach((asgn, idx) => {
+        dynamicTimeline.push({
+          id: `t-asgn-${asgn.id || idx}`,
+          timestamp: asgn.scheduled_date || 'Scheduled Shift',
+          title: asgn.title,
+          description: asgn.address || `Ward ${asgn.ward_number || 3}`,
+          stage: asgn.status === 'verified_complete' ? 'completion' : 'execution',
+          status: asgn.status === 'verified_complete' ? 'completed' : asgn.status === 'in_progress' ? 'in_progress' : 'pending'
+        });
+      });
+    }
+
     return {
       worker: profile!,
       metrics: {
@@ -3651,54 +3730,13 @@ export class DbRepository {
         in_progress_tasks: inProgressAssignments.length,
         attendance_status: attendanceStatus,
         is_temporary_leader_today: isTemporaryLeaderToday,
-        on_time_attendance_rate: 96,
-        verified_evidence_rate: 98
+        on_time_attendance_rate: onTimeRate,
+        verified_evidence_rate: verifiedEvidenceRate
       },
       today_assignments: todayAssignments,
       upcoming_assignments: upcomingAssignments,
       recent_attendance: recentAttendance.slice(0, 5),
-      timeline_events: [
-        {
-          id: 't-1',
-          timestamp: '07:30 AM',
-          title: 'Shift Reporting & Roll Call',
-          description: 'Dudhiya Talao Municipal Ward Complex Muster Point',
-          stage: 'reporting',
-          status: 'completed'
-        },
-        {
-          id: 't-2',
-          timestamp: '07:45 AM',
-          title: 'Location Geofence Attendance Verified',
-          description: 'GPS match within 17.4 meters of East Canal Sluice Gate',
-          stage: 'attendance',
-          status: 'completed'
-        },
-        {
-          id: 't-3',
-          timestamp: '08:00 AM',
-          title: 'Before-Work Photographs Uploaded',
-          description: 'Clogged silt condition verified and catalogued for Ward Officer audit',
-          stage: 'evidence_before',
-          status: 'completed'
-        },
-        {
-          id: 't-4',
-          timestamp: '09:30 AM',
-          title: 'Ground Execution & Desilting',
-          description: 'Channel flushing and silt extraction in progress with team members',
-          stage: 'execution',
-          status: 'in_progress'
-        },
-        {
-          id: 't-5',
-          timestamp: '11:30 AM',
-          title: 'After-Work Photographs & Report Submission',
-          description: 'Final clearance evidence and consolidated team completion report',
-          stage: 'completion',
-          status: 'pending'
-        }
-      ]
+      timeline_events: dynamicTimeline
     };
   }
 

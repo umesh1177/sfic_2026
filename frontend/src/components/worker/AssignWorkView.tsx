@@ -120,14 +120,10 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   );
 
   // Leader Evidence & Completion Modal / Form State
-  const [beforePhoto, setBeforePhoto] = useState<string>(
-    'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80'
-  );
-  const [afterPhoto, setAfterPhoto] = useState<string>(
-    'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'
-  );
+  const [beforePhoto, setBeforePhoto] = useState<string>('');
+  const [afterPhoto, setAfterPhoto] = useState<string>('');
   const [completionNotes, setCompletionNotes] = useState<string>('');
-  const [wasteCollectedKg, setWasteCollectedKg] = useState<number>(380);
+  const [wasteCollectedKg, setWasteCollectedKg] = useState<number>(0);
   const [submittingReport, setSubmittingReport] = useState<boolean>(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
 
@@ -433,11 +429,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
   if (!currentTask) {
     return (
-      <div className="p-8 bg-white rounded-3xl border border-[#e2e8f0] text-center space-y-3">
+      <div className="p-12 bg-white rounded-3xl border border-[#e2e8f0] text-center space-y-3 shadow-xs">
         <Briefcase className="w-12 h-12 text-slate-300 mx-auto" />
         <h3 className="text-base font-extrabold text-[#0f2925]">No Active Work Assignment</h3>
         <p className="text-xs text-slate-500 max-w-md mx-auto">
-          You currently have no tasks assigned in Ward 3. Check back after the next duty shift or contact your Ward Officer.
+          You currently have no tasks assigned by your Ward Officer. When a task or squad assignment is dispatched to your team, details, map coordinates, team members, and attendance will appear here automatically.
         </p>
       </div>
     );

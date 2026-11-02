@@ -22,9 +22,9 @@ import {
   Activity
 } from 'lucide-react';
 import { api } from '../../services/api.js';
-import { ComplaintDetailsModal } from './ComplaintDetailsModal.js';
 import { ComplaintViewModal } from './ComplaintViewModal.js';
 import { ComplaintInspectView } from './ComplaintInspectView.js';
+import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
 
 interface ComplaintCatalogueProps {
   initialFilter?: {
@@ -39,9 +39,7 @@ interface ComplaintCatalogueProps {
 export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialFilter }) => {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
-  const [openAssignDirectly, setOpenAssignDirectly] = useState<boolean>(false);
-  const [modalInitialTab, setModalInitialTab] = useState<'overview' | 'timeline'>('overview');
+  const [trackingComplaintId, setTrackingComplaintId] = useState<string | null>(null);
   const [viewingComplaintId, setViewingComplaintId] = useState<string | null>(null);
   const [inspectingComplaintId, setInspectingComplaintId] = useState<string | null>(null);
 
@@ -409,11 +407,8 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium">
                 {complaints.map(complaint => (
-                  <tr
-                    key={complaint.id}
-                    onClick={() => setSelectedComplaintId(complaint.id)}
-                    className="hover:bg-slate-50/80 cursor-pointer transition group"
-                  >
+                  <React.Fragment key={complaint.id}>
+                    <tr className="hover:bg-slate-50/80 transition group">
                     {/* ID & Category */}
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">
@@ -530,19 +525,50 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         <button
                           onClick={e => {
                             e.stopPropagation();
-                            setSelectedComplaintId(complaint.id);
-                            setOpenAssignDirectly(false);
-                            setModalInitialTab('timeline');
+                            setTrackingComplaintId(prev => (prev === complaint.id ? null : complaint.id));
                           }}
-                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1"
-                          title="View timeline audit trail"
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                            trackingComplaintId === complaint.id
+                              ? 'bg-[#095c54] text-white shadow-xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                          title="Toggle live status progression steps"
                         >
-                          <Activity className="w-3.5 h-3.5 text-slate-500" />
+                          <Activity className="w-3.5 h-3.5" />
                           <span>Track</span>
                         </button>
                       </div>
                     </td>
                   </tr>
+
+                  {/* Inline Status Progression Stepper (No Modal) */}
+                  {trackingComplaintId === complaint.id && (
+                    <tr className="bg-emerald-50/30 border-b border-[#e2e8f0]">
+                      <td colSpan={6} className="p-4 px-6">
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs">
+                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <Activity className="w-4 h-4 text-[#095c54]" />
+                              <span className="text-xs font-black text-[#0f2925] uppercase tracking-wider">
+                                Live Status Progression · {complaint.complaint_number}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setTrackingComplaintId(null)}
+                              className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-0.5 rounded-lg hover:bg-slate-100"
+                            >
+                              ✕ Close
+                            </button>
+                          </div>
+                          <StatusProgressionStepper
+                            status={complaint.status}
+                            rejectionReason={complaint.rejection_reason}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -553,11 +579,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             {complaints.map(complaint => (
               <div
                 key={complaint.id}
-                onClick={() => {
-                  setSelectedComplaintId(complaint.id);
-                  setOpenAssignDirectly(false);
-                }}
-                className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 cursor-pointer hover:border-[#095c54] transition"
+                className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 hover:border-[#095c54] transition"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -620,17 +642,44 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                     <button
                       onClick={e => {
                         e.stopPropagation();
-                        setSelectedComplaintId(complaint.id);
-                        setOpenAssignDirectly(false);
-                        setModalInitialTab('timeline');
+                        setTrackingComplaintId(prev => (prev === complaint.id ? null : complaint.id));
                       }}
-                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1"
+                      className={`px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition ${
+                        trackingComplaintId === complaint.id
+                          ? 'bg-[#095c54] text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
                     >
-                      <Activity className="w-3.5 h-3.5 text-slate-500" />
+                      <Activity className="w-3.5 h-3.5" />
                       <span>Track</span>
                     </button>
                   </div>
                 </div>
+
+                {/* Inline Status Progression Stepper for Mobile (No Modal) */}
+                {trackingComplaintId === complaint.id && (
+                  <div className="p-3 bg-emerald-50/30 rounded-2xl border border-emerald-100 mt-2">
+                    <div className="flex items-center justify-between mb-2 pb-1 border-b border-emerald-100">
+                      <span className="text-[11px] font-black text-[#095c54] uppercase tracking-wider">
+                        Live Status Progression
+                      </span>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setTrackingComplaintId(null);
+                        }}
+                        className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <StatusProgressionStepper
+                      status={complaint.status}
+                      rejectionReason={complaint.rejection_reason}
+                      compact={true}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -675,19 +724,6 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         />
       )}
 
-      {/* Complaint Details Modal */}
-      {selectedComplaintId && (
-        <ComplaintDetailsModal
-          complaintId={selectedComplaintId}
-          initialOpenAssign={openAssignDirectly}
-          initialTab={modalInitialTab}
-          onClose={() => {
-            setSelectedComplaintId(null);
-            setOpenAssignDirectly(false);
-          }}
-          onComplaintUpdated={fetchComplaints}
-        />
-      )}
     </div>
   );
 };

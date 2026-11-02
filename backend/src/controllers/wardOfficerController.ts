@@ -1289,6 +1289,8 @@ export class WardOfficerController {
       const workerCode = `WRK-2026-${serial}`;
       const effectiveUsername = (username && String(username).trim().length > 0) ? String(username).trim() : workerCode;
 
+      const officerWard = (req.body.ward_number ? parseInt(req.body.ward_number, 10) : undefined) || (req.user as any)?.ward_number || 3;
+
       // Create Profile so worker can log in
       const newProfile: any = {
         id: newUserId,
@@ -1297,7 +1299,8 @@ export class WardOfficerController {
         username: effectiveUsername,
         plain_password: workerPassword,
         preferred_language: 'gu',
-        locality: 'Dudhiya Talao Ward 3',
+        ward_number: officerWard,
+        locality: `Ward ${officerWard}`,
         address: 'Navsari Municipal Staff Quarters',
         is_active: true,
         role: 'worker',
@@ -1338,13 +1341,13 @@ export class WardOfficerController {
         phone: normalizedPhone,
         designation: designation.trim(),
         primary_designation: designation.trim(),
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
+        ward_number: officerWard,
+        ward_name: `Ward ${officerWard}`,
         availability_status: availability_status || 'available',
         active_task_code: undefined,
-        experience_years: 2.0,
+        experience_years: req.body.experience_years ? parseFloat(req.body.experience_years) : 0,
         skills: Array.isArray(skills) ? skills : [skills],
-        attendance_today: 'Present (Standby)',
+        attendance_today: 'Not Marked',
         avatar_url: `https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80`,
         created_at: new Date().toISOString()
       };
