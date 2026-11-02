@@ -602,6 +602,8 @@ export interface WorkAssignment {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  deadline?: string;
+  target_completion_date?: string;
   // Dynamic worker context fields
   is_temporary_leader?: boolean;
   temporary_leader_name?: string;
@@ -802,6 +804,7 @@ export interface ComplaintWorkAttempt {
   assignment_id: string;
   task_code: string;
   assigned_date: string;
+  deadline?: string;
   team_leader_id: string;
   team_leader_name: string;
   team_members: {

@@ -692,78 +692,10 @@ export class WardOfficerController {
         return;
       }
 
-      // Get or create attempts for this complaint
-      let attempts = wardData.workAttempts.get(complaint.id);
-      if (!attempts || attempts.length === 0) {
-        // Create initial attempt so Day-wise timeline is always populated
-        attempts = [
-          {
-            id: `att-${complaint.id}-1`,
-            complaint_id: complaint.id,
-            attempt_number: 1,
-            assignment_id: 'tsk-nav-2026-101',
-            task_code: 'TSK-NAV-2026-101',
-            assigned_date: complaint.reviewed_at || complaint.submitted_at,
-            team_leader_id: 'f2000000-0000-0000-0000-000000000001',
-            team_leader_name: 'Kanti Solanki',
-            team_members: [
-              {
-                worker_id: 'f2000000-0000-0000-0000-000000000001',
-                worker_code: 'WRK-2026-001',
-                name: 'Kanti Solanki',
-                designation: 'Sanitation Worker',
-                is_temporary_leader: true
-              },
-              {
-                worker_id: 'f2000000-0000-0000-0000-000000000002',
-                worker_code: 'WRK-2026-042',
-                name: 'Suresh Vaghela',
-                designation: 'Waste Collection Worker',
-                is_temporary_leader: false
-              }
-            ],
-            attendance_records: [
-              {
-                id: `att-rec-${complaint.id}-01`,
-                assignment_id: 'tsk-nav-2026-101',
-                worker_id: 'f2000000-0000-0000-0000-000000000001',
-                attendance_timestamp: complaint.reviewed_at || new Date().toISOString(),
-                latitude: complaint.location?.latitude || 20.9312,
-                longitude: complaint.location?.longitude || 72.9284,
-                gps_accuracy: 5.5,
-                distance_from_assignment_meters: 12.4,
-                geofence_radius_meters: 100,
-                validation_status: 'verified_match',
-                attendance_method: 'gps',
-                created_at: complaint.reviewed_at || new Date().toISOString()
-              }
-            ],
-            evidence: [
-              {
-                id: `ev-${complaint.id}-before`,
-                assignment_id: 'tsk-nav-2026-101',
-                submitted_by: 'f2000000-0000-0000-0000-000000000001',
-                evidence_type: 'before',
-                storage_path: complaint.image_url,
-                description: complaint.description,
-                latitude: complaint.location?.latitude || 20.9312,
-                longitude: complaint.location?.longitude || 72.9284,
-                distance_from_assignment_meters: 10.5,
-                location_validation_status: 'location_matched',
-                device_capture_timestamp: complaint.submitted_at,
-                server_upload_timestamp: complaint.submitted_at,
-                review_status: 'verified',
-                created_at: complaint.submitted_at
-              }
-            ],
-            status: complaint.status === 'submitted' ? 'assigned' : complaint.status,
-            created_at: complaint.submitted_at
-          }
-        ];
-        wardData.workAttempts.set(complaint.id, attempts);
-      }
+      // Get attempts for this complaint (NO fake mock data generation)
+      let attempts = wardData.workAttempts.get(complaint.id) || [];
 
-      const latestAttempt = attempts[attempts.length - 1];
+      const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
       const submittedDate = new Date(complaint.submitted_at);
       const slaDeadline = new Date(submittedDate.getTime() + 48 * 60 * 60 * 1000).toISOString();
 
@@ -775,15 +707,19 @@ export class WardOfficerController {
           complaint_number: complaint.complaint_number,
           title: `${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address}`,
           description: complaint.description,
+          image_url: complaint.image_url,
           category_name: complaint.category_name,
           category_id: complaint.category_id,
           priority: complaint.priority,
           status: complaint.status,
-          current_assigned_team: `Sanitation Unit 4B (${latestAttempt.team_leader_name})`,
-          temporary_team_leader_id: latestAttempt.team_leader_id,
-          temporary_team_leader_name: latestAttempt.team_leader_name,
-          current_assignment_id: latestAttempt.assignment_id,
-          current_task_code: latestAttempt.task_code,
+          current_assigned_team: latestAttempt
+            ? `${(complaint as any).assigned_team_name || 'Sanitation Team'} (${latestAttempt.team_leader_name})`
+            : ((complaint as any).assigned_team_name || (complaint.status === 'submitted' ? 'Unassigned' : 'Pending Team Assignment')),
+          temporary_team_leader_id: latestAttempt ? latestAttempt.team_leader_id : ((complaint as any).temporary_team_leader_id || null),
+          temporary_team_leader_name: latestAttempt ? latestAttempt.team_leader_name : ((complaint as any).temporary_team_leader_name || null),
+          current_assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          current_task_code: latestAttempt ? latestAttempt.task_code : null,
+          deadline: (complaint as any).deadline || (complaint as any).target_completion_date || slaDeadline,
           sla_deadline: slaDeadline,
           reopen_count: attempts.length > 1 ? attempts.length - 1 : (complaint.status === 'reopened' ? 1 : 0),
           complaint_age_days: Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24))),
@@ -795,9 +731,11 @@ export class WardOfficerController {
         citizen_report: {
           citizen_id: complaint.citizen_id,
           citizen_name: complaint.citizen_name || 'Harshil Mehta',
+          citizen_phone: (complaint as any).citizen_phone || '+91 98251 00001',
           submitted_at: complaint.submitted_at,
           original_description: complaint.description,
-          original_photos: [complaint.image_url],
+          original_photos: complaint.image_url ? [complaint.image_url] : [],
+          photo_url: complaint.image_url,
           reported_location: complaint.location?.address,
           ai_confidence: complaint.confidence_score || 94.6,
           ai_category_detected: complaint.category_name
@@ -821,7 +759,7 @@ export class WardOfficerController {
           attempt_number: att.attempt_number,
           assigned_date: att.assigned_date,
           team_leader_name: att.team_leader_name,
-          members_count: att.team_members.length,
+          members_count: (att.team_members || []).length,
           status: att.status,
           review_decision: att.review_decision || 'Pending Review'
         })),
@@ -831,18 +769,21 @@ export class WardOfficerController {
 
         // Section 6: Team & Attendance (Active Attempt)
         team_attendance: {
-          assignment_id: latestAttempt.assignment_id,
-          team_members: latestAttempt.team_members,
-          attendance_records: latestAttempt.attendance_records,
+          assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          team_members: latestAttempt ? (latestAttempt.team_members || []) : [],
+          attendance_records: latestAttempt ? (latestAttempt.attendance_records || []) : [],
+          records: latestAttempt ? (latestAttempt.attendance_records || []) : [],
           geofence_radius_meters: 100
         },
 
         // Section 7: Work Progress & Evidence (Active Attempt)
         work_progress_evidence: {
-          assignment_id: latestAttempt.assignment_id,
-          evidence_items: latestAttempt.evidence,
-          before_photo: latestAttempt.evidence.find(e => e.evidence_type === 'before')?.storage_path || complaint.image_url,
-          after_photo: latestAttempt.evidence.find(e => e.evidence_type === 'after')?.storage_path || null
+          assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          evidence_items: latestAttempt ? (latestAttempt.evidence || []) : [],
+          before_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || null,
+          before_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || null,
+          after_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || null,
+          after_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || null
         },
 
         // Section 8: Completion Reports
@@ -1055,7 +996,8 @@ export class WardOfficerController {
         work_type = 'waste_collection',
         instructions = '',
         worker_ids = [],
-        temporary_leader_id
+        temporary_leader_id,
+        deadline
       } = req.body;
 
       const complaint = (store.complaints || []).find(c => c.id === id);
@@ -1063,6 +1005,9 @@ export class WardOfficerController {
         res.status(404).json({ success: false, error: 'Complaint not found' });
         return;
       }
+
+      // Calculate deadline
+      const targetDeadline = deadline || new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
       // Find the selected team or create on the fly
       let team = (store.teams || []).find(t => t.id === team_id || t.team_name === team_name);
@@ -1090,7 +1035,10 @@ export class WardOfficerController {
       complaint.status = 'assigned';
       complaint.updated_at = new Date().toISOString();
       (complaint as any).assigned_team_name = team.team_name;
+      (complaint as any).temporary_team_leader_id = leader?.id || team.temporary_leader_id;
       (complaint as any).temporary_team_leader_name = leader?.full_name || team.temporary_leader_name;
+      (complaint as any).deadline = targetDeadline;
+      (complaint as any).target_completion_date = targetDeadline;
 
       // Create a unique Task Assignment Code
       const serial = Math.floor(100 + Math.random() * 900);
@@ -1114,7 +1062,9 @@ export class WardOfficerController {
         longitude: complaint.location?.longitude || 72.9284,
         scheduled_date: new Date().toISOString().split('T')[0],
         scheduled_start_time: new Date().toISOString(),
-        expected_end_time: new Date(Date.now() + 10800000).toISOString(),
+        expected_end_time: targetDeadline,
+        deadline: targetDeadline,
+        target_completion_date: targetDeadline,
         attendance_radius_meters: 100,
         evidence_radius_meters: 150,
         work_instructions: instructions || 'Clear civic waste and wash area thoroughly with bleaching powder.',
@@ -1157,6 +1107,7 @@ export class WardOfficerController {
         assignment_id: assignmentId,
         task_code: taskCode,
         assigned_date: new Date().toISOString(),
+        deadline: targetDeadline,
         team_leader_id: leader?.id || team.temporary_leader_id,
         team_leader_name: leader?.full_name || team.temporary_leader_name,
         team_members: teamWorkers.map(w => ({
@@ -1971,6 +1922,31 @@ export class WardOfficerController {
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  }
+}
+
+// =========================================================================
+// Real-time Dynamic Linkage Helpers between Worker & Ward Officer
+// =========================================================================
+export function recordAttendanceForAssignment(assignmentId: string, attendanceRecord: any): void {
+  for (const [, attempts] of wardData.workAttempts.entries()) {
+    const attempt = attempts.find(a => a.assignment_id === assignmentId);
+    if (attempt) {
+      if (!attempt.attendance_records) attempt.attendance_records = [];
+      attempt.attendance_records.push(attendanceRecord);
+      return;
+    }
+  }
+}
+
+export function recordEvidenceForAssignment(assignmentId: string, evidenceRecord: any): void {
+  for (const [, attempts] of wardData.workAttempts.entries()) {
+    const attempt = attempts.find(a => a.assignment_id === assignmentId);
+    if (attempt) {
+      if (!attempt.evidence) attempt.evidence = [];
+      attempt.evidence.push(evidenceRecord);
+      return;
     }
   }
 }

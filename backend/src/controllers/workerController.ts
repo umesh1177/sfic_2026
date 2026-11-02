@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { store } from '../data/store.js';
+import { recordAttendanceForAssignment, recordEvidenceForAssignment } from './wardOfficerController.js';
 
 export class WorkerController {
 
@@ -132,6 +134,22 @@ export class WorkerController {
         gps_accuracy_meters ? parseFloat(gps_accuracy_meters) : 12.0
       );
 
+      if (result.attendance) {
+        recordAttendanceForAssignment(assignment_id, result.attendance);
+        const assignment = (store.workAssignments || []).find(wa => wa.id === assignment_id);
+        if (assignment) {
+          assignment.my_attendance_status = 'verified';
+          if (assignment.team_members) {
+            const mem = assignment.team_members.find((m: any) => m.worker_id === workerId);
+            if (mem) {
+              mem.assignment_status = 'present';
+              mem.attendance_timestamp = new Date().toISOString();
+              mem.validation_status = result.attendance?.validation_status || 'verified_match';
+            }
+          }
+        }
+      }
+
       res.status(201).json({
         success: result.success,
         message: result.message,
@@ -262,6 +280,15 @@ export class WorkerController {
         longitude ? parseFloat(longitude) : undefined,
         gps_accuracy ? parseFloat(gps_accuracy) : undefined
       );
+
+      if (evidence) {
+        recordEvidenceForAssignment(id, evidence);
+        const assignment = (store.workAssignments || []).find(wa => wa.id === id);
+        if (assignment) {
+          if (stage === 'before') assignment.has_before_evidence = true;
+          if (stage === 'after') assignment.has_after_evidence = true;
+        }
+      }
 
       res.status(201).json({
         success: true,

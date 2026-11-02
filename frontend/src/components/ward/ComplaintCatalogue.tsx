@@ -41,6 +41,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
   const [openAssignDirectly, setOpenAssignDirectly] = useState<boolean>(false);
+  const [modalInitialTab, setModalInitialTab] = useState<'overview' | 'timeline'>('overview');
   const [viewingComplaintId, setViewingComplaintId] = useState<string | null>(null);
   const [inspectingComplaintId, setInspectingComplaintId] = useState<string | null>(null);
 
@@ -531,6 +532,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                             e.stopPropagation();
                             setSelectedComplaintId(complaint.id);
                             setOpenAssignDirectly(false);
+                            setModalInitialTab('timeline');
                           }}
                           className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1"
                           title="View timeline audit trail"
@@ -620,6 +622,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         e.stopPropagation();
                         setSelectedComplaintId(complaint.id);
                         setOpenAssignDirectly(false);
+                        setModalInitialTab('timeline');
                       }}
                       className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1"
                     >
@@ -677,6 +680,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         <ComplaintDetailsModal
           complaintId={selectedComplaintId}
           initialOpenAssign={openAssignDirectly}
+          initialTab={modalInitialTab}
           onClose={() => {
             setSelectedComplaintId(null);
             setOpenAssignDirectly(false);

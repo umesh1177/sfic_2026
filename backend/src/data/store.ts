@@ -735,7 +735,7 @@ const initialWorkers = [
   }
 ];
 
-// Initial Ward 3 Formed Teams
+// Initial Ward 3 & 8 Formed Teams
 const initialTeams = [
   {
     id: 'team-01',
@@ -748,6 +748,46 @@ const initialTeams = [
     temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
     temporary_leader_name: 'Kanti Solanki',
     created_at: '2026-10-25T08:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'team-02',
+    team_name: 'Rapid Cleanliness Squad 3A',
+    ward_number: 3,
+    worker_ids: [
+      'f2000000-0000-0000-0000-000000000003',
+      'f2000000-0000-0000-0000-000000000004'
+    ],
+    temporary_leader_id: 'f2000000-0000-0000-0000-000000000003',
+    temporary_leader_name: 'Paresh Parmar',
+    created_at: '2026-10-26T09:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'team-03',
+    team_name: 'Drainage & Desilting Taskforce 3C',
+    ward_number: 3,
+    worker_ids: [
+      'f2000000-0000-0000-0000-000000000005',
+      'f2000000-0000-0000-0000-000000000006'
+    ],
+    temporary_leader_id: 'f2000000-0000-0000-0000-000000000005',
+    temporary_leader_name: 'Dilip Chauhan',
+    created_at: '2026-10-27T08:30:00Z',
+    status: 'active'
+  },
+  {
+    id: 'team-04',
+    team_name: 'Ward 8 Heritage & Lake Clean Squad',
+    ward_number: 8,
+    worker_ids: [
+      'f2000000-0000-0000-0000-000000000001',
+      'f2000000-0000-0000-0000-000000000002',
+      'f2000000-0000-0000-0000-000000000004'
+    ],
+    temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
+    temporary_leader_name: 'Kanti Solanki',
+    created_at: '2026-10-28T09:00:00Z',
     status: 'active'
   }
 ];

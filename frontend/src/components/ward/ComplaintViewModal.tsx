@@ -16,7 +16,8 @@ import {
   Shield,
   Layers,
   Sparkles,
-  Eye
+  Eye,
+  Camera
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
@@ -65,6 +66,10 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
   const [instructions, setInstructions] = useState<string>(
     'Clear all overflowing waste, sweep pavement curb thoroughly, and disinfect area with bleaching powder.'
   );
+  const [deadline, setDeadline] = useState<string>(() => {
+    const d = new Date(Date.now() + 24 * 3600 * 1000);
+    return d.toISOString().slice(0, 16);
+  });
   const [assigning, setAssigning] = useState<boolean>(false);
 
   // View Full Team Modal State
@@ -138,7 +143,8 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
         work_type: selectedWorkType,
         worker_ids: team.worker_ids,
         temporary_leader_id: team.temporary_leader_id,
-        instructions
+        instructions,
+        deadline: new Date(deadline).toISOString()
       });
       confetti({ particleCount: 35, spread: 60 });
       if (onComplaintUpdated) onComplaintUpdated();
@@ -230,11 +236,18 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
           {/* 1. IMAGE & CITIZEN DESCRIPTION */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-4/3 relative">
-              <img
-                src={citizen_report?.photo_url || overview.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80'}
-                alt="Complaint photograph"
-                className="w-full h-full object-cover"
-              />
+              {(citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url) ? (
+                <img
+                  src={citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url}
+                  alt="Citizen complaint photograph"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-4 text-center">
+                  <Camera className="w-8 h-8 text-slate-300 mb-1" />
+                  <span className="text-xs font-bold text-slate-500">No Photo Submitted</span>
+                </div>
+              )}
               <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">
                 Citizen Photo Evidence
               </div>
@@ -413,8 +426,8 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
                 })}
               </div>
 
-              {/* Work Type & Instructions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+              {/* Work Type, Instructions & Deadline */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
                 <div>
                   <label className="text-[11px] font-bold text-slate-700 block mb-1">Work Type Category *</label>
                   <select
@@ -430,11 +443,24 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
                 </div>
 
                 <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Target Completion Deadline *</label>
+                  <input
+                    type="datetime-local"
+                    value={deadline}
+                    min={new Date().toISOString().slice(0, 16)}
+                    onChange={e => setDeadline(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white outline-hidden focus:border-[#095c54]"
+                  />
+                </div>
+
+                <div>
                   <label className="text-[11px] font-bold text-slate-700 block mb-1">Specific Officer Instructions *</label>
                   <input
                     type="text"
                     value={instructions}
                     onChange={e => setInstructions(e.target.value)}
+                    placeholder="e.g. Desilt drain mouth & apply lime..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white outline-hidden focus:border-[#095c54]"
                   />
                 </div>

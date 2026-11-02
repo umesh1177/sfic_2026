@@ -869,6 +869,7 @@ class ApiService {
     worker_ids?: string[];
     temporary_leader_id?: string;
     instructions?: string;
+    deadline?: string;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/assign`, {
       method: 'POST',

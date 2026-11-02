@@ -578,6 +578,8 @@ export interface WorkAssignmentMember {
 }
 
 export interface WorkAssignment {
+  deadline?: string;
+  target_completion_date?: string;
   id: string;
   task_code: string;
   title: string;
@@ -807,6 +809,7 @@ export interface WardDashboardSummary {
 }
 
 export interface ComplaintWorkAttempt {
+  deadline?: string;
   id: string;
   complaint_id: string;
   attempt_number: number;
