@@ -520,6 +520,403 @@ const initialSupportTickets = [
         ]
     }
 ];
+// Initial Ward 3 Field Workers
+const initialWorkers = [
+    {
+        id: 'f2000000-0000-0000-0000-000000000001',
+        user_id: 'f1000000-0000-0000-0000-000000000001',
+        worker_code: 'WRK-2026-001',
+        full_name: 'Kanti Solanki',
+        phone: '+919825120001',
+        designation: 'Sanitation Worker',
+        primary_designation: 'Sanitation Worker',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: 'available',
+        active_task_code: 'TSK-NAV-2026-101',
+        experience_years: 5.5,
+        skills: ['Bin Clearance', 'Lakeside Sanitation', 'Debris Lifting'],
+        attendance_today: 'Present - Location Verified (14.8m)',
+        avatar_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
+        created_at: '2026-10-15T09:00:00Z'
+    },
+    {
+        id: 'f2000000-0000-0000-0000-000000000002',
+        user_id: 'f1000000-0000-0000-0000-000000000002',
+        worker_code: 'WRK-2026-042',
+        full_name: 'Suresh Vaghela',
+        phone: '+919825120002',
+        designation: 'Waste Collection Worker',
+        primary_designation: 'Waste Collection Worker',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: 'available',
+        active_task_code: 'TSK-NAV-2026-101',
+        experience_years: 3.2,
+        skills: ['Door-to-door Collection', 'Waste Segregation'],
+        attendance_today: 'Present - Location Verified (22.1m)',
+        avatar_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80',
+        created_at: '2026-10-15T09:00:00Z'
+    },
+    {
+        id: 'f2000000-0000-0000-0000-000000000003',
+        user_id: 'f1000000-0000-0000-0000-000000000003',
+        worker_code: 'WRK-2026-015',
+        full_name: 'Rameshbhai Rathod',
+        phone: '+919825120003',
+        designation: 'Drainage Jetting Operator',
+        primary_designation: 'Drainage Jetting Operator',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: 'available',
+        active_task_code: undefined,
+        experience_years: 6.0,
+        skills: ['High Pressure Jetting', 'Sewer Maintenance'],
+        attendance_today: 'Present (Standby)',
+        avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
+        created_at: '2026-10-15T09:00:00Z'
+    },
+    {
+        id: 'f2000000-0000-0000-0000-000000000004',
+        user_id: 'f1000000-0000-0000-0000-000000000004',
+        worker_code: 'WRK-2026-027',
+        full_name: 'Mahesh Parmar',
+        phone: '+919825120004',
+        designation: 'Road Sweeper',
+        primary_designation: 'Road Sweeper',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: 'available',
+        active_task_code: undefined,
+        experience_years: 4.1,
+        skills: ['Mechanical Sweeping', 'Litter Abatement'],
+        attendance_today: 'Present (Standby)',
+        avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=80',
+        created_at: '2026-10-15T09:00:00Z'
+    },
+    {
+        id: 'f2000000-0000-0000-0000-000000000005',
+        user_id: 'f1000000-0000-0000-0000-000000000005',
+        worker_code: 'WRK-2026-033',
+        full_name: 'Dilip Chauhan',
+        phone: '+919825120005',
+        designation: 'Waste Collection Worker',
+        primary_designation: 'Waste Collection Worker',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: 'available',
+        active_task_code: undefined,
+        experience_years: 2.8,
+        skills: ['Commercial Waste Removal', 'Segregation'],
+        attendance_today: 'Present (Standby)',
+        avatar_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=256&q=80',
+        created_at: '2026-10-15T09:00:00Z'
+    },
+    {
+        id: 'f2000000-0000-0000-0000-000000000006',
+        user_id: 'f1000000-0000-0000-0000-000000000006',
+        worker_code: 'WRK-2026-008',
+        full_name: 'Hitesh Makwana',
+        phone: '+919825120006',
+        designation: 'Tipper Truck Driver',
+        primary_designation: 'Tipper Truck Driver',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: 'available',
+        active_task_code: undefined,
+        experience_years: 7.0,
+        skills: ['Heavy Vehicle Driving', 'GPS Route Navigation'],
+        attendance_today: 'Present (Standby)',
+        avatar_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=256&q=80',
+        created_at: '2026-10-15T09:00:00Z'
+    }
+];
+// Initial Ward 3 Formed Teams
+const initialTeams = [
+    {
+        id: 'team-01',
+        team_name: 'Sanitation Unit 4B',
+        ward_number: 3,
+        worker_ids: [
+            'f2000000-0000-0000-0000-000000000001',
+            'f2000000-0000-0000-0000-000000000002'
+        ],
+        temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
+        temporary_leader_name: 'Kanti Solanki',
+        created_at: '2026-10-25T08:00:00Z',
+        status: 'active'
+    }
+];
+// Initial Ward 3 Communities & RWAs
+const initialCommunities = [
+    {
+        id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        organisation_type: 'Resident Welfare Association',
+        head_name: 'Rajesh Varma',
+        phone: '+919825100099',
+        email: 'rajesh.varma@navsarigreen.org',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
+        address: '12, Green Avenue, Dudhiya Talao Road, Navsari',
+        locality: 'Dudhiya Talao',
+        active_drives_count: 2,
+        created_at: '2026-10-15T09:00:00Z'
+    },
+    {
+        id: 'b0000000-0000-0000-0000-000000000002',
+        community_name: 'Dudhiya Talao Paryavaran Mitra Mandal',
+        organisation_type: 'Environmental NGO',
+        head_name: 'Sanjay Desai',
+        phone: '+919825100102',
+        email: 'sanjay.desai@paryavaran.org',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        address: 'Opp. Lake Garden, Dudhiya Talao',
+        locality: 'Dudhiya Talao',
+        active_drives_count: 1,
+        created_at: '2026-10-18T10:00:00Z'
+    },
+    {
+        id: 'b0000000-0000-0000-0000-000000000003',
+        community_name: 'Ashapuri Swachhata Abhiyan Samiti',
+        organisation_type: 'Citizen Action Group',
+        head_name: 'Meena Patel',
+        phone: '+919825100103',
+        email: 'meena.patel@ashapuricivic.in',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Ashapuri',
+        address: 'B-10, Ashapuri Society Gate, Navsari',
+        locality: 'Ashapuri',
+        active_drives_count: 1,
+        created_at: '2026-10-20T11:00:00Z'
+    }
+];
+// Initial Work Assignments (linked with Ward 3 workers & complaints)
+const initialWorkAssignments = [
+    {
+        id: 'a1000000-0000-0000-0000-000000000001',
+        task_code: 'TSK-NAV-2026-101',
+        title: 'Overflowing Dustbin Clearance & Disinfection',
+        description: 'Clear overflowing waste and wash pavement with bleaching powder. Report by 11:30 AM.',
+        category: 'waste_collection',
+        priority: 'high',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        location_name: 'North Lake Promenade, Dudhiya Talao',
+        address: 'Near Ashapuri Mandir Entrance, North Gate, Navsari',
+        latitude: 20.9312,
+        longitude: 72.9284,
+        scheduled_date: new Date().toISOString().split('T')[0],
+        scheduled_start_time: new Date(Date.now() - 3600000).toISOString(),
+        expected_end_time: new Date(Date.now() + 10800000).toISOString(),
+        attendance_radius_meters: 100,
+        evidence_radius_meters: 150,
+        work_instructions: 'Clear overflowing garbage bin and wash pavement with bleaching powder. Ensure waste is loaded into tipper GJ-21-N-4421.',
+        safety_instructions: 'Wear heavy-duty rubber gloves, safety mask, and reflective vest.',
+        required_equipment: ['Heavy Duty Gloves', 'Safety Boots', 'Bleaching Powder', 'Shovel', 'Broom'],
+        emergency_contact_phone: '+919825130003',
+        status: 'assigned',
+        created_at: '2026-10-28T09:30:00Z',
+        updated_at: '2026-10-28T09:30:00Z',
+        is_temporary_leader: true,
+        temporary_leader_name: 'Kanti Solanki',
+        temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
+        team_members: [
+            {
+                id: 'wam-01',
+                assignment_id: 'a1000000-0000-0000-0000-000000000001',
+                worker_id: 'f2000000-0000-0000-0000-000000000001',
+                worker_code: 'WRK-2026-001',
+                worker_name: 'Kanti Solanki',
+                worker_phone: '+919825120001',
+                designation_name: 'Sanitation Worker',
+                temporary_leader: true,
+                assignment_status: 'present',
+                attendance_timestamp: new Date().toISOString(),
+                validation_status: 'verified_match',
+                distance_from_assignment_meters: 14.8
+            },
+            {
+                id: 'wam-02',
+                assignment_id: 'a1000000-0000-0000-0000-000000000001',
+                worker_id: 'f2000000-0000-0000-0000-000000000002',
+                worker_code: 'WRK-2026-042',
+                worker_name: 'Suresh Vaghela',
+                worker_phone: '+919825120002',
+                designation_name: 'Waste Collection Worker',
+                temporary_leader: false,
+                assignment_status: 'present',
+                attendance_timestamp: new Date().toISOString(),
+                validation_status: 'verified_match',
+                distance_from_assignment_meters: 22.1
+            }
+        ],
+        my_attendance_status: 'Checked-in (GPS Verified)',
+        has_before_evidence: true,
+        has_after_evidence: false
+    }
+];
+// Initial Community Activities (Cleanliness Drives)
+const initialCommunityActivities = [
+    {
+        id: 'act-01',
+        community_id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        title: 'Lakeside Eco-Cleanliness Drive 2026',
+        short_description: 'Citizen-led plastic collection and lake promenade cleaning along Dudhiya Talao.',
+        detailed_description: 'Join hands with fellow citizens and NMC officers to clear non-biodegradable waste from the shores of Dudhiya Talao lake. Safety gear provided on spot.',
+        activity_category: 'Lake & Waterbody Cleaning',
+        objectives: ['Collect 300+ kg of shoreline plastic', 'Clean pedestrian pathway', 'Promote source segregation'],
+        expected_outcomes: ['Zero litter on lakeside path', 'Increased citizen awareness'],
+        instructions: 'Report at North Gate Garden Entrance by 7:00 AM. Bring reusable water bottle.',
+        equipment_requirements: ['Cotton Gloves', 'Biodegradable Trash Bags', 'Grabber Sticks'],
+        safety_guidelines: 'Stay 2 meters away from water edge. Supervised by NMC ward team.',
+        faq: [{ q: 'Is transportation provided?', a: 'Please reach directly at Dudhiya Talao North Gate.' }],
+        cover_image_path: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=1200&q=80',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        latitude: 20.9315,
+        longitude: 72.9280,
+        address: 'Dudhiya Talao North Promenade, Navsari',
+        landmark: 'Near Ashapuri Garden Gate',
+        proposed_start_at: '2026-11-08T07:00:00Z',
+        proposed_end_at: '2026-11-08T10:30:00Z',
+        registration_open_at: '2026-10-25T00:00:00Z',
+        registration_close_at: '2026-11-07T20:00:00Z',
+        maximum_participants: 100,
+        minimum_participants: 20,
+        waiting_list_enabled: true,
+        registration_requires_approval: false,
+        publication_status: 'published',
+        approval_status: 'ward_approved',
+        registration_status: 'open',
+        event_status: 'upcoming',
+        evidence_status: 'not_submitted',
+        registered_count: 48,
+        verified_participants_count: 0,
+        created_by: 'c0000000-0000-0000-0000-000000000099',
+        created_at: '2026-10-25T10:00:00Z',
+        updated_at: '2026-10-28T12:00:00Z'
+    },
+    {
+        id: 'act-02',
+        community_id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        title: 'Ashapuri Temple Area Cleanliness Drive',
+        short_description: 'Post-festival cleaning and flower composting drive near Ashapuri Mata Mandir.',
+        detailed_description: 'Segregation of biodegradable floral offerings from plastic wrappers. Creating organic compost pits with NMC assistance.',
+        activity_category: 'Religious & Heritage Site Cleaning',
+        objectives: ['Divert organic temple waste into compost', 'Clean approach roads'],
+        expected_outcomes: ['100% segregated floral waste'],
+        instructions: 'Meet in front of Temple parking area at 6:30 AM.',
+        equipment_requirements: ['Compost bags', 'Brooms', 'Rakes'],
+        safety_guidelines: 'Follow footwear norms in temple compound.',
+        faq: [],
+        cover_image_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        latitude: 20.9300,
+        longitude: 72.9295,
+        address: 'Ashapuri Temple Road, Ward 3, Navsari',
+        landmark: 'Ashapuri Mata Mandir Complex',
+        proposed_start_at: '2026-11-15T06:30:00Z',
+        proposed_end_at: '2026-11-15T09:30:00Z',
+        registration_open_at: '2026-10-30T00:00:00Z',
+        registration_close_at: '2026-11-14T18:00:00Z',
+        maximum_participants: 60,
+        minimum_participants: 15,
+        waiting_list_enabled: true,
+        registration_requires_approval: false,
+        publication_status: 'draft',
+        approval_status: 'submitted',
+        registration_status: 'not_open',
+        event_status: 'upcoming',
+        evidence_status: 'not_submitted',
+        registered_count: 12,
+        verified_participants_count: 0,
+        created_by: 'c0000000-0000-0000-0000-000000000099',
+        created_at: '2026-10-30T11:00:00Z',
+        updated_at: '2026-10-30T11:00:00Z'
+    }
+];
+// Initial LinkedIn-style Recognition Wall Posts (Shared across Citizen, Officer, Community, Worker)
+const initialRecognitionPosts = [
+    {
+        id: 'post-01',
+        author_name: 'Ramesh Patel',
+        author_role: 'Chief Sanitary Inspector · NMC Ward 3',
+        author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&q=80',
+        is_verified_nmc: true,
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        hero_name: 'Sanitation Unit 4B (Kanti Solanki & Suresh Vaghela)',
+        hero_role: 'NMC Field Sanitation Heroes',
+        badge_title: 'Excellence in Rapid Civic Action',
+        title: 'Outstanding Turnaround: Dudhiya Talao Overflowing Dustbin Resolved in 1.8 Hours! 🏆',
+        description: 'Special recognition to our frontline warriors Kanti Solanki and Suresh Vaghela for completing the desilting and thorough sanitization at the North Lake Promenade within record time. Navsari shines brighter because of their tireless dedication!',
+        achievement_stats: 'Pavement Sanitized · 420 kg waste cleared · 100m geofence verified',
+        image_url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
+        likes_count: 42,
+        comments_count: 5,
+        is_liked: false,
+        created_at: '2026-10-30T12:00:00Z',
+        comments: [
+            {
+                id: 'com-01',
+                post_id: 'post-01',
+                citizen_id: 'c0000000-0000-0000-0000-000000000001',
+                citizen_name: 'Harshil Mehta',
+                citizen_role: 'Citizen · Ward 3',
+                comment_text: 'I reported this issue in the morning and by afternoon the entire lakeside walk was spotlessly clean! Kudos to Kanti bhai and Suresh bhai!',
+                created_at: '2026-10-30T13:15:00Z'
+            },
+            {
+                id: 'com-02',
+                post_id: 'post-01',
+                citizen_id: 'c0000000-0000-0000-0000-000000000099',
+                citizen_name: 'Rajesh Varma',
+                citizen_role: 'Community Head · Navsari Green Warriors',
+                comment_text: 'Superb coordination between NMC Ward 3 team and citizens. Let us keep our heritage lake clean!',
+                created_at: '2026-10-30T14:00:00Z'
+            }
+        ]
+    },
+    {
+        id: 'post-02',
+        author_name: 'Rajesh Varma',
+        author_role: 'Community Head · Navsari Green Warriors RWA',
+        author_avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
+        is_verified_nmc: true,
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        hero_name: 'Navsari Youth Volunteers Team',
+        hero_role: 'Volunteer Cleanliness Squad',
+        badge_title: 'Swachhata Ratna Award',
+        title: '380 Kilograms of Single-Use Plastic Segregated at Dudhiya Talao! 🌿',
+        description: 'Over 48 enthusiastic citizens and youth joined our Sunday morning cleanliness drive along Dudhiya Talao. Together we cleared 380 kg of waste, sorted recyclables, and educated 120 visitors about avoiding plastic litter.',
+        achievement_stats: '48 Active Volunteers · 380 kg Plastic Cleared · 100% Segregated',
+        image_url: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=1200&q=80',
+        likes_count: 57,
+        comments_count: 3,
+        is_liked: true,
+        created_at: '2026-10-29T16:00:00Z',
+        comments: [
+            {
+                id: 'com-03',
+                post_id: 'post-02',
+                citizen_id: 'w0000000-0000-0000-0000-000000000003',
+                citizen_name: 'Ramesh Patel',
+                citizen_role: 'Chief Sanitary Inspector · Ward 3',
+                comment_text: 'Proud to see the proactive citizen participation from Navsari Green Warriors! NMC team will collect all segregated bags for scientific processing.',
+                created_at: '2026-10-29T17:10:00Z'
+            }
+        ]
+    }
+];
 exports.store = {
     profiles: initialProfiles,
     authProfiles: [
@@ -599,5 +996,11 @@ exports.store = {
         { citizen_id: defaultCitizenId, reward_id: 'rew-03', awarded_at: '2026-10-16T11:00:00Z' }
     ],
     notifications: initialNotifications,
-    supportTickets: initialSupportTickets
+    supportTickets: initialSupportTickets,
+    teams: initialTeams,
+    workers: initialWorkers,
+    workAssignments: initialWorkAssignments,
+    communities: initialCommunities,
+    communityActivities: initialCommunityActivities,
+    recognitionPosts: initialRecognitionPosts
 };

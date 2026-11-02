@@ -28,19 +28,12 @@ import { Language, translations } from '../../i18n/translations.js';
 import { api } from '../../services/api.js';
 import { SwachhSetuLogo, SwachhSetuIcon } from '../SwachhSetuLogo.js';
 
-// 12 Tab Components
+// 5 Tab Components
 import { WorkerOverview } from './WorkerOverview.js';
-import { MyDailyWork } from './MyDailyWork.js';
-import { MyAssignments } from './MyAssignments.js';
-import { MyTeam } from './MyTeam.js';
-import { WorkerAttendance } from './WorkerAttendance.js';
-import { WorkLocationMap } from './WorkLocationMap.js';
-import { BeforeAfterEvidence } from './BeforeAfterEvidence.js';
-import { WorkCompletionReports } from './WorkCompletionReports.js';
+import { AssignWorkView } from './AssignWorkView.js';
+import { WorkHistoryView } from './WorkHistoryView.js';
 import { WorkerNotifications } from './WorkerNotifications.js';
-import { WorkerPerformance } from './WorkerPerformance.js';
 import { WorkerProfileView } from './WorkerProfileView.js';
-import { WorkerHelpSupport } from './WorkerHelpSupport.js';
 
 interface WorkerDashboardProps {
   user: Profile;
@@ -57,7 +50,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
   onLogout,
   onSwitchToCitizenView
 }) => {
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  const [activeTab, setActiveTab] = useState<string>('home');
   const [targetTaskId, setTargetTaskId] = useState<string | undefined>(undefined);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
 
@@ -91,7 +84,26 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
   }, []);
 
   const handleNavigateTab = (tabId: string, assignmentId?: string) => {
-    setActiveTab(tabId);
+    // Map legacy / sub-actions cleanly to the 5 primary tabs
+    if (tabId === 'overview') {
+      setActiveTab('home');
+    } else if (
+      tabId === 'daily_work' ||
+      tabId === 'assignments' ||
+      tabId === 'team' ||
+      tabId === 'attendance' ||
+      tabId === 'work_map' ||
+      tabId === 'evidence' ||
+      tabId === 'completion_reports' ||
+      tabId === 'assign_work'
+    ) {
+      setActiveTab('assign_work');
+    } else if (tabId === 'profile' || tabId === 'profile_settings') {
+      setActiveTab('profile_settings');
+    } else {
+      setActiveTab(tabId);
+    }
+
     if (assignmentId) {
       setTargetTaskId(assignmentId);
     }
@@ -99,28 +111,18 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Strictly 5 Tabs in Main Navigation
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'daily_work', label: 'My Daily Work', icon: Calendar },
-    { id: 'assignments', label: 'My Assignments', icon: Briefcase },
+    { id: 'home', label: 'Home', icon: LayoutDashboard },
     {
-      id: 'team',
-      label: 'My Team',
-      icon: Users,
+      id: 'assign_work',
+      label: 'Assign Work',
+      icon: Briefcase,
       badge: assignments.some(a => a.is_temporary_leader) ? '👑 Leader' : undefined
     },
-    { id: 'attendance', label: 'Attendance', icon: Clock },
-    { id: 'work_map', label: 'Work Location & Map', icon: MapPin },
-    { id: 'evidence', label: 'Before & After Evidence', icon: Camera },
-    {
-      id: 'completion_reports',
-      label: 'Completion Reports',
-      icon: FileCheck2
-    },
+    { id: 'work_history', label: 'Work History', icon: FileCheck2 },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'performance', label: 'My Performance', icon: TrendingUp },
-    { id: 'profile', label: 'My Profile', icon: User },
-    { id: 'help_support', label: 'Help & Support', icon: LifeBuoy }
+    { id: 'profile_settings', label: 'Profile & Settings', icon: User }
   ];
 
   return (
@@ -137,7 +139,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavigateTab('overview')}>
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavigateTab('home')}>
               <div className="shrink-0 transition-transform hover:scale-105 duration-200">
                 <SwachhSetuIcon size={38} />
               </div>
@@ -289,7 +291,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
 
         {/* Center Content Pane */}
         <main className="flex-1 min-w-0">
-          {activeTab === 'overview' && (
+          {activeTab === 'home' && (
             <WorkerOverview
               profile={workerProfile}
               summary={summary}
@@ -299,67 +301,19 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             />
           )}
 
-          {activeTab === 'daily_work' && (
-            <MyDailyWork
+          {activeTab === 'assign_work' && (
+            <AssignWorkView
               assignments={assignments}
               profile={workerProfile}
-              onNavigateTab={handleNavigateTab}
               lang={lang}
               onRefresh={loadWorkerData}
             />
           )}
 
-          {activeTab === 'assignments' && (
-            <MyAssignments
-              assignments={assignments}
-              onNavigateTab={handleNavigateTab}
-              lang={lang}
-            />
-          )}
-
-          {activeTab === 'team' && (
-            <MyTeam
+          {activeTab === 'work_history' && (
+            <WorkHistoryView
               assignments={assignments}
               profile={workerProfile}
-              onNavigateTab={handleNavigateTab}
-              lang={lang}
-            />
-          )}
-
-          {activeTab === 'attendance' && (
-            <WorkerAttendance
-              assignments={assignments}
-              profile={workerProfile}
-              onNavigateTab={handleNavigateTab}
-              lang={lang}
-            />
-          )}
-
-          {activeTab === 'work_map' && (
-            <WorkLocationMap
-              assignments={assignments}
-              initialTaskId={targetTaskId}
-              onNavigateTab={handleNavigateTab}
-              lang={lang}
-            />
-          )}
-
-          {activeTab === 'evidence' && (
-            <BeforeAfterEvidence
-              assignments={assignments}
-              initialTaskId={targetTaskId}
-              profile={workerProfile}
-              onNavigateTab={handleNavigateTab}
-              lang={lang}
-            />
-          )}
-
-          {activeTab === 'completion_reports' && (
-            <WorkCompletionReports
-              assignments={assignments}
-              initialTaskId={targetTaskId}
-              profile={workerProfile}
-              onNavigateTab={handleNavigateTab}
               lang={lang}
             />
           )}
@@ -371,25 +325,11 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             />
           )}
 
-          {activeTab === 'performance' && (
-            <WorkerPerformance
-              profile={workerProfile}
-              summary={summary}
-              lang={lang}
-            />
-          )}
-
-          {activeTab === 'profile' && (
+          {activeTab === 'profile_settings' && (
             <WorkerProfileView
               profile={workerProfile}
               lang={lang}
               setLang={setLang}
-            />
-          )}
-
-          {activeTab === 'help_support' && (
-            <WorkerHelpSupport
-              lang={lang}
             />
           )}
         </main>

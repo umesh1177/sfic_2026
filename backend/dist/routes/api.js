@@ -172,6 +172,11 @@ exports.apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, wardOffi
 exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);
 exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);
 exports.apiRouter.get('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getWorkers);
+exports.apiRouter.post('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addWorker);
+exports.apiRouter.get('/ward/teams', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getTeams);
+exports.apiRouter.post('/ward/teams', softAuthenticate, wardOfficerController_js_1.WardOfficerController.createTeam);
+exports.apiRouter.get('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunities);
+exports.apiRouter.post('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunity);
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);

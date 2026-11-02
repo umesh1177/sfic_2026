@@ -782,7 +782,11 @@ export class DbRepository {
       }
     }
 
-    return [];
+    // Fallback in-memory store
+    return (store.recognitionPosts || []).map(p => ({
+      ...p,
+      is_liked: !!p.is_liked
+    }));
   }
 
   public static async togglePostLike(postId: string, citizenId: string): Promise<{ is_liked: boolean; likes_count: number }> {
@@ -809,6 +813,14 @@ export class DbRepository {
       } catch (err: any) {
         console.error('[DB REPO ERROR - togglePostLike]:', err.message);
       }
+    }
+
+    // Fallback store
+    const post = (store.recognitionPosts || []).find(p => p.id === postId);
+    if (post) {
+      post.is_liked = !post.is_liked;
+      post.likes_count = post.is_liked ? (post.likes_count + 1) : Math.max(0, post.likes_count - 1);
+      return { is_liked: post.is_liked, likes_count: post.likes_count };
     }
     return { is_liked: true, likes_count: 1 };
   }
@@ -841,7 +853,24 @@ export class DbRepository {
         console.error('[DB REPO ERROR - addPostComment]:', err.message);
       }
     }
-    return null;
+
+    // Fallback store
+    const post = (store.recognitionPosts || []).find(p => p.id === postId);
+    const newComment: RecognitionComment = {
+      id: `com-${Date.now()}`,
+      post_id: postId,
+      citizen_id: citizenId,
+      citizen_name: citizenName,
+      citizen_role: 'Verified Citizen · Ward 3',
+      comment_text: text,
+      created_at: new Date().toISOString()
+    };
+    if (post) {
+      if (!post.comments) post.comments = [];
+      post.comments.push(newComment);
+      post.comments_count = post.comments.length;
+    }
+    return newComment;
   }
 
   public static async createRecognitionPost(data: {
@@ -881,7 +910,7 @@ export class DbRepository {
           ]
         );
         const r = res.rows[0];
-        return {
+        const postObj: CommunityRecognitionPost = {
           id: r.id,
           author_name: r.author_name,
           author_role: r.author_role,
@@ -902,11 +931,38 @@ export class DbRepository {
           created_at: r.created_at,
           comments: []
         };
+        store.recognitionPosts.unshift(postObj);
+        return postObj;
       } catch (err: any) {
         console.error('[DB REPO ERROR - createRecognitionPost]:', err.message);
       }
     }
-    return null;
+
+    // Fallback store
+    const newPost: CommunityRecognitionPost = {
+      id: `post-${Date.now()}`,
+      author_name: data.author_name,
+      author_role: data.author_role,
+      author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&q=80',
+      is_verified_nmc: true,
+      ward_number: data.ward_number,
+      ward_name: data.ward_name,
+      hero_name: data.hero_name,
+      hero_role: data.hero_role,
+      badge_title: data.badge_title,
+      title: data.title,
+      description: data.description,
+      achievement_stats: data.achievement_stats,
+      image_url: data.image_url,
+      likes_count: 1,
+      comments_count: 0,
+      is_liked: false,
+      created_at: new Date().toISOString(),
+      comments: []
+    };
+    if (!store.recognitionPosts) store.recognitionPosts = [];
+    store.recognitionPosts.unshift(newPost);
+    return newPost;
   }
 
   // =========================================================================
@@ -1082,7 +1138,16 @@ export class DbRepository {
       }
     }
 
-    return { activities: [], total: 0 };
+    // Fallback store
+    let acts = store.communityActivities || [];
+    if (params.status && params.status !== 'all') {
+      acts = acts.filter(a => a.approval_status === params.status || a.publication_status === params.status);
+    }
+    if (params.search && params.search.trim()) {
+      const q = params.search.toLowerCase().trim();
+      acts = acts.filter(a => a.title.toLowerCase().includes(q) || a.short_description.toLowerCase().includes(q));
+    }
+    return { activities: acts, total: acts.length };
   }
 
   public static async getActivityById(id: string): Promise<CommunityActivity | null> {
@@ -1103,7 +1168,7 @@ export class DbRepository {
         console.error('[DB REPO ERROR - getActivityById]:', err.message);
       }
     }
-    return null;
+    return (store.communityActivities || []).find(a => a.id === id) || null;
   }
 
   public static async createCommunityActivity(data: Partial<CommunityActivity>): Promise<CommunityActivity> {
@@ -1170,13 +1235,80 @@ export class DbRepository {
         ];
 
         const res = await pool.query(query, values);
-        return this.mapActivityRow(res.rows[0]);
+        const mapped = this.mapActivityRow(res.rows[0]);
+        if (!store.communityActivities) store.communityActivities = [];
+        store.communityActivities.unshift(mapped);
+        return mapped;
       } catch (err: any) {
         console.error('[DB REPO ERROR - createCommunityActivity]:', err.message);
-        throw err;
       }
     }
-    throw new Error('Database connection offline');
+
+    // Fallback store
+    const newAct: CommunityActivity = {
+      id: `act-${Date.now()}`,
+      community_id: data.community_id || 'b0000000-0000-0000-0000-000000000001',
+      community_name: 'Navsari Green Warriors RWA',
+      title: data.title || 'Community Cleanliness Drive',
+      short_description: data.short_description || 'Cleanliness drive in Navsari',
+      detailed_description: data.detailed_description || 'Volunteer-driven cleanup campaign.',
+      activity_category: data.activity_category || 'Public Area Cleaning',
+      objectives: data.objectives || ['Clean neighborhood', 'Promote hygiene'],
+      expected_outcomes: data.expected_outcomes || ['Clean public area'],
+      instructions: data.instructions || 'Bring gloves and meet at venue.',
+      equipment_requirements: data.equipment_requirements || ['Gloves', 'Trash bags'],
+      safety_guidelines: data.safety_guidelines || 'Stay safe and follow instructions.',
+      faq: data.faq || [],
+      cover_image_path: data.cover_image_path || 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=1200&q=80',
+      ward_id: data.ward_id || 'ward-03',
+      ward_number: data.ward_number || 3,
+      ward_name: data.ward_name || 'Ward 3 - Dudhiya Talao',
+      latitude: data.latitude || 20.9315,
+      longitude: data.longitude || 72.9280,
+      address: data.address || 'Dudhiya Talao Road, Navsari',
+      landmark: data.landmark || 'Near Garden Gate',
+      proposed_start_at: data.proposed_start_at || new Date(Date.now() + 86400000).toISOString(),
+      proposed_end_at: data.proposed_end_at || new Date(Date.now() + 97200000).toISOString(),
+      registration_open_at: data.registration_open_at || new Date().toISOString(),
+      registration_close_at: data.registration_close_at || new Date(Date.now() + 86400000).toISOString(),
+      maximum_participants: data.maximum_participants || 50,
+      minimum_participants: data.minimum_participants || 10,
+      waiting_list_enabled: data.waiting_list_enabled ?? true,
+      registration_requires_approval: data.registration_requires_approval ?? false,
+      publication_status: (data.publication_status as any) || 'submitted',
+      approval_status: (data.approval_status as any) || 'submitted',
+      registration_status: (data.registration_status as any) || 'not_open',
+      event_status: (data.event_status as any) || 'upcoming',
+      evidence_status: (data.evidence_status as any) || 'not_submitted',
+      registered_count: 0,
+      verified_participants_count: 0,
+      created_by: data.created_by || 'c0000000-0000-0000-0000-000000000099',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    if (!store.communityActivities) store.communityActivities = [];
+    store.communityActivities.unshift(newAct);
+
+    // Also mirror to store.drives so Citizen dashboard sees it
+    store.drives.unshift({
+      id: newAct.id,
+      title: newAct.title,
+      description: newAct.short_description,
+      ward_id: newAct.ward_id || 'ward-03',
+      ward_name: newAct.ward_name,
+      location_name: newAct.address,
+      start_time: newAct.proposed_start_at,
+      end_time: newAct.proposed_end_at,
+      registration_deadline: newAct.registration_close_at,
+      status: 'upcoming',
+      max_volunteers: newAct.maximum_participants,
+      registered_volunteers_count: 0,
+      organiser_name: newAct.community_name || 'Navsari Green Warriors RWA',
+      banner_url: newAct.cover_image_path,
+      is_registered: false
+    });
+
+    return newAct;
   }
 
   public static async updateCommunityActivity(id: string, data: Partial<CommunityActivity>): Promise<CommunityActivity | null> {
@@ -1357,6 +1489,18 @@ export class DbRepository {
       } catch (err: any) {
         console.error('[DB REPO ERROR - recordActivityApproval]:', err.message);
       }
+    }
+
+    // Fallback store update
+    const act = (store.communityActivities || []).find(a => a.id === activityId);
+    if (act) {
+      act.approval_status = (newStatus as any);
+      act.publication_status = (newStatus === 'ward_approved' || newStatus === 'nmc_admin_approved') ? 'published' : 'draft';
+      act.registration_status = (newStatus === 'ward_approved' || newStatus === 'nmc_admin_approved') ? 'open' : 'not_open';
+    }
+    const drv = (store.drives || []).find(d => d.id === activityId);
+    if (drv) {
+      drv.status = 'upcoming';
     }
 
     return {
@@ -2616,76 +2760,17 @@ export class DbRepository {
       }
     }
 
-    // Fallback seed tasks
-    const isKanti = validWorkerId === 'f2000000-0000-0000-0000-000000000001';
-    return [
-      {
-        id: 'a1000000-0000-0000-0000-000000000001',
-        task_code: 'TSK-NAV-2026-101',
-        title: 'Dudhiya Talao East Canal Drainage Desilting & Silt Clearance',
-        description: 'Clear blockage in primary municipal storm drain near Dudhiya Talao East gate before pre-monsoon flow tests.',
-        category: 'drainage_cleaning',
-        priority: 'high',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        location_name: 'Dudhiya Talao East Canal Sluice Gate',
-        address: 'Near East Promenade Sluice Gate, Dudhiya Talao Road, Navsari',
-        latitude: 20.9485,
-        longitude: 72.9260,
-        scheduled_date: new Date().toISOString().split('T')[0],
-        scheduled_start_time: new Date(Date.now() - 3600000).toISOString(),
-        expected_end_time: new Date(Date.now() + 10800000).toISOString(),
-        attendance_radius_meters: 100,
-        evidence_radius_meters: 150,
-        work_instructions: '1. Open culvert cover with hoist. 2. Extract plastic debris and heavy silt. 3. Flush channel with municipal suction jetter.',
-        safety_instructions: 'Wear industrial gumboots, heavy-duty puncture-resistant rubber gloves, and reflective neon jacket.',
-        required_equipment: ['Culvert lifting hook', 'Deep desilting shovel', 'High-pressure jetter pipe', 'Safety cones'],
-        emergency_contact_phone: '+919825110003',
-        status: 'in_progress',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_temporary_leader: isKanti,
-        temporary_leader_name: 'Kanti Solanki',
-        temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
-        my_attendance_status: 'present',
-        has_before_evidence: true,
-        has_after_evidence: false
-      },
-      {
-        id: 'a1000000-0000-0000-0000-000000000002',
-        task_code: 'TSK-NAV-2026-102',
-        title: 'Tower Road Commercial Stretch Morning Sweeping & Litter Clearing',
-        description: 'Scheduled morning sweeping of central commercial corridor and clearing of scattered paper, plastic, and tea cup litter.',
-        category: 'street_cleaning',
-        priority: 'medium',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        location_name: 'Tower Road Clock Circle to Ashapuri Gate',
-        address: 'Tower Road, Main Market Corridor, Ward 3, Navsari',
-        latitude: 20.9520,
-        longitude: 72.9310,
-        scheduled_date: new Date().toISOString().split('T')[0],
-        scheduled_start_time: new Date(Date.now() + 7200000).toISOString(),
-        expected_end_time: new Date(Date.now() + 18000000).toISOString(),
-        attendance_radius_meters: 100,
-        evidence_radius_meters: 150,
-        work_instructions: 'Sweep commercial curbs, collect debris in nylon bags, and empty secondary twin dustbins.',
-        safety_instructions: 'Stay within barricaded curb lane. Do not step into fast vehicular lanes without safety cones.',
-        required_equipment: ['Long-handle nylon broom', 'Dustpan with handle', 'Heavy duty waste bags'],
-        emergency_contact_phone: '+919825110003',
-        status: 'assigned',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_temporary_leader: !isKanti,
-        temporary_leader_name: 'Suresh Vaghela',
-        temporary_leader_id: 'f2000000-0000-0000-0000-000000000002',
-        my_attendance_status: 'assigned',
-        has_before_evidence: false,
-        has_after_evidence: false
-      }
-    ];
+    // Fallback store tasks
+    const allAssignments = store.workAssignments || [];
+    return allAssignments.map(a => {
+      const isLeader = a.temporary_leader_id === validWorkerId || (validWorkerId === 'f2000000-0000-0000-0000-000000000001' && a.is_temporary_leader) || (a.team_members || []).some(m => m.worker_id === validWorkerId && m.temporary_leader);
+      return {
+        ...a,
+        is_temporary_leader: isLeader,
+        temporary_leader_name: a.temporary_leader_name || 'Kanti Solanki',
+        my_attendance_status: a.my_attendance_status || 'assigned'
+      };
+    });
   }
 
   public static async getAssignmentById(assignmentId: string, workerId?: string): Promise<WorkAssignment | null> {
@@ -2731,6 +2816,11 @@ export class DbRepository {
       } catch (err: any) {
         console.error('[DB REPO ERROR - getAssignmentTeamMembers]:', err.message);
       }
+    }
+
+    const matchedAssignment = (store.workAssignments || []).find(a => a.id === assignmentId);
+    if (matchedAssignment && matchedAssignment.team_members && matchedAssignment.team_members.length > 0) {
+      return matchedAssignment.team_members;
     }
 
     return [
@@ -3202,6 +3292,13 @@ export class DbRepository {
       } catch (err: any) {
         console.error('[DB REPO ERROR - isWorkerTemporaryLeader]:', err.message);
       }
+    }
+
+    // Check dynamically created assignments in store
+    const assignment = (store.workAssignments || []).find(a => a.id === validAssignment || a.id === assignmentId);
+    if (assignment) {
+      if (assignment.temporary_leader_id === validWorker) return true;
+      if (assignment.temporary_leader_id && assignment.temporary_leader_id !== validWorker) return false;
     }
 
     // Fallback: Kanti is leader for task 1 & 3; Suresh is leader for task 2

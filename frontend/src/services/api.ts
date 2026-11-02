@@ -863,6 +863,9 @@ class ApiService {
   }
 
   async assignWardComplaint(id: string, data: {
+    team_name?: string;
+    team_id?: string;
+    work_type?: string;
     worker_ids?: string[];
     temporary_leader_id?: string;
     instructions?: string;
@@ -886,8 +889,59 @@ class ApiService {
     return this.request<{ success: boolean; data: any[] }>('/ward/assignments');
   }
 
-  async getWardWorkers() {
-    return this.request<{ success: boolean; data: any[] }>('/ward/workers');
+  async getWardWorkers(params?: { search?: string; availability?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.append('search', params.search);
+    if (params?.availability) qs.append('availability', params.availability);
+    const qStr = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/workers${qStr}`);
+  }
+
+  async addWardWorker(data: {
+    full_name: string;
+    phone: string;
+    designation: string;
+    skills?: string[];
+    availability_status?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/ward/workers', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getWardTeams() {
+    return this.request<{ success: boolean; data: any[] }>('/ward/teams');
+  }
+
+  async createWardTeam(data: {
+    team_name: string;
+    worker_ids: string[];
+    temporary_leader_id?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/ward/teams', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getWardCommunities() {
+    return this.request<{ success: boolean; data: any[] }>('/ward/communities');
+  }
+
+  async addWardCommunity(data: {
+    community_name: string;
+    head_name: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    locality?: string;
+    organisation_type?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/ward/communities', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   }
 
   async getWardApprovals() {

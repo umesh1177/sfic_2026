@@ -196,6 +196,11 @@ apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, WardOfficerContr
 apiRouter.get('/ward/hotspots', softAuthenticate, WardOfficerController.getHotspots);
 apiRouter.get('/ward/assignments', softAuthenticate, WardOfficerController.getAssignments);
 apiRouter.get('/ward/workers', softAuthenticate, WardOfficerController.getWorkers);
+apiRouter.post('/ward/workers', softAuthenticate, WardOfficerController.addWorker);
+apiRouter.get('/ward/teams', softAuthenticate, WardOfficerController.getTeams);
+apiRouter.post('/ward/teams', softAuthenticate, WardOfficerController.createTeam);
+apiRouter.get('/ward/communities', softAuthenticate, WardOfficerController.getCommunities);
+apiRouter.post('/ward/communities', softAuthenticate, WardOfficerController.addCommunity);
 apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getApprovals);
 apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
 apiRouter.get('/ward/cleanliness-score', softAuthenticate, WardOfficerController.getCleanlinessScore);

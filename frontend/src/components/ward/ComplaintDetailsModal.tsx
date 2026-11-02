@@ -30,12 +30,14 @@ interface ComplaintDetailsModalProps {
   complaintId: string;
   onClose: () => void;
   onComplaintUpdated?: () => void;
+  initialOpenAssign?: boolean;
 }
 
 export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
   complaintId,
   onClose,
-  onComplaintUpdated
+  onComplaintUpdated,
+  initialOpenAssign = false
 }) => {
   const [activeTab, setActiveTab] = useState<
     | 'overview'
@@ -55,6 +57,14 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [actionError, setActionError] = useState<string>('');
   const [actionSuccess, setActionSuccess] = useState<string>('');
+
+  // Assign Team Modal State
+  const [showAssignDialog, setShowAssignDialog] = useState<boolean>(initialOpenAssign);
+  const [teamsList, setTeamsList] = useState<any[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [selectedWorkType, setSelectedWorkType] = useState<string>('Solid Waste Clearance');
+  const [assignInstructions, setAssignInstructions] = useState<string>('');
+  const [submittingAssign, setSubmittingAssign] = useState<boolean>(false);
 
   // Reopen Modal State
   const [showReopenDialog, setShowReopenDialog] = useState<boolean>(false);
@@ -81,6 +91,46 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
   useEffect(() => {
     fetchDetails();
   }, [complaintId]);
+
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const res = await api.getWardTeams();
+        if (res.data && res.data.length > 0) {
+          setTeamsList(res.data);
+          setSelectedTeamId(res.data[0].id);
+        }
+      } catch (e) {
+        console.error('Failed to load teams:', e);
+      }
+    };
+    loadTeams();
+  }, []);
+
+  // Handle Team Assignment Submission
+  const handleAssignTeamSubmit = async () => {
+    setSubmittingAssign(true);
+    setActionError('');
+    try {
+      const selectedTeam = teamsList.find(t => t.id === selectedTeamId) || teamsList[0];
+      const res = await api.assignWardComplaint(complaintId, {
+        team_id: selectedTeam?.id,
+        team_name: selectedTeam?.team_name || 'Sanitation Unit 4B',
+        work_type: selectedWorkType,
+        instructions: assignInstructions,
+        worker_ids: selectedTeam?.worker_ids,
+        temporary_leader_id: selectedTeam?.temporary_leader_id
+      });
+      setActionSuccess(res.message || 'Work assignment successfully dispatched to field team');
+      setShowAssignDialog(false);
+      await fetchDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to assign team');
+    } finally {
+      setSubmittingAssign(false);
+    }
+  };
 
   // Handle Reopen Submission
   const handleReopenSubmit = async () => {
@@ -194,6 +244,15 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {overview.status !== 'resolved' && overview.status !== 'closed' && (
+              <button
+                onClick={() => setShowAssignDialog(true)}
+                className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs transition flex items-center gap-1.5 shadow-xs"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>{overview.status === 'assigned' || overview.status === 'in_progress' ? 'Reassign Team' : 'Assign Team & Resolve'}</span>
+              </button>
+            )}
             {/* Reopen Complaint Button (Available only for eligible completed complaints!) */}
             {isEligibleToReopen && (
               <button
@@ -319,15 +378,26 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                     <strong>{overview.current_assigned_team}</strong>
                   </p>
                 </div>
-                {isEligibleToReopen && (
-                  <button
-                    onClick={() => setShowReopenDialog(true)}
-                    className="px-4 py-2 bg-[#095c54] text-white rounded-xl text-xs font-extrabold hover:bg-emerald-800 transition flex items-center gap-1.5 shrink-0"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reopen for Follow-up Cleanliness</span>
-                  </button>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {overview.status !== 'resolved' && overview.status !== 'closed' && (
+                    <button
+                      onClick={() => setShowAssignDialog(true)}
+                      className="px-4 py-2 bg-[#095c54] text-white rounded-xl text-xs font-extrabold hover:bg-[#074741] transition flex items-center gap-1.5 shrink-0 shadow-xs"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>{overview.status === 'assigned' ? 'Reassign Team' : 'Assign Team & Start Resolving'}</span>
+                    </button>
+                  )}
+                  {isEligibleToReopen && (
+                    <button
+                      onClick={() => setShowReopenDialog(true)}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-extrabold hover:bg-purple-700 transition flex items-center gap-1.5 shrink-0"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Reopen for Follow-up Cleanliness</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1102,6 +1172,122 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                   <>
                     <Check className="w-3.5 h-3.5" />
                     <span>Confirm Reopen & Deploy</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Team Modal Dialog */}
+      {showAssignDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0f2925]">
+                    Assign Team & Start Resolving
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Complaint: <strong className="font-mono text-[#095c54]">{overview.complaint_number}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAssignDialog(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Select Team */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Select Sanitation Team <span className="text-red-500">*</span>
+                </label>
+                {teamsList.length > 0 ? (
+                  <select
+                    value={selectedTeamId}
+                    onChange={e => setSelectedTeamId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-slate-50 focus:bg-white focus:border-[#095c54] outline-hidden transition"
+                  >
+                    {teamsList.map(team => (
+                      <option key={team.id} value={team.id}>
+                        {team.team_name} — Leader: {team.temporary_leader_name} ({team.worker_ids?.length || 0} members)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
+                    No custom teams found. Default team (Sanitation Unit 4B led by Kanti Solanki) will be auto-assigned.
+                  </div>
+                )}
+              </div>
+
+              {/* Type of Work */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Type of Work Required <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedWorkType}
+                  onChange={e => setSelectedWorkType(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-slate-50 focus:bg-white focus:border-[#095c54] outline-hidden transition"
+                >
+                  <option value="Solid Waste Clearance & Garbage Disposal">Solid Waste Clearance & Garbage Disposal</option>
+                  <option value="Drainage Desilting & Cleaning">Drainage Desilting & Cleaning</option>
+                  <option value="Road & Pavement Sweeping">Road & Pavement Sweeping</option>
+                  <option value="Construction & Demolition Debris Removal">Construction & Demolition Debris Removal</option>
+                  <option value="Public Urinal & Toilet Sanitization">Public Urinal & Toilet Sanitization</option>
+                  <option value="Spot Cleansing & Bleaching Powder Spray">Spot Cleansing & Bleaching Powder Spray</option>
+                </select>
+              </div>
+
+              {/* Instructions */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Ward Officer Instructions (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={assignInstructions}
+                  onChange={e => setAssignInstructions(e.target.value)}
+                  placeholder="e.g. Clear 50m radius around bin, sanitize with lime powder, and capture before/after photos..."
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 bg-slate-50 focus:bg-white focus:border-[#095c54] outline-hidden transition resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAssignDialog(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submittingAssign}
+                onClick={handleAssignTeamSubmit}
+                className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition disabled:opacity-50"
+              >
+                {submittingAssign ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Dispatching...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Assign Team & Dispatch Work</span>
                   </>
                 )}
               </button>

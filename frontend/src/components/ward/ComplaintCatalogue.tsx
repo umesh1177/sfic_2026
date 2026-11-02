@@ -16,7 +16,8 @@ import {
   Camera,
   Layers,
   ArrowUpDown,
-  Sparkles
+  Sparkles,
+  Users
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 import { ComplaintDetailsModal } from './ComplaintDetailsModal.js';
@@ -34,6 +35,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
+  const [openAssignDirectly, setOpenAssignDirectly] = useState<boolean>(false);
 
   // Filters state
   const [search, setSearch] = useState<string>('');
@@ -431,16 +433,33 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
 
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          setSelectedComplaintId(complaint.id);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#095c54] text-slate-700 hover:text-white text-xs font-bold transition flex items-center gap-1.5 ml-auto"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Inspect</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {complaint.progress_status !== 'Verified Complete' && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              setSelectedComplaintId(complaint.id);
+                              setOpenAssignDirectly(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#095c54] text-[#095c54] hover:text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-200"
+                            title="Assign team to start resolving"
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Assign</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setSelectedComplaintId(complaint.id);
+                            setOpenAssignDirectly(false);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#095c54] text-slate-700 hover:text-white text-xs font-bold transition flex items-center gap-1.5"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Inspect</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -453,7 +472,10 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             {complaints.map(complaint => (
               <div
                 key={complaint.id}
-                onClick={() => setSelectedComplaintId(complaint.id)}
+                onClick={() => {
+                  setSelectedComplaintId(complaint.id);
+                  setOpenAssignDirectly(false);
+                }}
                 className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 cursor-pointer hover:border-[#095c54] transition"
               >
                 <div className="flex items-center justify-between">
@@ -493,10 +515,32 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                     <span className="text-[10px] text-slate-400 block">Progress Status:</span>
                     <span className="font-extrabold text-[#095c54]">{complaint.progress_status}</span>
                   </div>
-                  <button className="px-3 py-1.5 rounded-xl bg-[#095c54] text-white text-xs font-extrabold flex items-center gap-1">
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View Dossier</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {complaint.progress_status !== 'Verified Complete' && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setSelectedComplaintId(complaint.id);
+                          setOpenAssignDirectly(true);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-50 text-[#095c54] hover:bg-[#095c54] hover:text-white font-extrabold text-xs flex items-center gap-1 border border-emerald-200"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>Assign</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setSelectedComplaintId(complaint.id);
+                        setOpenAssignDirectly(false);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-[#095c54] text-white text-xs font-extrabold flex items-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>View</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -533,7 +577,11 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
       {selectedComplaintId && (
         <ComplaintDetailsModal
           complaintId={selectedComplaintId}
-          onClose={() => setSelectedComplaintId(null)}
+          initialOpenAssign={openAssignDirectly}
+          onClose={() => {
+            setSelectedComplaintId(null);
+            setOpenAssignDirectly(false);
+          }}
           onComplaintUpdated={fetchComplaints}
         />
       )}

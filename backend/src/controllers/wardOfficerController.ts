@@ -10,7 +10,8 @@ import {
   WardApprovalItem,
   WorkerAttendance,
   WorkEvidence,
-  WorkCompletionReport
+  WorkCompletionReport,
+  WorkAssignment
 } from '../types/index.js';
 
 // In-memory store for work attempts and hotspot tracking
@@ -1031,12 +1032,19 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 5. Assign & Reassign Complaint
+  // 5. Assign & Reassign Complaint to Team & Work Type
   // =========================================================================
   public static async assignComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { worker_ids = [], temporary_leader_id, instructions } = req.body;
+      const {
+        team_name,
+        team_id,
+        work_type = 'waste_collection',
+        instructions = '',
+        worker_ids = [],
+        temporary_leader_id
+      } = req.body;
 
       const complaint = (store.complaints || []).find(c => c.id === id);
       if (!complaint) {
@@ -1044,13 +1052,140 @@ export class WardOfficerController {
         return;
       }
 
+      // Find the selected team or create on the fly
+      let team = (store.teams || []).find(t => t.id === team_id || t.team_name === team_name);
+      if (!team) {
+        const leaderWorker = (store.workers || []).find(w => w.id === temporary_leader_id) || store.workers[0];
+        team = {
+          id: team_id || `team-${Date.now()}`,
+          team_name: team_name || 'Sanitation Squad 3A',
+          ward_number: 3,
+          worker_ids: worker_ids.length > 0 ? worker_ids : [store.workers[0]?.id, store.workers[1]?.id].filter(Boolean),
+          temporary_leader_id: leaderWorker?.id || 'f2000000-0000-0000-0000-000000000001',
+          temporary_leader_name: leaderWorker?.full_name || 'Kanti Solanki',
+          created_at: new Date().toISOString(),
+          status: 'active'
+        };
+        if (!store.teams) store.teams = [];
+        store.teams.push(team);
+      }
+
+      // Find leader and workers for this team
+      const teamWorkers = (store.workers || []).filter(w => (team.worker_ids || []).includes(w.id));
+      const leader = (store.workers || []).find(w => w.id === team.temporary_leader_id) || teamWorkers[0];
+
+      // Update complaint
       complaint.status = 'assigned';
       complaint.updated_at = new Date().toISOString();
+      (complaint as any).assigned_team_name = team.team_name;
+      (complaint as any).temporary_team_leader_name = leader?.full_name || team.temporary_leader_name;
+
+      // Create a unique Task Assignment Code
+      const serial = Math.floor(100 + Math.random() * 900);
+      const taskCode = `TSK-NAV-2026-${serial}`;
+      const assignmentId = `tsk-nav-2026-${serial}`;
+
+      // Create WorkAssignment for workers and leader to view in Worker Dashboard
+      const newAssignment: WorkAssignment = {
+        id: assignmentId,
+        task_code: taskCode,
+        title: `${(work_type || complaint.category_name).replace('_', ' ').toUpperCase()} at ${complaint.location?.landmark || complaint.location?.address || 'Ward 3'}`,
+        description: complaint.description || 'Assigned field sanitation task.',
+        category: work_type || 'waste_collection',
+        priority: (complaint.priority as any) || 'high',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        location_name: complaint.location?.landmark || complaint.location?.address || 'Ward 3 Cleanliness Zone',
+        address: complaint.location?.address || 'Navsari Municipal Ward 3',
+        latitude: complaint.location?.latitude || 20.9312,
+        longitude: complaint.location?.longitude || 72.9284,
+        scheduled_date: new Date().toISOString().split('T')[0],
+        scheduled_start_time: new Date().toISOString(),
+        expected_end_time: new Date(Date.now() + 10800000).toISOString(),
+        attendance_radius_meters: 100,
+        evidence_radius_meters: 150,
+        work_instructions: instructions || 'Clear civic waste and wash area thoroughly with bleaching powder.',
+        safety_instructions: 'Wear heavy-duty rubber gloves, safety mask, and reflective vest.',
+        required_equipment: ['Safety Gloves', 'Rubber Boots', 'Shovel', 'Broom', 'Bleaching Powder'],
+        emergency_contact_phone: '+919825130003',
+        status: 'assigned',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_temporary_leader: true,
+        temporary_leader_id: leader?.id || team.temporary_leader_id,
+        temporary_leader_name: leader?.full_name || team.temporary_leader_name,
+        team_members: teamWorkers.map(w => ({
+          id: `wam-${Date.now()}-${w.id}`,
+          assignment_id: assignmentId,
+          worker_id: w.id,
+          worker_code: w.worker_code,
+          worker_name: w.full_name,
+          worker_phone: w.phone,
+          designation_name: w.designation,
+          temporary_leader: w.id === (leader?.id || team.temporary_leader_id),
+          assignment_status: 'assigned',
+          attendance_timestamp: undefined,
+          validation_status: undefined
+        })),
+        my_attendance_status: 'assigned',
+        has_before_evidence: false,
+        has_after_evidence: false
+      };
+
+      if (!store.workAssignments) store.workAssignments = [];
+      store.workAssignments.unshift(newAssignment);
+
+      // Record in complaint work attempt history
+      const attempts = wardData.workAttempts.get(complaint.id) || [];
+      attempts.push({
+        id: `att-${Date.now()}`,
+        complaint_id: complaint.id,
+        attempt_number: attempts.length + 1,
+        assignment_id: assignmentId,
+        task_code: taskCode,
+        assigned_date: new Date().toISOString(),
+        team_leader_id: leader?.id || team.temporary_leader_id,
+        team_leader_name: leader?.full_name || team.temporary_leader_name,
+        team_members: teamWorkers.map(w => ({
+          worker_id: w.id,
+          worker_code: w.worker_code,
+          name: w.full_name,
+          designation: w.designation,
+          is_temporary_leader: w.id === (leader?.id || team.temporary_leader_id)
+        })),
+        attendance_records: [],
+        evidence: [],
+        status: 'assigned',
+        created_at: new Date().toISOString()
+      });
+      wardData.workAttempts.set(complaint.id, attempts);
+
+      // Record in complaint activity logs
+      if (!complaint.activity_logs) complaint.activity_logs = [];
+      complaint.activity_logs.push({
+        id: `act-${Date.now()}`,
+        complaint_id: complaint.id,
+        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
+        actor_name: 'Ramesh Patel (Ward 3 Officer)',
+        actor_role: 'ward_officer',
+        action: 'Assigned to Team',
+        previous_status: 'submitted',
+        new_status: 'assigned',
+        description: `Assigned to ${team.team_name} (Team Leader: ${leader?.full_name || team.temporary_leader_name}). Task: ${taskCode}`,
+        created_at: new Date().toISOString()
+      });
 
       res.status(200).json({
         success: true,
-        message: `Sanitation team assigned to complaint ${complaint.complaint_number}.`,
-        data: { complaint_id: complaint.id, status: 'assigned' }
+        message: `Assigned complaint ${complaint.complaint_number} to team "${team.team_name}". Task ${taskCode} dispatched.`,
+        data: {
+          complaint_id: complaint.id,
+          status: 'assigned',
+          task_code: taskCode,
+          team_name: team.team_name,
+          temporary_team_leader_name: leader?.full_name || team.temporary_leader_name
+        }
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1094,71 +1229,33 @@ export class WardOfficerController {
   public static async getAssignments(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       initializeSeedAttempts();
-      const assignments = [
-        {
-          id: 'tsk-nav-2026-101',
-          task_code: 'TSK-NAV-2026-101',
-          title: 'Overflowing Dustbin Clearance & Disinfection',
-          linked_complaint_id: 'comp-01',
-          linked_complaint_number: 'NMC-2026-10021',
-          category: 'bin_clearance',
-          priority: 'high',
-          ward_number: 3,
-          location_name: 'North Lake Promenade, Dudhiya Talao',
-          address: 'Near Ashapuri Mandir Entrance, North Gate',
-          latitude: 20.9312,
-          longitude: 72.9284,
-          team_leader_name: 'Kanti Solanki',
-          team_leader_id: 'f2000000-0000-0000-0000-000000000001',
-          team_members_count: 2,
-          scheduled_date: '2026-10-28',
-          status: 'completion_submitted',
-          attendance_status: 'All Present (GPS Verified)',
-          evidence_status: 'Before & After Uploaded'
-        },
-        {
-          id: 'tsk-nav-2026-104',
-          task_code: 'TSK-NAV-2026-104',
-          title: 'Illegal Plot Debris Removal & Grading',
-          linked_complaint_id: 'comp-02',
-          linked_complaint_number: 'NMC-2026-10045',
-          category: 'open_dumping_removal',
-          priority: 'medium',
-          ward_number: 3,
-          location_name: 'Ashapuri Garden East Perimeter',
-          address: 'Behind Community Hall, East Compound Wall',
-          latitude: 20.9295,
-          longitude: 72.9315,
-          team_leader_name: 'Kanti Solanki',
-          team_leader_id: 'f2000000-0000-0000-0000-000000000001',
-          team_members_count: 3,
-          scheduled_date: '2026-10-31',
-          status: 'in_progress',
-          attendance_status: '2 Present, 1 Exception Pending',
-          evidence_status: 'Before Uploaded'
-        },
-        {
-          id: 'tsk-nav-2026-109',
-          task_code: 'TSK-NAV-2026-109',
-          title: 'Surface Drain Jetting & Silt Desludging',
-          linked_complaint_id: 'comp-05',
-          linked_complaint_number: 'NMC-2026-10089',
-          category: 'drainage_cleaning',
-          priority: 'urgent',
-          ward_number: 3,
-          location_name: 'Lunsikui Vegetable Market Lane',
-          address: 'Back Gate, Lunsikui Mandi',
-          latitude: 20.9380,
-          longitude: 72.9340,
-          team_leader_name: 'Suresh Vaghela',
-          team_leader_id: 'f2000000-0000-0000-0000-000000000002',
-          team_members_count: 4,
-          scheduled_date: '2026-11-01',
-          status: 'assigned',
-          attendance_status: 'Awaiting Check-in',
-          evidence_status: 'Not Uploaded'
-        }
-      ];
+      const assignments = (store.workAssignments || []).map(a => ({
+        id: a.id,
+        task_code: a.task_code,
+        title: a.title,
+        linked_complaint_id: (a as any).complaint_id || 'comp-01',
+        linked_complaint_number: (a as any).complaint_number || 'NMC-2026-10021',
+        category: a.category,
+        priority: a.priority,
+        ward_number: a.ward_number || 3,
+        location_name: a.location_name,
+        address: a.address,
+        latitude: a.latitude,
+        longitude: a.longitude,
+        team_leader_name: a.temporary_leader_name || 'Kanti Solanki',
+        team_leader_id: a.temporary_leader_id || 'f2000000-0000-0000-0000-000000000001',
+        team_members_count: (a.team_members || []).length || 2,
+        scheduled_date: a.scheduled_date,
+        status: a.status,
+        attendance_status: a.my_attendance_status?.includes('present') || a.my_attendance_status?.includes('Checked')
+          ? 'All Present (GPS Verified)'
+          : 'Attendance Pending',
+        evidence_status: a.has_before_evidence && a.has_after_evidence
+          ? 'Before & After Uploaded'
+          : a.has_before_evidence
+          ? 'Before Uploaded'
+          : 'Pending Evidence'
+      }));
 
       res.status(200).json({ success: true, data: assignments });
     } catch (err: any) {
@@ -1171,78 +1268,173 @@ export class WardOfficerController {
   // =========================================================================
   public static async getWorkers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const workers = [
-        {
-          id: 'f2000000-0000-0000-0000-000000000001',
-          user_id: 'f1000000-0000-0000-0000-000000000001',
-          worker_code: 'WRK-2026-001',
-          full_name: 'Kanti Solanki',
-          phone: '+919825120001',
-          designation: 'Sanitation Worker',
-          primary_designation: 'Sanitation Worker',
-          ward_number: 3,
-          ward_name: 'Ward 3 - Dudhiya Talao',
-          availability_status: 'on_duty',
-          active_task_code: 'TSK-NAV-2026-101',
-          experience_years: 5.5,
-          skills: ['Bin Clearance', 'Lakeside Sanitation', 'Debris Lifting'],
-          attendance_today: 'Present – Location Verified (14.8m)',
-          avatar_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80'
-        },
-        {
-          id: 'f2000000-0000-0000-0000-000000000002',
-          user_id: 'f1000000-0000-0000-0000-000000000002',
-          worker_code: 'WRK-2026-042',
-          full_name: 'Suresh Vaghela',
-          phone: '+919825120002',
-          designation: 'Waste Collection Worker',
-          primary_designation: 'Waste Collection Worker',
-          ward_number: 3,
-          ward_name: 'Ward 3 - Dudhiya Talao',
-          availability_status: 'on_duty',
-          active_task_code: 'TSK-NAV-2026-101',
-          experience_years: 4.0,
-          skills: ['Tipper Vehicle Assistance', 'Pavement Power Washing'],
-          attendance_today: 'Present – Location Verified (22.1m)',
-          avatar_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80'
-        },
-        {
-          id: 'f2000000-0000-0000-0000-000000000003',
-          user_id: 'f1000000-0000-0000-0000-000000000003',
-          worker_code: 'WRK-2026-077',
-          full_name: 'Dinesh Parmar',
-          phone: '+919825120003',
-          designation: 'Garbage Vehicle Operator',
-          primary_designation: 'Garbage Vehicle Operator',
-          ward_number: 3,
-          ward_name: 'Ward 3 - Dudhiya Talao',
-          availability_status: 'available',
-          active_task_code: null,
-          experience_years: 7.2,
-          skills: ['Compactor Truck Operation', 'Heavy Vehicle Maneuvering'],
-          attendance_today: 'Present – Standby at Yard',
-          avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80'
-        },
-        {
-          id: 'f2000000-0000-0000-0000-000000000004',
-          user_id: 'f1000000-0000-0000-0000-000000000004',
-          worker_code: 'WRK-2026-088',
-          full_name: 'Pravin Makwana',
-          phone: '+919825120004',
-          designation: 'Drainage Cleaning Worker',
-          primary_designation: 'Drainage Cleaning Worker',
-          ward_number: 3,
-          ward_name: 'Ward 3 - Dudhiya Talao',
-          availability_status: 'available',
-          active_task_code: null,
-          experience_years: 3.5,
-          skills: ['Sewer Jetting', 'Silt Extraction'],
-          attendance_today: 'Present – Ready for Deployment',
-          avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=80'
-        }
-      ];
+      const { search, availability } = req.query as any;
+      let workers = store.workers || [];
+
+      if (availability && availability !== 'all') {
+        workers = workers.filter(w => w.availability_status === availability);
+      }
+      if (search && search.trim()) {
+        const q = search.toLowerCase().trim();
+        workers = workers.filter(w =>
+          w.full_name.toLowerCase().includes(q) ||
+          w.worker_code.toLowerCase().includes(q) ||
+          w.designation.toLowerCase().includes(q)
+        );
+      }
 
       res.status(200).json({ success: true, data: workers });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async addWorker(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const {
+        full_name,
+        phone,
+        designation = 'Sanitation Worker',
+        skills = ['Litter Abatement'],
+        availability_status = 'available'
+      } = req.body;
+
+      if (!full_name || !phone) {
+        res.status(400).json({ success: false, error: 'Full name and phone are required' });
+        return;
+      }
+
+      const count = (store.workers || []).length + 1;
+      const serial = String(count).padStart(3, '0');
+      const newWorker = {
+        id: `f2000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
+        user_id: `f1000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
+        worker_code: `WRK-2026-${serial}`,
+        full_name: full_name.trim(),
+        phone: phone.trim(),
+        designation: designation.trim(),
+        primary_designation: designation.trim(),
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        availability_status: availability_status || 'available',
+        active_task_code: undefined,
+        experience_years: 2.0,
+        skills: Array.isArray(skills) ? skills : [skills],
+        attendance_today: 'Present (Standby)',
+        avatar_url: `https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80`,
+        created_at: new Date().toISOString()
+      };
+
+      if (!store.workers) store.workers = [];
+      store.workers.push(newWorker);
+
+      res.status(201).json({
+        success: true,
+        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) added to Ward 3 directory.`,
+        data: newWorker
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 8B. Team Management (Form Units, Temporary Leadership)
+  // =========================================================================
+  public static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      res.status(200).json({ success: true, data: store.teams || [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async createTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { team_name, worker_ids = [], temporary_leader_id } = req.body;
+
+      if (!team_name || !worker_ids || worker_ids.length === 0) {
+        res.status(400).json({ success: false, error: 'Team name and at least one worker are required' });
+        return;
+      }
+
+      const leaderWorker = (store.workers || []).find(w => w.id === temporary_leader_id) || (store.workers || []).find(w => w.id === worker_ids[0]);
+
+      const newTeam = {
+        id: `team-${Date.now()}`,
+        team_name: team_name.trim(),
+        ward_number: 3,
+        worker_ids,
+        temporary_leader_id: leaderWorker?.id || worker_ids[0],
+        temporary_leader_name: leaderWorker?.full_name || 'Assigned Leader',
+        created_at: new Date().toISOString(),
+        status: 'active'
+      };
+
+      if (!store.teams) store.teams = [];
+      store.teams.push(newTeam);
+
+      res.status(201).json({
+        success: true,
+        message: `Team "${newTeam.team_name}" created with temporary leader ${newTeam.temporary_leader_name}.`,
+        data: newTeam
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 8C. Community Directory & Registration
+  // =========================================================================
+  public static async getCommunities(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      res.status(200).json({ success: true, data: store.communities || [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async addCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const {
+        community_name,
+        head_name,
+        phone,
+        email,
+        address,
+        locality = 'Dudhiya Talao',
+        organisation_type = 'Resident Welfare Association'
+      } = req.body;
+
+      if (!community_name || !head_name) {
+        res.status(400).json({ success: false, error: 'Community name and head name are required' });
+        return;
+      }
+
+      const newCommunity = {
+        id: `b0000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
+        community_name: community_name.trim(),
+        organisation_type: organisation_type || 'Resident Welfare Association',
+        head_name: head_name.trim(),
+        phone: phone?.trim() || '+919825100000',
+        email: email?.trim() || 'contact@community.org',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
+        address: address?.trim() || 'Dudhiya Talao Road, Ward 3, Navsari',
+        locality: locality?.trim() || 'Dudhiya Talao',
+        active_drives_count: 0,
+        created_at: new Date().toISOString()
+      };
+
+      if (!store.communities) store.communities = [];
+      store.communities.push(newCommunity);
+
+      res.status(201).json({
+        success: true,
+        message: `Community "${newCommunity.community_name}" registered in Ward 3.`,
+        data: newCommunity
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

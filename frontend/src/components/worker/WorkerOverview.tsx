@@ -12,7 +12,8 @@ import {
   Truck,
   Sparkles,
   PhoneCall,
-  Volume2
+  Volume2,
+  Briefcase
 } from 'lucide-react';
 import { WorkerProfile, WorkerDashboardSummary, WorkAssignment } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
@@ -113,11 +114,11 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
             </div>
           </div>
           <button
-            onClick={() => onNavigateTab('completion_reports', activeLeaderTasks[0]?.id)}
+            onClick={() => onNavigateTab('assign_work', activeLeaderTasks[0]?.id)}
             className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#06423c] text-white text-xs font-black shadow-md transition flex items-center justify-center gap-2 shrink-0"
           >
             <CheckCircle2 className="w-4 h-4 text-white" />
-            <span>Submit Completion Report</span>
+            <span>Open Assign Work</span>
           </button>
         </div>
       )}
@@ -185,7 +186,7 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
             <p className="text-xs text-[#64748b]">Ward 3 Scheduled Operations · Navsari Municipal Corporation</p>
           </div>
           <button
-            onClick={() => onNavigateTab('daily_work')}
+            onClick={() => onNavigateTab('assign_work')}
             className="text-xs font-extrabold text-[#095c54] hover:underline flex items-center gap-1"
           >
             <span>View All</span>
@@ -251,36 +252,12 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
 
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    onClick={() => onNavigateTab('work_map', task.id)}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition"
+                    onClick={() => onNavigateTab('assign_work', task.id)}
+                    className="px-3.5 py-2 bg-[#095c54] hover:bg-[#06423c] text-white text-xs font-extrabold rounded-xl flex items-center gap-1.5 transition shadow-xs"
                   >
-                    <MapPin className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Map</span>
+                    <Briefcase className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Open Work Details</span>
                   </button>
-                  <button
-                    onClick={() => onNavigateTab('evidence', task.id)}
-                    className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Evidence</span>
-                  </button>
-                  {task.is_temporary_leader ? (
-                    <button
-                      onClick={() => onNavigateTab('completion_reports', task.id)}
-                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition shadow-sm"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Submit Report</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => onNavigateTab('attendance', task.id)}
-                      className="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition shadow-sm"
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Attendance</span>
-                    </button>
-                  )}
                 </div>
               </div>
             ))
