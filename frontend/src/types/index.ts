@@ -100,6 +100,8 @@ export interface Complaint {
   status: ComplaintStatus;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   image_url: string;
+  resolved_image_url?: string;
+  resolution_image_url?: string;
   confidence_score?: number;
   ai_model_name?: string;
   ai_model_version?: string;
@@ -214,6 +216,8 @@ export interface CommunityRecognitionPost {
   description: string;
   achievement_stats: string;
   image_url: string;
+  resolved_image_url?: string;
+  resolution_image_url?: string;
   likes_count: number;
   comments_count: number;
   is_liked?: boolean;
@@ -447,6 +451,8 @@ export interface ActivityEvidence {
   stage?: 'before' | 'during' | 'after';
   storage_path?: string;
   image_url: string;
+  resolved_image_url?: string;
+  resolution_image_url?: string;
   caption: string;
   description?: string;
   latitude?: number;

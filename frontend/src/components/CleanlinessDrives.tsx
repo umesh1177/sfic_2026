@@ -157,19 +157,19 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   return (
     <div className="space-y-5 animate-fadeIn">
       {/* Header */}
-      <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#e2e8f0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="pill-badge py-1 px-3 text-[11px]">
               <span className="badge-dot" />
-              Community Swachhata Action
+              {t.app_subtitle}
             </span>
           </div>
           <h2 className="text-lg sm:text-xl font-extrabold text-[#095c54] mt-1">
             {t.nav_drives}
           </h2>
           <p className="text-xs text-[#64748b]">
-            Join local municipal drives, partner with civic organizations, and earn Karma points
+            {t.drives_desc}
           </p>
         </div>
 
@@ -178,10 +178,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           <Search className="w-4 h-4 text-[#94a3b8] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search drives or wards..."
+            placeholder={lang === 'gu' ? 'ડ્રાઇવ શોધો...' : lang === 'hi' ? 'ड्राइव खोजें...' : 'Search drives or wards...'}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 rounded-2xl border border-[#e2e8f0] text-xs font-semibold focus:border-[#095c54] outline-none bg-[#f8faf9]"
+            className="w-full pl-9 pr-3 py-2.5 rounded-2xl border border-[#e2e8f0] text-xs font-semibold focus:border-[#095c54] outline-none bg-[#f8faf9]"
           />
         </div>
       </div>
@@ -210,13 +210,9 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
       {/* Drives Grid */}
       {loading ? (
-        <div className="text-center py-12 text-xs font-bold text-[#64748b]">
-          Loading upcoming municipal cleanliness drives...
-        </div>
+        <div className="text-center py-12 text-xs font-bold text-[#64748b]">{t.loading}</div>
       ) : filtered.length === 0 ? (
-        <div className="p-8 text-center bg-white rounded-3xl border border-[#e2e8f0] text-xs text-[#64748b]">
-          No drives found matching your criteria.
-        </div>
+        <div className="p-8 text-center bg-white rounded-3xl border border-[#e2e8f0] text-xs text-[#64748b]">{t.empty}</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(d => {
@@ -276,30 +272,30 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   </div>
                 </div>
 
-                {/* Card Action: View Details Button (No direct register on card) */}
-                <div className="p-4 sm:p-5 pt-0">
-                  {d.is_registered ? (
-                    <div className="space-y-2">
-                      <div className="w-full py-2 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
-                        <Check className="w-3.5 h-3.5" /> You are Registered
+                  {/* Card Action: View Details Button */}
+                  <div className="p-4 sm:p-5 pt-0">
+                    {d.is_registered ? (
+                      <div className="space-y-2">
+                        <div className="w-full py-2.5 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
+                          <Check className="w-3.5 h-3.5" /> {t.registered_badge}
+                        </div>
+                        <button
+                          onClick={() => setSelectedDrive(d)}
+                          className="w-full py-2 rounded-xl text-xs font-bold text-[#095c54] hover:bg-[#e6f4f1] transition border border-[#b8e0d7] touch-press"
+                        >
+                          {t.view_details} →
+                        </button>
                       </div>
+                    ) : (
                       <button
                         onClick={() => setSelectedDrive(d)}
-                        className="w-full py-2 rounded-xl text-xs font-bold text-[#095c54] hover:bg-[#e6f4f1] transition border border-[#b8e0d7]"
+                        className="w-full btn-outline-custom py-2.5 text-xs font-extrabold text-[#095c54] border-[#b8e0d7] hover:bg-[#e6f4f1] transition flex items-center justify-center gap-1.5 touch-press"
                       >
-                        View Drive & Organizer Info →
+                        <span>{t.register_btn}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setSelectedDrive(d)}
-                      className="w-full btn-outline-custom py-2.5 text-xs font-extrabold text-[#095c54] border-[#b8e0d7] hover:bg-[#e6f4f1] transition flex items-center justify-center gap-1.5"
-                    >
-                      <span>View Details & Organizer</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                    )}
+                  </div>
               </div>
             );
           })}
@@ -310,9 +306,12 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
       {/* DETAILED MODAL: ORGANIZER INFO & REGISTRATION BUTTON     */}
       {/* ======================================================== */}
       {selectedDrive && activeOrganizer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeInBackdrop"
+          onClick={() => setSelectedDrive(null)}
+        >
           <div
-            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-[#e2e8f0] overflow-hidden flex flex-col max-h-[90vh] animate-scaleUp"
+            className="w-full max-w-lg bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl border border-[#e2e8f0] overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh] animate-slideUpSheet sm:animate-scaleUp pb-safe"
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -376,8 +375,9 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 <p className="text-xs text-[#64748b]">
                   {activeOrganizer.meeting_spot}
                 </p>
-                <div className="text-[11px] font-bold text-[#095c54]">
-                  ⏰ Reporting Time: {activeOrganizer.reporting_time}
+                <div className="text-[11px] font-bold text-[#095c54] flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                  <span>Reporting Time: {activeOrganizer.reporting_time}</span>
                 </div>
               </div>
 

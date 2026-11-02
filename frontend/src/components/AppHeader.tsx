@@ -9,7 +9,9 @@ import {
   AlertCircle,
   Menu,
   X,
-  Volume2
+  Volume2,
+  Wrench,
+  Building2
 } from 'lucide-react';
 import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile, AppNotification } from '../types/index.js';
@@ -69,13 +71,13 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <SwachhSetuIcon size={38} />
             </div>
             <div className="leading-tight min-w-0">
-              <div className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="font-black text-[#095c54] text-base tracking-tight">{t.app_title}</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#dcfce7] text-[#065f46] border border-[#86efac]">
-                  {t.nmc_label}
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-[#095c54] text-base tracking-tight truncate max-w-[160px] sm:max-w-none">{t.app_title}</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0] shrink-0">
+                  NMC
                 </span>
               </div>
-              <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
                 {t.citizen_portal}
               </p>
             </div>
@@ -108,10 +110,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {/* Actions & Utilities */}
           <div className="flex items-center gap-2 sm:gap-3">
             
-            {/* Quick Report Issue Button (Desktop & Tablet) */}
+            {/* Quick Report Issue Button (Desktop & Tablet only) */}
             <button
               onClick={onOpenReport}
-              className="hidden sm:inline-flex btn-primary-custom px-4 py-2 text-xs sm:text-sm"
+              className="hidden md:inline-flex btn-primary-custom px-4 py-2 text-xs sm:text-sm"
             >
               <Sparkles className="w-4 h-4" />
               <span>{t.action_report}</span>
@@ -183,7 +185,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-[#e2e8f0] overflow-hidden z-50">
+                <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-16 sm:top-auto mt-1 sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-2xl border border-[#e2e8f0] overflow-hidden z-50 animate-fadeIn">
                   <div className="p-3.5 bg-[#f0f6f4] border-b border-[#e2e8f0] flex items-center justify-between">
                     <span className="font-extrabold text-xs sm:text-sm text-[#095c54]">
                       Civic Notifications ({unreadCount} new)
@@ -252,7 +254,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             {user ? (
               <div
                 onClick={() => setCurrentTab('profile')}
-                className="flex items-center gap-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs group"
+                className="flex items-center gap-2 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs group touch-press"
               >
                 <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
                   {user.avatar_url ? (
@@ -265,15 +267,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     user.full_name ? user.full_name.slice(0, 2).toUpperCase() : 'CT'
                   )}
                 </div>
-                <div className="text-left min-w-0">
-                  <span className="block text-xs font-black text-[#095c54] truncate max-w-[110px] sm:max-w-[140px]">
+                <div className="text-left min-w-0 hidden min-[360px]:block">
+                  <span className="block text-xs font-black text-[#095c54] truncate max-w-[85px] sm:max-w-[140px]">
                     {user.full_name}
                   </span>
                   <span className="block text-[10px] font-bold text-[#047857] flex items-center gap-1 truncate">
                     {user.role === 'worker' || (user.role as any) === 'sanitation_worker' ? (
-                      <>🛠️ Field Worker</>
+                      <span className="flex items-center gap-1"><Wrench className="w-3 h-3 text-[#047857] shrink-0" /> Field Worker</span>
                     ) : user.role === 'community_head' ? (
-                      <>🏛️ Community Head</>
+                      <span className="flex items-center gap-1"><Building2 className="w-3 h-3 text-[#047857] shrink-0" /> Community Head</span>
                     ) : (
                       <>
                         <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
@@ -296,7 +298,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             {/* Mobile menu toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 text-[#095c54] hover:bg-[#e6f4f1] rounded-lg"
+              className="lg:hidden p-2 text-[#095c54] hover:bg-[#e6f4f1] rounded-xl transition touch-press"
+              aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -308,7 +311,23 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       {/* Mobile Drawer Navigation for Secondary Sections */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-white border-b border-[#e2e8f0] px-4 pt-2 pb-6 space-y-2 animate-fadeIn shadow-lg">
+        <div className="lg:hidden bg-white border-b border-[#e2e8f0] px-4 pt-3 pb-6 space-y-2 animate-fadeIn shadow-xl max-h-[80vh] overflow-y-auto">
+          {user && (
+            <div className="p-3 mb-2 rounded-2xl bg-[#e6f4f1]/70 border border-[#b8e0d7] flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.full_name} className="w-full h-full object-cover rounded-xl" />
+                ) : (
+                  user.full_name.slice(0, 2).toUpperCase()
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-black text-[#095c54] truncate">{user.full_name}</div>
+                <div className="text-[10px] text-[#64748b] truncate">{user.phone} · Ward 3 Dudhiya Talao</div>
+              </div>
+            </div>
+          )}
+
           {[
             { id: 'home', label: t.nav_home },
             { id: 'complaints', label: t.nav_complaints },
@@ -324,7 +343,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 setCurrentTab(item.id);
                 setMobileMenuOpen(false);
               }}
-              className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-between ${
+              className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-between transition touch-press ${
                 currentTab === item.id
                   ? 'text-[#095c54] bg-[#e6f4f1]'
                   : 'text-[#0f2925] hover:bg-slate-50'
@@ -341,7 +360,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 onLogout();
                 setMobileMenuOpen(false);
               }}
-              className="w-full text-left px-3.5 py-2.5 text-sm font-bold text-[#dc2626] hover:bg-[#fee2e2] rounded-xl flex items-center gap-2 mt-4"
+              className="w-full text-left px-3.5 py-2.5 text-sm font-bold text-[#dc2626] hover:bg-[#fee2e2] rounded-xl flex items-center gap-2 mt-4 transition touch-press"
             >
               <LogOut className="w-4 h-4" />
               <span>{t.nav_logout}</span>

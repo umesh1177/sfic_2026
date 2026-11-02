@@ -14,3 +14,4 @@ __pycache__/
 .DS_Store
 database/pgdata/
 .gemini/
+analyzeproject.md  

@@ -43,13 +43,13 @@ export const CommunityChallenges: React.FC<CommunityChallengesProps> = ({ lang }
 
   return (
     <div className="space-y-4">
-      <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-[#e2e8f0]">
+      <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-xs border border-[#e2e8f0]">
         <h2 className="text-lg sm:text-xl font-extrabold text-[#095c54] flex items-center gap-2">
           <Trophy className="w-5 h-5 text-[#d97706]" />
           {t.challenges_title}
         </h2>
         <p className="text-xs text-[#64748b] mt-0.5">
-          Join collective municipal cleanliness missions to make Navsari one of India's cleanest cities.
+          {t.action_challenges_sub}
         </p>
       </div>
 
@@ -61,9 +61,7 @@ export const CommunityChallenges: React.FC<CommunityChallengesProps> = ({ lang }
       )}
 
       {loading ? (
-        <div className="text-center py-12 text-xs font-bold text-[#64748b]">
-          Loading civic challenges...
-        </div>
+        <div className="text-center py-12 text-xs font-bold text-[#64748b]">{t.loading}</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {challenges.map(ch => {
@@ -72,7 +70,7 @@ export const CommunityChallenges: React.FC<CommunityChallengesProps> = ({ lang }
             return (
               <div
                 key={ch.id}
-                className="p-5 rounded-3xl border border-[#e2e8f0] bg-white shadow-sm flex flex-col justify-between space-y-4"
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-[#e2e8f0] bg-white shadow-sm flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -116,12 +114,12 @@ export const CommunityChallenges: React.FC<CommunityChallengesProps> = ({ lang }
                 <div>
                   {ch.is_joined ? (
                     <div className="w-full py-2.5 rounded-xl bg-[#ecfdf5] text-[#10b981] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
-                      <CheckCircle2 className="w-4 h-4" /> Active Participant
+                      <CheckCircle2 className="w-4 h-4" /> {t.registered_badge}
                     </div>
                   ) : (
                     <button
                       onClick={() => handleJoin(ch.id)}
-                      className="w-full btn-primary-custom py-2.5 text-xs font-bold"
+                      className="w-full btn-primary-custom py-2.5 text-xs font-bold touch-press"
                     >
                       {t.join_challenge}
                       <ArrowRight className="w-3.5 h-3.5 ml-1" />

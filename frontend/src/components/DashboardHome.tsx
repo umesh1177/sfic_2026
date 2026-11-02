@@ -29,7 +29,7 @@ interface DashboardHomeProps {
   lang: Language;
 }
 
-export const DashboardHome: React.FC<DashboardHomeProps> = ({
+export  const DashboardHome: React.FC<DashboardHomeProps> = ({
   user,
   dashboardData,
   onOpenReport,
@@ -46,163 +46,191 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
     { weekday: 'short', day: 'numeric', month: 'short' }
   );
 
-  return (
-    <div className="space-y-5 animate-fadeIn">
-      {/* ======================================================== */}
-      {/* 1. CLEAN CIVIC OVERVIEW HEADER                           */}
-      {/* ======================================================== */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
-            {t.welcome_back} {user?.full_name ? user.full_name.split(' ')[0] : 'Citizen'}!
-          </h1>
-          <p className="text-xs text-[#64748b] mt-0.5">
-            Navsari 13-Ward Civic Action & Cleanliness Overview · {currentDateFormatted}
-          </p>
-        </div>
+  // Time-of-day greeting (multilingual)
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 
+    ? t.greeting_morning 
+    : currentHour < 17 
+    ? t.greeting_afternoon 
+    : t.greeting_evening;
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenReport}
-            className="btn-primary-custom px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 shadow-xs"
-          >
-            <Camera className="w-4 h-4 text-white" />
-            <span>{t.action_report}</span>
-          </button>
+  return (
+    <div className="space-y-4 sm:space-y-6 animate-fadeIn">
+      {/* ======================================================== */}
+      {/* 1. CIVIC HERO & WELCOME BANNER                           */}
+      {/* ======================================================== */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#095c54] via-[#0d6e65] to-[#10b981] p-5 sm:p-7 text-white shadow-lg shadow-[#095c54]/15">
+        {/* Decorative background glow circles */}
+        <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-[#10b981]/20 blur-2xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-2 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 backdrop-blur-md text-white border border-white/25 flex items-center gap-1.5 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-[#10b981] ring-2 ring-white animate-pulse" />
+                {t.ward_badge}
+              </span>
+              <span className="text-white/80 text-[11px] font-semibold">
+                {t.civic_monitoring} · {currentDateFormatted}
+              </span>
+            </div>
+
+            <h1 className="text-xl sm:text-3xl font-black text-white tracking-tight leading-tight">
+              {greeting}, {user?.full_name ? user.full_name.split(' ')[0] : t.citizen}!
+            </h1>
+
+            <p className="text-xs sm:text-sm text-white/90 max-w-xl font-medium leading-relaxed">
+              {t.hero_card_desc}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0 pt-2 sm:pt-0">
+            <button
+              onClick={onOpenReport}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-white text-[#095c54] hover:bg-[#e6f4f1] font-black text-xs sm:text-sm shadow-lg shadow-black/10 transition-all flex items-center justify-center gap-2 touch-press"
+            >
+              <Camera className="w-4 h-4 text-[#095c54]" />
+              <span>{t.action_report}</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ======================================================== */}
       {/* 2. STATS OVERVIEW: CLEAN MINIMALIST CARDS                */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Total Submitted */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#b8e0d7] hover:shadow-md transition cursor-pointer group"
+          className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#b8e0d7] hover:shadow-md transition cursor-pointer group touch-press"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-[#64748b]">Total Reports</span>
-            <div className="p-2 rounded-xl bg-[#e6f4f1] text-[#095c54] group-hover:scale-110 transition-transform">
+            <span className="text-[11px] sm:text-xs font-extrabold text-[#64748b] truncate">{t.stats_total}</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-[#e6f4f1] text-[#095c54] group-hover:scale-110 transition-transform shrink-0">
               <FileText className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#0f2925] mt-2">
+          <div className="text-xl sm:text-3xl font-black text-[#0f2925] mt-1.5 sm:mt-2">
             {stats.total_submitted}
           </div>
-          <span className="text-[10px] font-bold text-[#095c54] mt-1 block">
-            All submitted issues
+          <span className="text-[10px] font-bold text-[#095c54] mt-0.5 block truncate">
+            {t.stats_total_sub}
           </span>
         </div>
 
         {/* Pending Review */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#fde68a] hover:shadow-md transition cursor-pointer group"
+          className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#fde68a] hover:shadow-md transition cursor-pointer group touch-press"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-[#64748b]">Pending</span>
-            <div className="p-2 rounded-xl bg-[#fef3c7] text-[#d97706] group-hover:scale-110 transition-transform">
+            <span className="text-[11px] sm:text-xs font-extrabold text-[#64748b] truncate">{t.stats_pending}</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-[#fef3c7] text-[#d97706] group-hover:scale-110 transition-transform shrink-0">
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#d97706] mt-2">
+          <div className="text-xl sm:text-3xl font-black text-[#d97706] mt-1.5 sm:mt-2">
             {stats.pending}
           </div>
-          <span className="text-[10px] font-bold text-[#b45309] mt-1 block">
-            Awaiting officer review
+          <span className="text-[10px] font-bold text-[#b45309] mt-0.5 block truncate">
+            {t.stats_pending_sub}
           </span>
         </div>
 
         {/* In Progress */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#bae6fd] hover:shadow-md transition cursor-pointer group"
+          className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#bae6fd] hover:shadow-md transition cursor-pointer group touch-press"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-[#64748b]">In Progress</span>
-            <div className="p-2 rounded-xl bg-[#f0f9ff] text-[#0284c7] group-hover:scale-110 transition-transform">
+            <span className="text-[11px] sm:text-xs font-extrabold text-[#64748b] truncate">{t.stats_in_progress}</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-[#f0f9ff] text-[#0284c7] group-hover:scale-110 transition-transform shrink-0">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#0284c7] mt-2">
+          <div className="text-xl sm:text-3xl font-black text-[#0284c7] mt-1.5 sm:mt-2">
             {stats.in_progress}
           </div>
-          <span className="text-[10px] font-bold text-[#0369a1] mt-1 block">
-            Sanitation crew dispatched
+          <span className="text-[10px] font-bold text-[#0369a1] mt-0.5 block truncate">
+            {t.stats_in_progress_sub}
           </span>
         </div>
 
         {/* Resolved */}
         <div
           onClick={() => onNavigateTab('complaints')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#a7f3d0] hover:shadow-md transition cursor-pointer group"
+          className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#a7f3d0] hover:shadow-md transition cursor-pointer group touch-press"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-[#64748b]">Resolved</span>
-            <div className="p-2 rounded-xl bg-[#ecfdf5] text-[#10b981] group-hover:scale-110 transition-transform">
+            <span className="text-[11px] sm:text-xs font-extrabold text-[#64748b] truncate">{t.stats_resolved}</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-[#ecfdf5] text-[#10b981] group-hover:scale-110 transition-transform shrink-0">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#10b981] mt-2">
+          <div className="text-xl sm:text-3xl font-black text-[#10b981] mt-1.5 sm:mt-2">
             {stats.resolved}
           </div>
-          <span className="text-[10px] font-bold text-[#047857] mt-1 block">
-            Verified cleaned spots
+          <span className="text-[10px] font-bold text-[#047857] mt-0.5 block truncate">
+            {t.stats_resolved_sub}
           </span>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* 3. QUICK CIVIC ACCESS CHIPS                              */}
+      {/* 3. QUICK CIVIC ACCESS CHIPS (RESPONSIVE 3-COLUMN)        */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        {/* Cleanliness Map */}
         <button
           onClick={() => onNavigateTab('map')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
+          className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#095c54] transition text-left flex flex-col sm:flex-row items-center sm:items-center justify-between gap-2 group touch-press"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center font-bold">
-              <MapIcon className="w-5 h-5" />
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left min-w-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center font-bold shrink-0">
+              <MapIcon className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="text-xs font-black text-[#0f2925]">Cleanliness Map</div>
-              <div className="text-[10px] text-[#64748b]">13 Ward GIS & Hotspots</div>
+            <div className="min-w-0">
+              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_map_title}</div>
+              <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_map_sub}</div>
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />
+          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition hidden sm:block shrink-0" />
         </button>
 
+        {/* Cleanliness Drives */}
         <button
           onClick={() => onNavigateTab('drives')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
+          className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#095c54] transition text-left flex flex-col sm:flex-row items-center sm:items-center justify-between gap-2 group touch-press"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#ecfdf5] text-[#10b981] flex items-center justify-center font-bold">
-              <Users className="w-5 h-5" />
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left min-w-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#ecfdf5] text-[#10b981] flex items-center justify-center font-bold shrink-0">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="text-xs font-black text-[#0f2925]">Cleanliness Drives</div>
-              <div className="text-[10px] text-[#64748b]">Join Volunteer Action</div>
+            <div className="min-w-0">
+              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_drives_title}</div>
+              <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_drives_sub}</div>
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />
+          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition hidden sm:block shrink-0" />
         </button>
 
+        {/* Civic Challenges */}
         <button
-          onClick={() => onNavigateTab('rewards')}
-          className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
+          onClick={() => onNavigateTab('challenges')}
+          className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#095c54] transition text-left flex flex-col sm:flex-row items-center sm:items-center justify-between gap-2 group touch-press"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center font-bold">
-              <Award className="w-5 h-5" />
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left min-w-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center font-bold shrink-0">
+              <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="text-xs font-black text-[#0f2925]">Rewards & Badges</div>
-              <div className="text-[10px] text-[#64748b]">Citizen Karma & Impact</div>
+            <div className="min-w-0">
+              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_challenges_title}</div>
+              <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_challenges_sub}</div>
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />
+          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition hidden sm:block shrink-0" />
         </button>
       </div>
 
@@ -211,21 +239,21 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
       {/* ======================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Recent Cleanliness Reports */}
-        <div className="lg:col-span-2 bg-white p-5 rounded-3xl border border-[#e2e8f0] shadow-sm space-y-4">
+        <div className="lg:col-span-2 bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-extrabold text-sm text-[#095c54]">
-                Recent Reports in Navsari
+                {t.nearby_issues_title}
               </h3>
               <p className="text-[11px] text-[#64748b]">
-                Real-time citizen reporting across wards
+                {t.civic_monitoring}
               </p>
             </div>
             <button
               onClick={() => onNavigateTab('complaints')}
               className="text-xs font-extrabold text-[#095c54] hover:underline"
             >
-              View All →
+              {t.view_details} →
             </button>
           </div>
 
@@ -247,8 +275,9 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
                     <div className="text-xs font-extrabold text-[#0f2925] truncate">
                       {issue.category_name}
                     </div>
-                    <div className="text-[11px] text-[#64748b] truncate">
-                      📍 {issue.address}
+                    <div className="text-[11px] text-[#64748b] truncate flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
+                      <span className="truncate">{issue.address}</span>
                     </div>
                   </div>
                 </div>
@@ -261,7 +290,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
                       ? 'bg-[#f0f9ff] text-[#0284c7]'
                       : 'bg-[#fef3c7] text-[#b45309]'
                   }`}>
-                    ● {issue.status.replace('_', ' ')}
+                    ● {issue.status === 'resolved' ? t.tab_resolved : issue.status === 'in_progress' ? t.tab_in_progress : t.tab_submitted}
                   </span>
                 </div>
               </div>
@@ -270,14 +299,14 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         </div>
 
         {/* Ward Cleanliness Index Leaderboard */}
-        <div className="bg-white p-5 rounded-3xl border border-[#e2e8f0] shadow-sm space-y-4">
+        <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-extrabold text-sm text-[#095c54]">
-                Cleanliness Index
+                {t.ward_scores_title}
               </h3>
               <p className="text-[11px] text-[#64748b]">
-                Top rated wards this week
+                {t.app_subtitle}
               </p>
             </div>
             <span className="p-1.5 rounded-xl bg-[#ecfdf5] text-[#10b981]">
@@ -311,7 +340,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
               onClick={() => onNavigateTab('map')}
               className="text-xs font-extrabold text-[#095c54] hover:underline"
             >
-              Explore Full Ward Ranking →
+              {t.action_map} →
             </button>
           </div>
         </div>

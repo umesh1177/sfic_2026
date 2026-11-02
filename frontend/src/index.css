@@ -41,65 +41,83 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom button classes from reference website */
-.btn-primary-custom {
-  background: var(--primary-gradient);
-  color: #ffffff !important;
-  font-weight: 700;
-  border-radius: 12px;
-  border: none;
-  box-shadow: 0 4px 16px rgba(9, 92, 84, 0.25);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+/* Touch manipulation optimization to eliminate 300ms tap delay on mobile */
+button, a, input, select, textarea {
+  touch-action: manipulation;
 }
 
-.btn-primary-custom:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(9, 92, 84, 0.35);
+/* Mobile Safe-Area Inset Utilities */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
-.btn-outline-custom {
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  color: var(--text);
-  font-weight: 700;
-  border-radius: 12px;
-  transition: all 0.25s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
+@layer components {
+  /* Custom button classes from reference website */
+  .btn-primary-custom {
+    background: var(--primary-gradient);
+    color: #ffffff !important;
+    font-weight: 700;
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 16px rgba(9, 92, 84, 0.25);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
 
-.btn-outline-custom:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  background-color: var(--primary-soft);
-}
+  .btn-primary-custom:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(9, 92, 84, 0.35);
+  }
 
-.glass-nav {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
-}
+  .btn-outline-custom {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    color: var(--text);
+    font-weight: 700;
+    border-radius: 12px;
+    transition: all 0.25s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
 
-.pill-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--primary-soft);
-  color: var(--primary-dark);
-  padding: 6px 14px;
-  border-radius: 9999px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  border: 1px solid var(--primary-border);
+  .btn-outline-custom:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background-color: var(--primary-soft);
+  }
+
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  }
+
+  .pill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border: 1px solid var(--primary-border);
+  }
 }
 
 .badge-dot {
@@ -127,13 +145,52 @@ body.high-contrast {
   --text-muted: #a1a1aa;
 }
 
-/* Hide scrollbar for clean mobile tabs */
+/* Hide scrollbar for clean mobile tabs with smooth touch momentum */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile Bottom Sheet & Dialog Animations */
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInBackdrop {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slideUpSheet {
+  animation: slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fadeInBackdrop {
+  animation: fadeInBackdrop 0.2s ease-out forwards;
+}
+
+/* Active touch feedback */
+.touch-press {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.touch-press:active {
+  transform: scale(0.96);
+  opacity: 0.9;
 }
 
 /* Uber / Rapido Style Pulsing Map Marker */

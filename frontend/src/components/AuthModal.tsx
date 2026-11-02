@@ -657,8 +657,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Step 4: First-time Onboarding Experience */}
               {signupStep === 4 && (
                 <div className="text-center py-2 space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-[#ecfdf5] text-[#10b981] flex items-center justify-center mx-auto text-2xl shadow-inner">
-                    🎉
+                  <div className="w-16 h-16 rounded-full bg-[#ecfdf5] text-[#10b981] flex items-center justify-center mx-auto shadow-inner">
+                    <Sparkles className="w-8 h-8 text-[#10b981]" />
                   </div>
                   <div>
                     <h3 className="font-extrabold text-lg text-[#095c54]">

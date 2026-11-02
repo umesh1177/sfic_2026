@@ -108,7 +108,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
         setAiQualityFeedback(
           res.data.passes_quality
             ? `✓ Photo verified: High clarity (score ${res.data.blur_score}/100) and balanced illumination.`
-            : `⚠ Quality warning: ${res.data.feedback_message || 'Image might be blurry or poorly lit'}`
+            : `Quality warning: ${res.data.feedback_message || 'Image might be blurry or poorly lit'}`
         );
       }
     } catch (err: any) {

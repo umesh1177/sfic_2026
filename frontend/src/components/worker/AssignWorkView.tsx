@@ -774,8 +774,8 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                     Sanitation Squad · Ward 3 Dudhiya Talao
                   </p>
                 </div>
-                <div className="w-9 h-9 rounded-full bg-white border border-amber-200 flex items-center justify-center text-amber-700 font-bold text-xs shadow-2xs">
-                  👑
+                <div className="w-9 h-9 rounded-full bg-white border border-amber-200 flex items-center justify-center text-amber-700 shadow-2xs">
+                  <Crown className="w-4 h-4 text-amber-600" />
                 </div>
               </div>
 

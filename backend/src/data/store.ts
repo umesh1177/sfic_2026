@@ -97,6 +97,42 @@ const initialCategories: ComplaintCategory[] = [
     description: 'Dead animal disposal, construction debris, or public toilet issues',
     icon: 'HelpCircle',
     is_active: true
+  },
+  {
+    id: 'cat-07',
+    category_name: 'Potholes / Degraded Road',
+    category_name_gu: 'ખાડા / તૂટેલો રસ્તો',
+    category_name_hi: 'सड़क के गड्ढे / खराब सड़क',
+    description: 'Potholes, cracks, and degraded road surface causing traffic hazards',
+    icon: 'Road',
+    is_active: true
+  },
+  {
+    id: 'cat-08',
+    category_name: 'Fallen Tree / Blockage',
+    category_name_gu: 'પડેલું ઝાડ / માર્ગ અવરોધ',
+    category_name_hi: 'गिरा हुआ पेड़ / मार्ग अवरोध',
+    description: 'Fallen branches, uprooted trees, or uncollected garden green waste',
+    icon: 'TreePine',
+    is_active: true
+  },
+  {
+    id: 'cat-09',
+    category_name: 'Railing / Parapet Damaged',
+    category_name_gu: 'રેલિંગ / પેરાપેટ નુકસાન',
+    category_name_hi: 'क्षतिग्रस्त रेलिंग / संरचना',
+    description: 'Damaged pedestrian railings, parapet walls, or culvert slabs',
+    icon: 'ShieldAlert',
+    is_active: true
+  },
+  {
+    id: 'cat-10',
+    category_name: 'Road Overtopped / Waterlogging',
+    category_name_gu: 'રસ્તા પર પાણી ભરાવું',
+    category_name_hi: 'सड़क पर जलभराव / ओवरफ्लो',
+    description: 'Severe waterlogging or flood water overtopping the road',
+    icon: 'Waves',
+    is_active: true
   }
 ];
 
@@ -326,6 +362,7 @@ const initialComplaints: Complaint[] = [
     status: 'resolved',
     priority: 'urgent',
     image_url: 'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80',
+    resolved_image_url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
     confidence_score: 96.1,
     ai_model_name: 'NavsariWasteClassifier-PyTorch-ResNet50',
     ai_model_version: 'v1.2.0',

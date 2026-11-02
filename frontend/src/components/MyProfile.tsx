@@ -250,11 +250,11 @@ export const MyProfile: React.FC<MyProfileProps> = ({
             />
           </div>
 
-          <div className="pt-2 flex justify-end">
+          <div className="pt-2 flex sm:justify-end">
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary-custom px-5 py-2 text-xs font-bold"
+              className="w-full sm:w-auto btn-primary-custom px-5 py-2.5 text-xs font-bold touch-press"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{loading ? 'Saving...' : 'Save Profile Changes'}</span>
@@ -340,14 +340,14 @@ export const MyProfile: React.FC<MyProfileProps> = ({
       </div>
 
       {/* Sign Out Card */}
-      <div className="p-5 rounded-3xl bg-[#fee2e2]/40 border border-[#fecaca] flex items-center justify-between">
+      <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-[#fee2e2]/40 border border-[#fecaca] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h4 className="font-extrabold text-xs text-[#dc2626]">Sign Out of My Clean Navsari</h4>
           <p className="text-[11px] text-[#64748b]">Clears active session token on this device.</p>
         </div>
         <button
           onClick={onLogout}
-          className="px-4 py-2 rounded-xl bg-[#dc2626] text-white text-xs font-bold hover:bg-[#b91c1c] transition flex items-center gap-1.5"
+          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#dc2626] text-white text-xs font-bold hover:bg-[#b91c1c] transition flex items-center justify-center gap-1.5 touch-press"
         >
           <LogOut className="w-3.5 h-3.5" /> Sign Out
         </button>

@@ -174,7 +174,7 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
       const res = await api.createRecognitionPost({
         hero_name: heroName.trim(),
         hero_role: heroRole.trim(),
-        badge_title: '🌟 Community Cleanliness Spotlight',
+        badge_title: 'Community Cleanliness Spotlight',
         title: postTitle.trim(),
         description: postDescription.trim(),
         ward_number: postWardNumber,
@@ -219,40 +219,36 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* 1. HERO HEADER: COMMUNITY WALL & RECOGNITION            */}
-      {/* ======================================================== */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e2e8f0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* HERO HEADER */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e2e8f0] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ecfdf5] border border-[#a7f3d0] text-xs font-black text-[#047857] mb-2">
             <Sparkles className="w-3.5 h-3.5 text-[#10b981]" />
-            NMC Swachhata Samman
+            {t.app_subtitle}
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
-            Community Wall & Recognition
+            {t.rewards_title}
           </h1>
           <p className="text-xs text-[#64748b] mt-1 max-w-lg">
-            Celebrating citizens, youth green brigades, and municipal sanitation squads making Navsari cleaner every day.
+            {t.action_drives_sub}
           </p>
         </div>
 
         <button
           onClick={() => setIsNominateModalOpen(true)}
-          className="btn-primary-custom px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition shrink-0"
+          className="btn-primary-custom px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition shrink-0 w-full sm:w-auto touch-press"
         >
           <Plus className="w-4 h-4 text-white" />
-          <span>Nominate a Hero</span>
+          <span>{lang === 'gu' ? 'હીરો નોમિનેટ કરો' : lang === 'hi' ? 'हीरो नामांकित करें' : 'Nominate a Hero'}</span>
         </button>
       </div>
 
-      {/* ======================================================== */}
-      {/* 2. FILTER TABS                                          */}
-      {/* ======================================================== */}
+      {/* FILTER TABS */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs font-bold">
         {[
-          { id: 'all', label: 'All Spotlights', icon: Award },
-          { id: 'official', label: 'NMC Official Recognitions', icon: ShieldCheck },
-          { id: 'community', label: 'Citizen Spotlights', icon: Users }
+          { id: 'all', label: lang === 'gu' ? 'બધા' : lang === 'hi' ? 'सभी' : 'All Spotlights', icon: Award },
+          { id: 'official', label: lang === 'gu' ? 'NMC સત્તાવાર' : lang === 'hi' ? 'NMC आधिकारिक' : 'NMC Official', icon: ShieldCheck },
+          { id: 'community', label: lang === 'gu' ? 'નાગરિક સ્પૉટ' : lang === 'hi' ? 'नागरिक स्पॉट' : 'Citizen Spotlights', icon: Users }
         ].map(f => {
           const TabIcon = f.icon;
           const isActive = activeFilter === f.id;
@@ -260,7 +256,7 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
             <button
               key={f.id}
               onClick={() => setActiveFilter(f.id as any)}
-              className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition flex items-center gap-2 border ${
+              className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition flex items-center gap-2 border touch-press ${
                 isActive
                   ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
                   : 'bg-white text-[#64748b] border-[#e2e8f0] hover:bg-slate-50'
@@ -357,8 +353,9 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
                 </div>
 
                 {post.achievement_stats && (
-                  <span className="text-[10px] font-bold text-[#047857] bg-white px-2.5 py-1 rounded-xl shadow-xs border border-[#a7f3d0]">
-                    ✨ {post.achievement_stats}
+                  <span className="text-[10px] font-bold text-[#047857] bg-white px-2.5 py-1 rounded-xl shadow-xs border border-[#a7f3d0] flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-[#047857] shrink-0" />
+                    <span>{post.achievement_stats}</span>
                   </span>
                 )}
               </div>
@@ -388,8 +385,8 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
               {/* Engagement Counter */}
               <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-[#64748b] border-b border-[#f1f5f9]">
                 <div className="flex items-center gap-1.5">
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#fee2e2] text-[#dc2626] text-[10px]">
-                    ❤️
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#fee2e2] text-[#dc2626]">
+                    <Heart className="w-3 h-3 text-[#dc2626] fill-[#dc2626]" />
                   </span>
                   <span className="font-bold text-[#0f2925]">{post.likes_count || 0}</span>
                   <span>appreciations</span>
@@ -499,8 +496,17 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
       {/* 4. MODAL: NOMINATE A CLEANLINESS HERO                     */}
       {/* ======================================================== */}
       {isNominateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-[#e2e8f0] space-y-4 my-8 animate-scaleUp">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto animate-fadeInBackdrop"
+          onClick={() => setIsNominateModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-t-[2rem] sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-[#e2e8f0] space-y-4 my-0 sm:my-8 animate-slideUpSheet sm:animate-scaleUp pb-safe max-h-[92vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Native Mobile Drag Pill */}
+            <div className="sm:hidden w-12 h-1.5 rounded-full bg-slate-300 mx-auto -mt-1 mb-2" />
+
             <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-3">
               <div className="flex items-center gap-2">
                 <span className="p-2 rounded-xl bg-[#e6f4f1] text-[#095c54]">

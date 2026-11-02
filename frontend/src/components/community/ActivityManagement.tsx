@@ -537,7 +537,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     if (!abuse.isSafe) {
       setActionMessage({
         type: 'error',
-        text: `⚠️ Inappropriate description detected: (${abuse.detectedWord || abuse.reason}). Please provide a professional civic description.`
+        text: `Inappropriate description detected: (${abuse.detectedWord || abuse.reason}). Please provide a professional civic description.`
       });
       return;
     }
@@ -1253,8 +1253,9 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                       <p className="text-[11px] text-slate-500 font-medium">
                         {new Date(act.proposed_start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(act.proposed_end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
-                      <p className="text-[11px] text-slate-500">
-                        📍 {act.target_area}
+                      <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
+                        <span>{act.target_area}</span>
                       </p>
                     </div>
                   </div>
@@ -1520,7 +1521,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                       >
                                         <Bot className="w-3.5 h-3.5 text-[#095c54]" />
                                         <span>
-                                          {aiGeneratingQuestion[q.id] ? 'Generating...' : '🤖 AI Suggest Answer'}
+                                          {aiGeneratingQuestion[q.id] ? 'Generating...' : 'AI Suggest Answer'}
                                         </span>
                                       </button>
                                     </div>
@@ -1682,7 +1683,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                 return (
                                   <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
                                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                    <span>⚠️ Inappropriate words detected ({abuse.detectedWord || abuse.reason}). Please remove abusive terms.</span>
+                                    <span>Inappropriate words detected ({abuse.detectedWord || abuse.reason}). Please remove abusive terms.</span>
                                   </p>
                                 );
                               }

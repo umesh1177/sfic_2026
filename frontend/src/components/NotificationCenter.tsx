@@ -250,7 +250,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           <button
             key={chip.id}
             onClick={() => setFilterType(chip.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition flex items-center gap-1.5 border ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition flex items-center gap-1.5 border touch-press ${
               filterType === chip.id
                 ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
                 : 'bg-white text-[#64748b] border-[#e2e8f0] hover:bg-[#f0f6f4] hover:text-[#095c54]'
@@ -291,7 +291,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               <div
                 key={n.id}
                 onClick={() => handleActionClick(n)}
-                className={`bg-white rounded-2xl border transition p-4 sm:p-5 flex items-start gap-3.5 cursor-pointer hover:shadow-md ${
+                className={`bg-white rounded-2xl border transition p-4 sm:p-5 flex items-start gap-3.5 cursor-pointer hover:shadow-md touch-press ${
                   !n.is_read
                     ? 'border-[#b8e0d7] shadow-sm bg-gradient-to-r from-[#f0f6f4]/50 to-white'
                     : 'border-[#e2e8f0] hover:border-[#b8e0d7]'
