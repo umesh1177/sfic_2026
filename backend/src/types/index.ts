@@ -578,8 +578,6 @@ export interface WorkAssignmentMember {
 }
 
 export interface WorkAssignment {
-  deadline?: string;
-  target_completion_date?: string;
   id: string;
   task_code: string;
   title: string;
@@ -615,6 +613,8 @@ export interface WorkAssignment {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  deadline?: string;
+  target_completion_date?: string;
   // Dynamic worker context fields
   is_temporary_leader?: boolean;
   temporary_leader_name?: string;

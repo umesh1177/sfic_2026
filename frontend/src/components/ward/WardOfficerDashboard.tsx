@@ -72,21 +72,20 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
   const userWardNum = wardMatch ? Number(wardMatch[1]) : 3;
   const wardArea = user?.locality?.replace(/Ward\s*\d+/i, '').replace(/NMC/i, '').trim() || (userWardNum === 8 ? 'Madhumati - Parsi Wad' : 'Dudhiya Talao');
 
-  // Exact 13 items mandated by Prompt Section 3:
+  // 12 Navigation items (Work Assignments removed from main nav as requested)
   const navItems = [
     { id: 'overview', label: '1. Overview', icon: LayoutDashboard },
     { id: 'complaints', label: '2. Complaint Catalogue', icon: FileText },
     { id: 'hotspots', label: '3. Hotspots Map', icon: MapPin },
-    { id: 'assignments', label: '4. Work Assignments', icon: Wrench },
-    { id: 'workers', label: '5. Worker Management', icon: UserCheck },
-    { id: 'teams', label: '6. Team Management', icon: Users },
-    { id: 'activities', label: '7. Community Activities', icon: Calendar },
-    { id: 'approvals', label: '8. Approval Management', icon: ShieldCheck },
-    { id: 'posts', label: '9. Community & Citizen Posts', icon: Megaphone },
-    { id: 'cleanliness_score', label: '10. Ward Cleanliness Score', icon: Award },
-    { id: 'reports', label: '11. Reports & Analytics', icon: BarChart3 },
-    { id: 'notifications', label: '12. Notifications', icon: Bell },
-    { id: 'settings', label: '13. Settings', icon: Settings }
+    { id: 'workers', label: '4. Worker Management', icon: UserCheck },
+    { id: 'teams', label: '5. Team Management', icon: Users },
+    { id: 'activities', label: '6. Community Activities', icon: Calendar },
+    { id: 'approvals', label: '7. Approval Management', icon: ShieldCheck },
+    { id: 'posts', label: '8. Community & Citizen Posts', icon: Megaphone },
+    { id: 'cleanliness_score', label: '9. Ward Cleanliness Score', icon: Award },
+    { id: 'reports', label: '10. Reports & Analytics', icon: BarChart3 },
+    { id: 'notifications', label: '11. Notifications', icon: Bell },
+    { id: 'settings', label: '12. Settings', icon: Settings }
   ];
 
   // Callback from overview cards to open catalogue with pre-applied filter

@@ -1,6 +1,9 @@
 import { Response } from 'express';
+import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { normalizeIndianPhone } from './authController.js';
 import { store } from '../data/store.js';
 import {
   WardDashboardSummary,
@@ -366,29 +369,33 @@ export class WardOfficerController {
     try {
       initializeSeedAttempts();
 
+      const userMatch = req.user?.locality?.match(/Ward\s*(\d+)/i) || req.user?.address?.match(/Ward\s*(\d+)/i);
+      const userWardNum = userMatch ? Number(userMatch[1]) : undefined;
       const requestedWard = (req.query as any)?.ward_number ? Number((req.query as any).ward_number) : undefined;
-      const allComplaints = store.complaints || [];
-      const wardComplaints = requestedWard
-        ? allComplaints.filter(c => (c.location?.ward_number || 3) === requestedWard)
-        : allComplaints;
-      const wardNum = requestedWard || 3;
+      const wardNum = requestedWard || userWardNum || 3;
 
-      const total = wardComplaints.length || 24;
-      const newCount = wardComplaints.filter(c => c.status === 'submitted').length || 4;
-      const underReview = wardComplaints.filter(c => c.status === 'under_review').length || 3;
-      const assigned = wardComplaints.filter(c => c.status === 'assigned').length || 6;
-      const inProgress = wardComplaints.filter(c => c.status === 'in_progress').length || 5;
-      const resolved = wardComplaints.filter(c => c.status === 'resolved' || c.status === 'awaiting_verification').length || 3;
-      const closed = 18;
-      const reopened = wardComplaints.filter(c => c.status === 'reopened').length || 2;
-      const overdue = 2;
+      const allComplaints = store.complaints || [];
+      const wardComplaints = allComplaints.filter(c => (c.location?.ward_number || 3) === wardNum);
+
+      const total = wardComplaints.length || 12;
+      const newCount = wardComplaints.filter(c => c.status === 'submitted').length;
+      const underReview = wardComplaints.filter(c => c.status === 'under_review').length;
+      const assigned = wardComplaints.filter(c => c.status === 'assigned').length;
+      const inProgress = wardComplaints.filter(c => c.status === 'in_progress').length;
+      const resolved = wardComplaints.filter(c => c.status === 'resolved' || c.status === 'awaiting_verification').length;
+      const closed = Math.max(0, resolved);
+      const reopened = wardComplaints.filter(c => c.status === 'reopened').length;
+      const overdue = 1;
       const unassigned = newCount;
+
+      const wardName = wardNum === 8 ? 'Ward 8 - Madhumati & Parsi Wad' : (wardNum === 3 ? 'Ward 3 - Dudhiya Talao & Ashapuri' : `Ward ${wardNum} - Navsari Civic Area`);
+      const officerName = req.user?.full_name || (wardNum === 8 ? 'Cyrus Contractor' : 'Ramesh Patel');
 
       const summary: WardDashboardSummary = {
         ward_number: wardNum,
-        ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
-        officer_name: 'Ramesh Patel',
-        officer_designation: 'Chief Sanitary Inspector, Ward 3',
+        ward_name: wardName,
+        officer_name: officerName,
+        officer_designation: `Chief Sanitary Inspector, Ward ${wardNum}`,
         metrics: {
           total_complaints: total,
           new_complaints: newCount,
@@ -949,23 +956,22 @@ export class WardOfficerController {
         created_at: now
       });
 
-      // Update complaint status
-      complaint.status = 'reopened';
-      complaint.updated_at = now;
-
-      // Add to audit logs
-      if (!complaint.activity_logs) complaint.activity_logs = [];
-      complaint.activity_logs.push({
-        id: `act-${Date.now()}`,
-        complaint_id: complaint.id,
-        actor_name: 'Ramesh Patel (Ward 3 Officer)',
-        actor_role: 'ward_officer',
-        action: 'Complaint Reopened',
-        previous_status: 'resolved',
-        new_status: 'reopened',
-        description: `Complaint reopened by Ward Officer. Reason: ${reopen_reason}. Attempt #${newAttemptNumber} dispatched to ${leaderName}.`,
-        created_at: now
+      // Update complaint status in store and PostgreSQL
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+      await DbRepository.updateComplaintStatus(complaint.id, 'reopened', {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Complaint reopened by Ward Officer. Reason: ${reopen_reason}. Attempt #${newAttemptNumber} dispatched to ${leaderName}.`
       });
+
+      // Dispatch notification to citizen
+      await DbRepository.createNotification(
+        complaint.citizen_id,
+        'Complaint Reopened for Follow-up',
+        `Your complaint ${complaint.complaint_number} has been reopened for additional sanitation. Squad leader: ${leaderName}.`,
+        complaint.id,
+        'complaint_status'
+      );
 
       res.status(200).json({
         success: true,
@@ -1053,11 +1059,11 @@ export class WardOfficerController {
         description: complaint.description || 'Assigned field sanitation task.',
         category: work_type || 'waste_collection',
         priority: (complaint.priority as any) || 'high',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        location_name: complaint.location?.landmark || complaint.location?.address || 'Ward 3 Cleanliness Zone',
-        address: complaint.location?.address || 'Navsari Municipal Ward 3',
+        ward_id: complaint.location?.ward_id || (complaint.location?.ward_number ? `ward-${String(complaint.location.ward_number).padStart(2, '0')}` : 'ward-03'),
+        ward_number: complaint.location?.ward_number || 3,
+        ward_name: complaint.location?.ward_name || `Ward ${complaint.location?.ward_number || 3}`,
+        location_name: complaint.location?.landmark || complaint.location?.address || `Ward ${complaint.location?.ward_number || 3} Cleanliness Zone`,
+        address: complaint.location?.address || `Navsari Municipal Ward ${complaint.location?.ward_number || 3}`,
         latitude: complaint.location?.latitude || 20.9312,
         longitude: complaint.location?.longitude || 72.9284,
         scheduled_date: new Date().toISOString().split('T')[0],
@@ -1124,20 +1130,22 @@ export class WardOfficerController {
       });
       wardData.workAttempts.set(complaint.id, attempts);
 
-      // Record in complaint activity logs
-      if (!complaint.activity_logs) complaint.activity_logs = [];
-      complaint.activity_logs.push({
-        id: `act-${Date.now()}`,
-        complaint_id: complaint.id,
-        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
-        actor_name: 'Ramesh Patel (Ward 3 Officer)',
-        actor_role: 'ward_officer',
-        action: 'Assigned to Team',
-        previous_status: 'submitted',
-        new_status: 'assigned',
-        description: `Assigned to ${team.team_name} (Team Leader: ${leader?.full_name || team.temporary_leader_name}). Task: ${taskCode}`,
-        created_at: new Date().toISOString()
+      // Persist status change to both store and PostgreSQL database
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+      await DbRepository.updateComplaintStatus(complaint.id, 'assigned', {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Assigned to ${team.team_name} (Team Leader: ${leader?.full_name || team.temporary_leader_name}). Task: ${taskCode}`
       });
+
+      // Dispatch live notification to citizen
+      await DbRepository.createNotification(
+        complaint.citizen_id,
+        'Complaint Assigned to Squad',
+        `Your complaint ${complaint.complaint_number} has been assigned to squad "${team.team_name}". Field sanitation team dispatched.`,
+        complaint.id,
+        'complaint_status'
+      );
 
       res.status(200).json({
         success: true,
@@ -1257,6 +1265,7 @@ export class WardOfficerController {
       const {
         full_name,
         phone,
+        password,
         designation = 'Sanitation Worker',
         skills = ['Litter Abatement'],
         availability_status = 'available'
@@ -1267,14 +1276,57 @@ export class WardOfficerController {
         return;
       }
 
+      const normalizedPhone = normalizeIndianPhone(phone) || phone.trim();
+      const workerPassword = password && password.trim().length >= 6 ? password.trim() : 'Worker@123';
+      const passwordHash = await bcrypt.hash(workerPassword, 10);
+      const newUserId = randomUUID();
+      const newWorkerId = randomUUID();
+
       const count = (store.workers || []).length + 1;
       const serial = String(count).padStart(3, '0');
+
+      // Create Profile so worker can log in
+      const newProfile: any = {
+        id: newUserId,
+        full_name: full_name.trim(),
+        phone: normalizedPhone,
+        preferred_language: 'gu',
+        locality: 'Dudhiya Talao Ward 3',
+        address: 'Navsari Municipal Staff Quarters',
+        is_active: true,
+        role: 'worker',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // Create CitizenAuthProfile
+      const newAuthProfile: any = {
+        id: `auth-${newUserId}`,
+        user_id: newUserId,
+        mobile_number: normalizedPhone,
+        password_hash: passwordHash,
+        mobile_verified: true,
+        verification_completed_at: new Date().toISOString(),
+        account_status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (!store.profiles) store.profiles = [];
+      store.profiles.push(newProfile);
+
+      if (!store.authProfiles) store.authProfiles = [];
+      store.authProfiles.push(newAuthProfile);
+
+      // Persist user to PostgreSQL database
+      await DbRepository.saveProfileToDb(newProfile, passwordHash).catch(() => {});
+
       const newWorker = {
-        id: `f2000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
-        user_id: `f1000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
+        id: newWorkerId,
+        user_id: newUserId,
         worker_code: `WRK-2026-${serial}`,
         full_name: full_name.trim(),
-        phone: phone.trim(),
+        phone: normalizedPhone,
         designation: designation.trim(),
         primary_designation: designation.trim(),
         ward_number: 3,
@@ -1293,7 +1345,7 @@ export class WardOfficerController {
 
       res.status(201).json({
         success: true,
-        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) added to Ward 3 directory.`,
+        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) added. Login enabled with phone "${normalizedPhone}".`,
         data: newWorker
       });
     } catch (err: any) {
@@ -1483,6 +1535,7 @@ export class WardOfficerController {
         head_name,
         phone,
         email,
+        password,
         address,
         locality = 'Dudhiya Talao',
         organisation_type = 'Resident Welfare Association'
@@ -1493,12 +1546,54 @@ export class WardOfficerController {
         return;
       }
 
+      const normalizedPhone = normalizeIndianPhone(phone || '+919825100000') || '+919825100000';
+      const headPassword = password && password.trim().length >= 6 ? password.trim() : 'Head@123';
+      const passwordHash = await bcrypt.hash(headPassword, 10);
+      const newUserId = randomUUID();
+      const newCommunityId = randomUUID();
+
+      // Create profile for Community Head login
+      const newProfile: any = {
+        id: newUserId,
+        full_name: head_name.trim(),
+        phone: normalizedPhone,
+        email: email?.trim() || `${head_name.toLowerCase().replace(/\s+/g, '.')}@community.org`,
+        preferred_language: 'en',
+        locality: locality?.trim() || 'Dudhiya Talao',
+        address: address?.trim() || 'Dudhiya Talao Road, Ward 3, Navsari',
+        is_active: true,
+        role: 'community_head',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const newAuthProfile: any = {
+        id: `auth-${newUserId}`,
+        user_id: newUserId,
+        mobile_number: normalizedPhone,
+        password_hash: passwordHash,
+        mobile_verified: true,
+        verification_completed_at: new Date().toISOString(),
+        account_status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (!store.profiles) store.profiles = [];
+      store.profiles.push(newProfile);
+
+      if (!store.authProfiles) store.authProfiles = [];
+      store.authProfiles.push(newAuthProfile);
+
+      await DbRepository.saveProfileToDb(newProfile, passwordHash).catch(() => {});
+
       const newCommunity = {
-        id: `b0000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
+        id: newCommunityId,
+        user_id: newUserId,
         community_name: community_name.trim(),
         organisation_type: organisation_type || 'Resident Welfare Association',
         head_name: head_name.trim(),
-        phone: phone?.trim() || '+919825100000',
+        phone: normalizedPhone,
         email: email?.trim() || 'contact@community.org',
         ward_number: 3,
         ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
@@ -1513,7 +1608,7 @@ export class WardOfficerController {
 
       res.status(201).json({
         success: true,
-        message: `Community "${newCommunity.community_name}" registered in Ward 3.`,
+        message: `Community "${newCommunity.community_name}" registered. Head can log in with phone "${normalizedPhone}".`,
         data: newCommunity
       });
     } catch (err: any) {
@@ -1750,34 +1845,24 @@ export class WardOfficerController {
       (complaint as any).rejection_reason = rejection_reason.trim();
       complaint.updated_at = new Date().toISOString();
 
-      // Record in activity log
-      if (!complaint.activity_logs) complaint.activity_logs = [];
-      complaint.activity_logs.push({
-        id: `act-${Date.now()}`,
-        complaint_id: complaint.id,
-        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
-        actor_name: 'Ramesh Patel (Ward 3 Officer)',
-        actor_role: 'ward_officer',
-        action: 'Complaint Rejected',
-        previous_status: prevStatus,
-        new_status: 'rejected',
-        description: rejection_reason.trim(),
-        created_at: new Date().toISOString()
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+
+      // Update in both memory store and PostgreSQL database
+      await DbRepository.updateComplaintStatus(complaint.id, 'rejected', {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Complaint rejected: ${rejection_reason.trim()}`,
+        rejection_reason: rejection_reason.trim()
       });
 
       // Dispatch live notification to citizen
-      if (!store.notifications) store.notifications = [];
-      const newNotif = {
-        id: `notif-${Date.now()}`,
-        user_id: complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
-        title: `Complaint ${complaint.complaint_number} Rejected`,
-        message: `Your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address} was reviewed and rejected by Ward 3 Officer. Reason: "${rejection_reason.trim()}"`,
-        notification_type: 'complaint_status' as const,
-        reference_id: complaint.id,
-        is_read: false,
-        created_at: new Date().toISOString()
-      };
-      store.notifications.unshift(newNotif);
+      await DbRepository.createNotification(
+        complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
+        `Complaint ${complaint.complaint_number} Rejected`,
+        `Your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address} was reviewed and rejected by the Ward Officer. Reason: "${rejection_reason.trim()}"`,
+        complaint.id,
+        'complaint_status'
+      );
 
       res.status(200).json({
         success: true,
@@ -1829,34 +1914,23 @@ export class WardOfficerController {
         (attempts[attempts.length - 1] as any).officer_review_notes = review_notes || 'All before and after photo evidence verified. Site cleared and sanitized.';
       }
 
-      // Record in activity log
-      if (!complaint.activity_logs) complaint.activity_logs = [];
-      complaint.activity_logs.push({
-        id: `act-${Date.now()}`,
-        complaint_id: complaint.id,
-        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
-        actor_name: 'Ramesh Patel (Ward 3 Officer)',
-        actor_role: 'ward_officer',
-        action: 'Work Verified & Resolved',
-        previous_status: prevStatus,
-        new_status: 'resolved',
-        description: review_notes || 'Ward Officer inspected evidence photos and verified 100% cleanliness clearance.',
-        created_at: new Date().toISOString()
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+
+      // Persist status change to both store and PostgreSQL database
+      await DbRepository.updateComplaintStatus(complaint.id, 'resolved', {
+        name: officerName,
+        role: 'ward_officer',
+        note: review_notes || 'Ward Officer inspected evidence photos and verified 100% cleanliness clearance.'
       });
 
       // Dispatch live notification to citizen
-      if (!store.notifications) store.notifications = [];
-      const newNotif = {
-        id: `notif-${Date.now()}`,
-        user_id: complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
-        title: `Cleanliness Restored! Complaint ${complaint.complaint_number} Resolved`,
-        message: `Great news! Ward 3 Sanitation Squad has resolved your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address}. Before and after evidence has been verified by Ward 3 Officer. Thank you for keeping Navsari clean!`,
-        notification_type: 'complaint_status' as const,
-        reference_id: complaint.id,
-        is_read: false,
-        created_at: new Date().toISOString()
-      };
-      store.notifications.unshift(newNotif);
+      await DbRepository.createNotification(
+        complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
+        `Cleanliness Restored! Complaint ${complaint.complaint_number} Resolved`,
+        `Great news! The Sanitation Squad has resolved your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address}. Before and after evidence has been verified. Thank you for keeping Navsari clean!`,
+        complaint.id,
+        'complaint_status'
+      );
 
       res.status(200).json({
         success: true,

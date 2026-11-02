@@ -4,7 +4,7 @@ import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { Complaint, ComplaintLocation, ComplaintActivityLog } from '../types/index.js';
 import { AIService } from '../services/aiService.js';
-import { findWardByCoordinates, calculateDistanceMeters } from '../utils/postgis.js';
+import { findWardByCoordinates, calculateDistanceMeters, NAVSARI_WARDS } from '../utils/postgis.js';
 
 export class ComplaintsController {
   /**
@@ -147,6 +147,8 @@ export class ComplaintsController {
         category_id,
         latitude,
         longitude,
+        ward_number,
+        ward_id,
         address,
         landmark,
         description,
@@ -170,9 +172,19 @@ export class ComplaintsController {
       }
 
       // 2. Ward Resolution
-      const lat = Number(latitude);
-      const lng = Number(longitude);
-      const ward = findWardByCoordinates(lat, lng);
+      let ward = (ward_number ? NAVSARI_WARDS.find(w => w.ward_number === Number(ward_number)) : null)
+        || (ward_id ? NAVSARI_WARDS.find(w => w.id === ward_id) : null);
+
+      let lat = Number(latitude);
+      let lng = Number(longitude);
+
+      if (!ward) {
+        ward = findWardByCoordinates(lat, lng);
+      } else if (ward && (!lat || !lng || (Math.abs(lat - 20.9325) < 0.001 && Math.abs(lng - 72.9280) < 0.001))) {
+        // If user picked a specific ward but coordinates are center of Navsari, adjust to ward center
+        lng = (ward.boundary_coordinates[0][0] + ward.boundary_coordinates[2][0]) / 2;
+        lat = (ward.boundary_coordinates[0][1] + ward.boundary_coordinates[2][1]) / 2;
+      }
 
       const category = store.categories.find(c => c.id === category_id);
       if (!category) {

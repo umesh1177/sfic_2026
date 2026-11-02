@@ -52,7 +52,7 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
         <div className="flex items-center gap-2 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-900">
           <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
           <div>
-            <span className="font-extrabold block">Complaint Rejected by Ward 3 Officer</span>
+            <span className="font-extrabold block">Complaint Rejected by Ward Officer</span>
             {rejectionReason && (
               <p className="text-[11px] text-rose-700 mt-0.5 font-medium leading-relaxed">
                 Reason: "{rejectionReason}"

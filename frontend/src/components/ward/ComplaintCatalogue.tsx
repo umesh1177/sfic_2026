@@ -159,7 +159,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             Complaint Catalogue
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Ward 3 Operations Central · Total Registered Complaints:{' '}
+            {initialFilter?.ward_number ? `Ward ${initialFilter.ward_number} Operations Central` : 'Ward Operations Central'} · Total Registered Complaints:{' '}
             <strong className="text-[#095c54]">{totalCount}</strong>
           </p>
         </div>

@@ -442,6 +442,94 @@ export class DbRepository {
     return false;
   }
 
+  public static async updateComplaintStatus(
+    id: string,
+    newStatus: string,
+    actorInfo?: { name: string; role: string; note: string; rejection_reason?: string }
+  ): Promise<void> {
+    // 1. Update in-memory store
+    const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+    if (complaint) {
+      complaint.status = newStatus as any;
+      complaint.updated_at = new Date().toISOString();
+      if (actorInfo?.rejection_reason) {
+        (complaint as any).rejection_reason = actorInfo.rejection_reason;
+      }
+      if (actorInfo) {
+        if (!complaint.activity_logs) complaint.activity_logs = [];
+        complaint.activity_logs.push({
+          id: `act-${Date.now()}`,
+          complaint_id: complaint.id,
+          status: newStatus as any,
+          note: actorInfo.note,
+          actor_name: actorInfo.name,
+          actor_role: actorInfo.role as any,
+          created_at: new Date().toISOString()
+        });
+      }
+    }
+
+    // 2. Synchronize to PostgreSQL if connected
+    if (isDbConnected()) {
+      try {
+        await pool.query(
+          `UPDATE complaints 
+           SET status = $1, updated_at = NOW() 
+           WHERE id = $2 OR complaint_number = $2`,
+          [newStatus, id]
+        );
+
+        if (actorInfo) {
+          await pool.query(
+            `INSERT INTO complaint_activity_logs (complaint_id, status, note, actor_name, actor_role)
+             VALUES (
+               COALESCE((SELECT id FROM complaints WHERE id = $1 OR complaint_number = $1 LIMIT 1), $1),
+               $2, $3, $4, $5
+             )`,
+            [id, newStatus, actorInfo.note, actorInfo.name, actorInfo.role]
+          ).catch(() => {});
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - updateComplaintStatus]:', err.message);
+      }
+    }
+  }
+
+  public static async createNotification(
+    userId: string,
+    title: string,
+    message: string,
+    referenceId?: string,
+    type: string = 'complaint_status'
+  ): Promise<void> {
+    const notifObj = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      user_id: userId,
+      title,
+      message,
+      notification_type: type as any,
+      reference_id: referenceId,
+      is_read: false,
+      created_at: new Date().toISOString()
+    };
+
+    if (!store.notifications) store.notifications = [];
+    store.notifications.unshift(notifObj);
+
+    if (isDbConnected()) {
+      try {
+        const validUserId = this.isValidUUID(userId) ? userId : 'c0000000-0000-0000-0000-000000000001';
+        await pool.query(
+          `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, is_read, created_at)
+           VALUES ($1, $2, $3, $4, $5, FALSE, NOW())`,
+          [validUserId, title, message, type, referenceId || null]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - createNotification]:', err.message);
+      }
+    }
+  }
+
   public static async submitFeedback(complaintId: string, citizenId: string, rating: number, feedbackText: string, satisfactory: boolean) {
     if (isDbConnected()) {
       try {
@@ -2661,7 +2749,35 @@ export class DbRepository {
       }
     }
 
-    // Resilient Fallback
+    // Resilient Fallback - check in-memory store for newly registered workers first
+    const fromStore = (store.workers || []).find(w => w.user_id === validUserId || w.id === validUserId || w.user_id === userId || w.id === userId);
+    if (fromStore) {
+      return {
+        id: fromStore.id,
+        user_id: fromStore.user_id || validUserId,
+        worker_code: fromStore.worker_code || 'NMC-WRK-099',
+        full_name: fromStore.full_name,
+        phone: fromStore.phone,
+        email: fromStore.email || `${fromStore.full_name.toLowerCase().replace(/\s+/g, '.')}@navsarimunicipal.gov.in`,
+        avatar_url: fromStore.avatar_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
+        designation_name: fromStore.designation || 'Sanitation Worker',
+        designation_code: fromStore.designation?.toLowerCase().replace(/\s+/g, '_') || 'sanitation_worker',
+        ward_id: `ward-${String(fromStore.ward_number || 3).padStart(2, '0')}`,
+        ward_number: fromStore.ward_number || 3,
+        ward_name: fromStore.ward_name || 'Ward 3 - Dudhiya Talao',
+        employment_status: 'permanent',
+        joining_date: '2024-01-15',
+        experience_years: fromStore.experience_years || 2.0,
+        availability_status: fromStore.availability_status || 'available',
+        emergency_contact_name: 'NMC Staff Operations',
+        emergency_contact_phone: '+919825130003',
+        language_preference: 'gu',
+        skills: fromStore.skills || ['Litter Abatement', 'Bin Clearance'],
+        created_at: fromStore.created_at || new Date().toISOString(),
+        updated_at: fromStore.updated_at || new Date().toISOString()
+      };
+    }
+
     const isKanti = validUserId === 'f1000000-0000-0000-0000-000000000001';
     return {
       id: isKanti ? 'f2000000-0000-0000-0000-000000000001' : 'f2000000-0000-0000-0000-000000000002',
@@ -2762,15 +2878,23 @@ export class DbRepository {
 
     // Fallback store tasks
     const allAssignments = store.workAssignments || [];
-    return allAssignments.map(a => {
-      const isLeader = a.temporary_leader_id === validWorkerId || (validWorkerId === 'f2000000-0000-0000-0000-000000000001' && a.is_temporary_leader) || (a.team_members || []).some(m => m.worker_id === validWorkerId && m.temporary_leader);
-      return {
-        ...a,
-        is_temporary_leader: isLeader,
-        temporary_leader_name: a.temporary_leader_name || 'Kanti Solanki',
-        my_attendance_status: a.my_attendance_status || 'assigned'
-      };
-    });
+    return allAssignments
+      .filter(a => {
+        const inTeam = (a.team_members || []).some(m => m.worker_id === validWorkerId || m.worker_id === workerId);
+        const isLeader = a.temporary_leader_id === validWorkerId || a.temporary_leader_id === workerId;
+        // Demo fallback for initial seed workers
+        if ((validWorkerId === 'f2000000-0000-0000-0000-000000000001' || validWorkerId === 'f2000000-0000-0000-0000-000000000002') && (a.team_members || []).length === 0) return true;
+        return inTeam || isLeader;
+      })
+      .map(a => {
+        const isLeader = a.temporary_leader_id === validWorkerId || a.temporary_leader_id === workerId || (a.team_members || []).some(m => (m.worker_id === validWorkerId || m.worker_id === workerId) && m.temporary_leader);
+        return {
+          ...a,
+          is_temporary_leader: isLeader,
+          temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Temporary Leader)' : 'Kanti Solanki'),
+          my_attendance_status: a.my_attendance_status || 'assigned'
+        };
+      });
   }
 
   public static async getAssignmentById(assignmentId: string, workerId?: string): Promise<WorkAssignment | null> {

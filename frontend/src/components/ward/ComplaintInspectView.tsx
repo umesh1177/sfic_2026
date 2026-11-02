@@ -97,8 +97,10 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
       const res = await api.getWardComplaintDetails(complaintId);
       setDetails(res.data);
       if (res.data?.overview?.title) {
-        setPostTitle(`Cleanliness Restored at ${res.data.overview.location?.landmark || res.data.overview.location?.address || 'Ward 3'}`);
-        setPostDescription(`Ward 3 Sanitation Squad successfully cleared accumulated waste, disinfected the perimeter, and restored civic hygiene following complaint ${res.data.overview.complaint_number}.`);
+        const wardNum = res.data.overview.location?.ward_number || (res.data.overview as any).ward_number || 3;
+        const wardNm = res.data.overview.location?.ward_name || (res.data.overview as any).ward_name || (wardNum === 8 ? 'Madhumati - Parsi Wad' : 'Dudhiya Talao');
+        setPostTitle(`Cleanliness Restored at ${res.data.overview.location?.landmark || res.data.overview.location?.address || `Ward ${wardNum}`}`);
+        setPostDescription(`Ward ${wardNum} (${wardNm}) Sanitation Squad successfully cleared accumulated waste, disinfected the perimeter, and restored civic hygiene following complaint ${res.data.overview.complaint_number}.`);
       }
       setIsPublished(!!(res.data?.overview as any)?.is_published_to_community);
     } catch (err: any) {
@@ -375,7 +377,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                   <h3 className="text-sm font-extrabold text-[#0f2925]">Geographical Location & Geofence</h3>
                 </div>
                 <span className="text-xs font-bold text-slate-600">
-                  {location_map?.address || 'Navsari Ward 3'}
+                  {location_map?.address || (overview.ward_number ? `Navsari Ward ${overview.ward_number}` : 'Navsari Municipal Ward')}
                 </span>
               </div>
 
@@ -435,11 +437,11 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
               <div className="space-y-2 text-xs text-slate-600">
                 <div className="flex items-center justify-between py-1 border-b border-slate-100">
                   <span className="text-slate-400">Assigned Ward:</span>
-                  <strong>Ward 3 - Dudhiya Talao</strong>
+                  <strong>Ward {location_map?.ward_number || overview.ward_number || 3} - {location_map?.ward_name || overview.ward_name || (overview.ward_number === 8 ? 'Madhumati - Parsi Wad' : 'Dudhiya Talao')}</strong>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-100">
                   <span className="text-slate-400">Chief Officer:</span>
-                  <strong>Ramesh Patel</strong>
+                  <strong>{overview.assigned_officer_name || (overview.ward_number === 8 ? 'Cyrus Contractor' : 'Ramesh Patel')}</strong>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-100">
                   <span className="text-slate-400">SLA Resolution Time:</span>
