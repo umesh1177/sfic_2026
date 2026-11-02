@@ -33,6 +33,7 @@ export const WorkerManagementView: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [fullName, setFullName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
+  const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('Worker@123');
   const [designation, setDesignation] = useState<string>('Sanitation Worker');
   const [selectedSkills, setSelectedSkills] = useState<string[]>(['Litter Abatement', 'Bin Clearance']);
@@ -146,6 +147,7 @@ export const WorkerManagementView: React.FC = () => {
       const res = await api.addWardWorker({
         full_name: fullName.trim(),
         phone: phone.trim(),
+        username: username.trim(),
         password: password.trim(),
         designation,
         skills: selectedSkills,
@@ -156,6 +158,7 @@ export const WorkerManagementView: React.FC = () => {
       setShowAddModal(false);
       setFullName('');
       setPhone('');
+      setUsername('');
       setPassword('Worker@123');
       setSelectedSkills(['Litter Abatement', 'Bin Clearance']);
       await fetchWorkers();
@@ -479,16 +482,29 @@ export const WorkerManagementView: React.FC = () => {
               </div>
 
               <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Login Username <span className="text-[10px] text-slate-400 font-normal">(Optional - defaults to worker code or mobile)</span>
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="e.g. raju or WRK-03"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
+                />
+              </div>
+
+              <div>
                 <label className="text-xs font-extrabold text-slate-700 block mb-1">Login Password *</label>
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Set password for worker login (min 6 chars)"
+                  placeholder="Set password for worker login"
                   className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">Worker will use their phone number and this password to log in.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Worker can log in using either their mobile number or username, along with this password.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

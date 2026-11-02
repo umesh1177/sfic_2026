@@ -36,6 +36,7 @@ export const WardCommunityActivities: React.FC = () => {
   const [headName, setHeadName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [email, setEmail] = useState<string>('');
+  const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('Head@123');
   const [organisationType, setOrganisationType] = useState<string>('Resident Welfare Association');
   const [address, setAddress] = useState<string>('');
@@ -159,6 +160,7 @@ export const WardCommunityActivities: React.FC = () => {
         head_name: headName.trim(),
         phone: phone.trim(),
         email: email.trim(),
+        username: username.trim(),
         password: password.trim(),
         address: address.trim(),
         locality: locality.trim(),
@@ -171,6 +173,7 @@ export const WardCommunityActivities: React.FC = () => {
       setHeadName('');
       setPhone('');
       setEmail('');
+      setUsername('');
       setPassword('Head@123');
       setAddress('');
       await fetchData();
@@ -512,16 +515,29 @@ export const WardCommunityActivities: React.FC = () => {
               </div>
 
               <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Login Username <span className="text-[10px] text-slate-400 font-normal">(Optional - defaults to email or phone)</span>
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="e.g. amit.sharma or green_youth"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
+                />
+              </div>
+
+              <div>
                 <label className="text-xs font-extrabold text-slate-700 block mb-1">Login Password *</label>
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Set password for Community Head login (min 6 chars)"
+                  placeholder="Set password for Community Head login"
                   className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">Community Head will use their phone number and this password to log in.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Community Head can log in using their phone number, email, or username, along with this password.</p>
               </div>
 
               <div>

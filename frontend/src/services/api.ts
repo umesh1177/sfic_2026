@@ -928,6 +928,7 @@ class ApiService {
   async addWardWorker(data: {
     full_name: string;
     phone: string;
+    username?: string;
     password?: string;
     designation: string;
     skills?: string[];
@@ -999,6 +1000,7 @@ class ApiService {
     head_name: string;
     phone?: string;
     email?: string;
+    username?: string;
     password?: string;
     address?: string;
     locality?: string;

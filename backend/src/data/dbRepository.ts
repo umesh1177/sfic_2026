@@ -53,7 +53,7 @@ export class DbRepository {
         await pool.query(
           `INSERT INTO user_roles (user_id, role)
            VALUES ($1, 'citizen')
-           ON CONFLICT (user_id, role) DO NOTHING`,
+           ON CONFLICT (user_id, role) DO UPDATE SET role = 'citizen'`,
           [validId]
         ).catch(() => {});
       } catch (err: any) {
@@ -91,11 +91,12 @@ export class DbRepository {
             profile.is_active
           ]
         );
+        const roleToAssign = profile.role || 'citizen';
         await pool.query(
           `INSERT INTO user_roles (user_id, role)
-           VALUES ($1, 'citizen')
-           ON CONFLICT (user_id, role) DO NOTHING`,
-          [validId]
+           VALUES ($1, $2)
+           ON CONFLICT (user_id, role) DO UPDATE SET role = EXCLUDED.role`,
+          [validId, roleToAssign]
         ).catch(() => {});
         await pool.query(
           `INSERT INTO citizen_auth_profiles (user_id, mobile_number, password_hash, mobile_verified, account_status)
@@ -124,8 +125,9 @@ export class DbRepository {
            FROM profiles p
            JOIN citizen_auth_profiles a ON a.user_id = p.id
            LEFT JOIN user_roles r ON r.user_id = p.id
-           WHERE p.phone = $1`,
-          [phone]
+           WHERE p.phone = $1 OR p.phone = $2 OR RIGHT(REGEXP_REPLACE(p.phone, '[^0-9]', '', 'g'), 10) = $3
+           LIMIT 1`,
+          [phone, `+91${phone.replace(/\D/g, '').slice(-10)}`, phone.replace(/\D/g, '').slice(-10)]
         );
         if (res.rows.length > 0) {
           const row = res.rows[0];
@@ -1108,6 +1110,30 @@ export class DbRepository {
       } catch (err: any) {
         console.error('[DB REPO ERROR - getCommunityByUserId]:', err.message);
       }
+    }
+
+    const fromStore = (store.communities || []).find(c => c.user_id === userId || c.id === userId);
+    if (fromStore) {
+      return {
+        id: fromStore.id,
+        community_name: fromStore.community_name,
+        organisation_type: fromStore.organisation_type || 'Resident Welfare Association',
+        registration_number: fromStore.registration_number || `NMC-RWA-2026-${fromStore.ward_number || 3}`,
+        description: fromStore.description || `${fromStore.community_name} citizen community organization`,
+        logo_path: fromStore.logo_path || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=300&q=80',
+        address: fromStore.address || 'Dudhiya Talao Road, Ward 3, Navsari',
+        locality: fromStore.locality || 'Dudhiya Talao',
+        ward_id: `ward-0${fromStore.ward_number || 3}`,
+        ward_number: fromStore.ward_number || 3,
+        ward_name: fromStore.ward_name || 'Ward 3 - Dudhiya Talao',
+        contact_email: fromStore.email,
+        contact_phone: fromStore.phone,
+        verification_status: 'verified',
+        created_by: fromStore.user_id || userId,
+        head_name: fromStore.head_name,
+        created_at: fromStore.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
     }
 
     return {

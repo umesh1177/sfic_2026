@@ -1265,6 +1265,7 @@ export class WardOfficerController {
       const {
         full_name,
         phone,
+        username,
         password,
         designation = 'Sanitation Worker',
         skills = ['Litter Abatement'],
@@ -1276,20 +1277,25 @@ export class WardOfficerController {
         return;
       }
 
-      const normalizedPhone = normalizeIndianPhone(phone) || phone.trim();
-      const workerPassword = password && password.trim().length >= 6 ? password.trim() : 'Worker@123';
+      const rawPhone = String(phone).trim();
+      const normalizedPhone = normalizeIndianPhone(rawPhone) || rawPhone;
+      const workerPassword = (password && String(password).trim().length > 0) ? String(password).trim() : 'Worker@123';
       const passwordHash = await bcrypt.hash(workerPassword, 10);
       const newUserId = randomUUID();
       const newWorkerId = randomUUID();
 
       const count = (store.workers || []).length + 1;
       const serial = String(count).padStart(3, '0');
+      const workerCode = `WRK-2026-${serial}`;
+      const effectiveUsername = (username && String(username).trim().length > 0) ? String(username).trim() : workerCode;
 
       // Create Profile so worker can log in
       const newProfile: any = {
         id: newUserId,
         full_name: full_name.trim(),
         phone: normalizedPhone,
+        username: effectiveUsername,
+        plain_password: workerPassword,
         preferred_language: 'gu',
         locality: 'Dudhiya Talao Ward 3',
         address: 'Navsari Municipal Staff Quarters',
@@ -1305,6 +1311,7 @@ export class WardOfficerController {
         user_id: newUserId,
         mobile_number: normalizedPhone,
         password_hash: passwordHash,
+        plain_password: workerPassword,
         mobile_verified: true,
         verification_completed_at: new Date().toISOString(),
         account_status: 'active',
@@ -1324,7 +1331,9 @@ export class WardOfficerController {
       const newWorker = {
         id: newWorkerId,
         user_id: newUserId,
-        worker_code: `WRK-2026-${serial}`,
+        worker_code: workerCode,
+        username: effectiveUsername,
+        plain_password: workerPassword,
         full_name: full_name.trim(),
         phone: normalizedPhone,
         designation: designation.trim(),
@@ -1345,7 +1354,7 @@ export class WardOfficerController {
 
       res.status(201).json({
         success: true,
-        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) added. Login enabled with phone "${normalizedPhone}".`,
+        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) registered! Log in with Mobile: "${normalizedPhone}" or Username: "${effectiveUsername}", Password: "${workerPassword}".`,
         data: newWorker
       });
     } catch (err: any) {
@@ -1535,6 +1544,7 @@ export class WardOfficerController {
         head_name,
         phone,
         email,
+        username,
         password,
         address,
         locality = 'Dudhiya Talao',
@@ -1546,18 +1556,23 @@ export class WardOfficerController {
         return;
       }
 
-      const normalizedPhone = normalizeIndianPhone(phone || '+919825100000') || '+919825100000';
-      const headPassword = password && password.trim().length >= 6 ? password.trim() : 'Head@123';
+      const rawPhone = String(phone || '+919825100000').trim();
+      const normalizedPhone = normalizeIndianPhone(rawPhone) || rawPhone;
+      const headPassword = (password && String(password).trim().length > 0) ? String(password).trim() : 'Head@123';
       const passwordHash = await bcrypt.hash(headPassword, 10);
       const newUserId = randomUUID();
       const newCommunityId = randomUUID();
+      const effectiveEmail = email?.trim() || `${head_name.toLowerCase().replace(/\s+/g, '.')}@community.org`;
+      const effectiveUsername = (username && String(username).trim().length > 0) ? String(username).trim() : (effectiveEmail || normalizedPhone);
 
       // Create profile for Community Head login
       const newProfile: any = {
         id: newUserId,
         full_name: head_name.trim(),
         phone: normalizedPhone,
-        email: email?.trim() || `${head_name.toLowerCase().replace(/\s+/g, '.')}@community.org`,
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: headPassword,
         preferred_language: 'en',
         locality: locality?.trim() || 'Dudhiya Talao',
         address: address?.trim() || 'Dudhiya Talao Road, Ward 3, Navsari',
@@ -1572,6 +1587,7 @@ export class WardOfficerController {
         user_id: newUserId,
         mobile_number: normalizedPhone,
         password_hash: passwordHash,
+        plain_password: headPassword,
         mobile_verified: true,
         verification_completed_at: new Date().toISOString(),
         account_status: 'active',
@@ -1594,7 +1610,9 @@ export class WardOfficerController {
         organisation_type: organisation_type || 'Resident Welfare Association',
         head_name: head_name.trim(),
         phone: normalizedPhone,
-        email: email?.trim() || 'contact@community.org',
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: headPassword,
         ward_number: 3,
         ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
         address: address?.trim() || 'Dudhiya Talao Road, Ward 3, Navsari',
@@ -1608,7 +1626,7 @@ export class WardOfficerController {
 
       res.status(201).json({
         success: true,
-        message: `Community "${newCommunity.community_name}" registered. Head can log in with phone "${normalizedPhone}".`,
+        message: `Community "${newCommunity.community_name}" registered! Head can log in with Mobile: "${normalizedPhone}" or Username/Email: "${effectiveUsername}", Password: "${headPassword}".`,
         data: newCommunity
       });
     } catch (err: any) {

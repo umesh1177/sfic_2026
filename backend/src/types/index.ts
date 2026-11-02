@@ -16,6 +16,7 @@ export interface Profile {
   id: string;
   full_name: string;
   phone: string;
+  username?: string;
   email?: string;
   avatar_url?: string;
   preferred_language: 'en' | 'gu' | 'hi';
