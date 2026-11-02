@@ -427,7 +427,10 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2">
                     <User className="w-5 h-5 text-[#095c54]" />
-                    <span className="text-sm font-extrabold text-[#0f2925]">{citizen_report.citizen_name}</span>
+                    <span className="text-sm font-extrabold text-[#0f2925]">Anonymous Citizen</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      Privacy Protected
+                    </span>
                   </div>
                   <span className="text-xs text-slate-500 font-medium">
                     {new Date(citizen_report.submitted_at).toLocaleString('en-IN')}

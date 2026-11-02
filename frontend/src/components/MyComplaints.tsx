@@ -12,6 +12,7 @@ import {
   Eye,
   ChevronRight,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
   ArrowRight,
   ClipboardList,
@@ -401,6 +402,10 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                       <span><strong>Resolved:</strong> {new Date(selectedComplaint.resolved_at).toLocaleString()}</span>
                     </div>
                   )}
+                  <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-200 text-emerald-800 font-bold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Your Identity: Submitted by You (Kept strictly Anonymous to Ward Officers & Field Squads)</span>
+                  </div>
                 </div>
               </div>
 

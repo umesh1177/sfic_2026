@@ -570,7 +570,7 @@ export class WardOfficerController {
           category_name: c.category_name,
           category_id: c.category_id,
           citizen_id: c.citizen_id,
-          citizen_name: c.citizen_name || 'Anonymous Citizen',
+          citizen_name: 'Anonymous Citizen',
           submitted_at: c.submitted_at,
           location: c.location,
           priority: c.priority || 'medium',
@@ -743,11 +743,11 @@ export class WardOfficerController {
           last_updated: complaint.updated_at || complaint.submitted_at
         },
 
-        // Section 2: Citizen Report (Preserves original citizen submission)
+        // Section 2: Citizen Report (Preserves original citizen submission with full privacy protection)
         citizen_report: {
           citizen_id: complaint.citizen_id,
-          citizen_name: complaint.citizen_name || 'Harshil Mehta',
-          citizen_phone: (complaint as any).citizen_phone || '+91 98251 00001',
+          citizen_name: 'Anonymous Citizen',
+          citizen_phone: 'Confidential (Anonymous Submission)',
           submitted_at: complaint.submitted_at,
           original_description: complaint.description,
           original_photos: complaint.image_url ? [complaint.image_url] : [],
@@ -827,8 +827,11 @@ export class WardOfficerController {
           reopenings: wardData.reopenEvents.filter(r => r.complaint_id === complaint.id)
         },
 
-        // Section 11: Audit History
-        audit_history: complaint.activity_logs || []
+        // Section 11: Audit History (Citizen identity protected)
+        audit_history: (complaint.activity_logs || []).map((l: any) => ({
+          ...l,
+          actor_name: l.actor_role === 'citizen' ? 'Anonymous Citizen' : l.actor_name
+        }))
       };
 
       res.status(200).json({ success: true, data: detailedComplaint });

@@ -271,13 +271,13 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-600 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Reported By:</span>
-                  <strong className="text-slate-800">{citizen_report?.citizen_name || overview.citizen_name || 'Citizen'}</strong>
+                  <strong className="text-slate-800">Anonymous Citizen</strong>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Phone:</span>
-                  <a href={`tel:${citizen_report?.citizen_phone || '+919825100001'}`} className="font-bold text-[#095c54] hover:underline">
-                    {citizen_report?.citizen_phone || '+91 98251 00001'}
-                  </a>
+                  <span className="text-slate-400">Privacy Status:</span>
+                  <span className="font-bold text-emerald-700">
+                    Protected (Anonymous Submission)
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Date:</span>

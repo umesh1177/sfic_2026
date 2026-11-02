@@ -301,9 +301,15 @@ export class ComplaintsController {
         return;
       }
 
+      const isOwner = req.user && req.user.id === complaint.citizen_id;
+      const safeComplaint = {
+        ...complaint,
+        citizen_name: isOwner ? complaint.citizen_name : 'Anonymous Citizen'
+      };
+
       res.status(200).json({
         success: true,
-        data: complaint
+        data: safeComplaint
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

@@ -386,7 +386,11 @@ export class DbRepository {
 
         query += ' ORDER BY created_at DESC';
         const res = await pool.query(query, values);
-        return res.rows.map(r => this.mapComplaintRow(r));
+        const mapped = res.rows.map(r => this.mapComplaintRow(r));
+        if (!params.citizen_id) {
+          return mapped.map(c => ({ ...c, citizen_name: 'Anonymous Citizen' }));
+        }
+        return mapped;
       } catch (err: any) {
         console.error('[DB REPO ERROR - getComplaints]:', err.message);
       }
@@ -402,6 +406,11 @@ export class DbRepository {
         return c.complaint_number.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || c.location.address.toLowerCase().includes(q);
       }
       return true;
+    }).map(c => {
+      if (!params.citizen_id) {
+        return { ...c, citizen_name: 'Anonymous Citizen' };
+      }
+      return c;
     });
   }
 

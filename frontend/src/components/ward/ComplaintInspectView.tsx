@@ -355,11 +355,12 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Reported By</span>
-                    <p className="text-xs font-black text-[#0f2925]">
-                      {citizen_report?.citizen_name || overview.citizen_name || 'Citizen'}
+                    <p className="text-xs font-black text-[#0f2925] flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Anonymous Citizen</span>
                     </p>
-                    <p className="text-[11px] text-slate-500 font-mono">
-                      Phone: {citizen_report?.citizen_phone || '+91 98251 00001'}
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Privacy Protected (Anonymous Submission)
                     </p>
                     <p className="text-[10px] text-slate-400">
                       Logged: {new Date(citizen_report?.submitted_at || overview.submitted_at).toLocaleString('en-IN')}
@@ -1053,7 +1054,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 {
                   action: 'Citizen Complaint Lodged',
                   created_at: overview.submitted_at,
-                  actor_name: citizen_report?.citizen_name || 'Citizen',
+                  actor_name: 'Anonymous Citizen',
                   description: `Reported ${overview.category_name} with location coordinates.`
                 },
                 ...(overview.status !== 'submitted' ? [

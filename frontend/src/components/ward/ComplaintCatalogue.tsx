@@ -428,7 +428,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         {new Date(complaint.submitted_at).toLocaleDateString('en-IN', {
                           day: 'numeric',
                           month: 'short'
-                        })} · By {complaint.citizen_name}
+                        })} · By Anonymous Citizen
                       </p>
                     </td>
 
