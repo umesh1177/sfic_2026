@@ -10,6 +10,20 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const api_js_1 = require("./routes/api.js");
 const db_js_1 = require("./data/db.js");
+const dbRepository_js_1 = require("./data/dbRepository.js");
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const envPaths = [
+    path_1.default.resolve(process.cwd(), '.env'),
+    path_1.default.resolve(process.cwd(), 'backend', '.env'),
+    path_1.default.resolve(process.cwd(), '..', 'backend', '.env')
+];
+for (const p of envPaths) {
+    if (fs_1.default.existsSync(p)) {
+        dotenv_1.default.config({ path: p });
+        break;
+    }
+}
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 exports.app = app;
@@ -74,4 +88,5 @@ app.listen(PORT, async () => {
     console.log(`  Health Check: http://localhost:${PORT}/api/health`);
     console.log(`================================================================`);
     await (0, db_js_1.checkDatabaseConnection)();
+    await dbRepository_js_1.DbRepository.initializeWorkerAndTeamTables();
 });

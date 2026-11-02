@@ -1391,25 +1391,14 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 8. Worker Management (Directory for Ward 3)
+  // 8. Worker Management (Directory for Ward 3 & DB Persistence)
   // =========================================================================
   public static async getWorkers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { search, availability } = req.query as any;
-      let workers = store.workers || [];
-
-      if (availability && availability !== 'all') {
-        workers = workers.filter(w => w.availability_status === availability);
-      }
-      if (search && search.trim()) {
-        const q = search.toLowerCase().trim();
-        workers = workers.filter(w =>
-          w.full_name.toLowerCase().includes(q) ||
-          w.worker_code.toLowerCase().includes(q) ||
-          w.designation.toLowerCase().includes(q)
-        );
-      }
-
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const workers = await DbRepository.getWorkersList({ search, availability, ward_number: officerWard });
+      store.workers = workers;
       res.status(200).json({ success: true, data: workers });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1484,9 +1473,6 @@ export class WardOfficerController {
       if (!store.authProfiles) store.authProfiles = [];
       store.authProfiles.push(newAuthProfile);
 
-      // Persist user to PostgreSQL database
-      await DbRepository.saveProfileToDb(newProfile, passwordHash).catch(() => {});
-
       const newWorker = {
         id: newWorkerId,
         user_id: newUserId,
@@ -1508,13 +1494,21 @@ export class WardOfficerController {
         created_at: new Date().toISOString()
       };
 
+      // Persist worker directly to PostgreSQL database
+      const savedWorker = await DbRepository.saveWorkerProfile(newWorker, passwordHash);
+
       if (!store.workers) store.workers = [];
-      store.workers.push(newWorker);
+      const existingIdx = store.workers.findIndex(w => w.id === savedWorker.id || w.user_id === savedWorker.user_id);
+      if (existingIdx !== -1) {
+        store.workers[existingIdx] = savedWorker;
+      } else {
+        store.workers.push(savedWorker);
+      }
 
       res.status(201).json({
         success: true,
-        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) registered! Log in with Mobile: "${normalizedPhone}" or Username: "${effectiveUsername}", Password: "${workerPassword}".`,
-        data: newWorker
+        message: `Worker ${savedWorker.full_name} (${savedWorker.worker_code}) registered! Log in with Mobile: "${normalizedPhone}" or Username: "${effectiveUsername}", Password: "${workerPassword}".`,
+        data: savedWorker
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1546,6 +1540,9 @@ export class WardOfficerController {
 
       store.workers[workerIndex] = updated;
 
+      // Update in PostgreSQL
+      await DbRepository.updateWorkerProfile(id, req.body);
+
       res.status(200).json({
         success: true,
         message: `Worker ${updated.full_name} profile updated successfully.`,
@@ -1572,6 +1569,9 @@ export class WardOfficerController {
         team.worker_ids = (team.worker_ids || []).filter((wId: string) => wId !== id);
       });
 
+      // Delete from PostgreSQL
+      await DbRepository.deleteWorkerProfile(id);
+
       res.status(200).json({
         success: true,
         message: `Worker ${deleted.full_name} (${deleted.worker_code}) removed from active directory.`,
@@ -1583,11 +1583,14 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 8B. Team Management (Form Units, Temporary Leadership)
+  // 8B. Team Management (Form Units, Temporary Leadership, DB Persistence)
   // =========================================================================
   public static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      res.status(200).json({ success: true, data: store.teams || [] });
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const teams = await DbRepository.getTeamsList(officerWard);
+      store.teams = teams;
+      res.status(200).json({ success: true, data: teams });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1608,12 +1611,15 @@ export class WardOfficerController {
         id: `team-${Date.now()}`,
         team_name: team_name.trim(),
         ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
         worker_ids,
         temporary_leader_id: leaderWorker?.id || worker_ids[0],
         temporary_leader_name: leaderWorker?.full_name || 'Assigned Leader',
         created_at: new Date().toISOString(),
         status: 'active'
       };
+
+      await DbRepository.saveTeam(newTeam);
 
       if (!store.teams) store.teams = [];
       store.teams.push(newTeam);
@@ -1654,6 +1660,13 @@ export class WardOfficerController {
 
       store.teams[teamIndex] = updated;
 
+      await DbRepository.updateTeam(id, {
+        team_name: updated.team_name,
+        worker_ids: updated.worker_ids,
+        temporary_leader_id: updated.temporary_leader_id,
+        temporary_leader_name: updated.temporary_leader_name
+      });
+
       res.status(200).json({
         success: true,
         message: `Team "${updated.team_name}" updated successfully.`,
@@ -1675,6 +1688,8 @@ export class WardOfficerController {
 
       const deleted = store.teams.splice(teamIndex, 1)[0];
 
+      await DbRepository.deleteTeam(id);
+
       res.status(200).json({
         success: true,
         message: `Team "${deleted.team_name}" disbandment complete.`,
@@ -1686,11 +1701,14 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 8C. Community Directory & Registration
+  // 8C. Community Directory & Registration (DB Persistence)
   // =========================================================================
   public static async getCommunities(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      res.status(200).json({ success: true, data: store.communities || [] });
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const comms = await DbRepository.getCommunitiesList(officerWard);
+      store.communities = comms;
+      res.status(200).json({ success: true, data: comms });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1760,8 +1778,6 @@ export class WardOfficerController {
       if (!store.authProfiles) store.authProfiles = [];
       store.authProfiles.push(newAuthProfile);
 
-      await DbRepository.saveProfileToDb(newProfile, passwordHash).catch(() => {});
-
       const newCommunity = {
         id: newCommunityId,
         user_id: newUserId,
@@ -1780,13 +1796,21 @@ export class WardOfficerController {
         created_at: new Date().toISOString()
       };
 
+      // Persist to PostgreSQL database
+      const savedComm = await DbRepository.saveCommunityToDb(newCommunity, passwordHash);
+
       if (!store.communities) store.communities = [];
-      store.communities.push(newCommunity);
+      const commIdx = store.communities.findIndex(c => c.id === savedComm.id);
+      if (commIdx !== -1) {
+        store.communities[commIdx] = savedComm;
+      } else {
+        store.communities.push(savedComm);
+      }
 
       res.status(201).json({
         success: true,
-        message: `Community "${newCommunity.community_name}" registered! Head can log in with Mobile: "${normalizedPhone}" or Username/Email: "${effectiveUsername}", Password: "${headPassword}".`,
-        data: newCommunity
+        message: `Community "${savedComm.community_name}" registered! Head can log in with Mobile: "${normalizedPhone}" or Username/Email: "${effectiveUsername}", Password: "${headPassword}".`,
+        data: savedComm
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1819,6 +1843,8 @@ export class WardOfficerController {
 
       store.communities[commIndex] = updated;
 
+      await DbRepository.updateCommunityInDb(id, req.body);
+
       res.status(200).json({
         success: true,
         message: `Community "${updated.community_name}" details updated successfully.`,
@@ -1839,6 +1865,8 @@ export class WardOfficerController {
       }
 
       const deleted = store.communities.splice(commIndex, 1)[0];
+
+      await DbRepository.deleteCommunityFromDb(id);
 
       res.status(200).json({
         success: true,

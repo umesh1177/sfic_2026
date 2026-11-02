@@ -370,7 +370,7 @@ class AuthController {
             // 4. Look up in PostgreSQL DB if not found
             if (!profile) {
                 const searchPhone = normalizedPhone || (inputCleanDigits.length >= 10 ? `+91${inputCleanDigits.slice(-10)}` : inputStr);
-                const dbUser = await dbRepository_js_1.DbRepository.findUserByPhone(searchPhone);
+                const dbUser = await dbRepository_js_1.DbRepository.findUserByIdentifier(inputStr) || await dbRepository_js_1.DbRepository.findUserByPhone(searchPhone);
                 if (dbUser) {
                     profile = dbUser.profile;
                     if (!store_js_1.store.profiles.some(p => p.id === profile.id)) {

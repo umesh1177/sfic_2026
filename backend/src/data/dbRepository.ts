@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+import bcrypt from 'bcryptjs';
 import { pool, isDbConnected } from './db.js';
 import { store } from './store.js';
 import {
@@ -66,45 +68,63 @@ export class DbRepository {
   /**
    * Persist a newly signed-up citizen profile into PostgreSQL
    */
-  public static async saveProfileToDb(profile: Profile, passwordHash: string): Promise<boolean> {
+  public static async saveProfileToDb(profile: any, passwordHash: string): Promise<boolean> {
     if (isDbConnected()) {
       try {
-        const validId = this.isValidUUID(profile.id) ? profile.id : 'c0000000-0000-0000-0000-000000000001';
+        const validId = this.isValidUUID(profile.id) ? profile.id : randomUUID();
+        const roleToAssign = profile.role || 'citizen';
+        const plainPassword = profile.plain_password || null;
+        const username = profile.username || null;
+        const wardNum = profile.ward_number || 3;
+
         await pool.query(
-          `INSERT INTO profiles (id, full_name, phone, email, avatar_url, preferred_language, address, locality, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO profiles (id, full_name, phone, email, username, plain_password, avatar_url, preferred_language, address, locality, ward_number, role, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
            ON CONFLICT (phone) DO UPDATE SET
              full_name = EXCLUDED.full_name,
-             email = EXCLUDED.email,
-             address = EXCLUDED.address,
-             locality = EXCLUDED.locality,
-             preferred_language = EXCLUDED.preferred_language`,
+             email = COALESCE(EXCLUDED.email, profiles.email),
+             username = COALESCE(EXCLUDED.username, profiles.username),
+             plain_password = COALESCE(EXCLUDED.plain_password, profiles.plain_password),
+             address = COALESCE(EXCLUDED.address, profiles.address),
+             locality = COALESCE(EXCLUDED.locality, profiles.locality),
+             ward_number = EXCLUDED.ward_number,
+             preferred_language = EXCLUDED.preferred_language,
+             role = EXCLUDED.role,
+             updated_at = CURRENT_TIMESTAMP`,
           [
             validId,
             profile.full_name,
             profile.phone,
             profile.email || null,
+            username,
+            plainPassword,
             profile.avatar_url || null,
             profile.preferred_language || 'en',
             profile.address || null,
             profile.locality || 'Navsari',
-            profile.is_active
+            wardNum,
+            roleToAssign,
+            profile.is_active ?? true
           ]
         );
-        const roleToAssign = profile.role || 'citizen';
+
         await pool.query(
           `INSERT INTO user_roles (user_id, role)
            VALUES ($1, $2)
            ON CONFLICT (user_id, role) DO UPDATE SET role = EXCLUDED.role`,
           [validId, roleToAssign]
         ).catch(() => {});
+
+        const authId = randomUUID();
         await pool.query(
-          `INSERT INTO citizen_auth_profiles (user_id, mobile_number, password_hash, mobile_verified, account_status)
-           VALUES ($1, $2, $3, TRUE, 'active')
+          `INSERT INTO citizen_auth_profiles (id, user_id, mobile_number, password_hash, plain_password, mobile_verified, account_status)
+           VALUES ($1, $2, $3, $4, $5, TRUE, 'active')
            ON CONFLICT (user_id) DO UPDATE SET
              password_hash = EXCLUDED.password_hash,
-             mobile_number = EXCLUDED.mobile_number`,
-          [validId, profile.phone, passwordHash]
+             plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
+             mobile_number = EXCLUDED.mobile_number,
+             updated_at = CURRENT_TIMESTAMP`,
+          [authId, validId, profile.phone, passwordHash, plainPassword]
         );
         return true;
       } catch (err: any) {
@@ -118,24 +138,49 @@ export class DbRepository {
    * Look up user profile and credentials from PostgreSQL by phone
    */
   public static async findUserByPhone(phone: string): Promise<{ profile: Profile; authProfile: CitizenAuthProfile } | null> {
+    return this.findUserByIdentifier(phone);
+  }
+
+  /**
+   * Universal User Lookup: by phone, mobile digits, email, username, or worker_code
+   */
+  public static async findUserByIdentifier(identifier: string): Promise<{ profile: Profile; authProfile: CitizenAuthProfile } | null> {
+    if (!identifier) return null;
     if (isDbConnected()) {
       try {
+        const cleanDigits = identifier.replace(/\D/g, '');
+        const tenDigits = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+
         const res = await pool.query(
-          `SELECT p.*, a.password_hash, a.account_status, a.mobile_verified, r.role
+          `SELECT p.*, a.password_hash, a.plain_password as auth_plain_password, a.account_status, a.mobile_verified, r.role,
+                  wp.worker_code, wp.username as worker_username, wp.plain_password as worker_plain_password,
+                  c.username as comm_username, c.plain_password as comm_plain_password
            FROM profiles p
-           JOIN citizen_auth_profiles a ON a.user_id = p.id
+           LEFT JOIN citizen_auth_profiles a ON a.user_id = p.id
            LEFT JOIN user_roles r ON r.user_id = p.id
-           WHERE p.phone = $1 OR p.phone = $2 OR RIGHT(REGEXP_REPLACE(p.phone, '[^0-9]', '', 'g'), 10) = $3
+           LEFT JOIN worker_profiles wp ON wp.user_id = p.id
+           LEFT JOIN communities c ON c.created_by = p.id
+           WHERE LOWER(p.phone) = LOWER($1)
+              OR ($2 <> '' AND RIGHT(REGEXP_REPLACE(p.phone, '[^0-9]', '', 'g'), 10) = $2)
+              OR LOWER(COALESCE(p.email, '')) = LOWER($1)
+              OR LOWER(COALESCE(p.username, '')) = LOWER($1)
+              OR LOWER(COALESCE(wp.worker_code, '')) = LOWER($1)
+              OR LOWER(COALESCE(wp.username, '')) = LOWER($1)
+              OR LOWER(COALESCE(c.username, '')) = LOWER($1)
            LIMIT 1`,
-          [phone, `+91${phone.replace(/\D/g, '').slice(-10)}`, phone.replace(/\D/g, '').slice(-10)]
+          [identifier.trim(), tenDigits]
         );
+
         if (res.rows.length > 0) {
           const row = res.rows[0];
-          const profile: Profile = {
+          const plainPass = row.plain_password || row.auth_plain_password || row.worker_plain_password || row.comm_plain_password;
+          const profile: any = {
             id: row.id,
             full_name: row.full_name,
             phone: row.phone,
             email: row.email,
+            username: row.username || row.worker_code || row.worker_username || row.comm_username,
+            plain_password: plainPass,
             avatar_url: row.avatar_url,
             preferred_language: row.preferred_language || 'en',
             address: row.address,
@@ -145,20 +190,21 @@ export class DbRepository {
             created_at: row.created_at,
             updated_at: row.updated_at
           };
-          const authProfile: CitizenAuthProfile = {
+          const authProfile: any = {
             id: `auth-${row.id}`,
             user_id: row.id,
             mobile_number: row.phone,
-            password_hash: row.password_hash,
-            mobile_verified: row.mobile_verified,
-            account_status: row.account_status,
+            password_hash: row.password_hash || (plainPass ? await bcrypt.hash(plainPass, 10) : ''),
+            plain_password: plainPass,
+            mobile_verified: row.mobile_verified ?? true,
+            account_status: row.account_status || 'active',
             created_at: row.created_at,
             updated_at: row.updated_at
           };
           return { profile, authProfile };
         }
       } catch (err: any) {
-        console.error('[DB REPO ERROR - findUserByPhone]:', err.message);
+        console.error('[DB REPO ERROR - findUserByIdentifier]:', err.message);
       }
     }
     return null;
@@ -3914,5 +3960,729 @@ export class DbRepository {
         skills: ['Heavy Machinery', 'Suction Jetter Operation']
       }
     ];
+  }
+
+  // =========================================================================
+  // WORKER, TEAM & COMMUNITY PERSISTENCE (POSTGRESQL FULL CRUD)
+  // =========================================================================
+
+  public static async initializeWorkerAndTeamTables(): Promise<void> {
+    if (!isDbConnected()) {
+      console.log('[DB REPO] DB offline, skipping initializeWorkerAndTeamTables');
+      return;
+    }
+    try {
+      console.log('[DB REPO] Initializing and verifying worker, team, and community tables...');
+
+      // 1. Column enhancements
+      await pool.query(`
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plain_password VARCHAR(100);
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ward_number INTEGER DEFAULT 3;
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'citizen';
+        ALTER TABLE citizen_auth_profiles ADD COLUMN IF NOT EXISTS plain_password VARCHAR(100);
+        ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+        ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS plain_password VARCHAR(100);
+        ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS designation VARCHAR(150);
+        ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS skills JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS attendance_today VARCHAR(150) DEFAULT 'Not Marked';
+        ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS active_task_code VARCHAR(100);
+      `);
+
+      // 2. Ensure worker_teams table exists and has VARCHAR ids
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS worker_teams (
+          id VARCHAR(100) PRIMARY KEY,
+          team_name VARCHAR(150) NOT NULL,
+          ward_number INTEGER DEFAULT 3,
+          ward_name VARCHAR(150) DEFAULT 'Ward 3',
+          temporary_leader_id VARCHAR(100),
+          temporary_leader_name VARCHAR(150),
+          worker_ids JSONB DEFAULT '[]'::jsonb,
+          shift VARCHAR(50) DEFAULT 'Morning (06:00 - 14:00)',
+          status VARCHAR(50) DEFAULT 'active',
+          active_task_code VARCHAR(100),
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+        ALTER TABLE worker_teams ALTER COLUMN id TYPE VARCHAR(100);
+        ALTER TABLE worker_teams ALTER COLUMN temporary_leader_id TYPE VARCHAR(100);
+      `);
+
+      // 3. Ensure communities enhancements
+      await pool.query(`
+        ALTER TABLE communities ALTER COLUMN created_by DROP NOT NULL;
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS head_name VARCHAR(150);
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS plain_password VARCHAR(100);
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS active_drives_count INTEGER DEFAULT 0;
+      `);
+
+      // 4. Synchronize memory store from database on startup so state is 100% unified
+      const workersFromDb = await this.getWorkersList();
+      if (workersFromDb.length > 0) {
+        store.workers = workersFromDb;
+        console.log(`[DB REPO] Synchronized ${workersFromDb.length} workers from PostgreSQL into memory.`);
+      }
+
+      const teamsFromDb = await this.getTeamsList();
+      if (teamsFromDb.length > 0) {
+        store.teams = teamsFromDb;
+        console.log(`[DB REPO] Synchronized ${teamsFromDb.length} teams from PostgreSQL into memory.`);
+      }
+
+      const commsFromDb = await this.getCommunitiesList();
+      if (commsFromDb.length > 0) {
+        store.communities = commsFromDb;
+        console.log(`[DB REPO] Synchronized ${commsFromDb.length} communities from PostgreSQL into memory.`);
+      }
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - initializeWorkerAndTeamTables]:', err.message);
+    }
+  }
+
+  public static async getWorkersList(filters?: { ward_number?: number; search?: string; availability?: string }): Promise<any[]> {
+    if (isDbConnected()) {
+      try {
+        let sql = `
+          SELECT wp.*, p.full_name, p.phone, p.email, p.avatar_url, p.address, p.locality,
+                 COALESCE(wp.designation, wd.designation_name, 'Sanitation Worker') as designation_label,
+                 COALESCE(wp.username, p.username, wp.worker_code) as worker_username,
+                 COALESCE(wp.plain_password, p.plain_password, 'Worker@123') as worker_plain_password
+          FROM worker_profiles wp
+          JOIN profiles p ON p.id = wp.user_id
+          LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
+          WHERE 1=1
+        `;
+        const values: any[] = [];
+
+        if (filters?.ward_number) {
+          values.push(filters.ward_number);
+          sql += ` AND wp.ward_number = $${values.length}`;
+        }
+        if (filters?.availability && filters.availability !== 'all') {
+          values.push(filters.availability);
+          sql += ` AND wp.availability_status = $${values.length}`;
+        }
+        if (filters?.search && filters.search.trim()) {
+          values.push(`%${filters.search.trim().toLowerCase()}%`);
+          sql += ` AND (LOWER(p.full_name) LIKE $${values.length} OR LOWER(wp.worker_code) LIKE $${values.length} OR LOWER(COALESCE(wp.designation, '')) LIKE $${values.length})`;
+        }
+
+        sql += ` ORDER BY wp.created_at ASC`;
+        const res = await pool.query(sql, values);
+
+        return res.rows.map(r => {
+          let parsedSkills: string[] = [];
+          if (Array.isArray(r.skills)) {
+            parsedSkills = r.skills;
+          } else if (typeof r.skills === 'string') {
+            try { parsedSkills = JSON.parse(r.skills); } catch { parsedSkills = [r.skills]; }
+          } else {
+            parsedSkills = ['Litter Abatement'];
+          }
+
+          return {
+            id: r.id,
+            user_id: r.user_id,
+            worker_code: r.worker_code,
+            username: r.worker_username,
+            plain_password: r.worker_plain_password,
+            full_name: r.full_name,
+            phone: r.phone,
+            email: r.email,
+            designation: r.designation_label,
+            primary_designation: r.designation_label,
+            ward_number: r.ward_number || 3,
+            ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
+            availability_status: r.availability_status || 'available',
+            active_task_code: r.active_task_code,
+            experience_years: parseFloat(r.experience_years || '0'),
+            skills: parsedSkills,
+            attendance_today: r.attendance_today || 'Not Marked',
+            avatar_url: r.avatar_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
+            created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
+          };
+        });
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getWorkersList]:', err.message);
+      }
+    }
+
+    // Fallback to in-memory store
+    let workers = store.workers || [];
+    if (filters?.availability && filters.availability !== 'all') {
+      workers = workers.filter(w => w.availability_status === filters.availability);
+    }
+    if (filters?.search && filters.search.trim()) {
+      const q = filters.search.toLowerCase().trim();
+      workers = workers.filter(w =>
+        (w.full_name && w.full_name.toLowerCase().includes(q)) ||
+        (w.worker_code && w.worker_code.toLowerCase().includes(q)) ||
+        (w.designation && w.designation.toLowerCase().includes(q))
+      );
+    }
+    return workers;
+  }
+
+  public static async saveWorkerProfile(worker: any, passwordHash?: string): Promise<any> {
+    const validWorkerId = this.isValidUUID(worker.id) ? worker.id : randomUUID();
+    let validUserId = this.isValidUUID(worker.user_id) ? worker.user_id : randomUUID();
+    const workerPassword = worker.plain_password || 'Worker@123';
+    const hash = passwordHash || await bcrypt.hash(workerPassword, 10);
+    const workerCode = worker.worker_code || `WRK-2026-${Date.now().toString().slice(-3)}`;
+    const effectiveUsername = worker.username || workerCode;
+
+    if (isDbConnected()) {
+      try {
+        // 1. Check if profile exists with this phone
+        const existingProfile = await pool.query(`SELECT id FROM profiles WHERE phone = $1`, [worker.phone]);
+        if (existingProfile.rows.length > 0) {
+          validUserId = existingProfile.rows[0].id;
+        }
+
+        // 2. Upsert profiles
+        await pool.query(
+          `INSERT INTO profiles (id, full_name, phone, username, plain_password, address, locality, ward_number, role, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'worker', TRUE)
+           ON CONFLICT (id) DO UPDATE SET
+             full_name = EXCLUDED.full_name,
+             phone = EXCLUDED.phone,
+             username = COALESCE(EXCLUDED.username, profiles.username),
+             plain_password = COALESCE(EXCLUDED.plain_password, profiles.plain_password),
+             ward_number = EXCLUDED.ward_number,
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            validUserId,
+            worker.full_name?.trim() || 'Municipal Worker',
+            worker.phone?.trim(),
+            effectiveUsername,
+            workerPassword,
+            worker.address || 'Navsari Municipal Staff Quarters',
+            worker.locality || `Ward ${worker.ward_number || 3}`,
+            worker.ward_number || 3
+          ]
+        );
+
+        // 3. Upsert citizen_auth_profiles
+        const authId = randomUUID();
+        await pool.query(
+          `INSERT INTO citizen_auth_profiles (id, user_id, mobile_number, password_hash, plain_password, mobile_verified, account_status)
+           VALUES ($1, $2, $3, $4, $5, TRUE, 'active')
+           ON CONFLICT (user_id) DO UPDATE SET
+             mobile_number = EXCLUDED.mobile_number,
+             password_hash = COALESCE(EXCLUDED.password_hash, citizen_auth_profiles.password_hash),
+             plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            authId,
+            validUserId,
+            worker.phone?.trim(),
+            hash,
+            workerPassword
+          ]
+        );
+
+        // 4. Ensure user_roles
+        await pool.query(
+          `INSERT INTO user_roles (user_id, role)
+           VALUES ($1, 'worker')
+           ON CONFLICT (user_id, role) DO UPDATE SET role = 'worker'`,
+          [validUserId]
+        ).catch(() => {});
+
+        // 5. Upsert worker_profiles
+        const skillsJson = JSON.stringify(Array.isArray(worker.skills) ? worker.skills : [worker.skills || 'Litter Abatement']);
+        await pool.query(
+          `INSERT INTO worker_profiles (
+             id, user_id, worker_code, username, plain_password, designation,
+             ward_number, ward_name, availability_status, experience_years,
+             skills, attendance_today, active_task_code
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (user_id) DO UPDATE SET
+             worker_code = EXCLUDED.worker_code,
+             username = EXCLUDED.username,
+             plain_password = EXCLUDED.plain_password,
+             designation = EXCLUDED.designation,
+             ward_number = EXCLUDED.ward_number,
+             ward_name = EXCLUDED.ward_name,
+             availability_status = EXCLUDED.availability_status,
+             experience_years = EXCLUDED.experience_years,
+             skills = EXCLUDED.skills,
+             attendance_today = EXCLUDED.attendance_today,
+             active_task_code = EXCLUDED.active_task_code,
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            validWorkerId,
+            validUserId,
+            workerCode,
+            effectiveUsername,
+            workerPassword,
+            worker.designation?.trim() || 'Sanitation Worker',
+            worker.ward_number || 3,
+            worker.ward_name || `Ward ${worker.ward_number || 3}`,
+            worker.availability_status || 'available',
+            parseFloat(worker.experience_years || '0'),
+            skillsJson,
+            worker.attendance_today || 'Not Marked',
+            worker.active_task_code || null
+          ]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - saveWorkerProfile]:', err.message);
+      }
+    }
+
+    const savedWorker = {
+      ...worker,
+      id: validWorkerId,
+      user_id: validUserId,
+      worker_code: workerCode,
+      username: effectiveUsername,
+      plain_password: workerPassword,
+      created_at: new Date().toISOString()
+    };
+
+    return savedWorker;
+  }
+
+  public static async updateWorkerProfile(id: string, updates: any): Promise<any> {
+    if (isDbConnected()) {
+      try {
+        const skillsJson = updates.skills ? JSON.stringify(Array.isArray(updates.skills) ? updates.skills : [updates.skills]) : undefined;
+        
+        let wpSql = `UPDATE worker_profiles SET updated_at = CURRENT_TIMESTAMP`;
+        const wpVals: any[] = [];
+        if (updates.designation) {
+          wpVals.push(updates.designation.trim());
+          wpSql += `, designation = $${wpVals.length}`;
+        }
+        if (updates.availability_status) {
+          wpVals.push(updates.availability_status);
+          wpSql += `, availability_status = $${wpVals.length}`;
+        }
+        if (skillsJson) {
+          wpVals.push(skillsJson);
+          wpSql += `, skills = $${wpVals.length}::jsonb`;
+        }
+        wpVals.push(id);
+        wpSql += ` WHERE id = $${wpVals.length} RETURNING user_id`;
+        const wpRes = await pool.query(wpSql, wpVals);
+
+        const userId = wpRes.rows[0]?.user_id;
+
+        if (userId && (updates.full_name || updates.phone)) {
+          let pSql = `UPDATE profiles SET updated_at = CURRENT_TIMESTAMP`;
+          const pVals: any[] = [];
+          if (updates.full_name) {
+            pVals.push(updates.full_name.trim());
+            pSql += `, full_name = $${pVals.length}`;
+          }
+          if (updates.phone) {
+            pVals.push(updates.phone.trim());
+            pSql += `, phone = $${pVals.length}`;
+          }
+          pVals.push(userId);
+          pSql += ` WHERE id = $${pVals.length}`;
+          await pool.query(pSql, pVals);
+
+          if (updates.phone) {
+            await pool.query(
+              `UPDATE citizen_auth_profiles SET mobile_number = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
+              [updates.phone.trim(), userId]
+            ).catch(() => {});
+          }
+        }
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - updateWorkerProfile]:', err.message);
+      }
+    }
+    return false;
+  }
+
+  public static async deleteWorkerProfile(id: string): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(`SELECT user_id FROM worker_profiles WHERE id = $1`, [id]);
+        const userId = res.rows[0]?.user_id;
+
+        await pool.query(`DELETE FROM worker_profiles WHERE id = $1`, [id]);
+
+        const teams = await pool.query(`SELECT id, worker_ids FROM worker_teams`);
+        for (const t of teams.rows) {
+          let wIds = Array.isArray(t.worker_ids) ? t.worker_ids : (typeof t.worker_ids === 'string' ? JSON.parse(t.worker_ids) : []);
+          if (wIds.includes(id)) {
+            wIds = wIds.filter((w: string) => w !== id);
+            await pool.query(`UPDATE worker_teams SET worker_ids = $1::jsonb WHERE id = $2`, [JSON.stringify(wIds), t.id]);
+          }
+        }
+
+        if (userId) {
+          await pool.query(`UPDATE profiles SET is_active = FALSE WHERE id = $1`, [userId]).catch(() => {});
+        }
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteWorkerProfile]:', err.message);
+      }
+    }
+    return false;
+  }
+
+  public static async getTeamsList(wardNumber?: number): Promise<any[]> {
+    if (isDbConnected()) {
+      try {
+        let sql = `SELECT * FROM worker_teams WHERE 1=1`;
+        const values: any[] = [];
+        if (wardNumber) {
+          values.push(wardNumber);
+          sql += ` AND ward_number = $${values.length}`;
+        }
+        sql += ` ORDER BY created_at ASC`;
+        const res = await pool.query(sql, values);
+        return res.rows.map(r => {
+          let parsedWorkerIds: string[] = [];
+          if (Array.isArray(r.worker_ids)) {
+            parsedWorkerIds = r.worker_ids;
+          } else if (typeof r.worker_ids === 'string') {
+            try { parsedWorkerIds = JSON.parse(r.worker_ids); } catch { parsedWorkerIds = []; }
+          }
+          return {
+            id: r.id,
+            team_name: r.team_name,
+            ward_number: r.ward_number || 3,
+            ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
+            worker_ids: parsedWorkerIds,
+            temporary_leader_id: r.temporary_leader_id,
+            temporary_leader_name: r.temporary_leader_name,
+            shift: r.shift || 'Morning (06:00 - 14:00)',
+            status: r.status || 'active',
+            active_task_code: r.active_task_code,
+            created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
+          };
+        });
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getTeamsList]:', err.message);
+      }
+    }
+    return store.teams || [];
+  }
+
+  public static async saveTeam(team: any): Promise<any> {
+    if (isDbConnected()) {
+      try {
+        const teamId = team.id || `team-${Date.now()}`;
+        const workerIdsJson = JSON.stringify(Array.isArray(team.worker_ids) ? team.worker_ids : []);
+        await pool.query(
+          `INSERT INTO worker_teams (
+             id, team_name, ward_number, ward_name, temporary_leader_id, temporary_leader_name,
+             worker_ids, shift, status
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (id) DO UPDATE SET
+             team_name = EXCLUDED.team_name,
+             temporary_leader_id = EXCLUDED.temporary_leader_id,
+             temporary_leader_name = EXCLUDED.temporary_leader_name,
+             worker_ids = EXCLUDED.worker_ids,
+             shift = EXCLUDED.shift,
+             status = EXCLUDED.status,
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            teamId,
+            team.team_name?.trim() || 'New Sanitation Team',
+            team.ward_number || 3,
+            team.ward_name || `Ward ${team.ward_number || 3}`,
+            team.temporary_leader_id,
+            team.temporary_leader_name,
+            workerIdsJson,
+            team.shift || 'Morning (06:00 - 14:00)',
+            team.status || 'active'
+          ]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - saveTeam]:', err.message);
+      }
+    }
+    return team;
+  }
+
+  public static async updateTeam(id: string, updates: any): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        let sql = `UPDATE worker_teams SET updated_at = CURRENT_TIMESTAMP`;
+        const vals: any[] = [];
+        if (updates.team_name) {
+          vals.push(updates.team_name.trim());
+          sql += `, team_name = $${vals.length}`;
+        }
+        if (updates.temporary_leader_id) {
+          vals.push(updates.temporary_leader_id);
+          sql += `, temporary_leader_id = $${vals.length}`;
+        }
+        if (updates.temporary_leader_name) {
+          vals.push(updates.temporary_leader_name);
+          sql += `, temporary_leader_name = $${vals.length}`;
+        }
+        if (updates.worker_ids) {
+          vals.push(JSON.stringify(Array.isArray(updates.worker_ids) ? updates.worker_ids : []));
+          sql += `, worker_ids = $${vals.length}::jsonb`;
+        }
+        if (updates.status) {
+          vals.push(updates.status);
+          sql += `, status = $${vals.length}`;
+        }
+        vals.push(id);
+        sql += ` WHERE id = $${vals.length}`;
+        await pool.query(sql, vals);
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - updateTeam]:', err.message);
+      }
+    }
+    return false;
+  }
+
+  public static async deleteTeam(id: string): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`DELETE FROM worker_teams WHERE id = $1`, [id]);
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteTeam]:', err.message);
+      }
+    }
+    return false;
+  }
+
+  public static async getCommunitiesList(wardNumber?: number): Promise<any[]> {
+    if (isDbConnected()) {
+      try {
+        let sql = `SELECT * FROM communities WHERE 1=1`;
+        const values: any[] = [];
+        if (wardNumber) {
+          values.push(wardNumber);
+          sql += ` AND ward_number = $${values.length}`;
+        }
+        sql += ` ORDER BY created_at ASC`;
+        const res = await pool.query(sql, values);
+        return res.rows.map(r => ({
+          id: r.id,
+          user_id: r.created_by,
+          community_name: r.community_name,
+          organisation_type: r.organisation_type || 'Resident Welfare Association',
+          head_name: r.head_name || 'Community Leader',
+          phone: r.contact_phone || r.phone,
+          email: r.contact_email || r.email,
+          username: r.username,
+          plain_password: r.plain_password || 'Head@123',
+          ward_number: r.ward_number || 3,
+          ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
+          address: r.address,
+          locality: r.locality,
+          active_drives_count: r.active_drives_count || 0,
+          created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
+        }));
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getCommunitiesList]:', err.message);
+      }
+    }
+    return store.communities || [];
+  }
+
+  public static async saveCommunityToDb(community: any, passwordHash?: string): Promise<any> {
+    const validCommId = this.isValidUUID(community.id) ? community.id : randomUUID();
+    let validUserId = this.isValidUUID(community.user_id) ? community.user_id : randomUUID();
+    const headPassword = community.plain_password || 'Head@123';
+    const hash = passwordHash || await bcrypt.hash(headPassword, 10);
+    const effectivePhone = community.phone?.trim() || '+919825100000';
+    const effectiveEmail = community.email?.trim() || `${(community.head_name || 'leader').toLowerCase().replace(/\s+/g, '.')}@community.org`;
+    const effectiveUsername = community.username?.trim() || effectiveEmail;
+
+    if (isDbConnected()) {
+      try {
+        const existingProfile = await pool.query(`SELECT id FROM profiles WHERE phone = $1`, [effectivePhone]);
+        if (existingProfile.rows.length > 0) {
+          validUserId = existingProfile.rows[0].id;
+        }
+
+        await pool.query(
+          `INSERT INTO profiles (id, full_name, phone, email, username, plain_password, address, locality, ward_number, role, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'community_head', TRUE)
+           ON CONFLICT (id) DO UPDATE SET
+             full_name = EXCLUDED.full_name,
+             phone = EXCLUDED.phone,
+             email = EXCLUDED.email,
+             username = COALESCE(EXCLUDED.username, profiles.username),
+             plain_password = COALESCE(EXCLUDED.plain_password, profiles.plain_password),
+             ward_number = EXCLUDED.ward_number,
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            validUserId,
+            community.head_name?.trim() || 'Community Leader',
+            effectivePhone,
+            effectiveEmail,
+            effectiveUsername,
+            headPassword,
+            community.address || 'Navsari',
+            community.locality || 'Dudhiya Talao',
+            community.ward_number || 3
+          ]
+        );
+
+        const authId = randomUUID();
+        await pool.query(
+          `INSERT INTO citizen_auth_profiles (id, user_id, mobile_number, password_hash, plain_password, mobile_verified, account_status)
+           VALUES ($1, $2, $3, $4, $5, TRUE, 'active')
+           ON CONFLICT (user_id) DO UPDATE SET
+             mobile_number = EXCLUDED.mobile_number,
+             password_hash = COALESCE(EXCLUDED.password_hash, citizen_auth_profiles.password_hash),
+             plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            authId,
+            validUserId,
+            effectivePhone,
+            hash,
+            headPassword
+          ]
+        );
+
+        await pool.query(
+          `INSERT INTO user_roles (user_id, role)
+           VALUES ($1, 'community_head')
+           ON CONFLICT (user_id, role) DO UPDATE SET role = 'community_head'`,
+          [validUserId]
+        ).catch(() => {});
+
+        await pool.query(
+          `INSERT INTO communities (
+             id, community_name, organisation_type, address, locality,
+             ward_number, ward_name, contact_email, contact_phone,
+             verification_status, created_by, head_name, phone, email,
+             username, plain_password, active_drives_count
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           ON CONFLICT (id) DO UPDATE SET
+             community_name = EXCLUDED.community_name,
+             organisation_type = EXCLUDED.organisation_type,
+             address = EXCLUDED.address,
+             locality = EXCLUDED.locality,
+             contact_email = EXCLUDED.contact_email,
+             contact_phone = EXCLUDED.contact_phone,
+             head_name = EXCLUDED.head_name,
+             phone = EXCLUDED.phone,
+             email = EXCLUDED.email,
+             username = EXCLUDED.username,
+             plain_password = EXCLUDED.plain_password,
+             active_drives_count = EXCLUDED.active_drives_count,
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            validCommId,
+            community.community_name?.trim() || 'Community Organization',
+            community.organisation_type || 'Resident Welfare Association',
+            community.address?.trim() || 'Navsari',
+            community.locality?.trim() || 'Dudhiya Talao',
+            community.ward_number || 3,
+            community.ward_name || `Ward ${community.ward_number || 3}`,
+            effectiveEmail,
+            effectivePhone,
+            'verified',
+            validUserId,
+            community.head_name?.trim() || 'Community Leader',
+            effectivePhone,
+            effectiveEmail,
+            effectiveUsername,
+            headPassword,
+            community.active_drives_count || 0
+          ]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - saveCommunityToDb]:', err.message);
+      }
+    }
+
+    return {
+      ...community,
+      id: validCommId,
+      user_id: validUserId,
+      created_at: new Date().toISOString()
+    };
+  }
+
+  public static async updateCommunityInDb(id: string, updates: any): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        let sql = `UPDATE communities SET updated_at = CURRENT_TIMESTAMP`;
+        const vals: any[] = [];
+        if (updates.community_name) {
+          vals.push(updates.community_name.trim());
+          sql += `, community_name = $${vals.length}`;
+        }
+        if (updates.head_name) {
+          vals.push(updates.head_name.trim());
+          sql += `, head_name = $${vals.length}`;
+        }
+        if (updates.phone) {
+          vals.push(updates.phone.trim());
+          sql += `, phone = $${vals.length}, contact_phone = $${vals.length}`;
+        }
+        if (updates.email) {
+          vals.push(updates.email.trim());
+          sql += `, email = $${vals.length}, contact_email = $${vals.length}`;
+        }
+        if (updates.address) {
+          vals.push(updates.address.trim());
+          sql += `, address = $${vals.length}`;
+        }
+        if (updates.locality) {
+          vals.push(updates.locality.trim());
+          sql += `, locality = $${vals.length}`;
+        }
+        if (updates.organisation_type) {
+          vals.push(updates.organisation_type.trim());
+          sql += `, organisation_type = $${vals.length}`;
+        }
+        vals.push(id);
+        sql += ` WHERE id = $${vals.length} RETURNING created_by`;
+        const res = await pool.query(sql, vals);
+        const userId = res.rows[0]?.created_by;
+
+        if (userId && (updates.head_name || updates.phone || updates.email)) {
+          let pSql = `UPDATE profiles SET updated_at = CURRENT_TIMESTAMP`;
+          const pVals: any[] = [];
+          if (updates.head_name) {
+            pVals.push(updates.head_name.trim());
+            pSql += `, full_name = $${pVals.length}`;
+          }
+          if (updates.phone) {
+            pVals.push(updates.phone.trim());
+            pSql += `, phone = $${pVals.length}`;
+          }
+          if (updates.email) {
+            pVals.push(updates.email.trim());
+            pSql += `, email = $${pVals.length}`;
+          }
+          pVals.push(userId);
+          pSql += ` WHERE id = $${pVals.length}`;
+          await pool.query(pSql, pVals);
+        }
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - updateCommunityInDb]:', err.message);
+      }
+    }
+    return false;
+  }
+
+  public static async deleteCommunityFromDb(id: string): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`DELETE FROM communities WHERE id = $1`, [id]);
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteCommunityFromDb]:', err.message);
+      }
+    }
+    return false;
   }
 }
