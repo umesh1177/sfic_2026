@@ -152,6 +152,38 @@ class AIService {
                 { category_name: 'Roadside Garbage', confidence: 0.02 }
             ];
         }
+        else if (textCorpus.includes('pothole') || textCorpus.includes('crater') || textCorpus.includes('khada') || textCorpus.includes('ખાડા') || textCorpus.includes('गड्ढा')) {
+            category = 'Potholes / Degraded Road';
+            confidence = 0.94;
+            alternatives = [
+                { category_name: 'Roadside Garbage', confidence: 0.04 },
+                { category_name: 'Railing / Parapet Damaged', confidence: 0.02 }
+            ];
+        }
+        else if (textCorpus.includes('tree') || textCorpus.includes('branch') || textCorpus.includes('ઝાડ') || textCorpus.includes('વૃક્ષ') || textCorpus.includes('पेड़')) {
+            category = 'Fallen Tree / Blockage';
+            confidence = 0.95;
+            alternatives = [
+                { category_name: 'Roadside Garbage', confidence: 0.03 },
+                { category_name: 'Other Cleanliness Issues', confidence: 0.02 }
+            ];
+        }
+        else if (textCorpus.includes('railing') || textCorpus.includes('parapet') || textCorpus.includes('wall') || textCorpus.includes('bridge') || textCorpus.includes('રેલિંગ')) {
+            category = 'Railing / Parapet Damaged';
+            confidence = 0.92;
+            alternatives = [
+                { category_name: 'Potholes / Degraded Road', confidence: 0.05 },
+                { category_name: 'Other Cleanliness Issues', confidence: 0.03 }
+            ];
+        }
+        else if (textCorpus.includes('waterlog') || textCorpus.includes('flood') || textCorpus.includes('overtop') || textCorpus.includes('ભરાયેલું પાણી')) {
+            category = 'Road Overtopped / Waterlogging';
+            confidence = 0.93;
+            alternatives = [
+                { category_name: 'Drainage / Waste Accumulation', confidence: 0.05 },
+                { category_name: 'Other Cleanliness Issues', confidence: 0.02 }
+            ];
+        }
         return {
             predicted_category_name: category,
             confidence,

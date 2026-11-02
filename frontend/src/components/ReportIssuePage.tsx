@@ -526,7 +526,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           setAiIdentifiedCategory({
             id: mlRes.data.matched_category_id,
             name: catObj?.category_name || mlRes.data.predicted_category_name || 'Civic Issue',
-            confidence: Math.round(mlRes.data.confidence_score || 94)
+            confidence: Math.round((mlRes.data as any).confidence_score || (mlRes.data.confidence ? mlRes.data.confidence * 100 : 94))
           });
           setImageValidationStatus(`Photo verified: ${mlRes.data.predicted_category_name}`);
         } else {
@@ -625,7 +625,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             setAiIdentifiedCategory({
               id: res.data.matched_category_id,
               name: catObj?.category_name || res.data.predicted_category_name || 'Civic Issue',
-              confidence: Math.round(res.data.confidence_score || 95)
+              confidence: Math.round((res.data as any).confidence_score || (res.data.confidence ? res.data.confidence * 100 : 95))
             });
             setImageValidationStatus(`Photo verified: ${res.data.predicted_category_name}`);
           } else {

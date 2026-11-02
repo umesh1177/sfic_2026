@@ -60,6 +60,29 @@ export interface AppTranslations {
 
   // Home (Citizen)
   welcome_back: string;
+  greeting_morning?: string;
+  greeting_afternoon?: string;
+  greeting_evening?: string;
+  citizen?: string;
+  ward_badge?: string;
+  civic_monitoring?: string;
+  nav_report_short?: string;
+  hero_card_title?: string;
+  hero_card_desc?: string;
+  hero_karma?: string;
+  hero_level?: string;
+  action_map_title?: string;
+  action_map_sub?: string;
+  action_drives_title?: string;
+  action_drives_sub?: string;
+  action_challenges_title?: string;
+  action_challenges_sub?: string;
+  action_rewards_title?: string;
+  action_rewards_sub?: string;
+  stats_total_sub?: string;
+  stats_pending_sub?: string;
+  stats_in_progress_sub?: string;
+  stats_resolved_sub?: string;
   quick_actions: string;
   action_report: string;
   action_track: string;
@@ -76,6 +99,12 @@ export interface AppTranslations {
 
   // Report Flow
   report_title: string;
+  flow_step_1?: string;
+  flow_step_2?: string;
+  flow_step_3?: string;
+  select_complaint_type?: string;
+  select_complaint_sub?: string;
+  tap_to_select?: string;
   step_1: string;
   step_2: string;
   step_3: string;
@@ -273,7 +302,6 @@ export const translations: Record<Language, AppTranslations> = {
     ward_badge: 'Ward 3 Dudhiya Talao',
     civic_monitoring: 'Navsari 13-Ward Civic Monitoring',
     nav_report_short: 'Report',
-    citizen_portal: 'Citizen Portal',
     hero_card_title: 'Keep Navsari Clean & Green',
     hero_card_desc: 'Spot garbage, overflowing bins, or open drains? Report instantly for 24-hr resolution.',
     hero_karma: 'Civic Karma',
@@ -506,7 +534,6 @@ export const translations: Record<Language, AppTranslations> = {
     ward_badge: 'વોર્ડ ૩ દૂધિયા તળાવ',
     civic_monitoring: 'નવસારી ૧૩-વોર્ડ નાગરિક મોનિટરિંગ',
     nav_report_short: 'ફરિયાદ',
-    citizen_portal: 'નાગરિક પોર્ટલ',
     hero_card_title: 'નવસારીને સ્વચ્છ અને સુંદર બનાવો',
     hero_card_desc: 'કચરાના ઢગલા કે ગટર ઉભરાવાની સમસ્યા? ૨૪ કલાકમાં નિકાલ માટે તુરંત ફરિયાદ નોંધાવો.',
     hero_karma: 'નાગરિક કર્મ',
@@ -739,7 +766,6 @@ export const translations: Record<Language, AppTranslations> = {
     ward_badge: 'वार्ड ३ दूधिया तालाब',
     civic_monitoring: 'नवसारी १३-वार्ड नागरिक निगरानी',
     nav_report_short: 'रिपोर्ट',
-    citizen_portal: 'नागरिक पोर्टल',
     hero_card_title: 'नवसारी को स्वच्छ और सुंदर बनाएं',
     hero_card_desc: 'कचरे के ढेर या जलभराव की समस्या? २४ घंटे में समाधान के लिए तुरंत शिकायत दर्ज करें।',
     hero_karma: 'नागरिक कर्म',
