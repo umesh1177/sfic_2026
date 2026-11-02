@@ -194,6 +194,22 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     { number: 13, name: 'Ward 13 - Dandi Coastal Corridor', center: [20.9350, 72.8925] as [number, number] },
   ];
 
+  // Helper to detect closest ward from geographic coordinates
+  const detectWardFromCoordinates = (lat: number, lng: number): number => {
+    let closestWard = 3;
+    let minDistanceSq = Infinity;
+    for (const ward of NAVSARI_WARDS_LIST) {
+      const dLat = lat - ward.center[0];
+      const dLng = lng - ward.center[1];
+      const distSq = dLat * dLat + dLng * dLng;
+      if (distSq < minDistanceSq) {
+        minDistanceSq = distSq;
+        closestWard = ward.number;
+      }
+    }
+    return closestWard;
+  };
+
   const handleWardChange = (wardNum: number) => {
     setSelectedWardNumber(wardNum);
     const wardInfo = NAVSARI_WARDS_LIST.find(w => w.number === wardNum);
@@ -267,6 +283,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       pos => {
         const { latitude, longitude } = pos.coords;
         setMapCenter([latitude, longitude]);
+        const detected = detectWardFromCoordinates(latitude, longitude);
+        setSelectedWardNumber(detected);
         reverseGeocode(latitude, longitude);
         setIsGpsLoading(false);
       },
@@ -290,6 +308,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   // Handle map movement / center update
   const handleMapLocationChanged = (lat: number, lng: number) => {
     setMapCenter([lat, lng]);
+    const detected = detectWardFromCoordinates(lat, lng);
+    setSelectedWardNumber(detected);
     reverseGeocode(lat, lng);
   };
 

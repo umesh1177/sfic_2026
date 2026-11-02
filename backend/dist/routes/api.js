@@ -136,6 +136,8 @@ exports.apiRouter.post('/community/ai/compare-evidence', communityHeadController
 exports.apiRouter.get('/community/ai/activity-insights', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getActivityInsights);
 // Dashboard Overview Summary
 exports.apiRouter.get('/community/dashboard/summary', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getDashboardSummary);
+exports.apiRouter.get('/community/ward-problems', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getWardProblems);
+exports.apiRouter.post('/community/ward-problems/:id/claim', softAuthenticate, communityHeadController_js_1.CommunityHeadController.claimWardProblem);
 // ============================================================================
 // WORKER DASHBOARD ROUTES (Navsari Municipal Corporation)
 // ============================================================================
@@ -188,5 +190,8 @@ exports.apiRouter.put('/ward/communities/:id', softAuthenticate, wardOfficerCont
 exports.apiRouter.delete('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunity);
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
+exports.apiRouter.get('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityProblems);
+exports.apiRouter.post('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunityProblem);
+exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
 exports.apiRouter.get('/ward/reports', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getReports);

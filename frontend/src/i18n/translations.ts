@@ -35,6 +35,7 @@ export interface AppTranslations {
   wo_nav_activities: string;
   wo_nav_approvals: string;
   wo_nav_posts: string;
+  wo_nav_community_problems: string;
   wo_nav_cleanliness_score: string;
   wo_nav_reports: string;
   wo_nav_notifications: string;
@@ -51,6 +52,7 @@ export interface AppTranslations {
   // Navigation (Community Head)
   ch_nav_overview: string;
   ch_nav_activities: string;
+  ch_nav_ward_problems: string;
   ch_nav_community: string;
   ch_nav_analytics: string;
   ch_nav_notifications: string;
@@ -239,6 +241,7 @@ export const translations: Record<Language, AppTranslations> = {
     wo_nav_activities: 'Community Activities',
     wo_nav_approvals: 'Approval Management',
     wo_nav_posts: 'Community & Citizen Posts',
+    wo_nav_community_problems: 'Add Problem for Community',
     wo_nav_cleanliness_score: 'Ward Cleanliness Score',
     wo_nav_reports: 'Reports & Analytics',
     wo_nav_notifications: 'Notifications',
@@ -255,6 +258,7 @@ export const translations: Record<Language, AppTranslations> = {
     // Navigation (Community Head)
     ch_nav_overview: 'Overview',
     ch_nav_activities: 'Activity Management',
+    ch_nav_ward_problems: 'Ward Problems for Action',
     ch_nav_community: 'My Community',
     ch_nav_analytics: 'Reports & Analytics',
     ch_nav_notifications: 'Notifications',
@@ -442,6 +446,7 @@ export const translations: Record<Language, AppTranslations> = {
     wo_nav_activities: 'સામુદાયિક પ્રવૃત્તિઓ',
     wo_nav_approvals: 'મંજૂરી સંચાલન',
     wo_nav_posts: 'નાગરિક પોસ્ટ્સ',
+    wo_nav_community_problems: 'સમુદાય માટે સમસ્યા ઉમેરો',
     wo_nav_cleanliness_score: 'વોર્ડ સ્વચ્છતા સ્કોર',
     wo_nav_reports: 'અહેવાલો અને આંકડા',
     wo_nav_notifications: 'સૂચનાઓ',
@@ -458,6 +463,7 @@ export const translations: Record<Language, AppTranslations> = {
     // Navigation (Community Head)
     ch_nav_overview: 'ઝાંખી',
     ch_nav_activities: 'પ્રવૃત્તિ સંચાલન',
+    ch_nav_ward_problems: 'કાર્યવાહી માટે વોર્ડ સમસ્યાઓ',
     ch_nav_community: 'મારી સંસ્થા',
     ch_nav_analytics: 'અહેવાલો અને આંકડા',
     ch_nav_notifications: 'સૂચનાઓ',
@@ -645,6 +651,7 @@ export const translations: Record<Language, AppTranslations> = {
     wo_nav_activities: 'सामुदायिक गतिविधियां',
     wo_nav_approvals: 'स्वीकृति प्रबंधन',
     wo_nav_posts: 'नागरिक पोस्ट्स',
+    wo_nav_community_problems: 'समुदाय के लिए समस्या जोड़ें',
     wo_nav_cleanliness_score: 'वार्ड स्वच्छता स्कोर',
     wo_nav_reports: 'रिपोर्ट और विश्लेषण',
     wo_nav_notifications: 'सूचनाएं',
@@ -661,6 +668,7 @@ export const translations: Record<Language, AppTranslations> = {
     // Navigation (Community Head)
     ch_nav_overview: 'अवलोकन',
     ch_nav_activities: 'गतिविधि प्रबंधन',
+    ch_nav_ward_problems: 'कार्रवाई हेतु वार्ड समस्याएं',
     ch_nav_community: 'मेरी संस्था',
     ch_nav_analytics: 'रिपोर्ट और विश्लेषण',
     ch_nav_notifications: 'सूचनाएं',

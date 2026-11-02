@@ -1,0 +1,557 @@
+import React, { useState, useEffect } from 'react';
+import {
+  AlertCircle,
+  Plus,
+  Trash2,
+  MapPin,
+  Users,
+  Wrench,
+  CheckCircle2,
+  Calendar,
+  Camera,
+  Image as ImageIcon,
+  Flame,
+  ArrowRight,
+  ShieldCheck,
+  Building,
+  RefreshCw,
+  Sparkles
+} from 'lucide-react';
+import { CommunityProblem } from '../../types/index.js';
+import { api } from '../../services/api.js';
+import { Language } from '../../i18n/translations.js';
+
+interface WardCommunityProblemsViewProps {
+  wardNumber: number;
+  officerName: string;
+  lang: Language;
+}
+
+const PRESET_EQUIPMENT_OPTIONS = [
+  'Heavy Duty Brooms',
+  'Protective Rubber Gloves',
+  'Large Biodegradable Trash Bags',
+  'Metal Rakes & Shovels',
+  'Bleaching Powder Disinfectant',
+  'Safety Reflective Vests',
+  'Wheelbarrows / Push Carts',
+  'Awareness Banners & Signboards',
+  'First Aid Kit'
+];
+
+export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps> = ({
+  wardNumber,
+  officerName
+}) => {
+  const [problems, setProblems] = useState<CommunityProblem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Form State
+  const [title, setTitle] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [locationName, setLocationName] = useState<string>('');
+  const [address, setAddress] = useState<string>(`Ward ${wardNumber}, Navsari Civic Area`);
+  const [actionPlan, setActionPlan] = useState<string>('');
+  const [urgency, setUrgency] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
+  const [volunteersNeeded, setVolunteersNeeded] = useState<number>(20);
+  const [selectedEquipment, setSelectedEquipment] = useState<string[]>([
+    'Heavy Duty Brooms',
+    'Protective Rubber Gloves',
+    'Large Biodegradable Trash Bags'
+  ]);
+  const [imageUrl, setImageUrl] = useState<string>(
+    'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80'
+  );
+
+  const fetchProblems = async () => {
+    setLoading(true);
+    try {
+      const res = await api.getWardCommunityProblems(wardNumber);
+      if (res.success && res.data) {
+        setProblems(res.data);
+      }
+    } catch (err: any) {
+      console.error('Failed to load community problems:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProblems();
+  }, [wardNumber]);
+
+  const toggleEquipment = (item: string) => {
+    setSelectedEquipment(prev =>
+      prev.includes(item) ? prev.filter(e => e !== item) : [...prev, item]
+    );
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !description.trim() || !actionPlan.trim()) {
+      setErrorMsg('Please complete all required fields: title, issue description, and action plan.');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const res = await api.addWardCommunityProblem({
+        ward_number: wardNumber,
+        title: title.trim(),
+        description: description.trim(),
+        location_name: locationName.trim() || `Ward ${wardNumber} Focus Area`,
+        address: address.trim(),
+        action_plan: actionPlan.trim(),
+        urgency,
+        estimated_volunteers_needed: volunteersNeeded,
+        suggested_equipment: selectedEquipment,
+        image_url: imageUrl.trim()
+      });
+
+      if (res.success) {
+        setSuccessMsg('Civic problem posted successfully! Community Heads will now see it in their dashboard.');
+        setIsCreateOpen(false);
+        // Reset form
+        setTitle('');
+        setDescription('');
+        setActionPlan('');
+        setLocationName('');
+        fetchProblems();
+        setTimeout(() => setSuccessMsg(null), 6000);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to post civic problem.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to remove this posted problem?')) return;
+    try {
+      await api.deleteWardCommunityProblem(id);
+      setProblems(prev => prev.filter(p => p.id !== id));
+      setSuccessMsg('Problem listing removed.');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Could not remove problem.');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 1. Header Banner */}
+      <div className="bg-gradient-to-r from-[#095c54] to-[#128c7e] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="relative z-10 max-w-3xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold uppercase tracking-wider backdrop-blur-xs mb-3">
+            <Users className="w-3.5 h-3.5" />
+            Ward {wardNumber} · Community Action Hub
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">
+            Add Problem for Community Cleanliness Drive
+          </h1>
+          <p className="text-sm sm:text-base text-emerald-100 font-medium leading-relaxed">
+            Post civic cleanliness challenges directly to registered Community Heads and RWAs in Navsari.
+            Outline the issue, upload evidence photos, and specify what action should be taken so citizen volunteers can organize weekend drives.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-sm shadow-md hover:bg-emerald-50 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              Post New Problem for Community
+            </button>
+            <button
+              onClick={fetchProblems}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/20 transition backdrop-blur-xs"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Decorative corner icon */}
+        <Sparkles className="absolute right-6 -bottom-6 w-44 h-44 text-white/10 pointer-events-none" />
+      </div>
+
+      {/* Notifications */}
+      {successMsg && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-bold flex items-center gap-3 animate-fadeIn">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-bold flex items-center gap-3 animate-fadeIn">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {/* 2. Create Modal Form */}
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 my-8">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+              <div>
+                <h2 className="text-xl font-black text-[#0f2925]">Post Problem for Community Drive</h2>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Published to Community Heads for voluntary clean-up drives in Ward {wardNumber}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Problem Title */}
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                  Problem Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g., Heavy Plastic & Silt Dumping along Dudhiya Lake Shore"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                  Problem Description *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Describe the condition, safety issues, and impact on local residents..."
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                />
+              </div>
+
+              {/* Action Plan: What Should Be Done */}
+              <div>
+                <label className="block text-xs font-black uppercase text-emerald-800 tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  What Should Be Done (Action Plan for Community Drive) *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g., Organize a 30-volunteer morning drive. Clear plastic bottles and wrappers from the pedestrian promenade, bag organic weeds, wash corners with bleaching powder, and plant 10 flowering saplings."
+                  value={actionPlan}
+                  onChange={e => setActionPlan(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border-2 border-emerald-200 bg-emerald-50/30 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                />
+              </div>
+
+              {/* Location & Address */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Location Landmark
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Near Lakeview Gazebo, Gate 2"
+                    value={locationName}
+                    onChange={e => setLocationName(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Street Address / Sector
+                  </label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={e => setAddress(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/20 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Urgency & Estimated Volunteers */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Urgency Level
+                  </label>
+                  <select
+                    value={urgency}
+                    onChange={e => setUrgency(e.target.value as any)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Urgency</option>
+                    <option value="critical">🚨 Critical / Health Hazard</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                    Estimated Volunteers Needed
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={150}
+                    value={volunteersNeeded}
+                    onChange={e => setVolunteersNeeded(parseInt(e.target.value, 10) || 15)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
+                  />
+                </div>
+              </div>
+
+              {/* Suggested Equipment Tags */}
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-2">
+                  Suggested Equipment & Tools
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {PRESET_EQUIPMENT_OPTIONS.map(item => {
+                    const isSelected = selectedEquipment.includes(item);
+                    return (
+                      <button
+                        type="button"
+                        key={item}
+                        onClick={() => toggleEquipment(item)}
+                        className={`text-xs px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-[#095c54] text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Photo Evidence URL */}
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                  Evidence Photo URL / Civic Proof
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={imageUrl}
+                    onChange={e => setImageUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/photo-..."
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:border-[#095c54]"
+                  />
+                </div>
+                {imageUrl && (
+                  <div className="mt-2 w-full h-32 rounded-xl overflow-hidden border border-slate-200">
+                    <img src={imageUrl} alt="Problem Preview" className="w-full h-full object-cover" />
+                  </div>
+                )}
+              </div>
+
+              {/* Submit / Cancel Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2.5 rounded-xl bg-[#095c54] text-white font-black text-sm shadow-md hover:bg-[#074741] transition disabled:opacity-50"
+                >
+                  {submitting ? 'Publishing...' : 'Publish to Community Heads'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Problems List / Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-64 bg-slate-100 rounded-3xl animate-pulse" />
+          ))}
+        </div>
+      ) : problems.length === 0 ? (
+        <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-black text-[#0f2925]">No Active Problems Posted for Ward {wardNumber}</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            When you notice chronic garbage spots, overgrown shrubs, or lakefront debris that can be cleaned through a community drive, post them here.
+          </p>
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#095c54] text-white font-black text-sm shadow hover:bg-[#074741] transition"
+          >
+            <Plus className="w-4 h-4" />
+            Add First Civic Problem
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {problems.map(prob => {
+            const isUrgentHigh = prob.urgency === 'high' || prob.urgency === 'critical';
+            return (
+              <div
+                key={prob.id}
+                className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between"
+              >
+                <div>
+                  {/* Photo Banner with Urgency & Status Badges */}
+                  <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
+                    <img
+                      src={prob.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80'}
+                      alt={prob.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm flex items-center gap-1 ${
+                          prob.urgency === 'critical'
+                            ? 'bg-rose-600 text-white'
+                            : prob.urgency === 'high'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-emerald-600 text-white'
+                        }`}
+                      >
+                        <Flame className="w-3 h-3" />
+                        {prob.urgency} Urgency
+                      </span>
+
+                      <span className="px-3 py-1 rounded-full bg-black/60 text-white backdrop-blur-xs text-xs font-bold">
+                        Ward {prob.ward_number}
+                      </span>
+                    </div>
+
+                    <div className="absolute top-3 right-3">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm ${
+                          prob.status === 'claimed'
+                            ? 'bg-blue-600 text-white'
+                            : prob.status === 'resolved'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-emerald-500 text-white'
+                        }`}
+                      >
+                        {prob.status === 'claimed' ? 'Drive Planned' : prob.status}
+                      </span>
+                    </div>
+
+                    <div className="absolute bottom-3 left-3 right-3 text-white">
+                      <h3 className="text-base sm:text-lg font-black leading-tight drop-shadow-sm">
+                        {prob.title}
+                      </h3>
+                      <p className="text-xs text-emerald-100 flex items-center gap-1 mt-1 truncate">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                        {prob.location_name} · {prob.address}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Body Details */}
+                  <div className="p-5 space-y-4">
+                    {/* Description */}
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                        Issue Description
+                      </span>
+                      <p className="text-xs sm:text-sm text-slate-700 font-medium leading-relaxed">
+                        {prob.description}
+                      </p>
+                    </div>
+
+                    {/* What Should Be Done */}
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-emerald-900 block mb-1 flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        What Should Be Done (Action Plan)
+                      </span>
+                      <p className="text-xs text-emerald-950 font-semibold leading-relaxed">
+                        {prob.action_plan}
+                      </p>
+                    </div>
+
+                    {/* Volunteers & Equipment */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                      <div className="flex items-center gap-1.5 text-slate-600 font-bold">
+                        <Users className="w-4 h-4 text-[#095c54]" />
+                        <span>Volunteers Needed: <strong>{prob.estimated_volunteers_needed}</strong></span>
+                      </div>
+
+                      {prob.claimed_by_community_name && (
+                        <div className="flex items-center gap-1 text-blue-700 font-bold">
+                          <Building className="w-3.5 h-3.5" />
+                          <span>Claimed by: {prob.claimed_by_community_name}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {prob.suggested_equipment && prob.suggested_equipment.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {prob.suggested_equipment.map((eq, idx) => (
+                          <span
+                            key={idx}
+                            className="text-[10px] px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-bold"
+                          >
+                            {eq}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer Controls */}
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    Posted by: {prob.officer_name || officerName}
+                  </span>
+
+                  <button
+                    onClick={() => handleDelete(prob.id)}
+                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 transition"
+                    title="Delete listing"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};

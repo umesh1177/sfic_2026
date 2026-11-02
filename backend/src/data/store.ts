@@ -12,7 +12,8 @@ import {
   SupportTicket,
   CommunityRecognitionPost,
   CommunityActivity,
-  WorkAssignment
+  WorkAssignment,
+  CommunityProblem
 } from '../types/index.js';
 import { NAVSARI_WARDS } from '../utils/postgis.js';
 
@@ -38,6 +39,7 @@ export interface DataStore {
   communities: any[];
   communityActivities: CommunityActivity[];
   recognitionPosts: CommunityRecognitionPost[];
+  communityProblems: CommunityProblem[];
 }
 
 // Initial seed categories
@@ -1162,5 +1164,6 @@ export const store: DataStore = {
   workAssignments: initialWorkAssignments,
   communities: initialCommunities,
   communityActivities: initialCommunityActivities,
-  recognitionPosts: initialRecognitionPosts
+  recognitionPosts: initialRecognitionPosts,
+  communityProblems: []
 };

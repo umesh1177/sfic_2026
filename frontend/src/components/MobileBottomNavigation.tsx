@@ -38,7 +38,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
     setMoreSheetOpen(false);
   };
 
-  const isMoreTabActive = ['drives', 'challenges', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
+  const isMoreTabActive = ['drives', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
 
   return (
     <>
@@ -158,24 +158,6 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 <div>
                   <span className="block font-bold text-xs">{t.nav_drives}</span>
                   <span className="block text-[10px] text-[#64748b]">Volunteer RSVP</span>
-                </div>
-              </button>
-
-              {/* Community Challenges */}
-              <button
-                onClick={() => handleSelectTab('challenges')}
-                className={`p-4 rounded-2xl border text-left flex flex-col gap-2 transition ${
-                  currentTab === 'challenges'
-                    ? 'border-[#095c54] bg-[#e6f4f1]/60 text-[#095c54]'
-                    : 'border-[#e2e8f0] bg-white text-[#0f2925] hover:border-[#b8e0d7]'
-                }`}
-              >
-                <div className="w-9 h-9 rounded-xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center">
-                  <Trophy className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="block font-bold text-xs">{t.nav_challenges}</span>
-                  <span className="block text-[10px] text-[#64748b]">Ward Missions</span>
                 </div>
               </button>
 

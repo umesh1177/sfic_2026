@@ -11,7 +11,7 @@ import {
   WorkerProfile, WorkerDesignation, WorkerSkill, WorkAssignment,
   WorkAssignmentMember, WorkerAttendance, AttendanceException,
   WorkProgressUpdate, WorkEvidence, WorkCompletionReport,
-  WorkReviewLog, WorkerDashboardSummary
+  WorkReviewLog, WorkerDashboardSummary, CommunityProblem
 } from '../types/index.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1109,20 +1109,21 @@ export class DbRepository {
     if (isDbConnected()) {
       try {
         let res = await pool.query(`
-          SELECT c.*, p.full_name as head_name
+          SELECT c.*, COALESCE(p.full_name, c.head_name) as head_name
           FROM communities c
-          JOIN community_members m ON m.community_id = c.id
-          LEFT JOIN profiles p ON p.id = m.user_id
-          WHERE m.user_id = $1 AND m.membership_role = 'community_head'
+          LEFT JOIN profiles p ON p.id = c.created_by
+          WHERE c.created_by = $1 OR c.id = $1 OR c.id IN (SELECT community_id FROM community_members WHERE user_id = $1)
+          ORDER BY (c.created_by = $1) DESC
           LIMIT 1
         `, [this.isValidUUID(userId) ? userId : 'c0000000-0000-0000-0000-000000000099']);
 
-        if (res.rows.length === 0) {
-          // Fallback to primary community for demo / evaluators
+        if (res.rows.length === 0 && (!userId || userId === 'c0000000-0000-0000-0000-000000000099')) {
+          // Fallback to primary community for default demo evaluator seed only
           res = await pool.query(`
             SELECT c.*, p.full_name as head_name
             FROM communities c
             LEFT JOIN profiles p ON p.id = c.created_by
+            WHERE c.id = 'b0000000-0000-0000-0000-000000000001'
             LIMIT 1
           `);
         }
@@ -1148,7 +1149,7 @@ export class DbRepository {
             verified_by: r.verified_by,
             verified_at: r.verified_at,
             created_by: r.created_by,
-            head_name: r.head_name || 'Rajesh Varma',
+            head_name: r.head_name || 'Community Leader',
             created_at: r.created_at,
             updated_at: r.updated_at
           };
@@ -1158,7 +1159,7 @@ export class DbRepository {
       }
     }
 
-    const fromStore = (store.communities || []).find(c => c.user_id === userId || c.id === userId);
+    const fromStore = (store.communities || []).find(c => c.user_id === userId || c.id === userId || c.created_by === userId);
     if (fromStore) {
       return {
         id: fromStore.id,
@@ -1176,32 +1177,36 @@ export class DbRepository {
         contact_phone: fromStore.phone,
         verification_status: 'verified',
         created_by: fromStore.user_id || userId,
-        head_name: fromStore.head_name,
+        head_name: fromStore.head_name || 'Community Leader',
         created_at: fromStore.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
     }
 
-    return {
-      id: 'b0000000-0000-0000-0000-000000000001',
-      community_name: 'Navsari Green Warriors RWA',
-      organisation_type: 'Resident Welfare Association',
-      registration_number: 'NMC-RWA-2024-042',
-      description: 'Citizen-led community coalition dedicated to lakefront conservation, zero-waste segregation and local ward hygiene in Dudhiya Talao and surrounding localities.',
-      logo_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=300&q=80',
-      address: 'Green Warriors Office, Lakeview Arcade, Dudhiya Talao',
-      locality: 'Dudhiya Talao Ward 3',
-      ward_id: 'ward-03',
-      ward_number: 3,
-      ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
-      contact_email: 'contact@navsarigreen.org',
-      contact_phone: '+919825100099',
-      verification_status: 'verified',
-      created_by: 'c0000000-0000-0000-0000-000000000099',
-      head_name: 'Rajesh Varma',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    if (!userId || userId === 'c0000000-0000-0000-0000-000000000099') {
+      return {
+        id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        organisation_type: 'Resident Welfare Association',
+        registration_number: 'NMC-RWA-2024-042',
+        description: 'Citizen-led community coalition dedicated to lakefront conservation, zero-waste segregation and local ward hygiene in Dudhiya Talao and surrounding localities.',
+        logo_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=300&q=80',
+        address: 'Green Warriors Office, Lakeview Arcade, Dudhiya Talao',
+        locality: 'Dudhiya Talao Ward 3',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
+        contact_email: 'contact@navsarigreen.org',
+        contact_phone: '+919825100099',
+        verification_status: 'verified',
+        created_by: 'c0000000-0000-0000-0000-000000000099',
+        head_name: 'Rajesh Varma',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    return null;
   }
 
   public static async updateCommunity(id: string, data: Partial<Community>): Promise<Community | null> {
@@ -2528,18 +2533,18 @@ export class DbRepository {
 
   public static async getCommunityDashboardSummary(communityId: string): Promise<CommunityDashboardSummary> {
     const comm = await this.getCommunityByUserId(communityId);
-    const validCommunityId = comm?.id || 'b0000000-0000-0000-0000-000000000001';
+    const validCommunityId = comm?.id || communityId;
 
     let stats = {
-      total_activities_created: 4,
-      activities_awaiting_approval: 1,
-      approved_activities: 2,
-      upcoming_activities: 2,
-      completed_activities: 1,
+      total_activities_created: 0,
+      activities_awaiting_approval: 0,
+      approved_activities: 0,
+      upcoming_activities: 0,
+      completed_activities: 0,
       activities_awaiting_evidence: 0,
-      total_citizen_registrations: 38,
-      total_verified_participants: 28,
-      unanswered_citizen_questions: 1
+      total_citizen_registrations: 0,
+      total_verified_participants: 0,
+      unanswered_citizen_questions: 0
     };
 
     let upcomingActivities: CommunityActivity[] = [];
@@ -2548,7 +2553,7 @@ export class DbRepository {
     let unansweredQuestions: ActivityQuestion[] = [];
     let evidencePending: CommunityActivity[] = [];
 
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(validCommunityId)) {
       try {
         const [statsRes, actsRes, qsRes] = await Promise.all([
           pool.query(`
@@ -2632,12 +2637,32 @@ export class DbRepository {
       verified_participants: stats.total_verified_participants,
       volunteer_attendance_rate: stats.total_citizen_registrations > 0
         ? Math.round((stats.total_verified_participants / stats.total_citizen_registrations) * 1000) / 10
-        : 89.1,
+        : 0,
       unanswered_citizen_questions: stats.unanswered_citizen_questions
     };
 
+    const effectiveComm = comm || {
+      id: validCommunityId,
+      community_name: 'Community Cleanliness Initiative',
+      organisation_type: 'Resident Welfare Association',
+      registration_number: 'NMC-RWA-2026-001',
+      description: 'Citizen action group dedicated to civic cleanliness.',
+      address: 'Navsari Civic Area',
+      locality: 'Navsari',
+      ward_id: 'ward-03',
+      ward_number: 3,
+      ward_name: 'Ward 3 - Dudhiya Talao',
+      contact_phone: '+919825100000',
+      contact_email: 'community@navsarimunicipal.gov.in',
+      created_by: communityId,
+      head_name: 'Community Leader',
+      verification_status: 'verified',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
     return {
-      community: comm!,
+      community: effectiveComm,
       stats,
       metrics,
       upcoming_activities: upcomingActivities,
@@ -2651,17 +2676,12 @@ export class DbRepository {
         verified_activities_count: stats.completed_activities,
         verified_participants_count: stats.total_verified_participants,
         total_cleanliness_hours: stats.completed_activities * 3,
-        monthly_trend: [
-          { month: 'Jul 2026', activities: 1, volunteers: 18, waste_kg: 240 },
-          { month: 'Aug 2026', activities: 2, volunteers: 34, waste_kg: 480 },
-          { month: 'Sep 2026', activities: 2, volunteers: 42, waste_kg: 620 },
-          { month: 'Oct 2026', activities: 3, volunteers: 65, waste_kg: 850 }
-        ],
-        ward_distribution: [
-          { ward_name: 'Ward 3 - Dudhiya Talao', count: 2 },
-          { ward_name: 'Ward 4 - Sayaji Road', count: 1 },
-          { ward_name: 'Ward 1 - Junathana', count: 1 }
-        ]
+        monthly_trend: stats.completed_activities > 0 ? [
+          { month: 'Oct 2026', activities: stats.completed_activities, volunteers: stats.total_verified_participants, waste_kg: stats.completed_activities * 120 }
+        ] : [],
+        ward_distribution: stats.total_activities_created > 0 ? [
+          { ward_name: effectiveComm.ward_name || `Ward ${effectiveComm.ward_number || 3}`, count: stats.total_activities_created }
+        ] : []
       }
     };
   }
@@ -2784,7 +2804,7 @@ export class DbRepository {
           FROM worker_profiles wp
           JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
-          WHERE wp.user_id = $1
+          WHERE wp.user_id = $1 OR wp.id = $1
         `, [userId]);
 
         if (res.rows.length > 0) {
@@ -2934,7 +2954,8 @@ export class DbRepository {
   }
 
   public static async getWorkerAssignments(workerId: string, filterStatus?: string): Promise<WorkAssignment[]> {
-    if (isDbConnected() && this.isValidUUID(workerId)) {
+    let dbAssignments: WorkAssignment[] = [];
+    if (isDbConnected()) {
       try {
         let query = `
           SELECT wa.*, wam.temporary_leader, wam.assignment_status as my_attendance_status,
@@ -2952,7 +2973,7 @@ export class DbRepository {
                  EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'after') as has_after_evidence
           FROM work_assignments wa
           JOIN work_assignment_members wam ON wam.assignment_id = wa.id
-          WHERE wam.worker_id = $1
+          WHERE (wam.worker_id = $1 OR wam.worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1) OR wam.worker_id IN (SELECT user_id FROM worker_profiles WHERE id = $1))
         `;
         const values: any[] = [workerId];
         if (filterStatus && filterStatus !== 'all') {
@@ -2963,7 +2984,7 @@ export class DbRepository {
 
         const res = await pool.query(query, values);
 
-        return res.rows.map(r => ({
+        dbAssignments = res.rows.map(r => ({
           id: r.id,
           task_code: r.task_code,
           title: r.title,
@@ -2977,9 +2998,9 @@ export class DbRepository {
           address: r.address,
           latitude: parseFloat(r.latitude),
           longitude: parseFloat(r.longitude),
-          scheduled_date: r.scheduled_date ? r.scheduled_date.toISOString().split('T')[0] : '2026-11-01',
-          scheduled_start_time: r.scheduled_start_time ? r.scheduled_start_time.toISOString() : new Date().toISOString(),
-          expected_end_time: r.expected_end_time ? r.expected_end_time.toISOString() : new Date().toISOString(),
+          scheduled_date: r.scheduled_date ? (r.scheduled_date instanceof Date ? r.scheduled_date.toISOString().split('T')[0] : String(r.scheduled_date)) : '2026-11-01',
+          scheduled_start_time: r.scheduled_start_time ? (r.scheduled_start_time instanceof Date ? r.scheduled_start_time.toISOString() : String(r.scheduled_start_time)) : new Date().toISOString(),
+          expected_end_time: r.expected_end_time ? (r.expected_end_time instanceof Date ? r.expected_end_time.toISOString() : String(r.expected_end_time)) : new Date().toISOString(),
           attendance_radius_meters: parseInt(r.attendance_radius_meters || '100', 10),
           evidence_radius_meters: parseInt(r.evidence_radius_meters || '150', 10),
           work_instructions: r.work_instructions,
@@ -3002,9 +3023,9 @@ export class DbRepository {
       }
     }
 
-    // Fallback store tasks
+    // Also merge in-memory store so newly created tasks are never lost
     const allAssignments = store.workAssignments || [];
-    return allAssignments
+    const inMemoryMatches = allAssignments
       .filter(a => {
         const inTeam = (a.team_members || []).some(m => m.worker_id === workerId);
         const isLeader = a.temporary_leader_id === workerId;
@@ -3021,6 +3042,102 @@ export class DbRepository {
           my_attendance_status: a.my_attendance_status || 'assigned'
         };
       });
+
+    // Deduplicate DB and store tasks
+    const combined = [...dbAssignments];
+    for (const mem of inMemoryMatches) {
+      if (!combined.some(c => c.id === mem.id || (mem.task_code && c.task_code === mem.task_code))) {
+        combined.push(mem);
+      }
+    }
+
+    return combined;
+  }
+
+  public static async saveWorkAssignment(assignment: WorkAssignment, members: any[]): Promise<boolean> {
+    const validAssignmentId = this.isValidUUID(assignment.id) ? assignment.id : randomUUID();
+    assignment.id = validAssignmentId;
+
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          INSERT INTO work_assignments (
+            id, task_code, title, description, category, priority,
+            ward_id, ward_number, ward_name, location_name, address,
+            latitude, longitude, scheduled_date, scheduled_start_time,
+            expected_end_time, attendance_radius_meters, evidence_radius_meters,
+            work_instructions, safety_instructions, required_equipment,
+            emergency_contact_phone, status, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12, $13, $14, $15,
+            $16, $17, $18,
+            $19, $20, $21,
+            $22, $23, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            status = EXCLUDED.status,
+            work_instructions = EXCLUDED.work_instructions,
+            updated_at = CURRENT_TIMESTAMP
+        `, [
+          validAssignmentId,
+          assignment.task_code || `TSK-${Date.now()}`,
+          assignment.title,
+          assignment.description || 'Assigned field sanitation task.',
+          assignment.category || 'waste_collection',
+          assignment.priority || 'high',
+          assignment.ward_id || 'ward-03',
+          assignment.ward_number || 3,
+          assignment.ward_name || `Ward ${assignment.ward_number || 3}`,
+          assignment.location_name || 'Navsari Work Area',
+          assignment.address || 'Navsari Municipal Area',
+          assignment.latitude || 20.9325,
+          assignment.longitude || 72.9275,
+          assignment.scheduled_date || new Date().toISOString().split('T')[0],
+          assignment.scheduled_start_time || new Date().toISOString(),
+          assignment.expected_end_time || assignment.deadline || new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+          assignment.attendance_radius_meters || 100,
+          assignment.evidence_radius_meters || 150,
+          assignment.work_instructions || 'Clean up assigned civic location.',
+          assignment.safety_instructions || 'Wear boots, gloves, and reflective jacket.',
+          JSON.stringify(assignment.required_equipment || ['Broom', 'Shovel', 'Gloves']),
+          assignment.emergency_contact_phone || '+919825130003',
+          assignment.status || 'assigned'
+        ]);
+
+        for (const m of members) {
+          const rawWorkerId = m.id || m.worker_id;
+          if (!rawWorkerId) continue;
+          
+          let resolvedWorkerId = rawWorkerId;
+          const checkWp = await pool.query(`SELECT id FROM worker_profiles WHERE id = $1 OR user_id = $1 LIMIT 1`, [rawWorkerId]);
+          if (checkWp.rows.length > 0) {
+            resolvedWorkerId = checkWp.rows[0].id;
+          }
+
+          const memberId = this.isValidUUID(m.member_id) ? m.member_id : randomUUID();
+          await pool.query(`
+            INSERT INTO work_assignment_members (
+              id, assignment_id, worker_id, temporary_leader, assignment_status, assigned_at
+            ) VALUES ($1, $2, $3, $4, 'assigned', CURRENT_TIMESTAMP)
+            ON CONFLICT (assignment_id, worker_id) DO UPDATE SET
+              temporary_leader = EXCLUDED.temporary_leader,
+              assignment_status = EXCLUDED.assignment_status
+          `, [
+            memberId,
+            validAssignmentId,
+            resolvedWorkerId,
+            Boolean(m.temporary_leader || m.is_leader || rawWorkerId === assignment.temporary_leader_id)
+          ]);
+        }
+
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - saveWorkAssignment]:', err.message);
+      }
+    }
+    return false;
   }
 
   public static async getAssignmentById(assignmentId: string, workerId?: string): Promise<WorkAssignment | null> {
@@ -4018,6 +4135,31 @@ export class DbRepository {
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS username VARCHAR(100);
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS plain_password VARCHAR(100);
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS active_drives_count INTEGER DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS community_problems (
+          id VARCHAR(100) PRIMARY KEY,
+          ward_number INT NOT NULL,
+          ward_name VARCHAR(100),
+          title VARCHAR(255) NOT NULL,
+          description TEXT NOT NULL,
+          location_name VARCHAR(255) NOT NULL,
+          address TEXT NOT NULL,
+          latitude NUMERIC(10, 7) NOT NULL,
+          longitude NUMERIC(10, 7) NOT NULL,
+          action_plan TEXT NOT NULL,
+          urgency VARCHAR(20) DEFAULT 'medium',
+          estimated_volunteers_needed INT DEFAULT 15,
+          suggested_equipment JSONB DEFAULT '[]'::jsonb,
+          image_url TEXT,
+          status VARCHAR(30) DEFAULT 'open',
+          claimed_by_community_id VARCHAR(100),
+          claimed_by_community_name VARCHAR(255),
+          linked_activity_id VARCHAR(100),
+          created_by VARCHAR(100),
+          officer_name VARCHAR(100),
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
       `);
 
       // 4. Synchronize memory store from database on startup so state is 100% unified
@@ -4596,6 +4738,13 @@ export class DbRepository {
             community.active_drives_count || 0
           ]
         );
+
+        await pool.query(
+          `INSERT INTO community_members (id, community_id, user_id, membership_role)
+           VALUES (gen_random_uuid(), $1, $2, 'community_head')
+           ON CONFLICT (community_id, user_id) DO UPDATE SET membership_role = 'community_head'`,
+          [validCommId, validUserId]
+        ).catch(() => {});
       } catch (err: any) {
         console.error('[DB REPO ERROR - saveCommunityToDb]:', err.message);
       }
@@ -4684,5 +4833,198 @@ export class DbRepository {
       }
     }
     return false;
+  }
+
+  // =========================================================================
+  // COMMUNITY PROBLEMS (WARD OFFICER POSTS FOR COMMUNITY ACTION)
+  // =========================================================================
+  public static async getCommunityProblems(wardNumber?: number): Promise<CommunityProblem[]> {
+    if (isDbConnected()) {
+      try {
+        let sql = `SELECT * FROM community_problems WHERE 1=1`;
+        const vals: any[] = [];
+        if (wardNumber) {
+          vals.push(wardNumber);
+          sql += ` AND ward_number = $${vals.length}`;
+        }
+        sql += ` ORDER BY created_at DESC`;
+        const res = await pool.query(sql, vals);
+        return res.rows.map(r => ({
+          id: r.id,
+          ward_number: r.ward_number,
+          ward_name: r.ward_name,
+          title: r.title,
+          description: r.description,
+          location_name: r.location_name,
+          address: r.address,
+          latitude: parseFloat(r.latitude),
+          longitude: parseFloat(r.longitude),
+          action_plan: r.action_plan,
+          urgency: r.urgency,
+          estimated_volunteers_needed: parseInt(r.estimated_volunteers_needed || '15', 10),
+          suggested_equipment: Array.isArray(r.suggested_equipment) ? r.suggested_equipment : [],
+          image_url: r.image_url,
+          status: r.status,
+          claimed_by_community_id: r.claimed_by_community_id,
+          claimed_by_community_name: r.claimed_by_community_name,
+          linked_activity_id: r.linked_activity_id,
+          created_by: r.created_by,
+          officer_name: r.officer_name,
+          created_at: r.created_at ? (r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at)) : new Date().toISOString(),
+          updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : new Date().toISOString()
+        }));
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getCommunityProblems]:', err.message);
+      }
+    }
+
+    let problems = store.communityProblems || [];
+    if (wardNumber) {
+      problems = problems.filter(p => p.ward_number === wardNumber);
+    }
+    return problems;
+  }
+
+  public static async saveCommunityProblem(problem: any): Promise<CommunityProblem> {
+    const validId = this.isValidUUID(problem.id) ? problem.id : randomUUID();
+    const newProblem: CommunityProblem = {
+      id: validId,
+      ward_number: problem.ward_number || 3,
+      ward_name: problem.ward_name || `Ward ${problem.ward_number || 3}`,
+      title: problem.title.trim(),
+      description: problem.description.trim(),
+      location_name: problem.location_name?.trim() || 'Navsari Ward Area',
+      address: problem.address?.trim() || 'Navsari Civic Area',
+      latitude: parseFloat(problem.latitude || 20.9325),
+      longitude: parseFloat(problem.longitude || 72.9275),
+      action_plan: problem.action_plan?.trim() || 'Organize community cleanliness drive to clean and restore the area.',
+      urgency: problem.urgency || 'medium',
+      estimated_volunteers_needed: parseInt(problem.estimated_volunteers_needed || '15', 10),
+      suggested_equipment: Array.isArray(problem.suggested_equipment) ? problem.suggested_equipment : ['Brooms', 'Gloves', 'Trash Bags'],
+      image_url: problem.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+      status: problem.status || 'open',
+      claimed_by_community_id: problem.claimed_by_community_id,
+      claimed_by_community_name: problem.claimed_by_community_name,
+      linked_activity_id: problem.linked_activity_id,
+      created_by: problem.created_by,
+      officer_name: problem.officer_name || 'Ward Officer',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          INSERT INTO community_problems (
+            id, ward_number, ward_name, title, description, location_name,
+            address, latitude, longitude, action_plan, urgency,
+            estimated_volunteers_needed, suggested_equipment, image_url,
+            status, claimed_by_community_id, claimed_by_community_name,
+            linked_activity_id, created_by, officer_name, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12, $13, $14,
+            $15, $16, $17,
+            $18, $19, $20, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            action_plan = EXCLUDED.action_plan,
+            urgency = EXCLUDED.urgency,
+            estimated_volunteers_needed = EXCLUDED.estimated_volunteers_needed,
+            suggested_equipment = EXCLUDED.suggested_equipment,
+            image_url = EXCLUDED.image_url,
+            status = EXCLUDED.status,
+            claimed_by_community_id = EXCLUDED.claimed_by_community_id,
+            claimed_by_community_name = EXCLUDED.claimed_by_community_name,
+            linked_activity_id = EXCLUDED.linked_activity_id,
+            updated_at = CURRENT_TIMESTAMP
+        `, [
+          newProblem.id,
+          newProblem.ward_number,
+          newProblem.ward_name,
+          newProblem.title,
+          newProblem.description,
+          newProblem.location_name,
+          newProblem.address,
+          newProblem.latitude,
+          newProblem.longitude,
+          newProblem.action_plan,
+          newProblem.urgency,
+          newProblem.estimated_volunteers_needed,
+          JSON.stringify(newProblem.suggested_equipment),
+          newProblem.image_url,
+          newProblem.status,
+          newProblem.claimed_by_community_id || null,
+          newProblem.claimed_by_community_name || null,
+          newProblem.linked_activity_id || null,
+          newProblem.created_by || null,
+          newProblem.officer_name || null
+        ]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - saveCommunityProblem]:', err.message);
+      }
+    }
+
+    if (!store.communityProblems) store.communityProblems = [];
+    const idx = store.communityProblems.findIndex(p => p.id === newProblem.id);
+    if (idx !== -1) {
+      store.communityProblems[idx] = newProblem;
+    } else {
+      store.communityProblems.unshift(newProblem);
+    }
+
+    return newProblem;
+  }
+
+  public static async claimCommunityProblem(
+    id: string,
+    communityId: string,
+    communityName: string,
+    activityId?: string
+  ): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          UPDATE community_problems
+          SET status = 'claimed',
+              claimed_by_community_id = $2,
+              claimed_by_community_name = $3,
+              linked_activity_id = $4,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [id, communityId, communityName, activityId || null]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - claimCommunityProblem]:', err.message);
+      }
+    }
+
+    if (store.communityProblems) {
+      const match = store.communityProblems.find(p => p.id === id);
+      if (match) {
+        match.status = 'claimed';
+        match.claimed_by_community_id = communityId;
+        match.claimed_by_community_name = communityName;
+        match.linked_activity_id = activityId;
+        match.updated_at = new Date().toISOString();
+      }
+    }
+    return true;
+  }
+
+  public static async deleteCommunityProblem(id: string): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`DELETE FROM community_problems WHERE id = $1`, [id]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteCommunityProblem]:', err.message);
+      }
+    }
+    if (store.communityProblems) {
+      store.communityProblems = store.communityProblems.filter(p => p.id !== id);
+    }
+    return true;
   }
 }

@@ -19,17 +19,19 @@ import {
   Globe,
   PlusCircle,
   HelpCircle,
-  ExternalLink
+  ExternalLink,
+  HeartHandshake
 } from 'lucide-react';
 import { Profile, CommunityDashboardSummary, CommunityActivity } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
 import { api } from '../../services/api.js';
 import { SwachhSetuLogo, SwachhSetuIcon } from '../SwachhSetuLogo.js';
 
-// 11 Tab Components
+// Tab Components
 import { CommunityOverview } from './CommunityOverview.js';
 import { MyCommunityProfile } from './MyCommunityProfile.js';
 import { ActivityManagement } from './ActivityManagement.js';
+import { CommunityWardProblemsView } from './CommunityWardProblemsView.js';
 import { EventRegistrations } from './EventRegistrations.js';
 import { CitizenQuestions } from './CitizenQuestions.js';
 import { EventNotifications } from './EventNotifications.js';
@@ -39,36 +41,36 @@ import { CommunityAnalytics } from './CommunityAnalytics.js';
 import { CommunityNotifications } from './CommunityNotifications.js';
 import { CommunitySettings } from './CommunitySettings.js';
 
-const DEFAULT_COMMUNITY_SUMMARY: CommunityDashboardSummary = {
+const buildDynamicInitialSummary = (user: Profile): CommunityDashboardSummary => ({
   community: {
-    id: 'b0000000-0000-0000-0000-000000000001',
-    community_name: 'Navsari Green Warriors RWA',
+    id: user?.id || 'comm-lead',
+    community_name: user?.full_name ? `${user.full_name}'s Community Team` : 'Navsari Cleanliness Initiative',
     organisation_type: 'Resident Welfare Association',
-    registration_number: 'NMC-RWA-2024-042',
-    description: 'Civic action group dedicated to tree planting, stormwater drain preservation, and zero-waste segregation in Dudhiya Talao sector.',
-    logo_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=256&q=80',
-    address: 'Near Dudhiya Talao Lakefront, Sector 3',
-    locality: 'Dudhiya Talao Ward 3',
-    ward_id: 'ward-03',
-    ward_number: 3,
-    ward_name: 'Ward 3 - Dudhiya Talao',
-    contact_phone: '+919825100099',
-    contact_email: 'rajesh.varma@navsarigreen.org',
-    created_by: 'c0000000-0000-0000-0000-000000000099',
-    head_name: 'Rajesh Varma',
+    registration_number: `NMC-RWA-2026-0${user?.ward_number || 3}`,
+    description: 'Civic cleanliness and local environmental action group.',
+    logo_path: user?.avatar_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=256&q=80',
+    address: user?.address || `Ward ${user?.ward_number || 3}, Navsari`,
+    locality: user?.locality || `Ward ${user?.ward_number || 3}`,
+    ward_id: `ward-0${user?.ward_number || 3}`,
+    ward_number: user?.ward_number || 3,
+    ward_name: `Ward ${user?.ward_number || 3}`,
+    contact_phone: user?.phone || '',
+    contact_email: user?.email || '',
+    created_by: user?.id || '',
+    head_name: user?.full_name || 'Community Leader',
     verification_status: 'verified',
-    created_at: '2026-10-15T09:00:00Z',
-    updated_at: '2026-10-30T10:00:00Z'
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   },
   metrics: {
-    total_activities: 8,
-    upcoming_activities: 2,
-    completed_activities: 5,
-    awaiting_evidence_activities: 1,
-    total_registrations: 384,
-    verified_participants: 342,
-    volunteer_attendance_rate: 89.1,
-    unanswered_citizen_questions: 1
+    total_activities: 0,
+    upcoming_activities: 0,
+    completed_activities: 0,
+    awaiting_evidence_activities: 0,
+    total_registrations: 0,
+    verified_participants: 0,
+    volunteer_attendance_rate: 0,
+    unanswered_citizen_questions: 0
   },
   upcoming_activities: [],
   pending_actions: {
@@ -78,21 +80,13 @@ const DEFAULT_COMMUNITY_SUMMARY: CommunityDashboardSummary = {
     evidence_pending: []
   },
   impact: {
-    verified_activities_count: 5,
-    verified_participants_count: 342,
-    total_cleanliness_hours: 1040,
-    monthly_trend: [
-      { month: 'Jul', activities: 1, volunteers: 45, waste_kg: 240 },
-      { month: 'Aug', activities: 2, volunteers: 95, waste_kg: 520 },
-      { month: 'Sep', activities: 2, volunteers: 88, waste_kg: 480 },
-      { month: 'Oct', activities: 3, volunteers: 156, waste_kg: 780 }
-    ],
-    ward_distribution: [
-      { ward_name: 'Ward 3 - Dudhiya Talao', count: 6 },
-      { ward_name: 'Ward 4 - Junathana', count: 2 }
-    ]
+    verified_activities_count: 0,
+    verified_participants_count: 0,
+    total_cleanliness_hours: 0,
+    monthly_trend: [],
+    ward_distribution: []
   }
-};
+});
 
 interface CommunityHeadDashboardProps {
   user: Profile;
@@ -111,7 +105,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
-  const [dashboardSummary, setDashboardSummary] = useState<CommunityDashboardSummary | null>(DEFAULT_COMMUNITY_SUMMARY);
+  const [dashboardSummary, setDashboardSummary] = useState<CommunityDashboardSummary | null>(() => buildDynamicInitialSummary(user));
   const [activities, setActivities] = useState<CommunityActivity[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
@@ -129,7 +123,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
       if (sumRes.data) {
         setDashboardSummary(sumRes.data);
       } else if (!dashboardSummary) {
-        setDashboardSummary(DEFAULT_COMMUNITY_SUMMARY);
+        setDashboardSummary(buildDynamicInitialSummary(user));
       }
       if (actRes.data && actRes.data.length > 0) {
         setActivities(actRes.data);
@@ -151,6 +145,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
   const navItems: { id: string; label: string; icon: any; badge?: number }[] = [
     { id: 'overview', label: t.ch_nav_overview, icon: LayoutDashboard },
     { id: 'activities', label: t.ch_nav_activities, icon: Calendar },
+    { id: 'ward_problems', label: t.ch_nav_ward_problems, icon: HeartHandshake },
     { id: 'community', label: t.ch_nav_community, icon: Building2 },
     { id: 'analytics', label: t.ch_nav_analytics, icon: TrendingUp },
     { id: 'notifications', label: t.ch_nav_notifications, icon: Bell },
@@ -458,6 +453,18 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             />
           )}
 
+          {/* Tab 4: Ward Problems for Community Action */}
+          {activeTab === 'ward_problems' && (
+            <CommunityWardProblemsView
+              community={dashboardSummary?.community || null}
+              lang={lang}
+              onPlanDriveForProblem={problem => {
+                setActiveTab('activities');
+                setOpenCreateWizardDirectly(true);
+              }}
+            />
+          )}
+
           {/* Tab 4: Reports & Analytics */}
           {activeTab === 'analytics' && (
             <CommunityAnalytics summary={dashboardSummary} />
@@ -503,7 +510,20 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               </span>
             </button>
 
-            {/* 3. Community Profile */}
+            {/* 3. Ward Problems */}
+            <button
+              onClick={() => setActiveTab('ward_problems')}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
+                activeTab === 'ward_problems' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <HeartHandshake className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
+                {t.ch_nav_ward_problems.split(' ')[0]}
+              </span>
+            </button>
+
+            {/* 4. Community Profile */}
             <button
               onClick={() => setActiveTab('community')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${

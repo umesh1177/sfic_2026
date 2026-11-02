@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Shield,
   Sparkles,
-  ArrowRightLeft
+  ArrowRightLeft,
+  HeartHandshake
 } from 'lucide-react';
 import { Profile } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -35,8 +36,7 @@ import { TeamManagementView } from './TeamManagementView.js';
 import { WardCommunityActivities } from './WardCommunityActivities.js';
 import { ApprovalManagementView } from './ApprovalManagementView.js';
 import { WardCommunityPosts } from './WardCommunityPosts.js';
-import { WardCleanlinessScoreView } from './WardCleanlinessScoreView.js';
-import { WardReportsAnalytics } from './WardReportsAnalytics.js';
+import { WardCommunityProblemsView } from './WardCommunityProblemsView.js';
 import { WardNotificationsView } from './WardNotificationsView.js';
 import { WardSettingsView } from './WardSettingsView.js';
 
@@ -75,7 +75,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
   const userWardNum = (user as any)?.ward_number || (wardMatch ? Number(wardMatch[1]) : 3);
   const wardArea = user?.locality?.replace(/Ward\s*\d+/i, '').replace(/NMC/i, '').trim() || (userWardNum === 8 ? 'Madhumati - Parsi Wad' : 'Dudhiya Talao');
 
-  // 12 Navigation items with fully dynamic language labels
+  // 11 Navigation items with fully dynamic language labels
   const navItems = [
     { id: 'overview', label: `1. ${t.wo_nav_overview}`, icon: LayoutDashboard },
     { id: 'complaints', label: `2. ${t.wo_nav_complaints}`, icon: FileText },
@@ -85,10 +85,9 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
     { id: 'activities', label: `6. ${t.wo_nav_activities}`, icon: Calendar },
     { id: 'approvals', label: `7. ${t.wo_nav_approvals}`, icon: ShieldCheck },
     { id: 'posts', label: `8. ${t.wo_nav_posts}`, icon: Megaphone },
-    { id: 'cleanliness_score', label: `9. ${t.wo_nav_cleanliness_score}`, icon: Award },
-    { id: 'reports', label: `10. ${t.wo_nav_reports}`, icon: BarChart3 },
-    { id: 'notifications', label: `11. ${t.wo_nav_notifications}`, icon: Bell },
-    { id: 'settings', label: `12. ${t.wo_nav_settings}`, icon: Settings }
+    { id: 'community_problems', label: `9. ${t.wo_nav_community_problems}`, icon: HeartHandshake },
+    { id: 'notifications', label: `10. ${t.wo_nav_notifications}`, icon: Bell },
+    { id: 'settings', label: `11. ${t.wo_nav_settings}`, icon: Settings }
   ];
 
   // Callback from overview cards to open catalogue with pre-applied filter
@@ -276,7 +275,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           )}
 
           {activeTab === 'complaints' && (
-            <ComplaintCatalogue initialFilter={catalogueFilter || { ward_number: userWardNum }} />
+            <ComplaintCatalogue initialFilter={{ ward_number: userWardNum, ...(catalogueFilter || {}) }} />
           )}
 
           {activeTab === 'hotspots' && (
@@ -295,9 +294,9 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
           {activeTab === 'posts' && <WardCommunityPosts />}
 
-          {activeTab === 'cleanliness_score' && <WardCleanlinessScoreView />}
-
-          {activeTab === 'reports' && <WardReportsAnalytics />}
+          {activeTab === 'community_problems' && (
+            <WardCommunityProblemsView wardNumber={userWardNum} officerName={officerName} lang={lang} />
+          )}
 
           {activeTab === 'notifications' && <WardNotificationsView />}
 

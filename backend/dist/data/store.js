@@ -1110,5 +1110,6 @@ exports.store = {
     workAssignments: initialWorkAssignments,
     communities: initialCommunities,
     communityActivities: initialCommunityActivities,
-    recognitionPosts: initialRecognitionPosts
+    recognitionPosts: initialRecognitionPosts,
+    communityProblems: []
 };

@@ -6,7 +6,6 @@ import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
 import { NavsariMap } from './components/NavsariMap.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
-import { CommunityChallenges } from './components/CommunityChallenges.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
 import { MyProfile } from './components/MyProfile.js';
@@ -295,10 +294,6 @@ export const App: React.FC = () => {
 
           {currentTab === 'drives' && (
             <CleanlinessDrives lang={lang} />
-          )}
-
-          {currentTab === 'challenges' && (
-            <CommunityChallenges lang={lang} />
           )}
 
           {currentTab === 'rewards' && (

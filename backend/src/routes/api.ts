@@ -152,6 +152,8 @@ apiRouter.get('/community/ai/activity-insights', softAuthenticate, CommunityHead
 
 // Dashboard Overview Summary
 apiRouter.get('/community/dashboard/summary', softAuthenticate, CommunityHeadController.getDashboardSummary);
+apiRouter.get('/community/ward-problems', softAuthenticate, CommunityHeadController.getWardProblems);
+apiRouter.post('/community/ward-problems/:id/claim', softAuthenticate, CommunityHeadController.claimWardProblem);
 
 // ============================================================================
 // WORKER DASHBOARD ROUTES (Navsari Municipal Corporation)
@@ -214,6 +216,9 @@ apiRouter.put('/ward/communities/:id', softAuthenticate, WardOfficerController.u
 apiRouter.delete('/ward/communities/:id', softAuthenticate, WardOfficerController.deleteCommunity);
 apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getApprovals);
 apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
+apiRouter.get('/ward/community-problems', softAuthenticate, WardOfficerController.getCommunityProblems);
+apiRouter.post('/ward/community-problems', softAuthenticate, WardOfficerController.addCommunityProblem);
+apiRouter.delete('/ward/community-problems/:id', softAuthenticate, WardOfficerController.deleteCommunityProblem);
 apiRouter.get('/ward/cleanliness-score', softAuthenticate, WardOfficerController.getCleanlinessScore);
 apiRouter.get('/ward/reports', softAuthenticate, WardOfficerController.getReports);
 

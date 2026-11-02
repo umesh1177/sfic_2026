@@ -118,7 +118,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     setCategory('all');
     setPriority('all');
     setProgressStatus('all');
-    setWardFilter('all');
+    setWardFilter(initialFilter?.ward_number ? String(initialFilter.ward_number) : 'all');
     setAssignment('all');
     setLocationFilter('all');
     setAdditionalFlags('all');

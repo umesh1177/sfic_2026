@@ -49,32 +49,32 @@ export const CommunityOverview: React.FC<CommunityOverviewProps> = ({
   }
 
   const comm = summary?.community || {
-    id: 'b0000000-0000-0000-0000-000000000001',
-    community_name: 'Navsari Green Warriors RWA',
+    id: 'comm-lead',
+    community_name: 'Community Cleanliness Initiative',
     organisation_type: 'Resident Welfare Association',
-    registration_number: 'NMC-RWA-2024-042',
-    address: 'Near Dudhiya Talao Lakefront',
-    locality: 'Dudhiya Talao Ward 3',
+    registration_number: 'NMC-RWA-2026-001',
+    address: 'Navsari Civic Area',
+    locality: 'Navsari',
     ward_number: 3,
     ward_name: 'Ward 3 - Dudhiya Talao',
-    contact_phone: '+919825100099',
-    contact_email: 'rajesh.varma@navsarigreen.org',
-    head_name: 'Rajesh Varma',
+    contact_phone: '+919825100000',
+    contact_email: 'community@navsarimunicipal.gov.in',
+    head_name: 'Community Leader',
     verification_status: 'verified' as const,
-    created_by: 'c0000000-0000-0000-0000-000000000099',
+    created_by: '',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
   const rawMetrics = (summary as any)?.metrics || (summary as any)?.stats;
   const metrics = {
-    total_activities: rawMetrics?.total_activities ?? rawMetrics?.total_activities_created ?? 4,
-    upcoming_activities: rawMetrics?.upcoming_activities ?? 2,
-    completed_activities: rawMetrics?.completed_activities ?? 1,
+    total_activities: rawMetrics?.total_activities ?? rawMetrics?.total_activities_created ?? 0,
+    upcoming_activities: rawMetrics?.upcoming_activities ?? 0,
+    completed_activities: rawMetrics?.completed_activities ?? 0,
     awaiting_evidence_activities: rawMetrics?.awaiting_evidence_activities ?? rawMetrics?.activities_awaiting_evidence ?? 0,
-    total_registrations: rawMetrics?.total_registrations ?? rawMetrics?.total_citizen_registrations ?? 38,
-    verified_participants: rawMetrics?.verified_participants ?? rawMetrics?.total_verified_participants ?? 28,
-    volunteer_attendance_rate: rawMetrics?.volunteer_attendance_rate ?? 89.1,
+    total_registrations: rawMetrics?.total_registrations ?? rawMetrics?.total_citizen_registrations ?? 0,
+    verified_participants: rawMetrics?.verified_participants ?? rawMetrics?.total_verified_participants ?? 0,
+    volunteer_attendance_rate: rawMetrics?.volunteer_attendance_rate ?? 0,
     unanswered_citizen_questions: rawMetrics?.unanswered_citizen_questions ?? 0
   };
 

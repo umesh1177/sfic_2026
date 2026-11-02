@@ -190,16 +190,16 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         </button>
 
         <button
-          onClick={() => onNavigateTab('challenges')}
+          onClick={() => onNavigateTab('rewards')}
           className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-sm hover:border-[#095c54] transition text-left flex items-center justify-between group"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center font-bold">
-              <Trophy className="w-5 h-5" />
+              <Award className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs font-black text-[#0f2925]">Civic Challenges</div>
-              <div className="text-[10px] text-[#64748b]">Earn Karma & Badges</div>
+              <div className="text-xs font-black text-[#0f2925]">Rewards & Badges</div>
+              <div className="text-[10px] text-[#64748b]">Citizen Karma & Impact</div>
             </div>
           </div>
           <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition" />

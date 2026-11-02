@@ -507,11 +507,20 @@ export class WardOfficerController {
         limit = 10
       } = req.query as any;
 
-      // Base complaints: support ward filter if passed, otherwise include all complaints across Navsari
+      // Base complaints: strictly filter by ward. Default to the authenticated officer's ward so Ward 8 never sees Ward 3!
       let complaints = store.complaints || [];
+      let officerWardNum = (req.user as any)?.ward_number;
+      if (!officerWardNum) {
+        const userMatch = req.user?.locality?.match(/Ward\s*(\d+)/i) || req.user?.address?.match(/Ward\s*(\d+)/i);
+        if (userMatch) officerWardNum = Number(userMatch[1]);
+      }
+
       const requestedWard = ward || ward_number;
-      if (requestedWard && requestedWard !== 'all') {
-        const targetWardNum = Number(requestedWard);
+      const targetWardNum = (requestedWard && requestedWard !== 'all')
+        ? Number(requestedWard)
+        : (officerWardNum ? Number(officerWardNum) : undefined);
+
+      if (targetWardNum !== undefined) {
         complaints = complaints.filter(c => (c.location?.ward_number || 3) === targetWardNum);
       }
 
@@ -1034,8 +1043,28 @@ export class WardOfficerController {
       }
 
       // Find leader and workers for this team
-      const teamWorkers = (store.workers || []).filter(w => (team.worker_ids || []).includes(w.id));
-      const leader = (store.workers || []).find(w => w.id === team.temporary_leader_id) || teamWorkers[0];
+      let teamWorkers = (store.workers || []).filter(w => (team.worker_ids || []).includes(w.id) || (team.worker_ids || []).includes(w.user_id));
+      if (teamWorkers.length === 0 && (team.worker_ids || []).length > 0) {
+        // Query from DB if not yet cached in store
+        const dbWorkers = await DbRepository.getWorkersList({}).catch(() => []);
+        teamWorkers = dbWorkers.filter(w => (team.worker_ids || []).includes(w.id) || (team.worker_ids || []).includes(w.user_id));
+      }
+      if (teamWorkers.length === 0 && (team.worker_ids || []).length > 0) {
+        // Fallback team member to ensure single-worker teams always have membership
+        teamWorkers = team.worker_ids.map((wId: string) => ({
+          id: wId,
+          user_id: wId,
+          worker_code: 'WRK-2026-NMC',
+          full_name: team.temporary_leader_name || 'Sanitation Worker',
+          phone: '+919876543210',
+          designation: 'Sanitation Worker',
+          ward_number: complaint.location?.ward_number || 3
+        }));
+      }
+
+      const leader = (store.workers || []).find(w => w.id === team.temporary_leader_id || w.user_id === team.temporary_leader_id) 
+        || teamWorkers.find(w => w.id === team.temporary_leader_id || w.user_id === team.temporary_leader_id) 
+        || teamWorkers[0];
 
       // Update complaint
       complaint.status = 'assigned';
@@ -1046,10 +1075,10 @@ export class WardOfficerController {
       (complaint as any).deadline = targetDeadline;
       (complaint as any).target_completion_date = targetDeadline;
 
-      // Create a unique Task Assignment Code
+      // Create a unique Task Assignment Code and UUID
       const serial = Math.floor(100 + Math.random() * 900);
       const taskCode = `TSK-NAV-2026-${serial}`;
-      const assignmentId = `tsk-nav-2026-${serial}`;
+      const assignmentId = randomUUID();
 
       // Create WorkAssignment for workers and leader to view in Worker Dashboard
       const newAssignment: WorkAssignment = {
@@ -1091,7 +1120,7 @@ export class WardOfficerController {
           worker_name: w.full_name,
           worker_phone: w.phone,
           designation_name: w.designation,
-          temporary_leader: w.id === (leader?.id || team.temporary_leader_id),
+          temporary_leader: w.id === (leader?.id || team.temporary_leader_id) || (teamWorkers.length === 1),
           assignment_status: 'assigned',
           attendance_timestamp: undefined,
           validation_status: undefined
@@ -1103,6 +1132,13 @@ export class WardOfficerController {
 
       if (!store.workAssignments) store.workAssignments = [];
       store.workAssignments.unshift(newAssignment);
+
+      // Persist to PostgreSQL Database
+      await DbRepository.saveWorkAssignment(newAssignment, teamWorkers.map(w => ({
+        id: w.id,
+        worker_id: w.id,
+        temporary_leader: w.id === (leader?.id || team.temporary_leader_id) || (teamWorkers.length === 1)
+      }))).catch(err => console.error('Failed to persist work assignment to DB:', err));
 
       // Record in complaint work attempt history
       const attempts = wardData.workAttempts.get(complaint.id) || [];
@@ -2199,6 +2235,86 @@ export class WardOfficerController {
         message: 'Work completion story has been published to the Community Wall for all citizens to see!',
         data: newPost
       });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 13. Ward Community Problems (Ward Officer posts for Community Head drives)
+  // =========================================================================
+  public static async getCommunityProblems(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const wardParam = req.query.ward_number ? parseInt(req.query.ward_number as string, 10) : officerWard;
+      const problems = await DbRepository.getCommunityProblems(wardParam);
+      res.status(200).json({ success: true, data: problems });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async addCommunityProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const {
+        title,
+        description,
+        location_name,
+        address,
+        latitude,
+        longitude,
+        action_plan,
+        urgency = 'medium',
+        estimated_volunteers_needed = 15,
+        suggested_equipment = ['Brooms', 'Gloves', 'Trash Bags'],
+        image_url,
+        ward_number
+      } = req.body;
+
+      if (!title || !description || !action_plan) {
+        res.status(400).json({
+          success: false,
+          error: 'Title, description, and action plan ("what should be done") are required.'
+        });
+        return;
+      }
+
+      const officerWard = ward_number ? parseInt(ward_number, 10) : ((req.user as any)?.ward_number || 3);
+      const officerName = req.user?.full_name || 'Ward Officer';
+
+      const savedProblem = await DbRepository.saveCommunityProblem({
+        ward_number: officerWard,
+        ward_name: `Ward ${officerWard}`,
+        title,
+        description,
+        location_name: location_name || `Ward ${officerWard} Cleanliness Locus`,
+        address: address || `Navsari Ward ${officerWard}`,
+        latitude: latitude || 20.9325,
+        longitude: longitude || 72.9275,
+        action_plan,
+        urgency,
+        estimated_volunteers_needed,
+        suggested_equipment,
+        image_url,
+        created_by: req.user?.id,
+        officer_name: officerName
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Civic problem successfully posted for community action!',
+        data: savedProblem
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async deleteCommunityProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      await DbRepository.deleteCommunityProblem(id);
+      res.status(200).json({ success: true, message: 'Community problem removed.' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
