@@ -307,8 +307,8 @@ export const WardCommunityPosts: React.FC = () => {
                 {/* Engagement Bar (Likes & Comments count) */}
                 <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-slate-500 border-b border-slate-100">
                   <span className="flex items-center gap-1 font-medium">
-                    <span className="w-4 h-4 rounded-full bg-[#095c54] text-white flex items-center justify-center text-[9px]">
-                      👍
+                    <span className="w-4 h-4 rounded-full bg-[#095c54] text-white flex items-center justify-center">
+                      <ThumbsUp className="w-2.5 h-2.5 text-white" />
                     </span>
                     <span>{post.likes_count || 0} appreciation</span>
                   </span>

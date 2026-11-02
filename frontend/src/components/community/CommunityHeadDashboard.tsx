@@ -386,8 +386,9 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
                   <span className="block text-xs font-black text-[#095c54] truncate max-w-[120px]">
                     {user.full_name}
                   </span>
-                  <span className="block text-[10px] font-bold text-[#047857] truncate">
-                    🏛️ Community Head
+                  <span className="block text-[10px] font-bold text-[#047857] flex items-center gap-1 truncate">
+                    <Building2 className="w-3 h-3 text-[#047857] shrink-0" />
+                    <span>Community Head</span>
                   </span>
                 </div>
               </div>

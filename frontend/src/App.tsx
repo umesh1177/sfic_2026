@@ -121,13 +121,19 @@ export const App: React.FC = () => {
   // 1. Loading screen while checking authentication token
   if (isInitializing) {
     return (
-      <div className="min-h-screen bg-[#f8faf9] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#095c54] to-[#10b981] flex items-center justify-center text-white shadow-xl animate-bounce">
-            <Sparkles className="w-6 h-6" />
+      <div className="min-h-screen bg-[#f8faf9] flex flex-col items-center justify-center gap-4">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-[#095c54] to-[#10b981] flex items-center justify-center text-white shadow-xl shadow-[#095c54]/30">
+            <Sparkles className="w-8 h-8" />
           </div>
-          <p className="text-xs font-bold text-[#095c54] animate-pulse">
-            Loading Swachh Setu...
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#10b981] flex items-center justify-center ring-2 ring-white">
+            <div className="w-2 h-2 rounded-full bg-white animate-ping" />
+          </div>
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-black text-[#095c54]">Swachh Setu</p>
+          <p className="text-xs font-bold text-[#64748b] animate-pulse">
+            {lang === 'gu' ? 'લોડ થઈ રહ્યું છે...' : lang === 'hi' ? 'लोड हो रहा है...' : 'Loading...'}
           </p>
         </div>
       </div>
@@ -250,8 +256,8 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* Content Container */}
-        <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 pb-28 lg:pb-12">
+        {/* Content Container (Mobile-first padding with safe-area support) */}
+        <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-8 pb-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))] lg:pb-12">
           {/* Direct Full-Page View: Report an Issue (NO modal) */}
           {currentTab === 'report' && (
             <ReportIssuePage

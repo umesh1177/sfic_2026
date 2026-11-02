@@ -346,7 +346,7 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
         color: white;
         font-size: 13px;
       ">
-        📍
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
       </div>
     `,
     iconSize: [28, 28],
@@ -557,7 +557,7 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
       {/* 3. REACT LEAFLET MAP VIEWPORT                            */}
       {/* ======================================================== */}
       {viewMode === 'map' ? (
-        <div className="relative rounded-3xl overflow-hidden border border-[#e2e8f0] shadow-xl bg-slate-100 h-[560px] sm:h-[620px]">
+        <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-[#e2e8f0] shadow-xl bg-slate-100 h-[440px] sm:h-[620px]">
           {/* React Leaflet Container */}
           <MapContainer
             center={mapCenter}
@@ -630,8 +630,9 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
                     <div className="font-extrabold text-[#095c54] text-sm leading-snug">
                       {c.category_name}
                     </div>
-                    <p className="text-[#0f2925] text-xs mt-1 mb-2">
-                      📍 {c.address}
+                    <p className="text-[#0f2925] text-xs mt-1 mb-2 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                      <span className="truncate">{c.address}</span>
                     </p>
                     <div className="pt-2 border-t border-[#e2e8f0] flex items-center justify-between">
                       <span
@@ -780,7 +781,10 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
               </div>
 
               <div className="mt-2 text-[11px] text-[#64748b] flex items-center justify-between">
-                <span>📍 {activeWardInfo.office_address || 'Navsari Municipal Ward Office'}</span>
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                  <span>{activeWardInfo.office_address || 'Navsari Municipal Ward Office'}</span>
+                </span>
                 <button
                   onClick={() => setActiveWardInfo(null)}
                   className="text-[11px] text-[#095c54] font-extrabold hover:underline"
@@ -854,8 +858,9 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
                   <h4 className="font-extrabold text-sm text-[#095c54]">
                     {c.category_name}
                   </h4>
-                  <p className="text-xs text-[#0f2925] mt-1">
-                    📍 Ward {c.ward_number}: {c.address}
+                  <p className="text-xs text-[#0f2925] mt-1 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                    <span>Ward {c.ward_number}: {c.address}</span>
                   </p>
                 </div>
 

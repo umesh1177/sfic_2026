@@ -12,7 +12,9 @@ import {
   LogOut,
   Sparkles,
   Volume2,
-  Globe
+  Globe,
+  Wrench,
+  Building2
 } from 'lucide-react';
 import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile } from '../types/index.js';
@@ -137,9 +139,9 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
               </p>
               <p className="text-[10px] font-bold text-[#047857] flex items-center gap-1 truncate">
                 {user.role === 'worker' || (user.role as any) === 'sanitation_worker' ? (
-                  <>🛠️ Field Worker</>
+                  <span className="flex items-center gap-1"><Wrench className="w-3 h-3 text-[#047857] shrink-0" /> Field Worker</span>
                 ) : user.role === 'community_head' ? (
-                  <>🏛️ Community Head</>
+                  <span className="flex items-center gap-1"><Building2 className="w-3 h-3 text-[#047857] shrink-0" /> Community Head</span>
                 ) : (
                   <>
                     <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />

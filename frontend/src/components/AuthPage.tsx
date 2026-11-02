@@ -540,7 +540,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="button"
                   onClick={handleQuickDemoLogin}
                   disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
                 >
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-[#095c54]" />
@@ -555,7 +555,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="button"
                   onClick={handleQuickDemoCommunityHeadLogin}
                   disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
                 >
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-[#095c54]" />
@@ -570,7 +570,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="button"
                   onClick={handleQuickDemoWorkerLogin}
                   disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
                 >
                   <div className="flex items-center gap-2">
                     <Wrench className="w-4 h-4 text-[#095c54]" />
@@ -585,7 +585,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="button"
                   onClick={handleQuickDemoWorker2Login}
                   disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
                 >
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-[#095c54]" />
@@ -600,7 +600,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="button"
                   onClick={handleQuickDemoWardOfficerLogin}
                   disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#6ee7b7] text-xs font-black text-[#065f46] transition flex items-center justify-between shadow-xs group"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#6ee7b7] text-xs font-black text-[#065f46] transition flex items-center justify-between shadow-xs group touch-press"
                 >
                   <div className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-[#065f46]" />

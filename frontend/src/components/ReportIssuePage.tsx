@@ -26,7 +26,9 @@ import {
   ThumbsUp,
   ExternalLink,
   AlertCircle,
-  Volume2
+  Volume2,
+  MousePointerClick,
+  FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
@@ -34,6 +36,7 @@ import { checkTextForAbuse } from '../utils/moderation.js';
 import { ComplaintCategory, Complaint } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
 import { MAP_CONFIG } from '../config/mapConfig.js';
+import { CategoryVisualSymbol } from './CategoryVisualSymbol.js';
 
 interface ReportIssuePageProps {
   onBack: () => void;
@@ -71,9 +74,139 @@ function MapMoveListener({ onLocationChanged }: { onLocationChanged: (lat: numbe
   return null;
 }
 
+// Comprehensive civic categories with visual illustrations
+export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
+  {
+    id: 'cat-03',
+    category_name: 'Overflowing Dustbin',
+    category_name_gu: 'ઉભરાતી કચરાપેટી',
+    category_name_hi: 'कूड़ेदान का ओवरफ्लो',
+    description: 'Community dustbins and municipal bins overflowing with waste',
+    icon: 'Archive',
+    is_active: true
+  },
+  {
+    id: 'cat-05',
+    category_name: 'Drainage / Choked Gutter',
+    category_name_gu: 'ગટર / નાલી કચરો',
+    category_name_hi: 'नाली या सीवर जल जमाव',
+    description: 'Choked drains, sewage overflow, and stagnant filthy waste water',
+    icon: 'Droplets',
+    is_active: true
+  },
+  {
+    id: 'cat-02',
+    category_name: 'Open Garbage Dumping',
+    category_name_gu: 'ખુલ્લામાં કચરો ઠાલવવો',
+    category_name_hi: 'खुले में कचरा डंपिंग',
+    description: 'Unauthorized garbage dump heaps on vacant plots or roadside',
+    icon: 'AlertTriangle',
+    is_active: true
+  },
+  {
+    id: 'cat-04',
+    category_name: 'Roadside Garbage',
+    category_name_gu: 'રસ્તા કિનારે કચરો',
+    category_name_hi: 'सड़क किनारे कचरा',
+    description: 'Accumulated debris, plastic packaging, and leaves along roads',
+    icon: 'Truck',
+    is_active: true
+  },
+  {
+    id: 'cat-01',
+    category_name: 'Littering / Plastic',
+    category_name_gu: 'કચરો / પ્લાસ્ટિક',
+    category_name_hi: 'कचरा फैलाना / प्लास्टिक',
+    description: 'Public litter on streets, sidewalks, and market areas',
+    icon: 'Trash2',
+    is_active: true
+  },
+  {
+    id: 'cat-07',
+    category_name: 'Potholes / Degraded Road',
+    category_name_gu: 'ખાડા / તૂટેલો રસ્તો',
+    category_name_hi: 'सड़क के गड्ढे / खराब सड़क',
+    description: 'Potholes, cracks, and degraded road surface causing traffic hazards',
+    icon: 'Road',
+    is_active: true
+  },
+  {
+    id: 'cat-08',
+    category_name: 'Fallen Tree / Blockage',
+    category_name_gu: 'પડેલું ઝાડ / માર્ગ અવરોધ',
+    category_name_hi: 'गिरा हुआ पेड़ / मार्ग अवरोध',
+    description: 'Fallen branches, uprooted trees, or uncollected garden green waste',
+    icon: 'TreePine',
+    is_active: true
+  },
+  {
+    id: 'cat-09',
+    category_name: 'Railing / Parapet Damaged',
+    category_name_gu: 'રેલિંગ / પેરાપેટ નુકસાન',
+    category_name_hi: 'क्षतिग्रस्त रेलिंग / संरचना',
+    description: 'Damaged pedestrian railings, parapet walls, or culvert slabs',
+    icon: 'ShieldAlert',
+    is_active: true
+  },
+  {
+    id: 'cat-10',
+    category_name: 'Road Overtopped / Flooding',
+    category_name_gu: 'રસ્તા પર પાણી ભરાવું',
+    category_name_hi: 'सड़क पर जलभराव / ओवरफ्लो',
+    description: 'Severe waterlogging or flood water overtopping the road',
+    icon: 'Waves',
+    is_active: true
+  },
+  {
+    id: 'cat-06',
+    category_name: 'Other Civic Issues',
+    category_name_gu: 'અન્ય નાગરિક સમસ્યાઓ',
+    category_name_hi: 'अन्य स्वच्छता समस्याएं',
+    description: 'Dead animal disposal, construction debris, or public toilet issues',
+    icon: 'HelpCircle',
+    is_active: true
+  }
+];
+
 // Client-side instant keyword detector for immediate responsive category assignment
 const detectCategoryFromText = (text: string, filename: string): string => {
   const combined = `${text} ${filename}`.toLowerCase();
+  if (
+    combined.includes('pothole') ||
+    combined.includes('crater') ||
+    combined.includes('khada') ||
+    combined.includes('degraded') ||
+    combined.includes('ખાડા') ||
+    combined.includes('गड्ढा')
+  ) {
+    return 'cat-07'; // Potholes / Degraded Road
+  }
+  if (
+    combined.includes('tree') ||
+    combined.includes('branch') ||
+    combined.includes('ઝાડ') ||
+    combined.includes('વૃક્ષ') ||
+    combined.includes('पेड़')
+  ) {
+    return 'cat-08'; // Fallen Tree
+  }
+  if (
+    combined.includes('railing') ||
+    combined.includes('parapet') ||
+    combined.includes('bridge') ||
+    combined.includes('રેલિંગ') ||
+    combined.includes('પુલ')
+  ) {
+    return 'cat-09'; // Railing / Parapet Damaged
+  }
+  if (
+    combined.includes('overtop') ||
+    combined.includes('waterlog') ||
+    combined.includes('flood') ||
+    combined.includes('ભરાયેલું પાણી')
+  ) {
+    return 'cat-10'; // Road Overtopped
+  }
   if (
     combined.includes('drain') ||
     combined.includes('gutter') ||
@@ -147,12 +280,10 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 }) => {
   const t = translations[lang];
 
-  // 1. Photo & Evidence State
-  const [imageUrl, setImageUrl] = useState<string>(
-    'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80'
-  );
-  const [imageFileName, setImageFileName] = useState<string>('dustbin_overflow.jpg');
-  const [imageValidationStatus, setImageValidationStatus] = useState<string>('Photo verified (JPEG, Clear visual)');
+  // 1. Photo & Evidence State (Starts empty - no prefilled dummy photo)
+  const [imageUrl, setImageUrl] = useState<string>('');
+  const [imageFileName, setImageFileName] = useState<string>('');
+  const [imageValidationStatus, setImageValidationStatus] = useState<string>('');
   const [isLiveCameraOpen, setIsLiveCameraOpen] = useState<boolean>(false);
   const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -163,11 +294,10 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
 
-  // 2. Form & Category State
-  const [description, setDescription] = useState<string>(
-    'Public community dustbin is completely filled and overflowing onto the pedestrian path.'
-  );
+  // 2. Form & Category State (Starts empty - citizen enters their own issue)
+  const [description, setDescription] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('cat-03');
+  const [aiIdentifiedCategory, setAiIdentifiedCategory] = useState<{ id: string; name: string; confidence: number } | null>(null);
   const [isUrgent, setIsUrgent] = useState<boolean>(false);
 
   // 3. Location & Map State (Uber/Rapido style)
@@ -346,6 +476,12 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         const mlRes = await api.classifyImage(file.name, file.size, description, b64);
         if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
           setSelectedCategoryId(mlRes.data.matched_category_id);
+          const catObj = categories.find(c => c.id === mlRes.data.matched_category_id);
+          setAiIdentifiedCategory({
+            id: mlRes.data.matched_category_id,
+            name: catObj?.category_name || mlRes.data.predicted_category_name || 'Civic Issue',
+            confidence: Math.round(mlRes.data.confidence_score || 94)
+          });
           setImageValidationStatus(`Photo verified: ${mlRes.data.predicted_category_name}`);
         } else {
           setImageValidationStatus('Photo verified (JPEG, Clear visual)');
@@ -439,6 +575,12 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         api.classifyImage('camera_capture.jpg', 500000, description, dataUrl).then(res => {
           if (res.data?.matched_category_id && categories.some(c => c.id === res.data.matched_category_id)) {
             setSelectedCategoryId(res.data.matched_category_id);
+            const catObj = categories.find(c => c.id === res.data.matched_category_id);
+            setAiIdentifiedCategory({
+              id: res.data.matched_category_id,
+              name: catObj?.category_name || res.data.predicted_category_name || 'Civic Issue',
+              confidence: Math.round(res.data.confidence_score || 95)
+            });
             setImageValidationStatus(`Photo verified: ${res.data.predicted_category_name}`);
           } else {
             setImageValidationStatus('Photo captured from live camera (JPEG, verified)');
@@ -560,7 +702,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       if (modRes.data?.moderation && !modRes.data.moderation.is_safe) {
         setFormError(
           modRes.data.moderation.reason ||
-          '⚠️ Prohibited or abusive language detected in description. Please describe the civic issue constructively.'
+          'Prohibited or abusive language detected in description. Please describe the civic issue constructively.'
         );
         setLoading(false);
         return;
@@ -631,8 +773,9 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             <span className="text-lg font-black text-[#095c54] tracking-wider select-all">
               {submittedComplaint.complaint_number}
             </span>
-            <div className="mt-2 pt-2 border-t border-[#e2e8f0] text-xs font-semibold text-[#0f2925]">
-              📍 {submittedComplaint.location?.address}
+            <div className="mt-2 pt-2 border-t border-[#e2e8f0] text-xs font-semibold text-[#0f2925] flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+              <span className="truncate">{submittedComplaint.location?.address}</span>
             </div>
           </div>
 
@@ -736,13 +879,13 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 className="w-full h-full object-cover"
               />
 
-              {/* Floating Camera Actions on Image */}
-              <div className="absolute inset-0 bg-black/35 flex items-center justify-center gap-2.5 p-3">
+              {/* Floating Camera Actions on Image (Responsive for small phones) */}
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-wrap items-center justify-center gap-2 p-2.5 sm:p-4">
                 {/* 1. Direct Native Camera Button */}
                 <button
                   type="button"
                   onClick={() => nativeCameraInputRef.current?.click()}
-                  className="btn-primary-custom py-2 px-3 text-xs font-extrabold shadow-lg flex items-center gap-1.5"
+                  className="btn-primary-custom py-2 px-3 sm:px-3.5 text-xs font-black shadow-lg flex items-center gap-1.5 touch-press"
                 >
                   <Camera className="w-4 h-4" />
                   <span>Click Photo</span>
@@ -752,7 +895,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 <button
                   type="button"
                   onClick={startLiveCamera}
-                  className="bg-white/95 backdrop-blur-sm text-[#095c54] hover:bg-white py-2 px-3 rounded-xl text-xs font-extrabold shadow-md flex items-center gap-1.5 transition"
+                  className="bg-white/95 backdrop-blur-sm text-[#095c54] hover:bg-white py-2 px-3 sm:px-3.5 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition touch-press"
                 >
                   <Sparkles className="w-4 h-4 text-[#095c54]" />
                   <span>Live Camera</span>
@@ -762,7 +905,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 <button
                   type="button"
                   onClick={() => galleryInputRef.current?.click()}
-                  className="bg-white/90 backdrop-blur-sm text-[#0f2925] hover:bg-white py-2 px-3 rounded-xl text-xs font-extrabold shadow-md flex items-center gap-1.5 transition"
+                  className="bg-white/90 backdrop-blur-sm text-[#0f2925] hover:bg-white py-2 px-3 sm:px-3.5 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition touch-press"
                 >
                   <Upload className="w-4 h-4 text-[#64748b]" />
                   <span>Gallery</span>
@@ -946,7 +1089,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5">
                 {categories.map(c => {
                   const isSelected = selectedCategoryId === c.id;
                   return (
@@ -954,15 +1097,28 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                       key={c.id}
                       type="button"
                       onClick={() => setSelectedCategoryId(c.id)}
-                      className={`p-2.5 rounded-xl text-left text-xs font-extrabold transition border ${
+                      className={`p-2.5 sm:p-3 rounded-2xl text-left transition-all touch-press border relative flex items-center gap-2.5 ${
                         isSelected
-                          ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
-                          : 'bg-[#f8faf9] text-[#0f2925] border-[#e2e8f0] hover:border-[#095c54]'
+                          ? 'bg-[#095c54] text-white border-[#095c54] shadow-md shadow-[#095c54]/20 ring-2 ring-[#095c54]/30'
+                          : 'bg-[#f8faf9] text-[#0f2925] border-[#e2e8f0] hover:border-[#095c54] hover:bg-[#e6f4f1]/50'
                       }`}
                     >
-                      <div className="truncate">{c.category_name}</div>
-                      <div className={`text-[10px] font-medium truncate ${isSelected ? 'text-white/80' : 'text-[#64748b]'}`}>
-                        {c.category_name_gu}
+                      <CategoryVisualSymbol
+                        categoryId={c.id}
+                        categoryName={c.category_name}
+                        isSelected={isSelected}
+                        size="sm"
+                        showCheckBadge={false}
+                        className="shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-black truncate">{c.category_name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                        </div>
+                        <div className={`text-[10px] font-semibold truncate mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-[#64748b]'}`}>
+                          {c.category_name_gu}
+                        </div>
                       </div>
                     </button>
                   );
@@ -1127,7 +1283,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[20] pointer-events-none flex flex-col items-center">
                 <div className="relative">
                   <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center shadow-2xl border-2 border-white font-black text-sm uber-pin-bounce">
-                    📍
+                    <MapPin className="w-5 h-5 text-white fill-white/20" />
                   </div>
                   <div className="gps-pulse-ring"></div>
                 </div>
@@ -1193,10 +1349,10 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           <button
             type="submit"
             disabled={loading || !abuseAlert.isSafe || description.trim().length < 8}
-            className={`w-full py-3.5 text-sm font-extrabold rounded-2xl shadow-xl transition flex items-center justify-center gap-2 ${
+            className={`w-full py-3.5 sm:py-4 text-sm font-black rounded-2xl shadow-xl transition-all touch-press flex items-center justify-center gap-2 ${
               !abuseAlert.isSafe
                 ? 'bg-[#fee2e2] text-[#dc2626] border border-[#fca5a5] cursor-not-allowed opacity-90'
-                : 'btn-primary-custom disabled:opacity-60'
+                : 'btn-primary-custom disabled:opacity-60 shadow-lg shadow-[#095c54]/30'
             }`}
           >
             {loading ? (
@@ -1209,7 +1365,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             ) : (
               <>
                 <span>Submit Report to Municipal Corporation</span>
-                <ChevronRight className="w-4 h-4 ml-1" />
+                <ChevronRight className="w-4 h-4 ml-1 stroke-[2.5]" />
               </>
             )}
           </button>

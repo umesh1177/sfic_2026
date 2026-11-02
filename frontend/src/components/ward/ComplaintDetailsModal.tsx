@@ -22,7 +22,8 @@ import {
   Eye,
   Check,
   Building,
-  Flag
+  Flag,
+  Star
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 
@@ -945,13 +946,14 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     {[1, 2, 3, 4, 5].map(star => (
-                      <span
-                        key={star}
-                        className={`text-lg ${
-                          star <= (citizen_feedback.rating || 5) ? 'text-amber-500' : 'text-slate-200'
-                        }`}
-                      >
-                        ★
+                      <span key={star}>
+                        <Star
+                          className={`w-4 h-4 ${
+                            star <= (citizen_feedback.rating || 5)
+                              ? 'text-amber-500 fill-amber-500'
+                              : 'text-slate-200'
+                          }`}
+                        />
                       </span>
                     ))}
                     <span className="text-xs font-black text-slate-700 ml-2">
