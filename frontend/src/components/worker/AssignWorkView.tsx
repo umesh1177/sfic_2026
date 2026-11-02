@@ -41,6 +41,7 @@ import confetti from 'canvas-confetti';
 import { WorkAssignment, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
 import { api } from '../../services/api.js';
+import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
 
 // Custom Leaflet Icons
 const taskIcon = new L.Icon({
@@ -509,6 +510,19 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Unified Civic Status Stepper */}
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-extrabold text-[#095c54] uppercase tracking-wider">
+            Municipal Work Progression
+          </span>
+          <span className="text-[11px] font-bold text-slate-500">Live Operation Status</span>
+        </div>
+        <StatusProgressionStepper
+          status={currentTask.status === 'verified_complete' ? 'resolved' : currentTask.status}
+        />
       </div>
 
       {/* Temporary Leader Banner (If Worker is the Temporary Leader for this Task) - MATCHING IMAGE 1 */}

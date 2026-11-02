@@ -25,6 +25,7 @@ import {
   Flag
 } from 'lucide-react';
 import { api } from '../../services/api.js';
+import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
 
 interface ComplaintDetailsModalProps {
   complaintId: string;
@@ -270,6 +271,15 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
+
+        {/* Unified Status Progression Stepper */}
+        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-[#e2e8f0]">
+          <StatusProgressionStepper
+            status={overview.status}
+            rejectionReason={(overview as any).rejection_reason}
+            compact
+          />
         </div>
 
         {/* Action Messages */}

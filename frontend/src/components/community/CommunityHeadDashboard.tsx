@@ -168,14 +168,14 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               <SwachhSetuIcon size={38} />
             </div>
             <div className="leading-tight min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
                 <span className="font-black text-[#095c54] text-base tracking-tight">Swachh Setu</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0]">
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#dcfce7] text-[#065f46] border border-[#86efac]">
                   NMC
                 </span>
               </div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Community Head Portal
+              <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
+                COMMUNITY HEAD PORTAL
               </p>
             </div>
           </div>
@@ -335,15 +335,6 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               >
                 <Menu className="w-5 h-5" />
               </button>
-
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-extrabold">
-                  NMC Ward 3 Head
-                </span>
-                <span className="text-xs font-bold text-slate-600">
-                  {dashboardSummary?.community?.community_name || 'Navsari Green Warriors RWA'}
-                </span>
-              </div>
             </div>
 
             {/* Header Right Actions */}

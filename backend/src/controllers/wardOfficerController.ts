@@ -1762,5 +1762,204 @@ export class WardOfficerController {
       res.status(500).json({ success: false, error: err.message });
     }
   }
+
+  // =========================================================================
+  // 12. Reject Citizen Complaint with Reason & Citizen Notification
+  // =========================================================================
+  public static async rejectComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { rejection_reason } = req.body;
+
+      if (!rejection_reason || !rejection_reason.trim()) {
+        res.status(400).json({ success: false, error: 'A specific reason for rejection is required.' });
+        return;
+      }
+
+      const complaint = (store.complaints || []).find(c => c.id === id);
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const prevStatus = complaint.status;
+      complaint.status = 'rejected';
+      (complaint as any).rejection_reason = rejection_reason.trim();
+      complaint.updated_at = new Date().toISOString();
+
+      // Record in activity log
+      if (!complaint.activity_logs) complaint.activity_logs = [];
+      complaint.activity_logs.push({
+        id: `act-${Date.now()}`,
+        complaint_id: complaint.id,
+        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
+        actor_name: 'Ramesh Patel (Ward 3 Officer)',
+        actor_role: 'ward_officer',
+        action: 'Complaint Rejected',
+        previous_status: prevStatus,
+        new_status: 'rejected',
+        description: rejection_reason.trim(),
+        created_at: new Date().toISOString()
+      });
+
+      // Dispatch live notification to citizen
+      if (!store.notifications) store.notifications = [];
+      const newNotif = {
+        id: `notif-${Date.now()}`,
+        user_id: complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
+        title: `Complaint ${complaint.complaint_number} Rejected`,
+        message: `Your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address} was reviewed and rejected by Ward 3 Officer. Reason: "${rejection_reason.trim()}"`,
+        notification_type: 'complaint_status' as const,
+        reference_id: complaint.id,
+        is_read: false,
+        created_at: new Date().toISOString()
+      };
+      store.notifications.unshift(newNotif);
+
+      res.status(200).json({
+        success: true,
+        message: `Complaint ${complaint.complaint_number} has been rejected and the citizen has been notified.`,
+        data: {
+          complaint_id: complaint.id,
+          status: 'rejected',
+          rejection_reason: rejection_reason.trim()
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 13. Verify & Mark Work Complete (Trigger Citizen Resolution Notification)
+  // =========================================================================
+  public static async verifyCompleteComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { review_notes } = req.body;
+
+      const complaint = (store.complaints || []).find(c => c.id === id);
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const prevStatus = complaint.status;
+      complaint.status = 'resolved';
+      complaint.updated_at = new Date().toISOString();
+      (complaint as any).resolved_at = new Date().toISOString();
+
+      // Update corresponding work assignments
+      (store.workAssignments || []).forEach(wa => {
+        if (wa.id === (complaint as any).assignment_id || wa.title?.includes(complaint.category_name)) {
+          wa.status = 'verified_complete';
+          (wa as any).verified_complete = true;
+          wa.updated_at = new Date().toISOString();
+        }
+      });
+
+      // Update work attempts
+      const attempts = wardData.workAttempts.get(complaint.id) || [];
+      if (attempts.length > 0) {
+        attempts[attempts.length - 1].status = 'verified_complete';
+        attempts[attempts.length - 1].review_decision = 'verified_complete';
+        (attempts[attempts.length - 1] as any).officer_review_notes = review_notes || 'All before and after photo evidence verified. Site cleared and sanitized.';
+      }
+
+      // Record in activity log
+      if (!complaint.activity_logs) complaint.activity_logs = [];
+      complaint.activity_logs.push({
+        id: `act-${Date.now()}`,
+        complaint_id: complaint.id,
+        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
+        actor_name: 'Ramesh Patel (Ward 3 Officer)',
+        actor_role: 'ward_officer',
+        action: 'Work Verified & Resolved',
+        previous_status: prevStatus,
+        new_status: 'resolved',
+        description: review_notes || 'Ward Officer inspected evidence photos and verified 100% cleanliness clearance.',
+        created_at: new Date().toISOString()
+      });
+
+      // Dispatch live notification to citizen
+      if (!store.notifications) store.notifications = [];
+      const newNotif = {
+        id: `notif-${Date.now()}`,
+        user_id: complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
+        title: `Cleanliness Restored! Complaint ${complaint.complaint_number} Resolved`,
+        message: `Great news! Ward 3 Sanitation Squad has resolved your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address}. Before and after evidence has been verified by Ward 3 Officer. Thank you for keeping Navsari clean!`,
+        notification_type: 'complaint_status' as const,
+        reference_id: complaint.id,
+        is_read: false,
+        created_at: new Date().toISOString()
+      };
+      store.notifications.unshift(newNotif);
+
+      res.status(200).json({
+        success: true,
+        message: `Complaint ${complaint.complaint_number} verified and marked complete. Citizen has been notified!`,
+        data: {
+          complaint_id: complaint.id,
+          status: 'resolved',
+          resolved_at: complaint.updated_at
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 14. Publish Work Completion to Community Wall (Citizen Feed)
+  // =========================================================================
+  public static async publishComplaintToCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { title, description, before_photo_url, after_photo_url, waste_kg = 380 } = req.body;
+
+      const complaint = (store.complaints || []).find(c => c.id === id);
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const postTitle = title || `Cleanliness Restored at ${complaint.location?.landmark || complaint.location?.address || 'Ward 3'}`;
+      const postDesc = description || `NMC Sanitation Squad cleared ${waste_kg} kg of accumulated waste, disinfected the curb, and restored civic hygiene following citizen report ${complaint.complaint_number}.`;
+
+      const newPost: any = {
+        id: `rec-post-${Date.now()}`,
+        title: postTitle,
+        description: postDesc,
+        author_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
+        author_name: 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)',
+        author_role: 'ward_officer',
+        author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        location_name: complaint.location?.landmark || complaint.location?.address || 'Navsari Ward 3',
+        image_url: after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        before_image_url: before_photo_url || complaint.image_url,
+        after_image_url: after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        likes_count: 18,
+        comments_count: 0,
+        is_verified_by_officer: true,
+        created_at: new Date().toISOString(),
+        comments: []
+      };
+
+      if (!store.recognitionPosts) store.recognitionPosts = [];
+      store.recognitionPosts.unshift(newPost);
+      (complaint as any).is_published_to_community = true;
+
+      res.status(201).json({
+        success: true,
+        message: 'Work completion story has been published to the Community Wall for all citizens to see!',
+        data: newPost
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
 }
 

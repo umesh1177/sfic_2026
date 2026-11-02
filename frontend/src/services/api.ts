@@ -876,6 +876,33 @@ class ApiService {
     });
   }
 
+  async rejectWardComplaint(id: string, data: { rejection_reason: string }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async verifyCompleteWardComplaint(id: string, data?: { review_notes?: string }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/verify-complete`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    });
+  }
+
+  async publishWardComplaintToCommunity(id: string, data: {
+    title: string;
+    description: string;
+    before_photo_url: string;
+    after_photo_url: string;
+    waste_kg?: number;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/publish-community`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
   async getWardHotspots(filters?: { category?: string; frequency?: string; ward?: number }) {
     const qs = new URLSearchParams();
     if (filters?.category) qs.append('category', filters.category);

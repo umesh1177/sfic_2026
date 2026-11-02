@@ -136,14 +136,14 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               <SwachhSetuIcon size={38} />
             </div>
             <div className="leading-tight min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
                 <span className="font-black text-[#095c54] text-base tracking-tight">Swachh Setu</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0]">
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#dcfce7] text-[#065f46] border border-[#86efac]">
                   NMC
                 </span>
               </div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Field Worker Portal
+              <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
+                FIELD WORKER PORTAL
               </p>
             </div>
           </div>

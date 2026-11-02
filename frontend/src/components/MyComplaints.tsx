@@ -18,6 +18,7 @@ import {
 import { api } from '../services/api.js';
 import { Complaint, ComplaintStatus } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { StatusProgressionStepper } from './common/StatusProgressionStepper.js';
 
 interface MyComplaintsProps {
   onOpenReport: () => void;
@@ -321,38 +322,18 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                 </div>
               </div>
 
-              {/* Resolution Timeline Visual Stepper */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-extrabold text-[#095c54] uppercase tracking-wider">
-                  Official Status Progression
-                </h4>
-                <div className="flex items-center justify-between text-[11px] font-bold text-center">
-                  {[
-                    { key: 'submitted', label: 'Submitted' },
-                    { key: 'assigned', label: 'Assigned' },
-                    { key: 'in_progress', label: 'In Progress' },
-                    { key: 'resolved', label: 'Resolved' }
-                  ].map((step, idx) => {
-                    const isDone =
-                      (step.key === 'submitted') ||
-                      (step.key === 'assigned' && ['assigned', 'in_progress', 'awaiting_verification', 'resolved'].includes(selectedComplaint.status)) ||
-                      (step.key === 'in_progress' && ['in_progress', 'awaiting_verification', 'resolved'].includes(selectedComplaint.status)) ||
-                      (step.key === 'resolved' && selectedComplaint.status === 'resolved');
-
-                    return (
-                      <div key={idx} className="flex-1 flex flex-col items-center">
-                        <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold ${
-                            isDone ? 'bg-[#10b981] text-white' : 'bg-slate-200 text-slate-500'
-                          }`}
-                        >
-                          {isDone ? '✓' : idx + 1}
-                        </div>
-                        <span className="text-[10px] text-[#64748b] mt-1">{step.label}</span>
-                      </div>
-                    );
-                  })}
+              {/* Resolution Timeline Visual Stepper (Unified 5-Step Civic Progression) */}
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-[#095c54] uppercase tracking-wider">
+                    Official Status Progression
+                  </h4>
+                  <span className="text-[10px] font-bold text-slate-500">Live Municipal Tracking</span>
                 </div>
+                <StatusProgressionStepper
+                  status={selectedComplaint.status}
+                  rejectionReason={(selectedComplaint as any).rejection_reason}
+                />
               </div>
 
               {/* Activity Log Audit Trail */}

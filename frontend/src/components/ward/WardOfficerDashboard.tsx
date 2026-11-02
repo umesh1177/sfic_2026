@@ -100,14 +100,14 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           <div className="flex items-center gap-3">
             <SwachhSetuIcon size={38} className="shrink-0" />
             <div className="leading-tight">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
                 <span className="font-black text-sm text-[#095c54] tracking-tight">Swachh Setu</span>
-                <span className="text-[10px] font-black bg-[#e6f4f1] text-[#095c54] px-1.5 py-0.2 rounded-full border border-[#b8e0d7]">
+                <span className="text-[9px] font-extrabold uppercase tracking-wider bg-[#dcfce7] text-[#065f46] px-1.5 py-0.5 rounded-full border border-[#86efac]">
                   NMC
                 </span>
               </div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">
-                Ward Officer Portal
+              <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
+                WARD OFFICER PORTAL
               </p>
             </div>
           </div>
