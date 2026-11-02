@@ -126,3 +126,4 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
     </div>
   );
 };
+

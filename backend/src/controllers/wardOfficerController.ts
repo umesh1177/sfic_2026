@@ -366,9 +366,12 @@ export class WardOfficerController {
     try {
       initializeSeedAttempts();
 
-      const wardNum = 3;
+      const requestedWard = (req.query as any)?.ward_number ? Number((req.query as any).ward_number) : undefined;
       const allComplaints = store.complaints || [];
-      const wardComplaints = allComplaints.filter(c => c.location?.ward_number === wardNum);
+      const wardComplaints = requestedWard
+        ? allComplaints.filter(c => (c.location?.ward_number || 3) === requestedWard)
+        : allComplaints;
+      const wardNum = requestedWard || 3;
 
       const total = wardComplaints.length || 24;
       const newCount = wardComplaints.filter(c => c.status === 'submitted').length || 4;
@@ -491,12 +494,19 @@ export class WardOfficerController {
         additional_flags,
         search,
         sort_by,
+        ward,
+        ward_number,
         page = 1,
         limit = 10
       } = req.query as any;
 
-      // Base complaints in Ward 3
-      let complaints = (store.complaints || []).filter(c => (c.location?.ward_number || 3) === 3);
+      // Base complaints: support ward filter if passed, otherwise include all complaints across Navsari
+      let complaints = store.complaints || [];
+      const requestedWard = ward || ward_number;
+      if (requestedWard && requestedWard !== 'all') {
+        const targetWardNum = Number(requestedWard);
+        complaints = complaints.filter(c => (c.location?.ward_number || 3) === targetWardNum);
+      }
 
       // Enhance with progress status and assignment details
       let enriched = complaints.map(c => {
@@ -523,13 +533,15 @@ export class WardOfficerController {
           progressStatus = 'Verified Complete';
         } else if (c.status === 'reopened') {
           progressStatus = 'Reopened – New Work Required';
+        } else if (c.status === 'rejected') {
+          progressStatus = 'Rejected';
         }
 
         // SLA deadline (48 hours from submission)
         const submittedDate = new Date(c.submitted_at || '2026-10-28T08:15:00Z');
         const slaDeadline = new Date(submittedDate.getTime() + 48 * 60 * 60 * 1000).toISOString();
         const daysPending = Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24)));
-        const isOverdue = Date.now() > new Date(slaDeadline).getTime() && c.status !== 'resolved' && c.status !== 'closed';
+        const isOverdue = Date.now() > new Date(slaDeadline).getTime() && c.status !== 'resolved' && c.status !== 'closed' && c.status !== 'rejected';
 
         if (isOverdue && progressStatus !== 'Verified Complete') {
           progressStatus = 'Overdue Work';
@@ -538,7 +550,7 @@ export class WardOfficerController {
         return {
           id: c.id,
           complaint_number: c.complaint_number || 'NMC-2026-10021',
-          title: `${c.category_name} at ${c.location?.landmark || c.location?.address || 'Ward 3'}`,
+          title: `${c.category_name} at ${c.location?.landmark || c.location?.address || `Ward ${c.location?.ward_number || 3}`}`,
           category_name: c.category_name,
           category_id: c.category_id,
           citizen_id: c.citizen_id,
@@ -547,9 +559,9 @@ export class WardOfficerController {
           location: c.location,
           priority: c.priority || 'medium',
           status: c.status,
-          assigned_team_name: latestAttempt ? `Sanitation Unit 4B (${latestAttempt.team_leader_name})` : (c.status === 'submitted' ? 'Unassigned' : 'Sanitation Unit 4B'),
-          temporary_team_leader_name: latestAttempt?.team_leader_name || (c.status !== 'submitted' ? 'Kanti Solanki' : null),
-          assignment_id: latestAttempt?.assignment_id || 'tsk-nav-2026-101',
+          assigned_team_name: latestAttempt ? `Sanitation Unit 4B (${latestAttempt.team_leader_name})` : ((c as any).assigned_team_name || (c.status === 'submitted' ? 'Unassigned' : 'Sanitation Unit 4B')),
+          temporary_team_leader_name: latestAttempt?.team_leader_name || ((c as any).temporary_leader_name || (c.status !== 'submitted' ? 'Kanti Solanki' : null)),
+          assignment_id: latestAttempt?.assignment_id || (c.status === 'submitted' ? null : 'tsk-nav-2026-101'),
           assignment_date: latestAttempt?.assigned_date || c.reviewed_at,
           last_activity_date: c.updated_at || c.submitted_at,
           sla_deadline: slaDeadline,

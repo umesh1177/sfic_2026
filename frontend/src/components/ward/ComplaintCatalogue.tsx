@@ -32,6 +32,7 @@ interface ComplaintCatalogueProps {
     progress_status?: string;
     priority?: string;
     additional_flags?: string;
+    ward_number?: number | string;
   };
 }
 
@@ -49,10 +50,29 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const [category, setCategory] = useState<string>('all');
   const [priority, setPriority] = useState<string>(initialFilter?.priority || 'all');
   const [progressStatus, setProgressStatus] = useState<string>(initialFilter?.progress_status || 'all');
+  const [wardFilter, setWardFilter] = useState<string>(initialFilter?.ward_number ? String(initialFilter.ward_number) : 'all');
   const [assignment, setAssignment] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
   const [additionalFlags, setAdditionalFlags] = useState<string>(initialFilter?.additional_flags || 'all');
   const [sortBy, setSortBy] = useState<string>('newest');
+
+  // Sync when initialFilter prop changes or is cleared
+  useEffect(() => {
+    if (initialFilter) {
+      if (initialFilter.status) setStatus(initialFilter.status);
+      if (initialFilter.priority) setPriority(initialFilter.priority);
+      if (initialFilter.progress_status) setProgressStatus(initialFilter.progress_status);
+      if (initialFilter.additional_flags) setAdditionalFlags(initialFilter.additional_flags);
+      if (initialFilter.ward_number) setWardFilter(String(initialFilter.ward_number));
+    } else {
+      setStatus('all');
+      setPriority('all');
+      setProgressStatus('all');
+      setAdditionalFlags('all');
+      setWardFilter('all');
+    }
+    setPage(1);
+  }, [initialFilter]);
 
   // Pagination
   const [page, setPage] = useState<number>(1);
@@ -69,6 +89,8 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         category,
         priority,
         progress_status: progressStatus,
+        ward: wardFilter !== 'all' ? wardFilter : undefined,
+        ward_number: wardFilter !== 'all' ? wardFilter : undefined,
         assignment,
         location: locationFilter,
         additional_flags: additionalFlags,
@@ -88,7 +110,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
 
   useEffect(() => {
     fetchComplaints();
-  }, [search, status, category, priority, progressStatus, assignment, locationFilter, additionalFlags, sortBy, page]);
+  }, [search, status, category, priority, progressStatus, wardFilter, assignment, locationFilter, additionalFlags, sortBy, page]);
 
   // Reset filters
   const handleClearFilters = () => {
@@ -97,6 +119,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     setCategory('all');
     setPriority('all');
     setProgressStatus('all');
+    setWardFilter('all');
     setAssignment('all');
     setLocationFilter('all');
     setAdditionalFlags('all');
@@ -110,6 +133,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     category !== 'all' ||
     priority !== 'all' ||
     progressStatus !== 'all' ||
+    wardFilter !== 'all' ||
     assignment !== 'all' ||
     locationFilter !== 'all' ||
     additionalFlags !== 'all' ||
@@ -187,7 +211,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         {/* Filters Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {/* 1. Progress Status (CRITICAL FILTER!) */}
-          <div className="col-span-2 sm:col-span-1 lg:col-span-2">
+          <div>
             <label className="block text-[10px] font-black uppercase text-purple-800 mb-1">
               Progress Status
             </label>
@@ -214,7 +238,35 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             </select>
           </div>
 
-          {/* 2. Complaint Status */}
+          {/* 2. Ward Location */}
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Ward</label>
+            <select
+              value={wardFilter}
+              onChange={e => {
+                setWardFilter(e.target.value);
+                setPage(1);
+              }}
+              className="w-full text-xs font-bold p-2 rounded-xl border border-slate-200 bg-white focus:border-[#095c54] outline-hidden truncate"
+            >
+              <option value="all">All Wards (Navsari)</option>
+              <option value="3">Ward 3 - Dudhiya Talao</option>
+              <option value="1">Ward 1 - Lunsikui</option>
+              <option value="2">Ward 2 - Station Road</option>
+              <option value="4">Ward 4 - Kaliawadi</option>
+              <option value="5">Ward 5 - Jalalpore</option>
+              <option value="6">Ward 6 - Shantadevi</option>
+              <option value="7">Ward 7 - Chhapra</option>
+              <option value="8">Ward 8 - Kabilpore</option>
+              <option value="9">Ward 9 - Vejalpore</option>
+              <option value="10">Ward 10 - Eru Char Rasta</option>
+              <option value="11">Ward 11 - Gandevi Road</option>
+              <option value="12">Ward 12 - Maroli</option>
+              <option value="13">Ward 13 - Aat Heritage</option>
+            </select>
+          </div>
+
+          {/* 3. Complaint Status */}
           <div>
             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Status</label>
             <select
