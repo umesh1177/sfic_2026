@@ -23,6 +23,7 @@ import {
   WorkAssignment,
   WorkAssignmentMember,
   WorkerAttendance,
+  CommunityProblem,
   AttendanceException,
   WorkProgressUpdate,
   WorkEvidence,
@@ -869,8 +870,36 @@ class ApiService {
     worker_ids?: string[];
     temporary_leader_id?: string;
     instructions?: string;
+    deadline?: string;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async rejectWardComplaint(id: string, data: { rejection_reason: string }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async verifyCompleteWardComplaint(id: string, data?: { review_notes?: string }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/verify-complete`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    });
+  }
+
+  async publishWardComplaintToCommunity(id: string, data: {
+    title: string;
+    description: string;
+    before_photo_url: string;
+    after_photo_url: string;
+    waste_kg?: number;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/publish-community`, {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -900,6 +929,8 @@ class ApiService {
   async addWardWorker(data: {
     full_name: string;
     phone: string;
+    username?: string;
+    password?: string;
     designation: string;
     skills?: string[];
     availability_status?: string;
@@ -970,6 +1001,8 @@ class ApiService {
     head_name: string;
     phone?: string;
     email?: string;
+    username?: string;
+    password?: string;
     address?: string;
     locality?: string;
     organisation_type?: string;
@@ -1018,6 +1051,49 @@ class ApiService {
 
   async getWardReports(reportType: string = 'complaints') {
     return this.request<{ success: boolean; data: any }>(`/ward/reports?report_type=${reportType}`);
+  }
+
+  async getWardCommunityProblems(wardNumber?: number) {
+    const qStr = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: CommunityProblem[] }>(`/ward/community-problems${qStr}`);
+  }
+
+  async addWardCommunityProblem(data: {
+    title: string;
+    description: string;
+    location_name?: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+    action_plan: string;
+    urgency?: string;
+    estimated_volunteers_needed?: number;
+    suggested_equipment?: string[];
+    image_url?: string;
+    ward_number?: number;
+  }) {
+    return this.request<{ success: boolean; message: string; data: CommunityProblem }>('/ward/community-problems', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteWardCommunityProblem(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/ward/community-problems/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getCommunityWardProblems(wardNumber?: number) {
+    const qStr = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: CommunityProblem[] }>(`/community/ward-problems${qStr}`);
+  }
+
+  async claimCommunityWardProblem(id: string, activityId?: string) {
+    return this.request<{ success: boolean; message: string }>(`/community/ward-problems/${id}/claim`, {
+      method: 'POST',
+      body: JSON.stringify({ activity_id: activityId })
+    });
   }
 }
 

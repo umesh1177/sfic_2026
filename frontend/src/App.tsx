@@ -6,7 +6,6 @@ import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
 import { NavsariMap } from './components/NavsariMap.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
-import { CommunityChallenges } from './components/CommunityChallenges.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
 import { MyProfile } from './components/MyProfile.js';
@@ -26,7 +25,16 @@ export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('home');
   const [viewMode, setViewMode] = useState<'citizen' | 'community_head' | 'worker' | 'ward_officer'>('citizen');
   const [user, setUser] = useState<Profile | null>(null);
-  const [lang, setLang] = useState<Language>('en');
+  const [lang, setLangState] = useState<Language>(() => {
+    const saved = localStorage.getItem('swachh_setu_lang');
+    if (saved === 'gu' || saved === 'hi' || saved === 'en') return saved;
+    return 'en';
+  });
+
+  const setLang = (newLang: Language) => {
+    setLangState(newLang);
+    localStorage.setItem('swachh_setu_lang', newLang);
+  };
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [categories, setCategories] = useState<ComplaintCategory[]>([]);
   const [dashboardData, setDashboardData] = useState<any>(null);
@@ -292,10 +300,6 @@ export const App: React.FC = () => {
 
           {currentTab === 'drives' && (
             <CleanlinessDrives lang={lang} />
-          )}
-
-          {currentTab === 'challenges' && (
-            <CommunityChallenges lang={lang} />
           )}
 
           {currentTab === 'rewards' && (

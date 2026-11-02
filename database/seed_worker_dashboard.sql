@@ -339,7 +339,7 @@ INSERT INTO work_completion_reports (
 )
 VALUES
 (
-    'r1000000-0000-0000-0000-000000000001',
+    'b1000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000003',
     'f2000000-0000-0000-0000-000000000001',
     'Successfully cleared festival waste overspill, washed cement apron with bleaching solution, and applied insecticidal lime boundary powder.',

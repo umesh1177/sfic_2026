@@ -125,7 +125,7 @@ class ComplaintsController {
                 res.status(401).json({ success: false, error: 'Unauthorized' });
                 return;
             }
-            const { category_id, latitude, longitude, address, landmark, description, original_language, image_url, confidence_score, ai_model_name, ai_model_version, is_duplicate, parent_complaint_id } = req.body;
+            const { category_id, latitude, longitude, ward_number, ward_id, address, landmark, description, original_language, image_url, confidence_score, ai_model_name, ai_model_version, is_duplicate, parent_complaint_id } = req.body;
             // 1. Content Moderation Gate
             const moderation = await aiService_js_1.AIService.moderateContent(description || '');
             if (moderation.status === 'UNSAFE') {
@@ -136,9 +136,18 @@ class ComplaintsController {
                 return;
             }
             // 2. Ward Resolution
-            const lat = Number(latitude);
-            const lng = Number(longitude);
-            const ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
+            let ward = (ward_number ? postgis_js_1.NAVSARI_WARDS.find(w => w.ward_number === Number(ward_number)) : null)
+                || (ward_id ? postgis_js_1.NAVSARI_WARDS.find(w => w.id === ward_id) : null);
+            let lat = Number(latitude);
+            let lng = Number(longitude);
+            if (!ward) {
+                ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
+            }
+            else if (ward && (!lat || !lng || (Math.abs(lat - 20.9325) < 0.001 && Math.abs(lng - 72.9280) < 0.001))) {
+                // If user picked a specific ward but coordinates are center of Navsari, adjust to ward center
+                lng = (ward.boundary_coordinates[0][0] + ward.boundary_coordinates[2][0]) / 2;
+                lat = (ward.boundary_coordinates[0][1] + ward.boundary_coordinates[2][1]) / 2;
+            }
             const category = store_js_1.store.categories.find(c => c.id === category_id);
             if (!category) {
                 res.status(400).json({ success: false, error: 'Invalid complaint category' });

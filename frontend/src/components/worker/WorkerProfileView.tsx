@@ -39,13 +39,13 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
       <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#e2e8f0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#095c54] to-[#10b981] flex items-center justify-center font-extrabold text-2xl text-white shadow-md shrink-0">
-            {profile?.full_name?.split(' ').map(n => n[0]).join('') || 'KW'}
+            {profile?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'WR'}
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black text-[#0f2925] tracking-tight">{profile?.full_name || 'Kanti Solanki'}</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-[#0f2925] tracking-tight">{profile?.full_name || 'Sanitation Worker'}</h2>
               <span className="bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0] text-xs px-2.5 py-0.5 rounded-full font-mono font-bold">
-                {profile?.worker_code || 'NMC-WRK-001'}
+                {profile?.worker_code || 'NMC-WRK'}
               </span>
             </div>
             <p className="text-[#64748b] text-sm mt-0.5 font-medium">{profile?.designation_name || 'Sanitation Worker'}</p>
@@ -61,7 +61,7 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
           <QrCode className="w-10 h-10 text-[#095c54]" />
           <div className="text-xs">
             <span className="text-[#64748b] block font-medium">Service ID:</span>
-            <span className="font-mono font-bold text-[#0f2925] block mt-0.5">{profile?.worker_code || 'NMC-WRK-001'}</span>
+            <span className="font-mono font-bold text-[#0f2925] block mt-0.5">{profile?.worker_code || 'NMC-WRK'}</span>
             <span className="text-[#047857] block text-[10px] font-bold">Valid 2026-2027</span>
           </div>
         </div>
@@ -78,7 +78,7 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
             <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
               <span className="text-[#64748b] block font-medium">Assigned Municipal Ward:</span>
               <span className="font-black text-[#0f2925] block mt-1 text-sm">
-                Ward {profile?.ward_number || 3} - {profile?.ward_name || 'Dudhiya Talao'}
+                Ward {profile?.ward_number || 3} {profile?.ward_name ? `- ${profile.ward_name}` : ''}
               </span>
             </div>
 
@@ -92,28 +92,30 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
             <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
               <span className="text-[#64748b] block font-medium">Registered Mobile Phone:</span>
               <span className="font-mono font-black text-[#0f2925] block mt-1 text-sm">
-                {profile?.phone || '+91 98251 20001'}
+                {profile?.phone || 'Not provided'}
               </span>
             </div>
 
             <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
               <span className="text-[#64748b] block font-medium">Emergency Contact:</span>
               <span className="font-black text-[#0f2925] block mt-1 text-sm">
-                Hansaben Solanki (+91 98251 99991)
+                {profile?.emergency_contact_name
+                  ? `${profile.emergency_contact_name} (${profile.emergency_contact_phone || ''})`
+                  : 'NMC Staff Operations (+91 98251 00000)'}
               </span>
             </div>
 
             <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
               <span className="text-[#64748b] block font-medium">Date of Joining:</span>
               <span className="font-black text-[#0f2925] block mt-1 text-sm">
-                {profile?.joining_date || '2023-01-10'} (3.5 Years Experience)
+                {profile?.joining_date || '2026-01-01'} ({profile?.experience_years ? `${profile.experience_years} Years Experience` : 'Active Service'})
               </span>
             </div>
 
             <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
               <span className="text-[#64748b] block font-medium">Sanitary Zone:</span>
               <span className="font-black text-[#0f2925] block mt-1 text-sm">
-                Central Navsari Municipal Division
+                Navsari Municipal Corporation
               </span>
             </div>
           </div>
@@ -124,13 +126,10 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
               Certified Technical & Safety Skills
             </h4>
             <div className="flex flex-wrap gap-2">
-              {[
-                'Suction Jetting Machinery',
-                'Deep Drain Desilting',
-                'Traffic Barrier Deployment',
-                'Biohazard & Chemical Disinfection',
-                'Heavy Silt Handling'
-              ].map((skill, idx) => (
+              {(profile?.skills && profile.skills.length > 0
+                ? profile.skills
+                : ['Municipal Sanitation', 'Solid Waste Collection', 'Civic Cleanliness']
+              ).map((skill, idx) => (
                 <span
                   key={idx}
                   className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0]"

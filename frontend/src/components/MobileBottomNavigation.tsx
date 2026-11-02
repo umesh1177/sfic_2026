@@ -38,7 +38,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
     setMoreSheetOpen(false);
   };
 
-  const isMoreTabActive = ['drives', 'challenges', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
+  const isMoreTabActive = ['drives', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
 
   return (
     <>

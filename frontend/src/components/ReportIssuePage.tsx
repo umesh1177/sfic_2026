@@ -301,11 +301,53 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   const [isUrgent, setIsUrgent] = useState<boolean>(false);
 
   // 3. Location & Map State (Uber/Rapido style)
+  const [selectedWardNumber, setSelectedWardNumber] = useState<number>(3);
   const [mapCenter, setMapCenter] = useState<[number, number]>(MAP_CONFIG.center);
   const [address, setAddress] = useState<string>('Detecting location...');
   const [landmark, setLandmark] = useState<string>('');
   const [isGpsLoading, setIsGpsLoading] = useState<boolean>(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
+
+  const NAVSARI_WARDS_LIST = [
+    { number: 1, name: 'Ward 1 - Lunsikui / Tower Road', center: [20.9475, 72.9275] as [number, number] },
+    { number: 2, name: 'Ward 2 - Station Road / Fuwara', center: [20.9475, 72.9425] as [number, number] },
+    { number: 3, name: 'Ward 3 - Dudhiya Talao / Ashapuri', center: [20.9325, 72.9275] as [number, number] },
+    { number: 4, name: 'Ward 4 - Kaliawadi / Sayaji Road', center: [20.9325, 72.9425] as [number, number] },
+    { number: 5, name: 'Ward 5 - Jalalpore Road / Shanta Devi', center: [20.9475, 72.9100] as [number, number] },
+    { number: 6, name: 'Ward 6 - Vijalpore North / Eru Char Rasta', center: [20.9175, 72.9250] as [number, number] },
+    { number: 7, name: 'Ward 7 - Vijalpore South / GIDC', center: [20.9175, 72.9450] as [number, number] },
+    { number: 8, name: 'Ward 8 - Madhumati / Parsi Wad', center: [20.9625, 72.9290] as [number, number] },
+    { number: 9, name: 'Ward 9 - Sandhkuva / Junathana', center: [20.9625, 72.9450] as [number, number] },
+    { number: 10, name: 'Ward 10 - Chhapra Road / Vejalpore', center: [20.9475, 72.9625] as [number, number] },
+    { number: 11, name: 'Ward 11 - Vansda Road / Italva', center: [20.9200, 72.9625] as [number, number] },
+    { number: 12, name: 'Ward 12 - Mahuva Highway / Chikhli Approach', center: [20.9000, 72.9150] as [number, number] },
+    { number: 13, name: 'Ward 13 - Dandi Coastal Corridor', center: [20.9350, 72.8925] as [number, number] },
+  ];
+
+  // Helper to detect closest ward from geographic coordinates
+  const detectWardFromCoordinates = (lat: number, lng: number): number => {
+    let closestWard = 3;
+    let minDistanceSq = Infinity;
+    for (const ward of NAVSARI_WARDS_LIST) {
+      const dLat = lat - ward.center[0];
+      const dLng = lng - ward.center[1];
+      const distSq = dLat * dLat + dLng * dLng;
+      if (distSq < minDistanceSq) {
+        minDistanceSq = distSq;
+        closestWard = ward.number;
+      }
+    }
+    return closestWard;
+  };
+
+  const handleWardChange = (wardNum: number) => {
+    setSelectedWardNumber(wardNum);
+    const wardInfo = NAVSARI_WARDS_LIST.find(w => w.number === wardNum);
+    if (wardInfo) {
+      setMapCenter(wardInfo.center);
+      setAddress(`${wardInfo.name.split(' - ')[1]}, Navsari`);
+    }
+  };
 
   // 4. Real Speech-To-Text State
   const [isListeningSpeech, setIsListeningSpeech] = useState<boolean>(false);
@@ -371,6 +413,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       pos => {
         const { latitude, longitude } = pos.coords;
         setMapCenter([latitude, longitude]);
+        const detected = detectWardFromCoordinates(latitude, longitude);
+        setSelectedWardNumber(detected);
         reverseGeocode(latitude, longitude);
         setIsGpsLoading(false);
       },
@@ -394,6 +438,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   // Handle map movement / center update
   const handleMapLocationChanged = (lat: number, lng: number) => {
     setMapCenter([lat, lng]);
+    const detected = detectWardFromCoordinates(lat, lng);
+    setSelectedWardNumber(detected);
     reverseGeocode(lat, lng);
   };
 
@@ -712,6 +758,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       const catId = selectedCategoryId || (categories[0]?.id || 'cat-01');
       const payload = {
         category_id: catId,
+        ward_number: selectedWardNumber,
         latitude: mapCenter[0],
         longitude: mapCenter[1],
         address: address || 'Navsari Municipal Area',
@@ -1233,11 +1280,34 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-[#095c54]" />
-                Incident Location
+                Incident Location & Municipal Ward
               </label>
               <span className="text-[11px] text-[#64748b] font-medium">
-                Drag map to pinpoint exact spot
+                Drag map or choose ward
               </span>
+            </div>
+
+            {/* Municipal Ward Selector */}
+            <div className="p-3 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="text-[10px] font-black uppercase text-[#095c54] block tracking-wider">
+                  Target Municipal Ward *
+                </span>
+                <span className="text-[11px] text-[#64748b] font-medium">
+                  Auto-centers map and dispatches to that ward's officer
+                </span>
+              </div>
+              <select
+                value={selectedWardNumber}
+                onChange={e => handleWardChange(Number(e.target.value))}
+                className="text-xs font-bold text-[#0f2925] bg-[#f8faf9] border border-[#cbd5e1] rounded-xl px-3 py-2 outline-none focus:border-[#095c54] cursor-pointer"
+              >
+                {NAVSARI_WARDS_LIST.map(w => (
+                  <option key={w.number} value={w.number}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* GPS Notification if Location is Disabled */}

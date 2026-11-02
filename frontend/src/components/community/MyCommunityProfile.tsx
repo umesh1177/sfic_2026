@@ -87,7 +87,7 @@ export const MyCommunityProfile: React.FC<MyCommunityProfileProps> = ({
                 </h1>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                {community.organisation_type} · Registration No: <strong className="text-slate-700">{community.registration_number || 'NMC-RWA-2024-042'}</strong>
+                {community.organisation_type} · Registration No: <strong className="text-slate-700">{community.registration_number || `NMC-RWA-2026-0${community.ward_number || 3}`}</strong>
               </p>
             </div>
           </div>

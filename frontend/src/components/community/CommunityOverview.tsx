@@ -49,32 +49,32 @@ export const CommunityOverview: React.FC<CommunityOverviewProps> = ({
   }
 
   const comm = summary?.community || {
-    id: 'b0000000-0000-0000-0000-000000000001',
-    community_name: 'Navsari Green Warriors RWA',
+    id: 'comm-lead',
+    community_name: 'Community Cleanliness Initiative',
     organisation_type: 'Resident Welfare Association',
-    registration_number: 'NMC-RWA-2024-042',
-    address: 'Near Dudhiya Talao Lakefront',
-    locality: 'Dudhiya Talao Ward 3',
+    registration_number: 'NMC-RWA-2026-001',
+    address: 'Navsari Civic Area',
+    locality: 'Navsari',
     ward_number: 3,
     ward_name: 'Ward 3 - Dudhiya Talao',
-    contact_phone: '+919825100099',
-    contact_email: 'rajesh.varma@navsarigreen.org',
-    head_name: 'Rajesh Varma',
+    contact_phone: '+919825100000',
+    contact_email: 'community@navsarimunicipal.gov.in',
+    head_name: 'Community Leader',
     verification_status: 'verified' as const,
-    created_by: 'c0000000-0000-0000-0000-000000000099',
+    created_by: '',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
   const rawMetrics = (summary as any)?.metrics || (summary as any)?.stats;
   const metrics = {
-    total_activities: rawMetrics?.total_activities ?? rawMetrics?.total_activities_created ?? 4,
-    upcoming_activities: rawMetrics?.upcoming_activities ?? 2,
-    completed_activities: rawMetrics?.completed_activities ?? 1,
+    total_activities: rawMetrics?.total_activities ?? rawMetrics?.total_activities_created ?? 0,
+    upcoming_activities: rawMetrics?.upcoming_activities ?? 0,
+    completed_activities: rawMetrics?.completed_activities ?? 0,
     awaiting_evidence_activities: rawMetrics?.awaiting_evidence_activities ?? rawMetrics?.activities_awaiting_evidence ?? 0,
-    total_registrations: rawMetrics?.total_registrations ?? rawMetrics?.total_citizen_registrations ?? 38,
-    verified_participants: rawMetrics?.verified_participants ?? rawMetrics?.total_verified_participants ?? 28,
-    volunteer_attendance_rate: rawMetrics?.volunteer_attendance_rate ?? 89.1,
+    total_registrations: rawMetrics?.total_registrations ?? rawMetrics?.total_citizen_registrations ?? 0,
+    verified_participants: rawMetrics?.verified_participants ?? rawMetrics?.total_verified_participants ?? 0,
+    volunteer_attendance_rate: rawMetrics?.volunteer_attendance_rate ?? 0,
     unanswered_citizen_questions: rawMetrics?.unanswered_citizen_questions ?? 0
   };
 
@@ -97,46 +97,25 @@ export const CommunityOverview: React.FC<CommunityOverviewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. HERO GREETING BANNER (CITIZEN GOLD STANDARD - MATCHING IMAGE 6) */}
-      <div className="relative rounded-3xl bg-gradient-to-r from-[#095c54] via-[#0d6e65] to-[#10b981] p-5 sm:p-7 text-white shadow-xl shadow-[#095c54]/15 overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 space-y-2.5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-bold text-[#e6f4f1]">
-            NMC Community Action Command · Navsari
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-white">
+      {/* 1. CLEAN CIVIC OVERVIEW HEADER (No bulky green banner) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
             {comm.community_name}
           </h1>
-
-          <p className="text-xs sm:text-sm text-[#e6f4f1] font-medium leading-relaxed max-w-2xl">
-            {comm.organisation_type} · Ward {comm.ward_number || 3} ({comm.ward_name || 'Ward 3 - Dudhiya Talao & Ashapuri'}). Coordinate citizen-driven cleanliness drives, volunteer registrations, and environmental action.
+          <p className="text-xs text-[#64748b] mt-0.5">
+            {comm.organisation_type} · Ward {comm.ward_number || 3} ({comm.ward_name || 'Ward 3 - Dudhiya Talao & Ashapuri'}) · NMC Action Command
           </p>
+        </div>
 
-          <div className="pt-2 flex flex-wrap gap-2.5">
-            <button
-              onClick={onOpenCreateWizard}
-              className="px-4 sm:px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-xs sm:text-sm shadow-md hover:shadow-lg transition flex items-center gap-2"
-            >
-              <PlusCircle className="w-4 h-4 text-[#10b981]" />
-              <span>Create New Activity</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('activities')}
-              className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
-            >
-              <Users className="w-4 h-4" />
-              <span>Event Volunteers</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('activities')}
-              className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>Citizen Q&A</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenCreateWizard}
+            className="btn-primary-custom px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 shadow-xs"
+          >
+            <PlusCircle className="w-4 h-4 text-white" />
+            <span>Create New Activity</span>
+          </button>
         </div>
       </div>
 

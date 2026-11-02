@@ -24,6 +24,7 @@ import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
 import { Complaint, ComplaintStatus } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { StatusProgressionStepper } from './common/StatusProgressionStepper.js';
 
 interface MyComplaintsProps {
   onOpenReport: () => void;
@@ -434,6 +435,10 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                     );
                   })}
                 </div>
+                <StatusProgressionStepper
+                  status={selectedComplaint.status}
+                  rejectionReason={(selectedComplaint as any).rejection_reason}
+                />
               </div>
 
               {/* Activity Log Audit Trail */}

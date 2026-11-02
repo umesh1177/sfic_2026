@@ -35,7 +35,9 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
 }) => {
   const isLeaderOnAnyTask = assignments.some(a => a.is_temporary_leader);
   const activeLeaderTasks = assignments.filter(a => a.is_temporary_leader);
-  const todayAssignments = assignments.filter(a => a.scheduled_date === '2026-11-01' || a.status === 'in_progress' || a.status === 'assigned');
+  const todayAssignments = assignments.filter(
+    a => a.status === 'in_progress' || a.status === 'assigned' || a.scheduled_date === new Date().toISOString().split('T')[0]
+  );
 
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
@@ -63,7 +65,7 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
           </h1>
 
           <p className="text-xs sm:text-sm text-[#e6f4f1] font-medium leading-relaxed">
-            {profile?.designation_name || 'Sanitation Worker'} · Ward {profile?.ward_number || 3} ({profile?.ward_name || 'Dudhiya Talao'}). Check today's assigned operations, team attendance, and before-and-after work evidence.
+            {profile?.designation_name || 'Sanitation Worker'} · Ward {profile?.ward_number || 3} {profile?.ward_name ? `(${profile.ward_name})` : ''}. Check today's assigned operations, team attendance, and before-and-after work evidence.
           </p>
 
           <div className="pt-2 flex flex-wrap gap-2.5">
@@ -146,7 +148,9 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[#0f2925]">{summary?.metrics?.in_progress_tasks ?? 1}</span>
+            <span className="text-2xl font-black text-[#0f2925]">
+              {summary?.metrics?.in_progress_tasks ?? assignments.filter(a => a.status === 'in_progress').length}
+            </span>
             <span className="text-[11px] text-amber-700 font-extrabold">Active</span>
           </div>
         </div>
@@ -159,7 +163,9 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[#0f2925]">{summary?.metrics?.completed_tasks ?? 142}</span>
+            <span className="text-2xl font-black text-[#0f2925]">
+              {summary?.metrics?.completed_tasks ?? assignments.filter(a => a.status === 'verified_complete' || a.status === 'closed' || a.status === 'completion_submitted').length}
+            </span>
             <span className="text-[11px] text-[#095c54] font-extrabold">Lifetime</span>
           </div>
         </div>
@@ -172,7 +178,7 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[#0f2925]">{summary?.metrics?.on_time_attendance_rate ?? 97.4}%</span>
+            <span className="text-2xl font-black text-[#0f2925]">{summary?.metrics?.on_time_attendance_rate ?? 0}%</span>
             <span className="text-[11px] text-[#047857] font-extrabold">Verified GPS</span>
           </div>
         </div>

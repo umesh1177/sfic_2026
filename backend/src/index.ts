@@ -4,7 +4,22 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { apiRouter } from './routes/api.js';
 import { checkDatabaseConnection } from './data/db.js';
+import { DbRepository } from './data/dbRepository.js';
 
+import path from 'path';
+import fs from 'fs';
+
+const envPaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'backend', '.env'),
+  path.resolve(process.cwd(), '..', 'backend', '.env')
+];
+for (const p of envPaths) {
+  if (fs.existsSync(p)) {
+    dotenv.config({ path: p });
+    break;
+  }
+}
 dotenv.config();
 
 const app = express();
@@ -78,6 +93,7 @@ app.listen(PORT, async () => {
   console.log(`  Health Check: http://localhost:${PORT}/api/health`);
   console.log(`================================================================`);
   await checkDatabaseConnection();
+  await DbRepository.initializeWorkerAndTeamTables();
 });
 
 export { app };

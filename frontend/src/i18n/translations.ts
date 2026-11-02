@@ -1,12 +1,223 @@
 export type Language = 'en' | 'gu' | 'hi';
 
-export const translations = {
+export interface AppTranslations {
+  // App brand
+  app_title: string;
+  app_subtitle: string;
+  tagline: string;
+  nmc_label: string;
+  ward_officer_portal: string;
+  field_worker_portal: string;
+  community_head_portal: string;
+  citizen_portal: string;
+
+  // Navigation (Citizen)
+  nav_home: string;
+  nav_report: string;
+  nav_complaints: string;
+  nav_map: string;
+  nav_more: string;
+  nav_drives: string;
+  nav_challenges: string;
+  nav_rewards: string;
+  nav_support: string;
+  nav_notifications: string;
+  nav_profile: string;
+  nav_login: string;
+  nav_logout: string;
+
+  // Navigation (Ward Officer)
+  wo_nav_overview: string;
+  wo_nav_complaints: string;
+  wo_nav_hotspots: string;
+  wo_nav_workers: string;
+  wo_nav_teams: string;
+  wo_nav_activities: string;
+  wo_nav_approvals: string;
+  wo_nav_posts: string;
+  wo_nav_community_problems: string;
+  wo_nav_cleanliness_score: string;
+  wo_nav_reports: string;
+  wo_nav_notifications: string;
+  wo_nav_settings: string;
+  wo_nav_more: string;
+
+  // Navigation (Worker)
+  wrk_nav_home: string;
+  wrk_nav_assign_work: string;
+  wrk_nav_work_history: string;
+  wrk_nav_notifications: string;
+  wrk_nav_profile: string;
+
+  // Navigation (Community Head)
+  ch_nav_overview: string;
+  ch_nav_activities: string;
+  ch_nav_ward_problems: string;
+  ch_nav_community: string;
+  ch_nav_analytics: string;
+  ch_nav_notifications: string;
+  ch_nav_settings: string;
+
+  // Home (Citizen)
+  welcome_back: string;
+  quick_actions: string;
+  action_report: string;
+  action_track: string;
+  action_map: string;
+  action_drives: string;
+  stats_total: string;
+  stats_pending: string;
+  stats_in_progress: string;
+  stats_resolved: string;
+  nearby_issues_title: string;
+  ward_scores_title: string;
+  community_impact_title: string;
+  points_earned: string;
+
+  // Report Flow
+  report_title: string;
+  step_1: string;
+  step_2: string;
+  step_3: string;
+  step_4: string;
+  step_5: string;
+  step_6: string;
+  step_7: string;
+  step_8: string;
+  upload_photo: string;
+  select_category: string;
+  describe_issue: string;
+  record_voice: string;
+  recording: string;
+  location_detected: string;
+  outside_nmc_error: string;
+  ai_predicted: string;
+  confidence: string;
+  submit_report: string;
+  complaint_success: string;
+  complaint_id: string;
+
+  // Complaints & Status Tabs
+  tab_all: string;
+  tab_submitted: string;
+  tab_under_review: string;
+  tab_assigned: string;
+  tab_in_progress: string;
+  tab_awaiting_verification: string;
+  tab_resolved: string;
+  tab_rejected: string;
+  tab_reopened: string;
+  view_details: string;
+  timeline_title: string;
+  activity_history: string;
+  reopen_btn: string;
+  feedback_btn: string;
+
+  // Map & Hotspots
+  map_title: string;
+  map_subtitle: string;
+  filter_all_wards: string;
+  toggle_hotspots: string;
+  toggle_complaints: string;
+  ward_info: string;
+  hotspots_title: string;
+  hotspots_subtitle: string;
+  hotspots_all_cats: string;
+  hotspots_all_freq: string;
+  hotspots_high_freq: string;
+  hotspots_med_freq: string;
+  hotspots_low_freq: string;
+  hotspots_category: string;
+  hotspots_frequency: string;
+  hotspots_total_incidents: string;
+  hotspots_active_now: string;
+  hotspots_resolved: string;
+  hotspots_reopen_count: string;
+  hotspots_ai_pattern: string;
+  hotspots_linked_complaints: string;
+  hotspots_inspect_dossier: string;
+
+  // Ward Officer Overview KPIs
+  kpi_total_complaints: string;
+  kpi_pending_triage: string;
+  kpi_active_field: string;
+  kpi_pending_verification: string;
+  kpi_resolved_rate: string;
+  kpi_critical_sla: string;
+  kpi_total_desc: string;
+  kpi_pending_desc: string;
+  kpi_active_desc: string;
+  kpi_verification_desc: string;
+  kpi_resolved_desc: string;
+  kpi_critical_desc: string;
+  ward_command_title: string;
+  telemetry_online: string;
+  operational_metrics: string;
+  live_indicators: string;
+
+  // Actions & Buttons
+  action_inspect: string;
+  action_assign_team: string;
+  action_view_team: string;
+  action_approve: string;
+  action_reject: string;
+  action_submit_evidence: string;
+  action_live_photo: string;
+  action_description: string;
+  action_deadline: string;
+  action_track_status: string;
+  action_switch_citizen: string;
+  action_refresh: string;
+  action_edit: string;
+  action_delete: string;
+
+  // Community
+  drives_title: string;
+  drives_desc: string;
+  register_btn: string;
+  cancel_reg_btn: string;
+  registered_badge: string;
+  challenges_title: string;
+  join_challenge: string;
+  rewards_title: string;
+  leaderboard_title: string;
+
+  // Support
+  support_title: string;
+  create_ticket: string;
+  rate_resolution: string;
+
+  // Profile & Accessibility
+  profile_title: string;
+  accessibility_title: string;
+  read_aloud: string;
+  font_size: string;
+  high_contrast: string;
+  change_mobile: string;
+  change_pass: string;
+
+  // Common
+  loading: string;
+  empty: string;
+  cancel: string;
+  save: string;
+  close: string;
+  error: string;
+  skip: string;
+}
+
+export const translations: Record<Language, AppTranslations> = {
   en: {
     app_title: 'Swachh Setu',
     app_subtitle: 'Navsari Municipal Corporation (NMC)',
     tagline: 'Connecting Citizens & Navsari Municipal Corporation for a Cleaner City',
-    
-    // Navigation
+    nmc_label: 'NMC',
+    ward_officer_portal: 'WARD OFFICER PORTAL',
+    field_worker_portal: 'FIELD WORKER PORTAL',
+    community_head_portal: 'COMMUNITY HEAD PORTAL',
+    citizen_portal: 'CITIZEN PORTAL',
+
+    // Navigation (Citizen)
     nav_home: 'Home',
     nav_report: 'Report',
     nav_complaints: 'My Complaints',
@@ -20,6 +231,38 @@ export const translations = {
     nav_profile: 'My Profile',
     nav_login: 'Login / Register',
     nav_logout: 'Sign Out',
+
+    // Navigation (Ward Officer)
+    wo_nav_overview: 'Overview',
+    wo_nav_complaints: 'Complaint Catalogue',
+    wo_nav_hotspots: 'Hotspots Map',
+    wo_nav_workers: 'Worker Management',
+    wo_nav_teams: 'Team Management',
+    wo_nav_activities: 'Community Activities',
+    wo_nav_approvals: 'Approval Management',
+    wo_nav_posts: 'Community & Citizen Posts',
+    wo_nav_community_problems: 'Add Problem for Community',
+    wo_nav_cleanliness_score: 'Ward Cleanliness Score',
+    wo_nav_reports: 'Reports & Analytics',
+    wo_nav_notifications: 'Notifications',
+    wo_nav_settings: 'Settings',
+    wo_nav_more: 'More',
+
+    // Navigation (Worker)
+    wrk_nav_home: 'Home',
+    wrk_nav_assign_work: 'Assign Work',
+    wrk_nav_work_history: 'Work History',
+    wrk_nav_notifications: 'Notifications',
+    wrk_nav_profile: 'Profile & Settings',
+
+    // Navigation (Community Head)
+    ch_nav_overview: 'Overview',
+    ch_nav_activities: 'Activity Management',
+    ch_nav_ward_problems: 'Ward Problems for Action',
+    ch_nav_community: 'My Community',
+    ch_nav_analytics: 'Reports & Analytics',
+    ch_nav_notifications: 'Notifications',
+    ch_nav_settings: 'Settings',
 
     // Home
     welcome_back: 'Welcome back,',
@@ -104,13 +347,63 @@ export const translations = {
     reopen_btn: 'Reopen Unresolved Issue',
     feedback_btn: 'Rate Resolution',
 
-    // Map
+    // Map & Hotspots
     map_title: 'Navsari Civic Cleanliness Map',
     map_subtitle: 'Explore live reports and official ward boundaries in Navsari',
     filter_all_wards: 'All 13 Wards',
     toggle_hotspots: 'Show Hotspots',
     toggle_complaints: 'Show Complaints',
     ward_info: 'Ward Information',
+    hotspots_title: 'Recurring Cleanliness Hotspots Map',
+    hotspots_subtitle: 'Navsari Municipal Problem Area Tracking',
+    hotspots_all_cats: 'All Categories',
+    hotspots_all_freq: 'All Frequencies',
+    hotspots_high_freq: 'High Frequency (5+ Reports)',
+    hotspots_med_freq: 'Medium Frequency (2-4 Reports)',
+    hotspots_low_freq: 'Low / Emerging (1 Report)',
+    hotspots_category: 'Category',
+    hotspots_frequency: 'Repeat Frequency',
+    hotspots_total_incidents: 'Total Incidents',
+    hotspots_active_now: 'Active Right Now',
+    hotspots_resolved: 'Resolved',
+    hotspots_reopen_count: 'Reopen Count',
+    hotspots_ai_pattern: 'AI Pattern Analysis (SQL & Geospatial Clustered)',
+    hotspots_linked_complaints: 'Linked Complaints at this Site',
+    hotspots_inspect_dossier: 'Inspect Dossier',
+
+    // Ward Officer Overview KPIs
+    kpi_total_complaints: 'Total Complaints',
+    kpi_pending_triage: 'Pending Triage & Unassigned',
+    kpi_active_field: 'Active Field Operations',
+    kpi_pending_verification: 'Pending Officer Verification',
+    kpi_resolved_rate: 'Resolved & Cleanliness Rate',
+    kpi_critical_sla: 'Critical & SLA Overdue',
+    kpi_total_desc: 'All registered complaints in ward',
+    kpi_pending_desc: 'Submitted and awaiting assignment',
+    kpi_active_desc: 'Field teams currently executing tasks',
+    kpi_verification_desc: 'Evidence submitted awaiting sign-off',
+    kpi_resolved_desc: 'Closed with confirmed before/after proof',
+    kpi_critical_desc: 'Urgent attention and SLA breach follow-ups',
+    ward_command_title: 'Ward Command Overview',
+    telemetry_online: 'Field Telemetry Online',
+    operational_metrics: 'Key Operational Indicators',
+    live_indicators: 'Live Operational Focus',
+
+    // Actions
+    action_inspect: 'Inspect',
+    action_assign_team: 'Assign Team',
+    action_view_team: 'View Full Team',
+    action_approve: 'Approve & Assign',
+    action_reject: 'Reject',
+    action_submit_evidence: 'Submit Evidence',
+    action_live_photo: 'Capture Live Photo',
+    action_description: 'Add Description',
+    action_deadline: 'Task Deadline',
+    action_track_status: 'Track Progress',
+    action_switch_citizen: 'Switch to Citizen View',
+    action_refresh: 'Refresh',
+    action_edit: 'Edit',
+    action_delete: 'Delete',
 
     // Community
     drives_title: 'NMC Swachhata Cleanliness Drives',
@@ -146,12 +439,18 @@ export const translations = {
     error: 'An error occurred',
     skip: 'Skip'
   },
+
   gu: {
     app_title: 'મારું સ્વચ્છ નવસારી',
     app_subtitle: 'નવસારી મહાનગરપાલિકા (NMC)',
-    tagline: 'નાગરિક સંચાલિત ડિજિટલ સ્વચ્છતા મોનિટરિંગ પ્લેટફોર્મ',
-    
-    // Navigation
+    tagline: 'સ્વચ્છ નવસારી માટે નાગરિક અને પાલિકા વચ્ચેનો ડિજિટલ સેતુ',
+    nmc_label: 'NMC',
+    ward_officer_portal: 'વોર્ડ ઓફિસર પોર્ટલ',
+    field_worker_portal: 'ફીલ્ડ વર્કર પોર્ટલ',
+    community_head_portal: 'કમ્યુનિટી હેડ પોર્ટલ',
+    citizen_portal: 'નાગરિક પોર્ટલ',
+
+    // Navigation (Citizen)
     nav_home: 'મુખ્ય પૃષ્ઠ',
     nav_report: 'ફરિયાદ નોંધાવો',
     nav_complaints: 'મારી ફરિયાદો',
@@ -165,6 +464,38 @@ export const translations = {
     nav_profile: 'મારી પ્રોફાઇલ',
     nav_login: 'પ્રવેશ / નોંધણી',
     nav_logout: 'લૉગ આઉટ',
+
+    // Navigation (Ward Officer)
+    wo_nav_overview: 'ડેશબોર્ડ ઝાંખી',
+    wo_nav_complaints: 'ફરિયાદ સૂચિ',
+    wo_nav_hotspots: 'કચરાના હોટસ્પોટ્સ',
+    wo_nav_workers: 'કર્મચારી સંચાલન',
+    wo_nav_teams: 'ટીમ સંચાલન',
+    wo_nav_activities: 'સામુદાયિક પ્રવૃત્તિઓ',
+    wo_nav_approvals: 'મંજૂરી સંચાલન',
+    wo_nav_posts: 'નાગરિક પોસ્ટ્સ',
+    wo_nav_community_problems: 'સમુદાય માટે સમસ્યા ઉમેરો',
+    wo_nav_cleanliness_score: 'વોર્ડ સ્વચ્છતા સ્કોર',
+    wo_nav_reports: 'અહેવાલો અને આંકડા',
+    wo_nav_notifications: 'સૂચનાઓ',
+    wo_nav_settings: 'સેટિંગ્સ',
+    wo_nav_more: 'વધુ મેનુ',
+
+    // Navigation (Worker)
+    wrk_nav_home: 'મુખ્ય પૃષ્ઠ',
+    wrk_nav_assign_work: 'સોંપાયેલ કામ',
+    wrk_nav_work_history: 'કામનો ઇતિહાસ',
+    wrk_nav_notifications: 'સૂચનાઓ',
+    wrk_nav_profile: 'પ્રોફાઇલ અને સેટિંગ્સ',
+
+    // Navigation (Community Head)
+    ch_nav_overview: 'ઝાંખી',
+    ch_nav_activities: 'પ્રવૃત્તિ સંચાલન',
+    ch_nav_ward_problems: 'કાર્યવાહી માટે વોર્ડ સમસ્યાઓ',
+    ch_nav_community: 'મારી સંસ્થા',
+    ch_nav_analytics: 'અહેવાલો અને આંકડા',
+    ch_nav_notifications: 'સૂચનાઓ',
+    ch_nav_settings: 'સેટિંગ્સ',
 
     // Home
     welcome_back: 'સ્વાગત છે,',
@@ -249,13 +580,63 @@ export const translations = {
     reopen_btn: 'સમસ્યા ફરીથી ખોલો',
     feedback_btn: 'રેટિંગ આપો',
 
-    // Map
+    // Map & Hotspots
     map_title: 'નવસારી સ્વચ્છતા નકશો',
     map_subtitle: 'વોર્ડ સીમાઓ અને જીવંત ફરિયાદોનું ભૌગોલિક દર્શન',
     filter_all_wards: 'બધા ૧૩ વોર્ડ',
     toggle_hotspots: 'કચરાના હોટસ્પોટ્સ',
     toggle_complaints: 'ફરિયાદો દર્શાવો',
     ward_info: 'વોર્ડ વિગત',
+    hotspots_title: 'કચરાના પુનરાવર્તિત હોટસ્પોટ્સ નકશો',
+    hotspots_subtitle: 'નવસારી નગરપાલિકા સમસ્યા વિસ્તાર મોનિટરિંગ',
+    hotspots_all_cats: 'બધી કેટેગરીઓ',
+    hotspots_all_freq: 'બધી આવર્તન',
+    hotspots_high_freq: 'ઉચ્ચ આવર્તન (૫+ ફરિયાદો)',
+    hotspots_med_freq: 'મધ્યમ આવર્તન (૨-૪ ફરિયાદો)',
+    hotspots_low_freq: 'નવા / ઓછા (૧ ફરિયાદ)',
+    hotspots_category: 'કેટેગરી',
+    hotspots_frequency: 'પુનરાવર્તન આવર્તન',
+    hotspots_total_incidents: 'કુલ બનાવો',
+    hotspots_active_now: 'હાલમાં સક્રિય',
+    hotspots_resolved: 'ઉકેલાયેલ',
+    hotspots_reopen_count: 'ફરી ખોલેલ',
+    hotspots_ai_pattern: 'AI પેટર્ન વિશ્લેષણ (ભૌગોલિક ક્લસ્ટર્ડ)',
+    hotspots_linked_complaints: 'આ સ્થળ પર નોંધાયેલી ફરિયાદો',
+    hotspots_inspect_dossier: 'તપાસ કરો',
+
+    // Ward Officer Overview KPIs
+    kpi_total_complaints: 'કુલ ફરિયાદો',
+    kpi_pending_triage: 'વિભાજન અને સોંપણી બાકી',
+    kpi_active_field: 'ફીલ્ડ કામગીરી ચાલુ',
+    kpi_pending_verification: 'અધિકારી ચકાસણી બાકી',
+    kpi_resolved_rate: 'ઉકેલાયેલ અને સ્વચ્છતા દર',
+    kpi_critical_sla: 'તાકીદનું અને સમયમર્યાદા બહાર',
+    kpi_total_desc: 'વોર્ડમાં નોંધાયેલ તમામ ફરિયાદો',
+    kpi_pending_desc: 'નવી નોંધાયેલ જે ટીમ સોંપણીની રાહ જુએ છે',
+    kpi_active_desc: 'ફીલ્ડ ટીમો હાલમાં કામ કરી રહી છે',
+    kpi_verification_desc: 'પુરાવા સબમિટ થયા છે જે મંજૂરી બાકી છે',
+    kpi_resolved_desc: 'પહેલા અને પછીના ફોટા સાથે બંધ થયેલ',
+    kpi_critical_desc: 'તાત્કાલિક ધ્યાન અને SLA અનુસરણ જરૂરી',
+    ward_command_title: 'વોર્ડ કમાન્ડ ઝાંખી',
+    telemetry_online: 'ફીલ્ડ ટેલિમેટ્રી ઓનલાઇન',
+    operational_metrics: 'મુખ્ય કામગીરી સૂચકાંકો',
+    live_indicators: 'જીવંત કામગીરી કેન્દ્રબિંદુ',
+
+    // Actions
+    action_inspect: 'તપાસો',
+    action_assign_team: 'ટીમ સોંપો',
+    action_view_team: 'આખી ટીમ જુઓ',
+    action_approve: 'મંજૂર કરી ટીમ સોંપો',
+    action_reject: 'અસ્વીકાર કરો',
+    action_submit_evidence: 'પુરાવા સબમિટ કરો',
+    action_live_photo: 'લાઈવ ફોટો પાડો',
+    action_description: 'વર્ણન ઉમેરો',
+    action_deadline: 'કામની અંતિમ તારીખ',
+    action_track_status: 'પ્રગતિ ટ્રેક કરો',
+    action_switch_citizen: 'નાગરિક વ્યુ પર જાઓ',
+    action_refresh: 'રીફ્રેશ કરો',
+    action_edit: 'સુધારો',
+    action_delete: 'કાઢી નાખો',
 
     // Community
     drives_title: 'નવસારી મહાનગરપાલિકા સ્વચ્છતા ડ્રાઇવ્સ',
@@ -291,12 +672,18 @@ export const translations = {
     error: 'ભૂલ આવી છે',
     skip: 'છોડી દો'
   },
+
   hi: {
     app_title: 'माय क्लीन नवसारी',
     app_subtitle: 'नवसारी नगर निगम (NMC)',
-    tagline: 'नागरिक-आधारित डिजिटल स्वच्छता निगरानी मंच',
-    
-    // Navigation
+    tagline: 'स्वच्छ शहर के लिए नागरिकों और नवसारी नगर निगम का डिजिटल मंच',
+    nmc_label: 'NMC',
+    ward_officer_portal: 'वार्ड अधिकारी पोर्टल',
+    field_worker_portal: 'फील्ड कार्यकर्ता पोर्टल',
+    community_head_portal: 'कम्युनिटी प्रमुख पोर्टल',
+    citizen_portal: 'नागरिक पोर्टल',
+
+    // Navigation (Citizen)
     nav_home: 'होम',
     nav_report: 'शिकायत दर्ज करें',
     nav_complaints: 'मेरी शिकायतें',
@@ -310,6 +697,38 @@ export const translations = {
     nav_profile: 'मेरी प्रोफ़ाइल',
     nav_login: 'लॉग इन / रजिस्टर',
     nav_logout: 'लॉग आउट',
+
+    // Navigation (Ward Officer)
+    wo_nav_overview: 'डैशबोर्ड अवलोकन',
+    wo_nav_complaints: 'शिकायत सूची',
+    wo_nav_hotspots: 'कचरा हॉटस्पॉट नक्शा',
+    wo_nav_workers: 'कर्मचारी प्रबंधन',
+    wo_nav_teams: 'टीम प्रबंधन',
+    wo_nav_activities: 'सामुदायिक गतिविधियां',
+    wo_nav_approvals: 'स्वीकृति प्रबंधन',
+    wo_nav_posts: 'नागरिक पोस्ट्स',
+    wo_nav_community_problems: 'समुदाय के लिए समस्या जोड़ें',
+    wo_nav_cleanliness_score: 'वार्ड स्वच्छता स्कोर',
+    wo_nav_reports: 'रिपोर्ट और विश्लेषण',
+    wo_nav_notifications: 'सूचनाएं',
+    wo_nav_settings: 'सेटिंग्स',
+    wo_nav_more: 'अधिक मेनू',
+
+    // Navigation (Worker)
+    wrk_nav_home: 'होम',
+    wrk_nav_assign_work: 'आवंटित कार्य',
+    wrk_nav_work_history: 'कार्य इतिहास',
+    wrk_nav_notifications: 'सूचनाएं',
+    wrk_nav_profile: 'प्रोफ़ाइल एवं सेटिंग्स',
+
+    // Navigation (Community Head)
+    ch_nav_overview: 'अवलोकन',
+    ch_nav_activities: 'गतिविधि प्रबंधन',
+    ch_nav_ward_problems: 'कार्रवाई हेतु वार्ड समस्याएं',
+    ch_nav_community: 'मेरी संस्था',
+    ch_nav_analytics: 'रिपोर्ट और विश्लेषण',
+    ch_nav_notifications: 'सूचनाएं',
+    ch_nav_settings: 'सेटिंग्स',
 
     // Home
     welcome_back: 'स्वागत है,',
@@ -394,13 +813,63 @@ export const translations = {
     reopen_btn: 'अनसुलझी समस्या पुनः खोलें',
     feedback_btn: 'रेटिंग दें',
 
-    // Map
+    // Map & Hotspots
     map_title: 'नवसारी स्वच्छता नक्शा',
     map_subtitle: 'वार्ड सीमाएं और लाइव नागरिक शिकायतें',
     filter_all_wards: 'सभी १३ वार्ड',
     toggle_hotspots: 'कचरा हॉटस्पॉट',
     toggle_complaints: 'शिकायतें दिखाएं',
     ward_info: 'वार्ड विवरण',
+    hotspots_title: 'कचरा हॉटस्पॉट नक्शा',
+    hotspots_subtitle: 'नवसारी नगर निगम समस्या क्षेत्र ट्रैकिंग',
+    hotspots_all_cats: 'सभी श्रेणियां',
+    hotspots_all_freq: 'सभी आवृत्तियां',
+    hotspots_high_freq: 'उच्च आवृत्ति (५+ शिकायतें)',
+    hotspots_med_freq: 'मध्यम आवृत्ति (२-४ शिकायतें)',
+    hotspots_low_freq: 'कम / उभरती (१ शिकायत)',
+    hotspots_category: 'श्रेणी',
+    hotspots_frequency: 'पुनरावृत्ति आवृत्ति',
+    hotspots_total_incidents: 'कुल घटनाएं',
+    hotspots_active_now: 'वर्तमान में सक्रिय',
+    hotspots_resolved: 'निस्तारित',
+    hotspots_reopen_count: 'पुनः खुली',
+    hotspots_ai_pattern: 'AI पैटर्न विश्लेषण (भू-स्थानिक क्लस्टर्ड)',
+    hotspots_linked_complaints: 'इस स्थान से जुड़ी शिकायतें',
+    hotspots_inspect_dossier: 'जांच करें',
+
+    // Ward Officer Overview KPIs
+    kpi_total_complaints: 'कुल शिकायतें',
+    kpi_pending_triage: 'समीक्षा व आवंटन लंबित',
+    kpi_active_field: 'फील्ड कार्य प्रगति पर',
+    kpi_pending_verification: 'अधिकारी सत्यापन प्रतीक्षारत',
+    kpi_resolved_rate: 'निस्तारित व स्वच्छता दर',
+    kpi_critical_sla: 'अति-महत्वपूर्ण व समय सीमा पार',
+    kpi_total_desc: 'वार्ड में दर्ज सभी शिकायतें',
+    kpi_pending_desc: 'नई शिकायतें जो टीम आवंटन की प्रतीक्षा में हैं',
+    kpi_active_desc: 'फील्ड टीमें वर्तमान में कार्य कर रही हैं',
+    kpi_verification_desc: 'साक्ष्य प्रस्तुत हो चुका है, स्वीकृति लंबित',
+    kpi_resolved_desc: 'सत्यापित पूर्व/पश्चात फोटो के साथ पूर्ण',
+    kpi_critical_desc: 'तत्काल ध्यान और SLA अनुवर्ती कार्यवाही योग्य',
+    ward_command_title: 'वार्ड कमान अवलोकन',
+    telemetry_online: 'फील्ड टेलीमेट्री ऑनलाइन',
+    operational_metrics: 'प्रमुख परिचालन संकेतक',
+    live_indicators: 'सक्रिय परिचालन फोकस',
+
+    // Actions
+    action_inspect: 'जांचें',
+    action_assign_team: 'टीम आवंटित करें',
+    action_view_team: 'पूरी टीम देखें',
+    action_approve: 'स्वीकार करें व टीम लगाएं',
+    action_reject: 'अस्वीकार करें',
+    action_submit_evidence: 'साक्ष्य प्रस्तुत करें',
+    action_live_photo: 'लाइव फोटो खींचें',
+    action_description: 'विवरण लिखें',
+    action_deadline: 'कार्य अंतिम तिथि',
+    action_track_status: 'प्रगति ट्रैक करें',
+    action_switch_citizen: 'नागरिक दृश्य पर जाएं',
+    action_refresh: 'रिफ्रेश करें',
+    action_edit: 'संपादित करें',
+    action_delete: 'हटाएं',
 
     // Community
     drives_title: 'नवसारी नगर निगम स्वच्छता अभियान',

@@ -20,6 +20,9 @@ export const ApprovalManagementView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [actionMessage, setActionMessage] = useState<string>('');
+  const [rejectModalItem, setRejectModalItem] = useState<WardApprovalItem | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
+  const [submittingAction, setSubmittingAction] = useState<boolean>(false);
 
   const fetchApprovals = async () => {
     setLoading(true);
@@ -37,11 +40,40 @@ export const ApprovalManagementView: React.FC = () => {
     fetchApprovals();
   }, []);
 
+  const handleApprove = async (item: WardApprovalItem) => {
+    try {
+      await api.reviewWardApproval(item.id, 'approve', 'Approved by Municipal Ward Officer for community action');
+      setActionMessage(`Cleanliness Drive "${item.title}" APPROVED! It is now published and live on all citizen dashboards.`);
+      setApprovals(prev => prev.filter(a => a.id !== item.id));
+      setTimeout(() => setActionMessage(''), 6000);
+    } catch (err: any) {
+      console.error('Approve failed:', err);
+    }
+  };
+
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectModalItem || !rejectReason.trim()) return;
+    setSubmittingAction(true);
+    try {
+      await api.reviewWardApproval(rejectModalItem.id, 'reject', rejectReason.trim());
+      setActionMessage(`Cleanliness Drive "${rejectModalItem.title}" REJECTED. Official reason sent as notification to Community Head.`);
+      setApprovals(prev => prev.filter(a => a.id !== rejectModalItem.id));
+      setRejectModalItem(null);
+      setRejectReason('');
+      setTimeout(() => setActionMessage(''), 6000);
+    } catch (err: any) {
+      console.error('Reject failed:', err);
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
   const handleReviewAction = async (id: string, action: 'approve' | 'changes_requested' | 'reject') => {
     try {
-      await api.reviewWardApproval(id, action, `Official review by Ward 3 Officer: ${action}`);
-      setActionMessage(`Item ${id} successfully marked as ${action}.`);
-      setApprovals(approvals.filter(a => a.id !== id));
+      await api.reviewWardApproval(id, action, `Official review by Ward Officer: ${action}`);
+      setActionMessage(`Item ${id} marked as ${action}.`);
+      setApprovals(prev => prev.filter(a => a.id !== id));
     } catch (err) {
       console.error('Action failed:', err);
     }
@@ -170,11 +202,11 @@ export const ApprovalManagementView: React.FC = () => {
               {/* Actions */}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
-                  onClick={() => handleReviewAction(item.id, 'approve')}
+                  onClick={() => handleApprove(item)}
                   className="px-4 py-1.5 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-emerald-800 transition flex items-center gap-1 shadow-2xs"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>Approve</span>
+                  <span>Approve & Publish to Citizens</span>
                 </button>
                 <button
                   onClick={() => handleReviewAction(item.id, 'changes_requested')}
@@ -183,16 +215,79 @@ export const ApprovalManagementView: React.FC = () => {
                   Request Changes
                 </button>
                 <button
-                  onClick={() => handleReviewAction(item.id, 'reject')}
+                  onClick={() => {
+                    setRejectModalItem(item);
+                    setRejectReason('');
+                  }}
                   className="px-3.5 py-1.5 rounded-xl bg-red-100 hover:bg-red-200 text-red-900 text-xs font-extrabold transition"
                 >
-                  Reject
+                  Reject (With Reason)
                 </button>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Officer Rejection Reason Modal */}
+      {rejectModalItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-rose-600">
+                <AlertTriangle className="w-5 h-5" />
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Reject Cleanliness Drive Submission
+                </h3>
+              </div>
+              <button
+                onClick={() => setRejectModalItem(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Please enter the official reason for rejecting <strong>"{rejectModalItem.title}"</strong>.
+              This reason will be instantly dispatched as a high-priority notification to the Community Head's dashboard:
+            </p>
+
+            <form onSubmit={handleConfirmReject} className="space-y-4">
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                  Reason for Rejection *
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="e.g. Schedule conflicts with NMC arterial road desilting drive. Please reschedule to Sunday or shift the volunteer gathering point away from the main highway."
+                  className="w-full px-4 py-3 rounded-2xl border-2 border-rose-200 bg-rose-50/20 text-xs font-medium text-slate-800 focus:border-rose-500 focus:ring-2 focus:ring-rose-400/20 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalItem(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingAction || !rejectReason.trim()}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md transition disabled:opacity-50"
+                >
+                  {submittingAction ? 'Sending Rejection...' : 'Confirm Rejection & Notify Community Head'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -195,13 +195,28 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // Quick Demo Ward 8 Officer (Cyrus Contractor - Ward 8) Login
+  const handleQuickDemoWard8OfficerLogin = async () => {
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await api.login('9825130008', 'Navsari@2026', 'captcha-verified-token');
+      localStorage.setItem('clean_navsari_token', res.data.token);
+      onSuccess(res.data.profile, false);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Demo Ward 8 Officer login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 1. Submit Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!phone || phone.length < 10) {
-      setErrorMessage('Please enter a valid 10-digit Indian mobile number');
+    if (!phone || phone.trim().length < 3) {
+      setErrorMessage('Please enter your mobile number, username, or worker code');
       return;
     }
     if (!password) {
@@ -404,33 +419,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="text-center mb-5">
                 <h2 className="text-xl font-extrabold text-[#095c54]">
-                  Welcome Citizen
+                  Welcome to Swachh Setu
                 </h2>
                 <p className="text-xs text-[#64748b] mt-0.5">
-                  Sign in with your mobile number to monitor Navsari
+                  Sign in with Mobile Number, Username, or Worker Code
                 </p>
               </div>
 
-              {/* Mobile Number */}
+              {/* Mobile Number / Username / Worker Code */}
               <div>
-                <label className="block text-xs font-bold text-[#0f2925] mb-1.5">
-                  Mobile Number
+                <label className="block text-xs font-bold text-[#0f2925] mb-1.5 flex items-center justify-between">
+                  <span>Username / Mobile Number</span>
+                  <span className="text-[10px] text-[#64748b] font-normal">Phone, Worker Code, or Email</span>
                 </label>
                 <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] focus-within:ring-2 focus-within:ring-[#095c54]/10 bg-white overflow-hidden transition">
                   <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
-                    🇮🇳 +91
+                    {/^\d+$/.test(phone.trim()) && phone.trim().length <= 10 ? '🇮🇳 +91' : '👤 ID'}
                   </span>
                   <input
-                    type="tel"
-                    maxLength={16}
-                    placeholder="98765 43210"
+                    type="text"
+                    maxLength={50}
+                    placeholder="e.g. 9825120005, WRK-2026-003, or username"
                     value={phone}
-                    onChange={e => {
-                      let val = e.target.value.replace(/\D/g, '');
-                      if (val.startsWith('91') && val.length > 10) val = val.slice(2);
-                      else if (val.startsWith('0') && val.length > 10) val = val.slice(1);
-                      setPhone(val.slice(0, 10));
-                    }}
+                    onChange={e => setPhone(e.target.value)}
                     className="flex-1 px-3 py-2.5 text-sm font-semibold text-[#0f2925] outline-none"
                     required
                   />
@@ -604,10 +615,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 >
                   <div className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-[#065f46]" />
-                    <span>Ward Officer Demo (Ramesh Patel · Ward 3)</span>
+                    <span>Ward 3 Officer Demo (Ramesh Patel · Ward 3)</span>
                   </div>
                   <span className="text-[10px] bg-white border border-[#a7f3d0] text-[#065f46] px-2 py-0.5 rounded-full font-bold">
                     9825130003
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickDemoWard8OfficerLogin}
+                  disabled={loading}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-[#f0fdf4] hover:bg-[#dcfce7] border border-[#86efac] text-xs font-black text-[#166534] transition flex items-center justify-between shadow-xs group"
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-[#166534]" />
+                    <span>Ward 8 Officer Demo (Cyrus Contractor · Ward 8)</span>
+                  </div>
+                  <span className="text-[10px] bg-white border border-[#86efac] text-[#166534] px-2 py-0.5 rounded-full font-bold">
+                    9825130008
                   </span>
                 </button>
               </div>

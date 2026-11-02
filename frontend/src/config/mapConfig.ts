@@ -21,9 +21,9 @@ const ENV_TILE_ATTRIBUTION = import.meta.env.VITE_MAP_TILE_ATTRIBUTION;
 const ENV_TILE_SUBDOMAINS = import.meta.env.VITE_MAP_SUBDOMAINS;
 
 export const MAP_CONFIG = {
-  // Navsari City Center Coordinates (Dudhia Talav / Tower Road axis)
-  center: [20.9467, 72.9520] as [number, number],
-  defaultZoom: 13,
+  // Navsari City Center Coordinates (Dudhiya Talao / Ward 3 Civic Command axis)
+  center: [20.9325, 72.9280] as [number, number],
+  defaultZoom: 14,
   minZoom: 12,
   maxZoom: 18,
 

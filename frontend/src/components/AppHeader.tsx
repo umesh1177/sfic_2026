@@ -90,7 +90,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               { id: 'complaints', label: t.nav_complaints },
               { id: 'map', label: t.nav_map },
               { id: 'drives', label: t.nav_drives },
-              { id: 'challenges', label: t.nav_challenges },
               { id: 'rewards', label: t.nav_rewards },
               { id: 'support', label: t.nav_support }
             ].map(item => (
@@ -334,7 +333,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             { id: 'complaints', label: t.nav_complaints },
             { id: 'map', label: t.nav_map },
             { id: 'drives', label: t.nav_drives },
-            { id: 'challenges', label: t.nav_challenges },
             { id: 'rewards', label: t.nav_rewards },
             { id: 'support', label: t.nav_support },
             { id: 'profile', label: t.nav_profile }

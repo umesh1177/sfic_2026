@@ -12,7 +12,8 @@ import {
   SupportTicket,
   CommunityRecognitionPost,
   CommunityActivity,
-  WorkAssignment
+  WorkAssignment,
+  CommunityProblem
 } from '../types/index.js';
 import { NAVSARI_WARDS } from '../utils/postgis.js';
 
@@ -38,6 +39,7 @@ export interface DataStore {
   communities: any[];
   communityActivities: CommunityActivity[];
   recognitionPosts: CommunityRecognitionPost[];
+  communityProblems: CommunityProblem[];
 }
 
 // Initial seed categories
@@ -206,11 +208,68 @@ const initialProfiles: Profile[] = [
     role: 'ward_officer',
     created_at: '2026-10-15T09:00:00Z',
     updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'w0000000-0000-0000-0000-000000000008',
+    full_name: 'Cyrus Contractor',
+    phone: '+919825130008',
+    email: 'cyrus.contractor@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: 'NMC Ward 8 Administrative Office, Heritage Parsi Vad, Navsari',
+    locality: 'Madhumati - Parsi Wad Ward 8',
+    is_active: true,
+    role: 'ward_officer',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
   }
 ];
 
 // Seed sample complaints in Navsari
 const initialComplaints: Complaint[] = [
+  {
+    id: 'comp-w8-01',
+    complaint_number: 'NMC-2026-80012',
+    citizen_id: defaultCitizenId,
+    citizen_name: 'Harshil Mehta',
+    category_id: 'cat-01',
+    category_name: 'Open Garbage Dumping',
+    location: {
+      id: 'loc-w8-01',
+      latitude: 20.9620,
+      longitude: 72.9300,
+      address: 'Heritage Parsi Vad, Near Sohrab Baug, Navsari',
+      landmark: 'Opposite Parsi Agiary Gate',
+      ward_id: 'ward-08',
+      ward_number: 8,
+      ward_name: 'Madhumati - Parsi Wad',
+      is_inside_nmc_boundary: true
+    },
+    description: 'Accumulation of garden waste and dry tree branches near heritage street corner.',
+    original_language: 'en',
+    status: 'submitted',
+    priority: 'medium',
+    image_url: 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+    confidence_score: 96.0,
+    ai_model_name: 'NavsariWasteClassifier-PyTorch-ResNet50',
+    ai_model_version: 'v1.3.0',
+    is_duplicate: false,
+    submitted_at: '2026-11-01T09:15:00Z',
+    updated_at: '2026-11-01T09:15:00Z',
+    upvotes_count: 3,
+    followers_count: 2,
+    activity_logs: [
+      {
+        id: 'log-w8-01',
+        complaint_id: 'comp-w8-01',
+        status: 'submitted',
+        note: 'Complaint lodged by citizen with location and photo evidence.',
+        actor_name: 'Harshil Mehta',
+        actor_role: 'citizen',
+        created_at: '2026-11-01T09:15:00Z'
+      }
+    ]
+  },
   {
     id: 'comp-01',
     complaint_number: 'NMC-2026-10021',
@@ -715,7 +774,7 @@ const initialWorkers = [
   }
 ];
 
-// Initial Ward 3 Formed Teams
+// Initial Ward 3 & 8 Formed Teams
 const initialTeams = [
   {
     id: 'team-01',
@@ -728,6 +787,46 @@ const initialTeams = [
     temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
     temporary_leader_name: 'Kanti Solanki',
     created_at: '2026-10-25T08:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'team-02',
+    team_name: 'Rapid Cleanliness Squad 3A',
+    ward_number: 3,
+    worker_ids: [
+      'f2000000-0000-0000-0000-000000000003',
+      'f2000000-0000-0000-0000-000000000004'
+    ],
+    temporary_leader_id: 'f2000000-0000-0000-0000-000000000003',
+    temporary_leader_name: 'Paresh Parmar',
+    created_at: '2026-10-26T09:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'team-03',
+    team_name: 'Drainage & Desilting Taskforce 3C',
+    ward_number: 3,
+    worker_ids: [
+      'f2000000-0000-0000-0000-000000000005',
+      'f2000000-0000-0000-0000-000000000006'
+    ],
+    temporary_leader_id: 'f2000000-0000-0000-0000-000000000005',
+    temporary_leader_name: 'Dilip Chauhan',
+    created_at: '2026-10-27T08:30:00Z',
+    status: 'active'
+  },
+  {
+    id: 'team-04',
+    team_name: 'Ward 8 Heritage & Lake Clean Squad',
+    ward_number: 8,
+    worker_ids: [
+      'f2000000-0000-0000-0000-000000000001',
+      'f2000000-0000-0000-0000-000000000002',
+      'f2000000-0000-0000-0000-000000000004'
+    ],
+    temporary_leader_id: 'f2000000-0000-0000-0000-000000000001',
+    temporary_leader_name: 'Kanti Solanki',
+    created_at: '2026-10-28T09:00:00Z',
     status: 'active'
   }
 ];
@@ -1063,6 +1162,17 @@ export const store: DataStore = {
       account_status: 'active',
       created_at: '2026-10-15T09:00:00Z',
       updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w8',
+      user_id: 'w0000000-0000-0000-0000-000000000008',
+      mobile_number: '+919825130008',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
     }
   ],
   otpSessions: [],
@@ -1091,5 +1201,6 @@ export const store: DataStore = {
   workAssignments: initialWorkAssignments,
   communities: initialCommunities,
   communityActivities: initialCommunityActivities,
-  recognitionPosts: initialRecognitionPosts
+  recognitionPosts: initialRecognitionPosts,
+  communityProblems: []
 };

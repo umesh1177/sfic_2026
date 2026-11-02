@@ -16,11 +16,13 @@ export interface Profile {
   id: string;
   full_name: string;
   phone: string;
+  username?: string;
   email?: string;
   avatar_url?: string;
   preferred_language: 'en' | 'gu' | 'hi';
   address?: string;
   locality?: string;
+  ward_number?: number;
   is_active: boolean;
   role: UserRole;
   created_at: string;
@@ -613,6 +615,8 @@ export interface WorkAssignment {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  deadline?: string;
+  target_completion_date?: string;
   // Dynamic worker context fields
   is_temporary_leader?: boolean;
   temporary_leader_name?: string;
@@ -807,6 +811,7 @@ export interface WardDashboardSummary {
 }
 
 export interface ComplaintWorkAttempt {
+  deadline?: string;
   id: string;
   complaint_id: string;
   attempt_number: number;
@@ -884,4 +889,56 @@ export interface WardApprovalItem {
   details: any;
   photos?: string[];
   comments?: string;
+}
+
+
+export interface CommunityProblem {
+  id: string;
+  ward_number: number;
+  ward_name: string;
+  title: string;
+  description: string;
+  location_name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  action_plan: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  estimated_volunteers_needed: number;
+  suggested_equipment: string[];
+  image_url?: string;
+  status: 'open' | 'claimed' | 'in_progress' | 'resolved';
+  claimed_by_community_id?: string;
+  claimed_by_community_name?: string;
+  linked_activity_id?: string;
+  created_by?: string;
+  officer_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+
+export interface CommunityProblem {
+  id: string;
+  ward_number: number;
+  ward_name: string;
+  title: string;
+  description: string;
+  location_name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  action_plan: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  estimated_volunteers_needed: number;
+  suggested_equipment: string[];
+  image_url?: string;
+  status: 'open' | 'claimed' | 'in_progress' | 'resolved';
+  claimed_by_community_id?: string;
+  claimed_by_community_name?: string;
+  linked_activity_id?: string;
+  created_by?: string;
+  officer_name?: string;
+  created_at: string;
+  updated_at: string;
 }

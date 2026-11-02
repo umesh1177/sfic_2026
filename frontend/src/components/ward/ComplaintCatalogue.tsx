@@ -17,10 +17,14 @@ import {
   Layers,
   ArrowUpDown,
   Sparkles,
-  Users
+  Users,
+  ClipboardCheck,
+  Activity
 } from 'lucide-react';
 import { api } from '../../services/api.js';
-import { ComplaintDetailsModal } from './ComplaintDetailsModal.js';
+import { ComplaintViewModal } from './ComplaintViewModal.js';
+import { ComplaintInspectView } from './ComplaintInspectView.js';
+import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
 
 interface ComplaintCatalogueProps {
   initialFilter?: {
@@ -28,14 +32,16 @@ interface ComplaintCatalogueProps {
     progress_status?: string;
     priority?: string;
     additional_flags?: string;
+    ward_number?: number | string;
   };
 }
 
 export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialFilter }) => {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
-  const [openAssignDirectly, setOpenAssignDirectly] = useState<boolean>(false);
+  const [trackingComplaintId, setTrackingComplaintId] = useState<string | null>(null);
+  const [viewingComplaintId, setViewingComplaintId] = useState<string | null>(null);
+  const [inspectingComplaintId, setInspectingComplaintId] = useState<string | null>(null);
 
   // Filters state
   const [search, setSearch] = useState<string>('');
@@ -43,10 +49,29 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const [category, setCategory] = useState<string>('all');
   const [priority, setPriority] = useState<string>(initialFilter?.priority || 'all');
   const [progressStatus, setProgressStatus] = useState<string>(initialFilter?.progress_status || 'all');
+  const [wardFilter, setWardFilter] = useState<string>(initialFilter?.ward_number ? String(initialFilter.ward_number) : 'all');
   const [assignment, setAssignment] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
   const [additionalFlags, setAdditionalFlags] = useState<string>(initialFilter?.additional_flags || 'all');
   const [sortBy, setSortBy] = useState<string>('newest');
+
+  // Sync when initialFilter prop changes or is cleared
+  useEffect(() => {
+    if (initialFilter) {
+      if (initialFilter.status) setStatus(initialFilter.status);
+      if (initialFilter.priority) setPriority(initialFilter.priority);
+      if (initialFilter.progress_status) setProgressStatus(initialFilter.progress_status);
+      if (initialFilter.additional_flags) setAdditionalFlags(initialFilter.additional_flags);
+      if (initialFilter.ward_number) setWardFilter(String(initialFilter.ward_number));
+    } else {
+      setStatus('all');
+      setPriority('all');
+      setProgressStatus('all');
+      setAdditionalFlags('all');
+      setWardFilter('all');
+    }
+    setPage(1);
+  }, [initialFilter]);
 
   // Pagination
   const [page, setPage] = useState<number>(1);
@@ -63,6 +88,8 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         category,
         priority,
         progress_status: progressStatus,
+        ward: wardFilter !== 'all' ? wardFilter : undefined,
+        ward_number: wardFilter !== 'all' ? wardFilter : undefined,
         assignment,
         location: locationFilter,
         additional_flags: additionalFlags,
@@ -82,7 +109,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
 
   useEffect(() => {
     fetchComplaints();
-  }, [search, status, category, priority, progressStatus, assignment, locationFilter, additionalFlags, sortBy, page]);
+  }, [search, status, category, priority, progressStatus, wardFilter, assignment, locationFilter, additionalFlags, sortBy, page]);
 
   // Reset filters
   const handleClearFilters = () => {
@@ -91,6 +118,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     setCategory('all');
     setPriority('all');
     setProgressStatus('all');
+    setWardFilter(initialFilter?.ward_number ? String(initialFilter.ward_number) : 'all');
     setAssignment('all');
     setLocationFilter('all');
     setAdditionalFlags('all');
@@ -104,10 +132,21 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     category !== 'all' ||
     priority !== 'all' ||
     progressStatus !== 'all' ||
+    wardFilter !== 'all' ||
     assignment !== 'all' ||
     locationFilter !== 'all' ||
     additionalFlags !== 'all' ||
     sortBy !== 'newest';
+
+  if (inspectingComplaintId) {
+    return (
+      <ComplaintInspectView
+        complaintId={inspectingComplaintId}
+        onBack={() => setInspectingComplaintId(null)}
+        onComplaintUpdated={fetchComplaints}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -118,7 +157,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             Complaint Catalogue
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Ward 3 Operations Central · Total Registered Complaints:{' '}
+            {initialFilter?.ward_number ? `Ward ${initialFilter.ward_number} Operations Central` : 'Ward Operations Central'} · Total Registered Complaints:{' '}
             <strong className="text-[#095c54]">{totalCount}</strong>
           </p>
         </div>
@@ -171,7 +210,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         {/* Filters Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {/* 1. Progress Status (CRITICAL FILTER!) */}
-          <div className="col-span-2 sm:col-span-1 lg:col-span-2">
+          <div>
             <label className="block text-[10px] font-black uppercase text-purple-800 mb-1">
               Progress Status
             </label>
@@ -198,7 +237,35 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             </select>
           </div>
 
-          {/* 2. Complaint Status */}
+          {/* 2. Ward Location */}
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Ward</label>
+            <select
+              value={wardFilter}
+              onChange={e => {
+                setWardFilter(e.target.value);
+                setPage(1);
+              }}
+              className="w-full text-xs font-bold p-2 rounded-xl border border-slate-200 bg-white focus:border-[#095c54] outline-hidden truncate"
+            >
+              <option value="all">All Wards (Navsari)</option>
+              <option value="3">Ward 3 - Dudhiya Talao</option>
+              <option value="1">Ward 1 - Lunsikui</option>
+              <option value="2">Ward 2 - Station Road</option>
+              <option value="4">Ward 4 - Kaliawadi</option>
+              <option value="5">Ward 5 - Jalalpore</option>
+              <option value="6">Ward 6 - Shantadevi</option>
+              <option value="7">Ward 7 - Chhapra</option>
+              <option value="8">Ward 8 - Kabilpore</option>
+              <option value="9">Ward 9 - Vejalpore</option>
+              <option value="10">Ward 10 - Eru Char Rasta</option>
+              <option value="11">Ward 11 - Gandevi Road</option>
+              <option value="12">Ward 12 - Maroli</option>
+              <option value="13">Ward 13 - Aat Heritage</option>
+            </select>
+          </div>
+
+          {/* 3. Complaint Status */}
           <div>
             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Status</label>
             <select
@@ -340,11 +407,8 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium">
                 {complaints.map(complaint => (
-                  <tr
-                    key={complaint.id}
-                    onClick={() => setSelectedComplaintId(complaint.id)}
-                    className="hover:bg-slate-50/80 cursor-pointer transition group"
-                  >
+                  <React.Fragment key={complaint.id}>
+                    <tr className="hover:bg-slate-50/80 transition group">
                     {/* ID & Category */}
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">
@@ -431,37 +495,80 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                       </span>
                     </td>
 
-                    {/* Actions */}
+                    {/* Actions: 3 Distinct Buttons (View, Inspect, Track) */}
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {complaint.progress_status !== 'Verified Complete' && (
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              setSelectedComplaintId(complaint.id);
-                              setOpenAssignDirectly(true);
-                            }}
-                            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#095c54] text-[#095c54] hover:text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-200"
-                            title="Assign team to start resolving"
-                          >
-                            <Users className="w-3.5 h-3.5" />
-                            <span>Assign</span>
-                          </button>
-                        )}
                         <button
                           onClick={e => {
                             e.stopPropagation();
-                            setSelectedComplaintId(complaint.id);
-                            setOpenAssignDirectly(false);
+                            setViewingComplaintId(complaint.id);
                           }}
-                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#095c54] text-slate-700 hover:text-white text-xs font-bold transition flex items-center gap-1.5"
+                          className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#095c54] border border-[#a7f3d0] text-xs font-extrabold transition flex items-center gap-1 shadow-2xs"
+                          title="View complaint image, description, map location, and approve or reject"
                         >
                           <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setInspectingComplaintId(complaint.id);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold transition flex items-center gap-1 shadow-2xs"
+                          title="Open full dedicated inspection dossier with 5 tabs"
+                        >
+                          <ClipboardCheck className="w-3.5 h-3.5 text-emerald-300" />
                           <span>Inspect</span>
+                        </button>
+
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setTrackingComplaintId(prev => (prev === complaint.id ? null : complaint.id));
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                            trackingComplaintId === complaint.id
+                              ? 'bg-[#095c54] text-white shadow-xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                          title="Toggle live status progression steps"
+                        >
+                          <Activity className="w-3.5 h-3.5" />
+                          <span>Track</span>
                         </button>
                       </div>
                     </td>
                   </tr>
+
+                  {/* Inline Status Progression Stepper (No Modal) */}
+                  {trackingComplaintId === complaint.id && (
+                    <tr className="bg-emerald-50/30 border-b border-[#e2e8f0]">
+                      <td colSpan={6} className="p-4 px-6">
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs">
+                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <Activity className="w-4 h-4 text-[#095c54]" />
+                              <span className="text-xs font-black text-[#0f2925] uppercase tracking-wider">
+                                Live Status Progression · {complaint.complaint_number}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setTrackingComplaintId(null)}
+                              className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-0.5 rounded-lg hover:bg-slate-100"
+                            >
+                              ✕ Close
+                            </button>
+                          </div>
+                          <StatusProgressionStepper
+                            status={complaint.status}
+                            rejectionReason={complaint.rejection_reason}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -472,11 +579,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             {complaints.map(complaint => (
               <div
                 key={complaint.id}
-                onClick={() => {
-                  setSelectedComplaintId(complaint.id);
-                  setOpenAssignDirectly(false);
-                }}
-                className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 cursor-pointer hover:border-[#095c54] transition"
+                className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 hover:border-[#095c54] transition"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -515,33 +618,68 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                     <span className="text-[10px] text-slate-400 block">Progress Status:</span>
                     <span className="font-extrabold text-[#095c54]">{complaint.progress_status}</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    {complaint.progress_status !== 'Verified Complete' && (
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          setSelectedComplaintId(complaint.id);
-                          setOpenAssignDirectly(true);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-emerald-50 text-[#095c54] hover:bg-[#095c54] hover:text-white font-extrabold text-xs flex items-center gap-1 border border-emerald-200"
-                      >
-                        <Users className="w-3.5 h-3.5" />
-                        <span>Assign</span>
-                      </button>
-                    )}
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       onClick={e => {
                         e.stopPropagation();
-                        setSelectedComplaintId(complaint.id);
-                        setOpenAssignDirectly(false);
+                        setViewingComplaintId(complaint.id);
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-[#095c54] text-white text-xs font-extrabold flex items-center gap-1"
+                      className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#095c54] border border-[#a7f3d0] font-extrabold text-xs flex items-center gap-1 shadow-2xs"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       <span>View</span>
                     </button>
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setInspectingComplaintId(complaint.id);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs flex items-center gap-1 shadow-2xs"
+                    >
+                      <ClipboardCheck className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Inspect</span>
+                    </button>
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setTrackingComplaintId(prev => (prev === complaint.id ? null : complaint.id));
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition ${
+                        trackingComplaintId === complaint.id
+                          ? 'bg-[#095c54] text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                      <span>Track</span>
+                    </button>
                   </div>
                 </div>
+
+                {/* Inline Status Progression Stepper for Mobile (No Modal) */}
+                {trackingComplaintId === complaint.id && (
+                  <div className="p-3 bg-emerald-50/30 rounded-2xl border border-emerald-100 mt-2">
+                    <div className="flex items-center justify-between mb-2 pb-1 border-b border-emerald-100">
+                      <span className="text-[11px] font-black text-[#095c54] uppercase tracking-wider">
+                        Live Status Progression
+                      </span>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setTrackingComplaintId(null);
+                        }}
+                        className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <StatusProgressionStepper
+                      status={complaint.status}
+                      rejectionReason={complaint.rejection_reason}
+                      compact={true}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -573,18 +711,19 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         </div>
       )}
 
-      {/* Complaint Details Modal */}
-      {selectedComplaintId && (
-        <ComplaintDetailsModal
-          complaintId={selectedComplaintId}
-          initialOpenAssign={openAssignDirectly}
-          onClose={() => {
-            setSelectedComplaintId(null);
-            setOpenAssignDirectly(false);
-          }}
+      {/* View & Triage Modal */}
+      {viewingComplaintId && (
+        <ComplaintViewModal
+          complaintId={viewingComplaintId}
+          onClose={() => setViewingComplaintId(null)}
           onComplaintUpdated={fetchComplaints}
+          onOpenInspect={id => {
+            setViewingComplaintId(null);
+            setInspectingComplaintId(id);
+          }}
         />
       )}
+
     </div>
   );
 };

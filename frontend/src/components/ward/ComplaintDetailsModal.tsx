@@ -26,19 +26,22 @@ import {
   Star
 } from 'lucide-react';
 import { api } from '../../services/api.js';
+import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
 
 interface ComplaintDetailsModalProps {
   complaintId: string;
   onClose: () => void;
   onComplaintUpdated?: () => void;
   initialOpenAssign?: boolean;
+  initialTab?: 'overview' | 'citizen_report' | 'location_map' | 'assignment_history' | 'timeline' | 'attendance' | 'evidence' | 'completion' | 'feedback' | 'reviews' | 'audit';
 }
 
 export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
   complaintId,
   onClose,
   onComplaintUpdated,
-  initialOpenAssign = false
+  initialOpenAssign = false,
+  initialTab = 'overview'
 }) => {
   const [activeTab, setActiveTab] = useState<
     | 'overview'
@@ -52,7 +55,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
     | 'feedback'
     | 'reviews'
     | 'audit'
-  >('overview');
+  >(initialTab);
 
   const [details, setDetails] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -65,6 +68,10 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   const [selectedWorkType, setSelectedWorkType] = useState<string>('Solid Waste Clearance');
   const [assignInstructions, setAssignInstructions] = useState<string>('');
+  const [assignDeadline, setAssignDeadline] = useState<string>(() => {
+    const d = new Date(Date.now() + 24 * 3600 * 1000);
+    return d.toISOString().slice(0, 16);
+  });
   const [submittingAssign, setSubmittingAssign] = useState<boolean>(false);
 
   // Reopen Modal State
@@ -120,7 +127,8 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
         work_type: selectedWorkType,
         instructions: assignInstructions,
         worker_ids: selectedTeam?.worker_ids,
-        temporary_leader_id: selectedTeam?.temporary_leader_id
+        temporary_leader_id: selectedTeam?.temporary_leader_id,
+        deadline: new Date(assignDeadline).toISOString()
       });
       setActionSuccess(res.message || 'Work assignment successfully dispatched to field team');
       setShowAssignDialog(false);
@@ -271,6 +279,15 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
+
+        {/* Unified Status Progression Stepper */}
+        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-[#e2e8f0]">
+          <StatusProgressionStepper
+            status={overview.status}
+            rejectionReason={(overview as any).rejection_reason}
+            compact
+          />
         </div>
 
         {/* Action Messages */}
@@ -1250,6 +1267,21 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                   <option value="Public Urinal & Toilet Sanitization">Public Urinal & Toilet Sanitization</option>
                   <option value="Spot Cleansing & Bleaching Powder Spray">Spot Cleansing & Bleaching Powder Spray</option>
                 </select>
+              </div>
+
+              {/* Target Completion Deadline */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Target Completion Deadline <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={assignDeadline}
+                  min={new Date().toISOString().slice(0, 16)}
+                  onChange={e => setAssignDeadline(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-slate-50 focus:bg-white focus:border-[#095c54] outline-hidden transition"
+                />
               </div>
 
               {/* Instructions */}

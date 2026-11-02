@@ -1,6 +1,9 @@
 import { Response } from 'express';
+import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { normalizeIndianPhone } from './authController.js';
 import { store } from '../data/store.js';
 import {
   WardDashboardSummary,
@@ -366,26 +369,33 @@ export class WardOfficerController {
     try {
       initializeSeedAttempts();
 
-      const wardNum = 3;
-      const allComplaints = store.complaints || [];
-      const wardComplaints = allComplaints.filter(c => c.location?.ward_number === wardNum);
+      const userMatch = req.user?.locality?.match(/Ward\s*(\d+)/i) || req.user?.address?.match(/Ward\s*(\d+)/i);
+      const userWardNum = userMatch ? Number(userMatch[1]) : undefined;
+      const requestedWard = (req.query as any)?.ward_number ? Number((req.query as any).ward_number) : undefined;
+      const wardNum = requestedWard || userWardNum || 3;
 
-      const total = wardComplaints.length || 24;
-      const newCount = wardComplaints.filter(c => c.status === 'submitted').length || 4;
-      const underReview = wardComplaints.filter(c => c.status === 'under_review').length || 3;
-      const assigned = wardComplaints.filter(c => c.status === 'assigned').length || 6;
-      const inProgress = wardComplaints.filter(c => c.status === 'in_progress').length || 5;
-      const resolved = wardComplaints.filter(c => c.status === 'resolved' || c.status === 'awaiting_verification').length || 3;
-      const closed = 18;
-      const reopened = wardComplaints.filter(c => c.status === 'reopened').length || 2;
-      const overdue = 2;
+      const allComplaints = store.complaints || [];
+      const wardComplaints = allComplaints.filter(c => (c.location?.ward_number || 3) === wardNum);
+
+      const total = wardComplaints.length || 12;
+      const newCount = wardComplaints.filter(c => c.status === 'submitted').length;
+      const underReview = wardComplaints.filter(c => c.status === 'under_review').length;
+      const assigned = wardComplaints.filter(c => c.status === 'assigned').length;
+      const inProgress = wardComplaints.filter(c => c.status === 'in_progress').length;
+      const resolved = wardComplaints.filter(c => c.status === 'resolved' || c.status === 'awaiting_verification').length;
+      const closed = Math.max(0, resolved);
+      const reopened = wardComplaints.filter(c => c.status === 'reopened').length;
+      const overdue = 1;
       const unassigned = newCount;
+
+      const wardName = wardNum === 8 ? 'Ward 8 - Madhumati & Parsi Wad' : (wardNum === 3 ? 'Ward 3 - Dudhiya Talao & Ashapuri' : `Ward ${wardNum} - Navsari Civic Area`);
+      const officerName = req.user?.full_name || (wardNum === 8 ? 'Cyrus Contractor' : 'Ramesh Patel');
 
       const summary: WardDashboardSummary = {
         ward_number: wardNum,
-        ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
-        officer_name: 'Ramesh Patel',
-        officer_designation: 'Chief Sanitary Inspector, Ward 3',
+        ward_name: wardName,
+        officer_name: officerName,
+        officer_designation: `Chief Sanitary Inspector, Ward ${wardNum}`,
         metrics: {
           total_complaints: total,
           new_complaints: newCount,
@@ -491,12 +501,28 @@ export class WardOfficerController {
         additional_flags,
         search,
         sort_by,
+        ward,
+        ward_number,
         page = 1,
         limit = 10
       } = req.query as any;
 
-      // Base complaints in Ward 3
-      let complaints = (store.complaints || []).filter(c => (c.location?.ward_number || 3) === 3);
+      // Base complaints: strictly filter by ward. Default to the authenticated officer's ward so Ward 8 never sees Ward 3!
+      let complaints = store.complaints || [];
+      let officerWardNum = (req.user as any)?.ward_number;
+      if (!officerWardNum) {
+        const userMatch = req.user?.locality?.match(/Ward\s*(\d+)/i) || req.user?.address?.match(/Ward\s*(\d+)/i);
+        if (userMatch) officerWardNum = Number(userMatch[1]);
+      }
+
+      const requestedWard = ward || ward_number;
+      const targetWardNum = (requestedWard && requestedWard !== 'all')
+        ? Number(requestedWard)
+        : (officerWardNum ? Number(officerWardNum) : undefined);
+
+      if (targetWardNum !== undefined) {
+        complaints = complaints.filter(c => (c.location?.ward_number || 3) === targetWardNum);
+      }
 
       // Enhance with progress status and assignment details
       let enriched = complaints.map(c => {
@@ -523,13 +549,15 @@ export class WardOfficerController {
           progressStatus = 'Verified Complete';
         } else if (c.status === 'reopened') {
           progressStatus = 'Reopened – New Work Required';
+        } else if (c.status === 'rejected') {
+          progressStatus = 'Rejected';
         }
 
         // SLA deadline (48 hours from submission)
         const submittedDate = new Date(c.submitted_at || '2026-10-28T08:15:00Z');
         const slaDeadline = new Date(submittedDate.getTime() + 48 * 60 * 60 * 1000).toISOString();
         const daysPending = Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24)));
-        const isOverdue = Date.now() > new Date(slaDeadline).getTime() && c.status !== 'resolved' && c.status !== 'closed';
+        const isOverdue = Date.now() > new Date(slaDeadline).getTime() && c.status !== 'resolved' && c.status !== 'closed' && c.status !== 'rejected';
 
         if (isOverdue && progressStatus !== 'Verified Complete') {
           progressStatus = 'Overdue Work';
@@ -538,7 +566,7 @@ export class WardOfficerController {
         return {
           id: c.id,
           complaint_number: c.complaint_number || 'NMC-2026-10021',
-          title: `${c.category_name} at ${c.location?.landmark || c.location?.address || 'Ward 3'}`,
+          title: `${c.category_name} at ${c.location?.landmark || c.location?.address || `Ward ${c.location?.ward_number || 3}`}`,
           category_name: c.category_name,
           category_id: c.category_id,
           citizen_id: c.citizen_id,
@@ -547,9 +575,9 @@ export class WardOfficerController {
           location: c.location,
           priority: c.priority || 'medium',
           status: c.status,
-          assigned_team_name: latestAttempt ? `Sanitation Unit 4B (${latestAttempt.team_leader_name})` : (c.status === 'submitted' ? 'Unassigned' : 'Sanitation Unit 4B'),
-          temporary_team_leader_name: latestAttempt?.team_leader_name || (c.status !== 'submitted' ? 'Kanti Solanki' : null),
-          assignment_id: latestAttempt?.assignment_id || 'tsk-nav-2026-101',
+          assigned_team_name: latestAttempt ? `Sanitation Unit 4B (${latestAttempt.team_leader_name})` : ((c as any).assigned_team_name || (c.status === 'submitted' ? 'Unassigned' : 'Sanitation Unit 4B')),
+          temporary_team_leader_name: latestAttempt?.team_leader_name || ((c as any).temporary_leader_name || (c.status !== 'submitted' ? 'Kanti Solanki' : null)),
+          assignment_id: latestAttempt?.assignment_id || (c.status === 'submitted' ? null : 'tsk-nav-2026-101'),
           assignment_date: latestAttempt?.assigned_date || c.reviewed_at,
           last_activity_date: c.updated_at || c.submitted_at,
           sla_deadline: slaDeadline,
@@ -680,78 +708,10 @@ export class WardOfficerController {
         return;
       }
 
-      // Get or create attempts for this complaint
-      let attempts = wardData.workAttempts.get(complaint.id);
-      if (!attempts || attempts.length === 0) {
-        // Create initial attempt so Day-wise timeline is always populated
-        attempts = [
-          {
-            id: `att-${complaint.id}-1`,
-            complaint_id: complaint.id,
-            attempt_number: 1,
-            assignment_id: 'tsk-nav-2026-101',
-            task_code: 'TSK-NAV-2026-101',
-            assigned_date: complaint.reviewed_at || complaint.submitted_at,
-            team_leader_id: 'f2000000-0000-0000-0000-000000000001',
-            team_leader_name: 'Kanti Solanki',
-            team_members: [
-              {
-                worker_id: 'f2000000-0000-0000-0000-000000000001',
-                worker_code: 'WRK-2026-001',
-                name: 'Kanti Solanki',
-                designation: 'Sanitation Worker',
-                is_temporary_leader: true
-              },
-              {
-                worker_id: 'f2000000-0000-0000-0000-000000000002',
-                worker_code: 'WRK-2026-042',
-                name: 'Suresh Vaghela',
-                designation: 'Waste Collection Worker',
-                is_temporary_leader: false
-              }
-            ],
-            attendance_records: [
-              {
-                id: `att-rec-${complaint.id}-01`,
-                assignment_id: 'tsk-nav-2026-101',
-                worker_id: 'f2000000-0000-0000-0000-000000000001',
-                attendance_timestamp: complaint.reviewed_at || new Date().toISOString(),
-                latitude: complaint.location?.latitude || 20.9312,
-                longitude: complaint.location?.longitude || 72.9284,
-                gps_accuracy: 5.5,
-                distance_from_assignment_meters: 12.4,
-                geofence_radius_meters: 100,
-                validation_status: 'verified_match',
-                attendance_method: 'gps',
-                created_at: complaint.reviewed_at || new Date().toISOString()
-              }
-            ],
-            evidence: [
-              {
-                id: `ev-${complaint.id}-before`,
-                assignment_id: 'tsk-nav-2026-101',
-                submitted_by: 'f2000000-0000-0000-0000-000000000001',
-                evidence_type: 'before',
-                storage_path: complaint.image_url,
-                description: complaint.description,
-                latitude: complaint.location?.latitude || 20.9312,
-                longitude: complaint.location?.longitude || 72.9284,
-                distance_from_assignment_meters: 10.5,
-                location_validation_status: 'location_matched',
-                device_capture_timestamp: complaint.submitted_at,
-                server_upload_timestamp: complaint.submitted_at,
-                review_status: 'verified',
-                created_at: complaint.submitted_at
-              }
-            ],
-            status: complaint.status === 'submitted' ? 'assigned' : complaint.status,
-            created_at: complaint.submitted_at
-          }
-        ];
-        wardData.workAttempts.set(complaint.id, attempts);
-      }
+      // Get attempts for this complaint (NO fake mock data generation)
+      let attempts = wardData.workAttempts.get(complaint.id) || [];
 
-      const latestAttempt = attempts[attempts.length - 1];
+      const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
       const submittedDate = new Date(complaint.submitted_at);
       const slaDeadline = new Date(submittedDate.getTime() + 48 * 60 * 60 * 1000).toISOString();
 
@@ -763,15 +723,19 @@ export class WardOfficerController {
           complaint_number: complaint.complaint_number,
           title: `${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address}`,
           description: complaint.description,
+          image_url: complaint.image_url,
           category_name: complaint.category_name,
           category_id: complaint.category_id,
           priority: complaint.priority,
           status: complaint.status,
-          current_assigned_team: `Sanitation Unit 4B (${latestAttempt.team_leader_name})`,
-          temporary_team_leader_id: latestAttempt.team_leader_id,
-          temporary_team_leader_name: latestAttempt.team_leader_name,
-          current_assignment_id: latestAttempt.assignment_id,
-          current_task_code: latestAttempt.task_code,
+          current_assigned_team: latestAttempt
+            ? `${(complaint as any).assigned_team_name || 'Sanitation Team'} (${latestAttempt.team_leader_name})`
+            : ((complaint as any).assigned_team_name || (complaint.status === 'submitted' ? 'Unassigned' : 'Pending Team Assignment')),
+          temporary_team_leader_id: latestAttempt ? latestAttempt.team_leader_id : ((complaint as any).temporary_team_leader_id || null),
+          temporary_team_leader_name: latestAttempt ? latestAttempt.team_leader_name : ((complaint as any).temporary_team_leader_name || null),
+          current_assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          current_task_code: latestAttempt ? latestAttempt.task_code : null,
+          deadline: (complaint as any).deadline || (complaint as any).target_completion_date || slaDeadline,
           sla_deadline: slaDeadline,
           reopen_count: attempts.length > 1 ? attempts.length - 1 : (complaint.status === 'reopened' ? 1 : 0),
           complaint_age_days: Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24))),
@@ -783,9 +747,11 @@ export class WardOfficerController {
         citizen_report: {
           citizen_id: complaint.citizen_id,
           citizen_name: complaint.citizen_name || 'Harshil Mehta',
+          citizen_phone: (complaint as any).citizen_phone || '+91 98251 00001',
           submitted_at: complaint.submitted_at,
           original_description: complaint.description,
-          original_photos: [complaint.image_url],
+          original_photos: complaint.image_url ? [complaint.image_url] : [],
+          photo_url: complaint.image_url,
           reported_location: complaint.location?.address,
           ai_confidence: complaint.confidence_score || 94.6,
           ai_category_detected: complaint.category_name
@@ -809,7 +775,7 @@ export class WardOfficerController {
           attempt_number: att.attempt_number,
           assigned_date: att.assigned_date,
           team_leader_name: att.team_leader_name,
-          members_count: att.team_members.length,
+          members_count: (att.team_members || []).length,
           status: att.status,
           review_decision: att.review_decision || 'Pending Review'
         })),
@@ -819,18 +785,21 @@ export class WardOfficerController {
 
         // Section 6: Team & Attendance (Active Attempt)
         team_attendance: {
-          assignment_id: latestAttempt.assignment_id,
-          team_members: latestAttempt.team_members,
-          attendance_records: latestAttempt.attendance_records,
+          assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          team_members: latestAttempt ? (latestAttempt.team_members || []) : [],
+          attendance_records: latestAttempt ? (latestAttempt.attendance_records || []) : [],
+          records: latestAttempt ? (latestAttempt.attendance_records || []) : [],
           geofence_radius_meters: 100
         },
 
         // Section 7: Work Progress & Evidence (Active Attempt)
         work_progress_evidence: {
-          assignment_id: latestAttempt.assignment_id,
-          evidence_items: latestAttempt.evidence,
-          before_photo: latestAttempt.evidence.find(e => e.evidence_type === 'before')?.storage_path || complaint.image_url,
-          after_photo: latestAttempt.evidence.find(e => e.evidence_type === 'after')?.storage_path || null
+          assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          evidence_items: latestAttempt ? (latestAttempt.evidence || []) : [],
+          before_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || null,
+          before_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || null,
+          after_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || null,
+          after_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || null
         },
 
         // Section 8: Completion Reports
@@ -996,23 +965,22 @@ export class WardOfficerController {
         created_at: now
       });
 
-      // Update complaint status
-      complaint.status = 'reopened';
-      complaint.updated_at = now;
-
-      // Add to audit logs
-      if (!complaint.activity_logs) complaint.activity_logs = [];
-      complaint.activity_logs.push({
-        id: `act-${Date.now()}`,
-        complaint_id: complaint.id,
-        actor_name: 'Ramesh Patel (Ward 3 Officer)',
-        actor_role: 'ward_officer',
-        action: 'Complaint Reopened',
-        previous_status: 'resolved',
-        new_status: 'reopened',
-        description: `Complaint reopened by Ward Officer. Reason: ${reopen_reason}. Attempt #${newAttemptNumber} dispatched to ${leaderName}.`,
-        created_at: now
+      // Update complaint status in store and PostgreSQL
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+      await DbRepository.updateComplaintStatus(complaint.id, 'reopened', {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Complaint reopened by Ward Officer. Reason: ${reopen_reason}. Attempt #${newAttemptNumber} dispatched to ${leaderName}.`
       });
+
+      // Dispatch notification to citizen
+      await DbRepository.createNotification(
+        complaint.citizen_id,
+        'Complaint Reopened for Follow-up',
+        `Your complaint ${complaint.complaint_number} has been reopened for additional sanitation. Squad leader: ${leaderName}.`,
+        complaint.id,
+        'complaint_status'
+      );
 
       res.status(200).json({
         success: true,
@@ -1043,7 +1011,8 @@ export class WardOfficerController {
         work_type = 'waste_collection',
         instructions = '',
         worker_ids = [],
-        temporary_leader_id
+        temporary_leader_id,
+        deadline
       } = req.body;
 
       const complaint = (store.complaints || []).find(c => c.id === id);
@@ -1051,6 +1020,9 @@ export class WardOfficerController {
         res.status(404).json({ success: false, error: 'Complaint not found' });
         return;
       }
+
+      // Calculate deadline
+      const targetDeadline = deadline || new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
       // Find the selected team or create on the fly
       let team = (store.teams || []).find(t => t.id === team_id || t.team_name === team_name);
@@ -1071,19 +1043,42 @@ export class WardOfficerController {
       }
 
       // Find leader and workers for this team
-      const teamWorkers = (store.workers || []).filter(w => (team.worker_ids || []).includes(w.id));
-      const leader = (store.workers || []).find(w => w.id === team.temporary_leader_id) || teamWorkers[0];
+      let teamWorkers = (store.workers || []).filter(w => (team.worker_ids || []).includes(w.id) || (team.worker_ids || []).includes(w.user_id));
+      if (teamWorkers.length === 0 && (team.worker_ids || []).length > 0) {
+        // Query from DB if not yet cached in store
+        const dbWorkers = await DbRepository.getWorkersList({}).catch(() => []);
+        teamWorkers = dbWorkers.filter(w => (team.worker_ids || []).includes(w.id) || (team.worker_ids || []).includes(w.user_id));
+      }
+      if (teamWorkers.length === 0 && (team.worker_ids || []).length > 0) {
+        // Fallback team member to ensure single-worker teams always have membership
+        teamWorkers = team.worker_ids.map((wId: string) => ({
+          id: wId,
+          user_id: wId,
+          worker_code: 'WRK-2026-NMC',
+          full_name: team.temporary_leader_name || 'Sanitation Worker',
+          phone: '+919876543210',
+          designation: 'Sanitation Worker',
+          ward_number: complaint.location?.ward_number || 3
+        }));
+      }
+
+      const leader = (store.workers || []).find(w => w.id === team.temporary_leader_id || w.user_id === team.temporary_leader_id) 
+        || teamWorkers.find(w => w.id === team.temporary_leader_id || w.user_id === team.temporary_leader_id) 
+        || teamWorkers[0];
 
       // Update complaint
       complaint.status = 'assigned';
       complaint.updated_at = new Date().toISOString();
       (complaint as any).assigned_team_name = team.team_name;
+      (complaint as any).temporary_team_leader_id = leader?.id || team.temporary_leader_id;
       (complaint as any).temporary_team_leader_name = leader?.full_name || team.temporary_leader_name;
+      (complaint as any).deadline = targetDeadline;
+      (complaint as any).target_completion_date = targetDeadline;
 
-      // Create a unique Task Assignment Code
+      // Create a unique Task Assignment Code and UUID
       const serial = Math.floor(100 + Math.random() * 900);
       const taskCode = `TSK-NAV-2026-${serial}`;
-      const assignmentId = `tsk-nav-2026-${serial}`;
+      const assignmentId = randomUUID();
 
       // Create WorkAssignment for workers and leader to view in Worker Dashboard
       const newAssignment: WorkAssignment = {
@@ -1093,16 +1088,18 @@ export class WardOfficerController {
         description: complaint.description || 'Assigned field sanitation task.',
         category: work_type || 'waste_collection',
         priority: (complaint.priority as any) || 'high',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        location_name: complaint.location?.landmark || complaint.location?.address || 'Ward 3 Cleanliness Zone',
-        address: complaint.location?.address || 'Navsari Municipal Ward 3',
+        ward_id: complaint.location?.ward_id || (complaint.location?.ward_number ? `ward-${String(complaint.location.ward_number).padStart(2, '0')}` : 'ward-03'),
+        ward_number: complaint.location?.ward_number || 3,
+        ward_name: complaint.location?.ward_name || `Ward ${complaint.location?.ward_number || 3}`,
+        location_name: complaint.location?.landmark || complaint.location?.address || `Ward ${complaint.location?.ward_number || 3} Cleanliness Zone`,
+        address: complaint.location?.address || `Navsari Municipal Ward ${complaint.location?.ward_number || 3}`,
         latitude: complaint.location?.latitude || 20.9312,
         longitude: complaint.location?.longitude || 72.9284,
         scheduled_date: new Date().toISOString().split('T')[0],
         scheduled_start_time: new Date().toISOString(),
-        expected_end_time: new Date(Date.now() + 10800000).toISOString(),
+        expected_end_time: targetDeadline,
+        deadline: targetDeadline,
+        target_completion_date: targetDeadline,
         attendance_radius_meters: 100,
         evidence_radius_meters: 150,
         work_instructions: instructions || 'Clear civic waste and wash area thoroughly with bleaching powder.',
@@ -1123,7 +1120,7 @@ export class WardOfficerController {
           worker_name: w.full_name,
           worker_phone: w.phone,
           designation_name: w.designation,
-          temporary_leader: w.id === (leader?.id || team.temporary_leader_id),
+          temporary_leader: w.id === (leader?.id || team.temporary_leader_id) || (teamWorkers.length === 1),
           assignment_status: 'assigned',
           attendance_timestamp: undefined,
           validation_status: undefined
@@ -1136,6 +1133,13 @@ export class WardOfficerController {
       if (!store.workAssignments) store.workAssignments = [];
       store.workAssignments.unshift(newAssignment);
 
+      // Persist to PostgreSQL Database
+      await DbRepository.saveWorkAssignment(newAssignment, teamWorkers.map(w => ({
+        id: w.id,
+        worker_id: w.id,
+        temporary_leader: w.id === (leader?.id || team.temporary_leader_id) || (teamWorkers.length === 1)
+      }))).catch(err => console.error('Failed to persist work assignment to DB:', err));
+
       // Record in complaint work attempt history
       const attempts = wardData.workAttempts.get(complaint.id) || [];
       attempts.push({
@@ -1145,6 +1149,7 @@ export class WardOfficerController {
         assignment_id: assignmentId,
         task_code: taskCode,
         assigned_date: new Date().toISOString(),
+        deadline: targetDeadline,
         team_leader_id: leader?.id || team.temporary_leader_id,
         team_leader_name: leader?.full_name || team.temporary_leader_name,
         team_members: teamWorkers.map(w => ({
@@ -1161,20 +1166,22 @@ export class WardOfficerController {
       });
       wardData.workAttempts.set(complaint.id, attempts);
 
-      // Record in complaint activity logs
-      if (!complaint.activity_logs) complaint.activity_logs = [];
-      complaint.activity_logs.push({
-        id: `act-${Date.now()}`,
-        complaint_id: complaint.id,
-        actor_user_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
-        actor_name: 'Ramesh Patel (Ward 3 Officer)',
-        actor_role: 'ward_officer',
-        action: 'Assigned to Team',
-        previous_status: 'submitted',
-        new_status: 'assigned',
-        description: `Assigned to ${team.team_name} (Team Leader: ${leader?.full_name || team.temporary_leader_name}). Task: ${taskCode}`,
-        created_at: new Date().toISOString()
+      // Persist status change to both store and PostgreSQL database
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+      await DbRepository.updateComplaintStatus(complaint.id, 'assigned', {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Assigned to ${team.team_name} (Team Leader: ${leader?.full_name || team.temporary_leader_name}). Task: ${taskCode}`
       });
+
+      // Dispatch live notification to citizen
+      await DbRepository.createNotification(
+        complaint.citizen_id,
+        'Complaint Assigned to Squad',
+        `Your complaint ${complaint.complaint_number} has been assigned to squad "${team.team_name}". Field sanitation team dispatched.`,
+        complaint.id,
+        'complaint_status'
+      );
 
       res.status(200).json({
         success: true,
@@ -1193,29 +1200,185 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 6. Hotspots Map (Dedicated Navigation Item)
+  // 6. Hotspots Map (Dedicated Navigation Item - Dynamic Clustering)
   // =========================================================================
   public static async getHotspots(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { category, frequency, ward = 3 } = req.query as any;
+      const { category, frequency, ward } = req.query as any;
 
-      let hotspots = [...seedHotspots];
-
-      if (category && category !== 'all') {
-        hotspots = hotspots.filter(h => h.primary_category.toLowerCase().includes(category.toLowerCase()));
+      // Determine target ward
+      let targetWardNum: number | 'all' = 3;
+      if (ward && ward !== 'all') {
+        targetWardNum = Number(ward);
+      } else if (ward === 'all') {
+        targetWardNum = 'all';
+      } else if ((req.user as any)?.ward_number) {
+        targetWardNum = Number((req.user as any).ward_number);
+      } else if (req.user?.locality) {
+        const match = req.user.locality.match(/Ward\s*(\d+)/i);
+        if (match) targetWardNum = Number(match[1]);
       }
 
+      const allComplaints = store.complaints || [];
+      const relevantComplaints = targetWardNum === 'all'
+        ? allComplaints
+        : allComplaints.filter(c => (c.location?.ward_number || 3) === targetWardNum);
+
+      // Dynamic Clustering by proximity (~0.003 deg ~ 300m) or landmark/locality
+      interface ComplaintCluster {
+        centerLat: number;
+        centerLng: number;
+        locality: string;
+        address: string;
+        ward_number: number;
+        complaints: typeof allComplaints;
+      }
+
+      const clusters: ComplaintCluster[] = [];
+
+      for (const comp of relevantComplaints) {
+        const lat = comp.location?.latitude || (20.9250 + ((comp.location?.ward_number || 3) * 0.002));
+        const lng = comp.location?.longitude || (72.9250 + ((comp.location?.ward_number || 3) * 0.0015));
+        const loc = comp.location?.landmark || comp.location?.ward_name || (comp.location as any)?.locality || `Ward ${comp.location?.ward_number || 3}`;
+        const addr = comp.location?.address || `${loc}, Navsari`;
+        const compWard = comp.location?.ward_number || (typeof targetWardNum === 'number' ? targetWardNum : 3);
+
+        let matchedCluster = clusters.find(cl => {
+          const dLat = Math.abs(cl.centerLat - lat);
+          const dLng = Math.abs(cl.centerLng - lng);
+          const distanceDeg = Math.sqrt(dLat * dLat + dLng * dLng);
+          const sameLoc = cl.locality.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(cl.locality.toLowerCase());
+          return distanceDeg < 0.0035 || (sameLoc && distanceDeg < 0.008);
+        });
+
+        if (matchedCluster) {
+          matchedCluster.complaints.push(comp);
+          // Gently update centroid
+          matchedCluster.centerLat = (matchedCluster.centerLat + lat) / 2;
+          matchedCluster.centerLng = (matchedCluster.centerLng + lng) / 2;
+        } else {
+          clusters.push({
+            centerLat: lat,
+            centerLng: lng,
+            locality: loc,
+            address: addr,
+            ward_number: compWard,
+            complaints: [comp]
+          });
+        }
+      }
+
+      // Convert clusters into WardHotspot objects
+      const dynamicHotspots: WardHotspot[] = clusters.map((cl, idx) => {
+        const total = cl.complaints.length;
+        const active = cl.complaints.filter(c => !['resolved', 'closed', 'verified_complete', 'rejected'].includes(c.status)).length;
+        const resolved = cl.complaints.filter(c => ['resolved', 'closed', 'verified_complete'].includes(c.status)).length;
+        const reopened = cl.complaints.filter(c => c.status === 'reopened').length;
+
+        // Determine dominant category
+        const catCounts: Record<string, number> = {};
+        for (const c of cl.complaints) {
+          const cat = c.category_name || (c as any).category || 'General Waste';
+          catCounts[cat] = (catCounts[cat] || 0) + 1;
+        }
+        let dominantCat = 'Overflowing Dustbin & Littering';
+        let maxCount = 0;
+        for (const [cat, cnt] of Object.entries(catCounts)) {
+          if (cnt > maxCount) {
+            maxCount = cnt;
+            dominantCat = cat;
+          }
+        }
+
+        const dates = cl.complaints.map(c => c.submitted_at || (c as any).created_at).filter(Boolean).sort();
+        const firstReported = dates[0] ? dates[0].slice(0, 10) : '2026-10-01';
+        const latestReported = dates[dates.length - 1] ? dates[dates.length - 1].slice(0, 10) : '2026-11-02';
+
+        const freqLevel: 'high' | 'medium' | 'low' = total >= 4 ? 'high' : total >= 2 ? 'medium' : 'low';
+
+        return {
+          id: `hs-dyn-w${cl.ward_number}-${idx + 1}`,
+          hotspot_code: `HOT-NAV-${String(cl.ward_number).padStart(2, '0')}-${String(idx + 1).padStart(2, '0')}`,
+          title: `${cl.locality} Problem Cluster`,
+          locality: cl.locality,
+          address: cl.address,
+          ward_number: cl.ward_number,
+          latitude: Number(cl.centerLat.toFixed(5)),
+          longitude: Number(cl.centerLng.toFixed(5)),
+          total_complaints: total,
+          active_complaints: active,
+          resolved_complaints: resolved,
+          reopened_count: reopened,
+          primary_category: dominantCat,
+          first_reported_date: firstReported,
+          latest_reported_date: latestReported,
+          avg_resolution_days: 1.4,
+          frequency_level: freqLevel,
+          linked_complaint_ids: cl.complaints.map(c => c.id),
+          ai_summary: `AI Geospatial Intelligence: ${total} complaints recorded near ${cl.locality}. Dominant pattern: ${dominantCat}. ${active} issues actively require sanitation team dispatch.`
+        };
+      });
+
+      // Filter seedHotspots if matching ward
+      const relevantSeed = (seedHotspots || []).filter(h => {
+        if (targetWardNum === 'all') return true;
+        return h.ward_number === targetWardNum;
+      });
+
+      // Combine dynamic hotspots first, followed by seed hotspots that don't collide
+      let combined = [...dynamicHotspots];
+      for (const s of relevantSeed) {
+        const collides = combined.some(d => {
+          const dist = Math.sqrt(Math.pow(d.latitude - s.latitude, 2) + Math.pow(d.longitude - s.longitude, 2));
+          return dist < 0.002 || d.locality.toLowerCase() === s.locality.toLowerCase();
+        });
+        if (!collides) {
+          combined.push(s);
+        }
+      }
+
+      // If combined is empty (e.g. brand new ward with no complaints yet), provide a sensible baseline cluster
+      if (combined.length === 0 && targetWardNum !== 'all') {
+        combined.push({
+          id: `hs-w${targetWardNum}-default`,
+          hotspot_code: `HOT-NAV-${String(targetWardNum).padStart(2, '0')}-01`,
+          title: `Ward ${targetWardNum} Municipal Hub Area`,
+          locality: `Ward ${targetWardNum}`,
+          address: `Central Sector, Ward ${targetWardNum}, Navsari`,
+          ward_number: Number(targetWardNum),
+          latitude: 20.9250 + (Number(targetWardNum) * 0.0025),
+          longitude: 72.9250 + (Number(targetWardNum) * 0.002),
+          total_complaints: relevantComplaints.length,
+          active_complaints: relevantComplaints.filter(c => c.status !== 'resolved' && c.status !== 'closed').length,
+          resolved_complaints: relevantComplaints.filter(c => c.status === 'resolved' || c.status === 'closed').length,
+          reopened_count: 0,
+          primary_category: 'Civic Cleanliness',
+          first_reported_date: '2026-10-01',
+          latest_reported_date: '2026-11-02',
+          avg_resolution_days: 1.5,
+          frequency_level: relevantComplaints.length >= 4 ? 'high' : relevantComplaints.length >= 2 ? 'medium' : 'low',
+          linked_complaint_ids: relevantComplaints.map(c => c.id),
+          ai_summary: `Real-time ward monitoring active. ${relevantComplaints.length} registered reports processed.`
+        });
+      }
+
+      // Filter by category
+      if (category && category !== 'all') {
+        combined = combined.filter(h => h.primary_category.toLowerCase().includes(category.toLowerCase()));
+      }
+
+      // Filter by frequency
       if (frequency && frequency !== 'all') {
-        hotspots = hotspots.filter(h => h.frequency_level.toLowerCase() === frequency.toLowerCase());
+        combined = combined.filter(h => h.frequency_level.toLowerCase() === frequency.toLowerCase());
       }
 
       res.status(200).json({
         success: true,
-        data: hotspots,
+        data: combined,
         meta: {
-          ward_number: Number(ward),
-          total_hotspots: hotspots.length,
-          high_frequency_count: hotspots.filter(h => h.frequency_level === 'high').length
+          ward_number: targetWardNum === 'all' ? 0 : Number(targetWardNum),
+          total_hotspots: combined.length,
+          high_frequency_count: combined.filter(h => h.frequency_level === 'high').length
         }
       });
     } catch (err: any) {
@@ -1264,25 +1427,14 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 8. Worker Management (Directory for Ward 3)
+  // 8. Worker Management (Directory for Ward 3 & DB Persistence)
   // =========================================================================
   public static async getWorkers(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { search, availability } = req.query as any;
-      let workers = store.workers || [];
-
-      if (availability && availability !== 'all') {
-        workers = workers.filter(w => w.availability_status === availability);
-      }
-      if (search && search.trim()) {
-        const q = search.toLowerCase().trim();
-        workers = workers.filter(w =>
-          w.full_name.toLowerCase().includes(q) ||
-          w.worker_code.toLowerCase().includes(q) ||
-          w.designation.toLowerCase().includes(q)
-        );
-      }
-
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const workers = await DbRepository.getWorkersList({ search, availability, ward_number: officerWard });
+      store.workers = workers;
       res.status(200).json({ success: true, data: workers });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1294,6 +1446,8 @@ export class WardOfficerController {
       const {
         full_name,
         phone,
+        username,
+        password,
         designation = 'Sanitation Worker',
         skills = ['Litter Abatement'],
         availability_status = 'available'
@@ -1304,34 +1458,93 @@ export class WardOfficerController {
         return;
       }
 
+      const rawPhone = String(phone).trim();
+      const normalizedPhone = normalizeIndianPhone(rawPhone) || rawPhone;
+      const workerPassword = (password && String(password).trim().length > 0) ? String(password).trim() : 'Worker@123';
+      const passwordHash = await bcrypt.hash(workerPassword, 10);
+      const newUserId = randomUUID();
+      const newWorkerId = randomUUID();
+
       const count = (store.workers || []).length + 1;
       const serial = String(count).padStart(3, '0');
-      const newWorker = {
-        id: `f2000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
-        user_id: `f1000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
-        worker_code: `WRK-2026-${serial}`,
+      const workerCode = `WRK-2026-${serial}`;
+      const effectiveUsername = (username && String(username).trim().length > 0) ? String(username).trim() : workerCode;
+
+      const officerWard = (req.body.ward_number ? parseInt(req.body.ward_number, 10) : undefined) || (req.user as any)?.ward_number || 3;
+
+      // Create Profile so worker can log in
+      const newProfile: any = {
+        id: newUserId,
         full_name: full_name.trim(),
-        phone: phone.trim(),
+        phone: normalizedPhone,
+        username: effectiveUsername,
+        plain_password: workerPassword,
+        preferred_language: 'gu',
+        ward_number: officerWard,
+        locality: `Ward ${officerWard}`,
+        address: 'Navsari Municipal Staff Quarters',
+        is_active: true,
+        role: 'worker',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // Create CitizenAuthProfile
+      const newAuthProfile: any = {
+        id: `auth-${newUserId}`,
+        user_id: newUserId,
+        mobile_number: normalizedPhone,
+        password_hash: passwordHash,
+        plain_password: workerPassword,
+        mobile_verified: true,
+        verification_completed_at: new Date().toISOString(),
+        account_status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (!store.profiles) store.profiles = [];
+      store.profiles.push(newProfile);
+
+      if (!store.authProfiles) store.authProfiles = [];
+      store.authProfiles.push(newAuthProfile);
+
+      const newWorker = {
+        id: newWorkerId,
+        user_id: newUserId,
+        worker_code: workerCode,
+        username: effectiveUsername,
+        plain_password: workerPassword,
+        full_name: full_name.trim(),
+        phone: normalizedPhone,
         designation: designation.trim(),
         primary_designation: designation.trim(),
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
+        ward_number: officerWard,
+        ward_name: `Ward ${officerWard}`,
         availability_status: availability_status || 'available',
         active_task_code: undefined,
-        experience_years: 2.0,
+        experience_years: req.body.experience_years ? parseFloat(req.body.experience_years) : 0,
         skills: Array.isArray(skills) ? skills : [skills],
-        attendance_today: 'Present (Standby)',
+        attendance_today: 'Not Marked',
         avatar_url: `https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80`,
         created_at: new Date().toISOString()
       };
 
+      // Persist worker directly to PostgreSQL database
+      const savedWorker = await DbRepository.saveWorkerProfile(newWorker, passwordHash);
+
       if (!store.workers) store.workers = [];
-      store.workers.push(newWorker);
+      const existingIdx = store.workers.findIndex(w => w.id === savedWorker.id || w.user_id === savedWorker.user_id);
+      if (existingIdx !== -1) {
+        store.workers[existingIdx] = savedWorker;
+      } else {
+        store.workers.push(savedWorker);
+      }
 
       res.status(201).json({
         success: true,
-        message: `Worker ${newWorker.full_name} (${newWorker.worker_code}) added to Ward 3 directory.`,
-        data: newWorker
+        message: `Worker ${savedWorker.full_name} (${savedWorker.worker_code}) registered! Log in with Mobile: "${normalizedPhone}" or Username: "${effectiveUsername}", Password: "${workerPassword}".`,
+        data: savedWorker
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1363,6 +1576,9 @@ export class WardOfficerController {
 
       store.workers[workerIndex] = updated;
 
+      // Update in PostgreSQL
+      await DbRepository.updateWorkerProfile(id, req.body);
+
       res.status(200).json({
         success: true,
         message: `Worker ${updated.full_name} profile updated successfully.`,
@@ -1389,6 +1605,9 @@ export class WardOfficerController {
         team.worker_ids = (team.worker_ids || []).filter((wId: string) => wId !== id);
       });
 
+      // Delete from PostgreSQL
+      await DbRepository.deleteWorkerProfile(id);
+
       res.status(200).json({
         success: true,
         message: `Worker ${deleted.full_name} (${deleted.worker_code}) removed from active directory.`,
@@ -1400,11 +1619,14 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 8B. Team Management (Form Units, Temporary Leadership)
+  // 8B. Team Management (Form Units, Temporary Leadership, DB Persistence)
   // =========================================================================
   public static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      res.status(200).json({ success: true, data: store.teams || [] });
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const teams = await DbRepository.getTeamsList(officerWard);
+      store.teams = teams;
+      res.status(200).json({ success: true, data: teams });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1425,12 +1647,15 @@ export class WardOfficerController {
         id: `team-${Date.now()}`,
         team_name: team_name.trim(),
         ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
         worker_ids,
         temporary_leader_id: leaderWorker?.id || worker_ids[0],
         temporary_leader_name: leaderWorker?.full_name || 'Assigned Leader',
         created_at: new Date().toISOString(),
         status: 'active'
       };
+
+      await DbRepository.saveTeam(newTeam);
 
       if (!store.teams) store.teams = [];
       store.teams.push(newTeam);
@@ -1471,6 +1696,13 @@ export class WardOfficerController {
 
       store.teams[teamIndex] = updated;
 
+      await DbRepository.updateTeam(id, {
+        team_name: updated.team_name,
+        worker_ids: updated.worker_ids,
+        temporary_leader_id: updated.temporary_leader_id,
+        temporary_leader_name: updated.temporary_leader_name
+      });
+
       res.status(200).json({
         success: true,
         message: `Team "${updated.team_name}" updated successfully.`,
@@ -1492,6 +1724,8 @@ export class WardOfficerController {
 
       const deleted = store.teams.splice(teamIndex, 1)[0];
 
+      await DbRepository.deleteTeam(id);
+
       res.status(200).json({
         success: true,
         message: `Team "${deleted.team_name}" disbandment complete.`,
@@ -1503,11 +1737,14 @@ export class WardOfficerController {
   }
 
   // =========================================================================
-  // 8C. Community Directory & Registration
+  // 8C. Community Directory & Registration (DB Persistence)
   // =========================================================================
   public static async getCommunities(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      res.status(200).json({ success: true, data: store.communities || [] });
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const comms = await DbRepository.getCommunitiesList(officerWard);
+      store.communities = comms;
+      res.status(200).json({ success: true, data: comms });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1520,6 +1757,8 @@ export class WardOfficerController {
         head_name,
         phone,
         email,
+        username,
+        password,
         address,
         locality = 'Dudhiya Talao',
         organisation_type = 'Resident Welfare Association'
@@ -1530,13 +1769,61 @@ export class WardOfficerController {
         return;
       }
 
+      const rawPhone = String(phone || '+919825100000').trim();
+      const normalizedPhone = normalizeIndianPhone(rawPhone) || rawPhone;
+      const headPassword = (password && String(password).trim().length > 0) ? String(password).trim() : 'Head@123';
+      const passwordHash = await bcrypt.hash(headPassword, 10);
+      const newUserId = randomUUID();
+      const newCommunityId = randomUUID();
+      const effectiveEmail = email?.trim() || `${head_name.toLowerCase().replace(/\s+/g, '.')}@community.org`;
+      const effectiveUsername = (username && String(username).trim().length > 0) ? String(username).trim() : (effectiveEmail || normalizedPhone);
+
+      // Create profile for Community Head login
+      const newProfile: any = {
+        id: newUserId,
+        full_name: head_name.trim(),
+        phone: normalizedPhone,
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: headPassword,
+        preferred_language: 'en',
+        locality: locality?.trim() || 'Dudhiya Talao',
+        address: address?.trim() || 'Dudhiya Talao Road, Ward 3, Navsari',
+        is_active: true,
+        role: 'community_head',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const newAuthProfile: any = {
+        id: `auth-${newUserId}`,
+        user_id: newUserId,
+        mobile_number: normalizedPhone,
+        password_hash: passwordHash,
+        plain_password: headPassword,
+        mobile_verified: true,
+        verification_completed_at: new Date().toISOString(),
+        account_status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (!store.profiles) store.profiles = [];
+      store.profiles.push(newProfile);
+
+      if (!store.authProfiles) store.authProfiles = [];
+      store.authProfiles.push(newAuthProfile);
+
       const newCommunity = {
-        id: `b0000000-0000-0000-0000-${Date.now().toString().slice(-12)}`,
+        id: newCommunityId,
+        user_id: newUserId,
         community_name: community_name.trim(),
         organisation_type: organisation_type || 'Resident Welfare Association',
         head_name: head_name.trim(),
-        phone: phone?.trim() || '+919825100000',
-        email: email?.trim() || 'contact@community.org',
+        phone: normalizedPhone,
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: headPassword,
         ward_number: 3,
         ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
         address: address?.trim() || 'Dudhiya Talao Road, Ward 3, Navsari',
@@ -1545,13 +1832,21 @@ export class WardOfficerController {
         created_at: new Date().toISOString()
       };
 
+      // Persist to PostgreSQL database
+      const savedComm = await DbRepository.saveCommunityToDb(newCommunity, passwordHash);
+
       if (!store.communities) store.communities = [];
-      store.communities.push(newCommunity);
+      const commIdx = store.communities.findIndex(c => c.id === savedComm.id);
+      if (commIdx !== -1) {
+        store.communities[commIdx] = savedComm;
+      } else {
+        store.communities.push(savedComm);
+      }
 
       res.status(201).json({
         success: true,
-        message: `Community "${newCommunity.community_name}" registered in Ward 3.`,
-        data: newCommunity
+        message: `Community "${savedComm.community_name}" registered! Head can log in with Mobile: "${normalizedPhone}" or Username/Email: "${effectiveUsername}", Password: "${headPassword}".`,
+        data: savedComm
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1584,6 +1879,8 @@ export class WardOfficerController {
 
       store.communities[commIndex] = updated;
 
+      await DbRepository.updateCommunityInDb(id, req.body);
+
       res.status(200).json({
         success: true,
         message: `Community "${updated.community_name}" details updated successfully.`,
@@ -1605,6 +1902,8 @@ export class WardOfficerController {
 
       const deleted = store.communities.splice(commIndex, 1)[0];
 
+      await DbRepository.deleteCommunityFromDb(id);
+
       res.status(200).json({
         success: true,
         message: `Community "${deleted.community_name}" removed from Ward 3 directory.`,
@@ -1620,23 +1919,10 @@ export class WardOfficerController {
   // =========================================================================
   public static async getApprovals(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const approvals: WardApprovalItem[] = [
-        {
-          id: 'appr-act-01',
-          type: 'activity',
-          title: 'Lakeside Eco-Cleanliness Drive 2026',
-          submitted_by_name: 'Rajesh Varma (Navsari Green Warriors RWA)',
-          submitted_by_role: 'Community Head',
-          submission_time: '2026-10-30T11:00:00Z',
-          ward_number: 3,
-          status: 'pending',
-          details: {
-            proposed_date: '2026-11-08',
-            location: 'North Lake Promenade, Dudhiya Talao',
-            expected_volunteers: 150,
-            safety_plan: 'First aid kit, safety gloves, 500 biodegradable waste bags provided.'
-          }
-        },
+      const officerWard = (req.user as any)?.ward_number;
+      const dynamicPending = await DbRepository.getPendingActivitiesForOfficer(officerWard);
+
+      const otherApprovals: WardApprovalItem[] = [
         {
           id: 'appr-cr-01',
           type: 'completion_report',
@@ -1644,7 +1930,7 @@ export class WardOfficerController {
           submitted_by_name: 'Kanti Solanki (Team Leader)',
           submitted_by_role: 'Sanitation Worker',
           submission_time: '2026-10-28T12:55:00Z',
-          ward_number: 3,
+          ward_number: officerWard || 3,
           status: 'pending',
           details: {
             task_code: 'TSK-NAV-2026-101',
@@ -1663,31 +1949,17 @@ export class WardOfficerController {
           submitted_by_name: 'Suresh Vaghela',
           submitted_by_role: 'Waste Collection Worker',
           submission_time: '2026-10-29T10:15:00Z',
-          ward_number: 3,
+          ward_number: officerWard || 3,
           status: 'pending',
           details: {
             gps_match: '11.5 meters from assigned coordinates',
             ai_quality: 'Pass - Genuine civic cleanliness photo'
           },
           photos: ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80']
-        },
-        {
-          id: 'appr-att-ex-01',
-          type: 'attendance_exception',
-          title: 'GPS Attendance Discrepancy Exception Request',
-          submitted_by_name: 'Suresh Vaghela',
-          submitted_by_role: 'Waste Collection Worker',
-          submission_time: '2026-10-31T08:42:00Z',
-          ward_number: 3,
-          status: 'pending',
-          details: {
-            reason: 'Mobile GPS signal shielded inside underground concrete basement of municipal drainage pump room.',
-            submitted_distance: '185 meters (Threshold: 100 meters)'
-          }
         }
       ];
 
-      res.status(200).json({ success: true, data: approvals });
+      res.status(200).json({ success: true, data: [...dynamicPending, ...otherApprovals] });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1706,9 +1978,12 @@ export class WardOfficerController {
         return;
       }
 
+      const officerWard = (req.user as any)?.ward_number;
+      const result = await DbRepository.officerReviewApproval(id, action, comments, officerWard);
+
       res.status(200).json({
         success: true,
-        message: `Approval item ${id} successfully marked as ${action}.`,
+        message: result.message,
         data: { id, action, comments, reviewed_at: new Date().toISOString() }
       });
     } catch (err: any) {
@@ -1760,6 +2035,289 @@ export class WardOfficerController {
       res.status(200).json({ success: true, data: reportData });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 12. Reject Citizen Complaint with Reason & Citizen Notification
+  // =========================================================================
+  public static async rejectComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { rejection_reason } = req.body;
+
+      if (!rejection_reason || !rejection_reason.trim()) {
+        res.status(400).json({ success: false, error: 'A specific reason for rejection is required.' });
+        return;
+      }
+
+      const complaint = (store.complaints || []).find(c => c.id === id);
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const prevStatus = complaint.status;
+      complaint.status = 'rejected';
+      (complaint as any).rejection_reason = rejection_reason.trim();
+      complaint.updated_at = new Date().toISOString();
+
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+
+      // Update in both memory store and PostgreSQL database
+      await DbRepository.updateComplaintStatus(complaint.id, 'rejected', {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Complaint rejected: ${rejection_reason.trim()}`,
+        rejection_reason: rejection_reason.trim()
+      });
+
+      // Dispatch live notification to citizen
+      await DbRepository.createNotification(
+        complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
+        `Complaint ${complaint.complaint_number} Rejected`,
+        `Your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address} was reviewed and rejected by the Ward Officer. Reason: "${rejection_reason.trim()}"`,
+        complaint.id,
+        'complaint_status'
+      );
+
+      res.status(200).json({
+        success: true,
+        message: `Complaint ${complaint.complaint_number} has been rejected and the citizen has been notified.`,
+        data: {
+          complaint_id: complaint.id,
+          status: 'rejected',
+          rejection_reason: rejection_reason.trim()
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 13. Verify & Mark Work Complete (Trigger Citizen Resolution Notification)
+  // =========================================================================
+  public static async verifyCompleteComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { review_notes } = req.body;
+
+      const complaint = (store.complaints || []).find(c => c.id === id);
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const prevStatus = complaint.status;
+      complaint.status = 'resolved';
+      complaint.updated_at = new Date().toISOString();
+      (complaint as any).resolved_at = new Date().toISOString();
+
+      // Update corresponding work assignments
+      (store.workAssignments || []).forEach(wa => {
+        if (wa.id === (complaint as any).assignment_id || wa.title?.includes(complaint.category_name)) {
+          wa.status = 'verified_complete';
+          (wa as any).verified_complete = true;
+          wa.updated_at = new Date().toISOString();
+        }
+      });
+
+      // Update work attempts
+      const attempts = wardData.workAttempts.get(complaint.id) || [];
+      if (attempts.length > 0) {
+        attempts[attempts.length - 1].status = 'verified_complete';
+        attempts[attempts.length - 1].review_decision = 'verified_complete';
+        (attempts[attempts.length - 1] as any).officer_review_notes = review_notes || 'All before and after photo evidence verified. Site cleared and sanitized.';
+      }
+
+      const officerName = req.user?.full_name || (complaint.location?.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Ward 3 Officer)');
+
+      // Persist status change to both store and PostgreSQL database
+      await DbRepository.updateComplaintStatus(complaint.id, 'resolved', {
+        name: officerName,
+        role: 'ward_officer',
+        note: review_notes || 'Ward Officer inspected evidence photos and verified 100% cleanliness clearance.'
+      });
+
+      // Dispatch live notification to citizen
+      await DbRepository.createNotification(
+        complaint.citizen_id || 'c0000000-0000-0000-0000-000000000001',
+        `Cleanliness Restored! Complaint ${complaint.complaint_number} Resolved`,
+        `Great news! The Sanitation Squad has resolved your complaint for ${complaint.category_name} at ${complaint.location?.landmark || complaint.location?.address}. Before and after evidence has been verified. Thank you for keeping Navsari clean!`,
+        complaint.id,
+        'complaint_status'
+      );
+
+      res.status(200).json({
+        success: true,
+        message: `Complaint ${complaint.complaint_number} verified and marked complete. Citizen has been notified!`,
+        data: {
+          complaint_id: complaint.id,
+          status: 'resolved',
+          resolved_at: complaint.updated_at
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 14. Publish Work Completion to Community Wall (Citizen Feed)
+  // =========================================================================
+  public static async publishComplaintToCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { title, description, before_photo_url, after_photo_url, waste_kg = 380 } = req.body;
+
+      const complaint = (store.complaints || []).find(c => c.id === id);
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const postTitle = title || `Cleanliness Restored at ${complaint.location?.landmark || complaint.location?.address || 'Ward 3'}`;
+      const postDesc = description || `NMC Sanitation Squad cleared ${waste_kg} kg of accumulated waste, disinfected the curb, and restored civic hygiene following citizen report ${complaint.complaint_number}.`;
+
+      const newPost: any = {
+        id: `rec-post-${Date.now()}`,
+        title: postTitle,
+        description: postDesc,
+        author_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
+        author_name: 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)',
+        author_role: 'ward_officer',
+        author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80',
+        ward_id: 'ward-03',
+        ward_number: 3,
+        ward_name: 'Ward 3 - Dudhiya Talao',
+        location_name: complaint.location?.landmark || complaint.location?.address || 'Navsari Ward 3',
+        image_url: after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        before_image_url: before_photo_url || complaint.image_url,
+        after_image_url: after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        likes_count: 18,
+        comments_count: 0,
+        is_verified_by_officer: true,
+        created_at: new Date().toISOString(),
+        comments: []
+      };
+
+      if (!store.recognitionPosts) store.recognitionPosts = [];
+      store.recognitionPosts.unshift(newPost);
+      (complaint as any).is_published_to_community = true;
+
+      res.status(201).json({
+        success: true,
+        message: 'Work completion story has been published to the Community Wall for all citizens to see!',
+        data: newPost
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 13. Ward Community Problems (Ward Officer posts for Community Head drives)
+  // =========================================================================
+  public static async getCommunityProblems(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const officerWard = (req.user as any)?.ward_number || 3;
+      const wardParam = req.query.ward_number ? parseInt(req.query.ward_number as string, 10) : officerWard;
+      const problems = await DbRepository.getCommunityProblems(wardParam);
+      res.status(200).json({ success: true, data: problems });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async addCommunityProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const {
+        title,
+        description,
+        location_name,
+        address,
+        latitude,
+        longitude,
+        action_plan,
+        urgency = 'medium',
+        estimated_volunteers_needed = 15,
+        suggested_equipment = ['Brooms', 'Gloves', 'Trash Bags'],
+        image_url,
+        ward_number
+      } = req.body;
+
+      if (!title || !description || !action_plan) {
+        res.status(400).json({
+          success: false,
+          error: 'Title, description, and action plan ("what should be done") are required.'
+        });
+        return;
+      }
+
+      const officerWard = ward_number ? parseInt(ward_number, 10) : ((req.user as any)?.ward_number || 3);
+      const officerName = req.user?.full_name || 'Ward Officer';
+
+      const savedProblem = await DbRepository.saveCommunityProblem({
+        ward_number: officerWard,
+        ward_name: `Ward ${officerWard}`,
+        title,
+        description,
+        location_name: location_name || `Ward ${officerWard} Cleanliness Locus`,
+        address: address || `Navsari Ward ${officerWard}`,
+        latitude: latitude || 20.9325,
+        longitude: longitude || 72.9275,
+        action_plan,
+        urgency,
+        estimated_volunteers_needed,
+        suggested_equipment,
+        image_url,
+        created_by: req.user?.id,
+        officer_name: officerName
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Civic problem successfully posted for community action!',
+        data: savedProblem
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async deleteCommunityProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      await DbRepository.deleteCommunityProblem(id);
+      res.status(200).json({ success: true, message: 'Community problem removed.' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+}
+
+// =========================================================================
+// Real-time Dynamic Linkage Helpers between Worker & Ward Officer
+// =========================================================================
+export function recordAttendanceForAssignment(assignmentId: string, attendanceRecord: any): void {
+  for (const [, attempts] of wardData.workAttempts.entries()) {
+    const attempt = attempts.find(a => a.assignment_id === assignmentId);
+    if (attempt) {
+      if (!attempt.attendance_records) attempt.attendance_records = [];
+      attempt.attendance_records.push(attendanceRecord);
+      return;
+    }
+  }
+}
+
+export function recordEvidenceForAssignment(assignmentId: string, evidenceRecord: any): void {
+  for (const [, attempts] of wardData.workAttempts.entries()) {
+    const attempt = attempts.find(a => a.assignment_id === assignmentId);
+    if (attempt) {
+      if (!attempt.evidence) attempt.evidence = [];
+      attempt.evidence.push(evidenceRecord);
+      return;
     }
   }
 }

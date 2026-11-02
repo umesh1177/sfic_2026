@@ -727,5 +727,41 @@ export class CommunityHeadController {
       res.status(500).json({ success: false, error: err.message });
     }
   }
+
+  // =========================================================================
+  // 9. WARD PROBLEMS FOR COMMUNITY ACTION
+  // =========================================================================
+  public static async getWardProblems(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
+      const community = await DbRepository.getCommunityByUserId(userId);
+      // If ward_number is specified (and not 'all'), filter by ward; otherwise return ALL problems across all wards
+      const wardQuery = req.query.ward_number as string | undefined;
+      const wardNum = wardQuery && wardQuery !== 'all' ? parseInt(wardQuery, 10) : undefined;
+      const problems = await DbRepository.getCommunityProblems(wardNum);
+      res.status(200).json({ success: true, data: problems });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async claimWardProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { activity_id } = req.body;
+      const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
+      const community = await DbRepository.getCommunityByUserId(userId);
+      const commId = community?.id || 'comm-lead';
+      const commName = community?.community_name || 'Community Organization';
+
+      await DbRepository.claimCommunityProblem(id, commId, commName, activity_id);
+      res.status(200).json({
+        success: true,
+        message: 'Problem claimed for community drive!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
 }
 

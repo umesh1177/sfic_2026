@@ -41,6 +41,7 @@ import confetti from 'canvas-confetti';
 import { WorkAssignment, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
 import { api } from '../../services/api.js';
+import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
 
 // Custom Leaflet Icons
 const taskIcon = new L.Icon({
@@ -119,14 +120,10 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   );
 
   // Leader Evidence & Completion Modal / Form State
-  const [beforePhoto, setBeforePhoto] = useState<string>(
-    'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80'
-  );
-  const [afterPhoto, setAfterPhoto] = useState<string>(
-    'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'
-  );
+  const [beforePhoto, setBeforePhoto] = useState<string>('');
+  const [afterPhoto, setAfterPhoto] = useState<string>('');
   const [completionNotes, setCompletionNotes] = useState<string>('');
-  const [wasteCollectedKg, setWasteCollectedKg] = useState<number>(380);
+  const [wasteCollectedKg, setWasteCollectedKg] = useState<number>(0);
   const [submittingReport, setSubmittingReport] = useState<boolean>(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
 
@@ -432,11 +429,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
   if (!currentTask) {
     return (
-      <div className="p-8 bg-white rounded-3xl border border-[#e2e8f0] text-center space-y-3">
+      <div className="p-12 bg-white rounded-3xl border border-[#e2e8f0] text-center space-y-3 shadow-xs">
         <Briefcase className="w-12 h-12 text-slate-300 mx-auto" />
         <h3 className="text-base font-extrabold text-[#0f2925]">No Active Work Assignment</h3>
         <p className="text-xs text-slate-500 max-w-md mx-auto">
-          You currently have no tasks assigned in Ward 3. Check back after the next duty shift or contact your Ward Officer.
+          You currently have no tasks assigned by your Ward Officer. When a task or squad assignment is dispatched to your team, details, map coordinates, team members, and attendance will appear here automatically.
         </p>
       </div>
     );
@@ -485,10 +482,23 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight mt-1.5">
             {currentTask.title}
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <span>Today's Shift: {currentTask.scheduled_date || new Date().toISOString().split('T')[0]}</span>
-          </p>
+          <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-500">
+            <span className="flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span>Shift: {currentTask.scheduled_date || new Date().toISOString().split('T')[0]}</span>
+            </span>
+            <span className="flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 text-[11px]">
+              <Clock className="w-3 h-3 text-rose-600" />
+              <span>
+                Deadline: {new Date(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000).toLocaleString('en-IN', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+            </span>
+          </div>
         </div>
 
         {/* Multi-task Selector pills */}
@@ -509,6 +519,19 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Unified Civic Status Stepper */}
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-extrabold text-[#095c54] uppercase tracking-wider">
+            Municipal Work Progression
+          </span>
+          <span className="text-[11px] font-bold text-slate-500">Live Operation Status</span>
+        </div>
+        <StatusProgressionStepper
+          status={currentTask.status === 'verified_complete' ? 'resolved' : currentTask.status}
+        />
       </div>
 
       {/* Temporary Leader Banner (If Worker is the Temporary Leader for this Task) - MATCHING IMAGE 1 */}
@@ -645,6 +668,29 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </div>
 
             <div className="space-y-3">
+              {/* Target Completion Deadline */}
+              <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                    <Clock className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-rose-600 uppercase tracking-wider block">
+                      Ward Officer Completion Deadline
+                    </span>
+                    <p className="text-xs font-black text-rose-950">
+                      {new Date(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short'
+                      })}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-rose-200/80 text-rose-950 font-black text-[10px] uppercase tracking-wider shrink-0">
+                  Enforced SLA
+                </span>
+              </div>
+
               {/* Officer Work Instructions */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">

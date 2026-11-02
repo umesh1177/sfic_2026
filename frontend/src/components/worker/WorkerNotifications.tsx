@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bell,
   CheckCircle2,
@@ -7,9 +7,12 @@ import {
   Crown,
   Clock,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 import { Language } from '../../i18n/translations.js';
+import { api } from '../../services/api.js';
+import { AppNotification } from '../../types/index.js';
 
 interface WorkerNotificationsProps {
   onNavigateTab: (tabId: string, assignmentId?: string) => void;
@@ -21,51 +24,42 @@ export const WorkerNotifications: React.FC<WorkerNotificationsProps> = ({
   lang
 }) => {
   const [filter, setFilter] = useState<'all' | 'tasks' | 'attendance' | 'alerts'>('all');
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const notifications = [
-    {
-      id: 'notif-1',
-      title: 'Appointed Temporary Team Leader for Drain Desilting',
-      message: 'Ward 3 Officer has appointed you as the temporary Team Leader for Task NMC-TSK-2026-001 (Dudhiya Talao Road). You are responsible for team coordination and completion reporting.',
-      type: 'leadership',
-      timestamp: 'Today, 06:15 AM',
-      read: false,
-      tabTarget: 'team',
-      taskId: 'a1000000-0000-0000-0000-000000000001'
-    },
-    {
-      id: 'notif-2',
-      title: 'GPS Geofence Attendance Verified',
-      message: 'Your punch-in at Dudhiya Talao (18.5m from site) was successfully validated against Navsari Municipal GIS.',
-      type: 'attendance',
-      timestamp: 'Today, 06:48 AM',
-      read: true,
-      tabTarget: 'attendance'
-    },
-    {
-      id: 'notif-3',
-      title: 'Monsoon Silt Removal Protocol Activated',
-      message: 'All Ward 3 drainage workers must wear rubber safety boots, reflective vests, and deploy road cones before lifting drain lids.',
-      type: 'alerts',
-      timestamp: 'Yesterday, 04:30 PM',
-      read: true,
-      tabTarget: 'help_support'
-    },
-    {
-      id: 'notif-4',
-      title: 'Task Completion Approved by Ward Officer',
-      message: 'Yesterday\'s public market waste clearance task (NMC-TSK-2026-003) was verified and approved by the Ward Officer. 100% attendance recorded.',
-      type: 'tasks',
-      timestamp: 'Yesterday, 02:15 PM',
-      read: true,
-      tabTarget: 'assignments'
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const res = await api.getNotifications();
+      if (res && res.data) {
+        setNotifications(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch worker notifications:', err);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const handleMarkRead = async (id: string) => {
+    try {
+      await api.markNotificationRead(id);
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
+      );
+    } catch (err) {
+      console.error('Failed to mark notification read:', err);
+    }
+  };
 
   const filtered = notifications.filter(n => {
-    if (filter === 'tasks') return n.type === 'tasks' || n.type === 'leadership';
-    if (filter === 'attendance') return n.type === 'attendance';
-    if (filter === 'alerts') return n.type === 'alerts';
+    if (filter === 'tasks') return n.notification_type === 'complaint_status';
+    if (filter === 'attendance') return n.notification_type === 'civic_alert';
+    if (filter === 'alerts') return n.notification_type === 'system_alert';
     return true;
   });
 
@@ -79,11 +73,11 @@ export const WorkerNotifications: React.FC<WorkerNotificationsProps> = ({
             <span>Worker Field Notifications & Duty Alerts</span>
           </h2>
           <p className="text-xs text-[#64748b] mt-1">
-            Real-time assignment updates, shift schedules, and safety instructions from Ward 3 Command.
+            Real-time assignment updates, shift schedules, and safety instructions from Ward Operations Command.
           </p>
         </div>
 
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap items-center">
           {(['all', 'tasks', 'attendance', 'alerts'] as const).map(tab => (
             <button
               key={tab}
@@ -97,55 +91,97 @@ export const WorkerNotifications: React.FC<WorkerNotificationsProps> = ({
               {tab}
             </button>
           ))}
+          <button
+            onClick={fetchNotifications}
+            className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition"
+            title="Refresh notifications"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
       {/* Notifications List */}
-      <div className="space-y-3">
-        {filtered.map(notif => (
-          <div
-            key={notif.id}
-            className={`p-4 rounded-3xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-              notif.read ? 'bg-white border-[#e2e8f0]' : 'bg-[#e6f4f1]/50 border-[#b8e0d7] shadow-sm'
-            }`}
-          >
-            <div className="flex items-start gap-3.5">
-              <div className={`p-2.5 rounded-2xl shrink-0 ${
-                notif.type === 'leadership' ? 'bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0]' :
-                notif.type === 'attendance' ? 'bg-[#ecfdf5] text-[#047857]' :
-                notif.type === 'alerts' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-[#e6f4f1] text-[#095c54]'
-              }`}>
-                {notif.type === 'leadership' ? <Crown className="w-5 h-5" /> :
-                 notif.type === 'attendance' ? <Clock className="w-5 h-5" /> :
-                 notif.type === 'alerts' ? <ShieldAlert className="w-5 h-5" /> :
-                 <CheckCircle2 className="w-5 h-5" />}
+      {loading ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] shadow-xs">
+          <RefreshCw className="w-6 h-6 text-[#095c54] animate-spin mx-auto mb-2" />
+          <p className="text-xs text-slate-500 font-bold">Loading duty notifications...</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-3 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
+            <Bell className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-extrabold text-[#0f2925]">No Notifications</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            You are all caught up! Work orders, team updates, and municipal duty alerts will appear here in real-time.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(notif => (
+            <div
+              key={notif.id}
+              className={`p-4 rounded-3xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                notif.is_read ? 'bg-white border-[#e2e8f0]' : 'bg-[#e6f4f1]/50 border-[#b8e0d7] shadow-sm'
+              }`}
+            >
+              <div className="flex items-start gap-3.5">
+                <div className={`p-2.5 rounded-2xl shrink-0 ${
+                  notif.notification_type === 'system_alert' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                  notif.notification_type === 'civic_alert' ? 'bg-[#ecfdf5] text-[#047857]' :
+                  'bg-[#e6f4f1] text-[#095c54]'
+                }`}>
+                  {notif.notification_type === 'system_alert' ? <ShieldAlert className="w-5 h-5" /> :
+                   notif.notification_type === 'civic_alert' ? <Clock className="w-5 h-5" /> :
+                   <CheckCircle2 className="w-5 h-5" />}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-black text-[#0f2925] text-sm">{notif.title}</h3>
+                    {!notif.is_read && (
+                      <span className="w-2 h-2 rounded-full bg-[#10b981] inline-block animate-pulse" />
+                    )}
+                  </div>
+                  <p className="text-xs text-[#64748b] leading-relaxed">{notif.message}</p>
+                  <span className="text-[11px] text-[#94a3b8] block pt-0.5">
+                    {new Date(notif.created_at).toLocaleString('en-IN', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-black text-[#0f2925] text-sm">{notif.title}</h3>
-                  {!notif.read && (
-                    <span className="w-2 h-2 rounded-full bg-[#10b981] inline-block animate-pulse" />
-                  )}
-                </div>
-                <p className="text-xs text-[#64748b] leading-relaxed">{notif.message}</p>
-                <span className="text-[11px] text-[#94a3b8] block pt-0.5">{notif.timestamp}</span>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {!notif.is_read && (
+                  <button
+                    type="button"
+                    onClick={() => handleMarkRead(notif.id)}
+                    className="text-xs text-slate-500 hover:text-[#095c54] font-bold px-2 py-1"
+                  >
+                    Mark Read
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleMarkRead(notif.id);
+                    onNavigateTab('assign_work', notif.reference_id);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 bg-[#095c54] hover:bg-[#06423c] text-white rounded-2xl text-xs font-black shrink-0 flex items-center justify-center gap-1.5 transition shadow-sm"
+                >
+                  <span>View</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-white" />
+                </button>
               </div>
             </div>
-
-            {notif.tabTarget && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab(notif.tabTarget, notif.taskId)}
-                className="w-full sm:w-auto px-4 py-2 bg-[#095c54] hover:bg-[#06423c] text-white rounded-2xl text-xs font-black shrink-0 flex items-center justify-center gap-1.5 transition shadow-sm"
-              >
-                <span>View</span>
-                <ArrowRight className="w-3.5 h-3.5 text-white" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
