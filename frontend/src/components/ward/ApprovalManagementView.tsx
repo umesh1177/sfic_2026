@@ -15,7 +15,11 @@ import {
 import { api } from '../../services/api.js';
 import { WardApprovalItem } from '../../types/index.js';
 
-export const ApprovalManagementView: React.FC = () => {
+interface ApprovalManagementViewProps {
+  wardNumber?: number;
+}
+
+export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ wardNumber }) => {
   const [approvals, setApprovals] = useState<WardApprovalItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -27,7 +31,7 @@ export const ApprovalManagementView: React.FC = () => {
   const fetchApprovals = async () => {
     setLoading(true);
     try {
-      const res = await api.getWardApprovals();
+      const res = await api.getWardApprovals(wardNumber);
       setApprovals(res.data || []);
     } catch (err) {
       console.error('Failed to load approvals:', err);
@@ -38,7 +42,7 @@ export const ApprovalManagementView: React.FC = () => {
 
   useEffect(() => {
     fetchApprovals();
-  }, []);
+  }, [wardNumber]);
 
   const handleApprove = async (item: WardApprovalItem) => {
     try {

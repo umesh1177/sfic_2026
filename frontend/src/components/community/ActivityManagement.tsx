@@ -129,19 +129,37 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     save_as_draft: false
   });
 
-  // Filtered Activities
+  // Filtered Activities with dynamic status matching
   const filteredActivities = activities.filter(act => {
+    const status = (act.approval_status as string) || 'draft';
+    const isApproved =
+      status === 'approved' ||
+      status === 'ward_approved' ||
+      status === 'nmc_admin_approved' ||
+      act.publication_status === 'published';
+
+    const isPending =
+      status === 'pending_officer_review' ||
+      status === 'ward_review' ||
+      status === 'nmc_admin_review' ||
+      status === 'pending' ||
+      status === 'submitted' ||
+      status === 'changes_requested';
+
+    const isDraft = (status === 'draft' || act.publication_status === 'draft') && !isApproved && !isPending;
+    const isCompleted = act.event_status === 'completed' || act.evidence_status === 'verified_complete';
+
     const matchesStatus =
       filterStatus === 'all'
         ? true
         : filterStatus === 'approved'
-        ? act.approval_status === 'approved'
+        ? isApproved && !isCompleted
         : filterStatus === 'pending'
-        ? act.approval_status === 'pending_officer_review' || act.approval_status === 'changes_requested'
+        ? isPending
         : filterStatus === 'draft'
-        ? act.approval_status === 'draft'
+        ? isDraft
         : filterStatus === 'completed'
-        ? act.event_status === 'completed'
+        ? isCompleted
         : true;
 
     const matchesSearch =

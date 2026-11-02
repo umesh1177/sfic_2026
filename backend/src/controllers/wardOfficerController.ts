@@ -1919,8 +1919,19 @@ export class WardOfficerController {
   // =========================================================================
   public static async getApprovals(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const officerWard = (req.user as any)?.ward_number;
-      const dynamicPending = await DbRepository.getPendingActivitiesForOfficer(officerWard);
+      let officerWardNum = (req.user as any)?.ward_number ? Number((req.user as any)?.ward_number) : undefined;
+      if (!officerWardNum && req.query.ward_number && req.query.ward_number !== 'all') {
+        officerWardNum = parseInt(req.query.ward_number as string, 10);
+      }
+      if (!officerWardNum && req.user?.locality) {
+        const m = req.user.locality.match(/Ward\s*(\d+)/i);
+        if (m) officerWardNum = parseInt(m[1], 10);
+      }
+      if (!officerWardNum && req.user?.address) {
+        const m = req.user.address.match(/Ward\s*(\d+)/i);
+        if (m) officerWardNum = parseInt(m[1], 10);
+      }
+      const dynamicPending = await DbRepository.getPendingActivitiesForOfficer(officerWardNum);
 
       const otherApprovals: WardApprovalItem[] = [
         {
@@ -1930,7 +1941,7 @@ export class WardOfficerController {
           submitted_by_name: 'Kanti Solanki (Team Leader)',
           submitted_by_role: 'Sanitation Worker',
           submission_time: '2026-10-28T12:55:00Z',
-          ward_number: officerWard || 3,
+          ward_number: officerWardNum || 3,
           status: 'pending',
           details: {
             task_code: 'TSK-NAV-2026-101',
@@ -1949,7 +1960,7 @@ export class WardOfficerController {
           submitted_by_name: 'Suresh Vaghela',
           submitted_by_role: 'Waste Collection Worker',
           submission_time: '2026-10-29T10:15:00Z',
-          ward_number: officerWard || 3,
+          ward_number: officerWardNum || 3,
           status: 'pending',
           details: {
             gps_match: '11.5 meters from assigned coordinates',
@@ -2122,6 +2133,7 @@ export class WardOfficerController {
           wa.updated_at = new Date().toISOString();
         }
       });
+      await DbRepository.verifyCompleteAssignment(complaint.id, complaint.category_name);
 
       // Update work attempts
       const attempts = wardData.workAttempts.get(complaint.id) || [];

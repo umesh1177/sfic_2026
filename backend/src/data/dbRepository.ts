@@ -3821,6 +3821,34 @@ export class DbRepository {
     return { success: true, report };
   }
 
+  public static async verifyCompleteAssignment(assignmentOrComplaintId: string, categoryName?: string): Promise<void> {
+    // 1. Update memory store
+    (store.workAssignments || []).forEach(wa => {
+      if (
+        wa.id === assignmentOrComplaintId ||
+        wa.task_code === assignmentOrComplaintId ||
+        (categoryName && wa.title?.toLowerCase().includes(categoryName.toLowerCase()))
+      ) {
+        wa.status = 'verified_complete';
+        (wa as any).verified_complete = true;
+        wa.updated_at = new Date().toISOString();
+      }
+    });
+
+    // 2. Update PostgreSQL database
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          UPDATE work_assignments
+          SET status = 'verified_complete', updated_at = NOW()
+          WHERE id = $1 OR task_code = $1 OR title ILIKE '%' || $2 || '%'
+        `, [assignmentOrComplaintId, categoryName || '']);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - verifyCompleteAssignment]:', err.message);
+      }
+    }
+  }
+
   public static async getWorkCompletionReport(assignmentId: string): Promise<WorkCompletionReport | null> {
     const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : 'a1000000-0000-0000-0000-000000000003';
     if (isDbConnected()) {

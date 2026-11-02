@@ -81,16 +81,22 @@ export class CommunityHeadController {
       const community = await DbRepository.getCommunityByUserId(userId);
       const communityId = community?.id || 'b0000000-0000-0000-0000-000000000001';
 
-      // Auto-identify ward using PostGIS point-in-polygon logic
-      let wardId = req.body.ward_id;
-      let wardNumber = req.body.ward_number || 3;
-      let wardName = req.body.ward_name || 'Ward 3 - Dudhiya Talao';
+      // Ward resolution: respect explicitly passed ward_number first!
+      let wardNumber = req.body.ward_number ? Number(req.body.ward_number) : undefined;
+      let wardId = req.body.ward_id || (wardNumber ? `ward-0${wardNumber}` : undefined);
+      let wardName = req.body.ward_name || (wardNumber ? `Ward ${wardNumber}` : undefined);
 
-      if (req.body.latitude && req.body.longitude) {
+      if (!wardNumber && req.body.latitude && req.body.longitude) {
         const resolvedWard = findWardByCoordinates(Number(req.body.latitude), Number(req.body.longitude));
         wardId = resolvedWard.id;
         wardNumber = resolvedWard.ward_number;
         wardName = resolvedWard.ward_name;
+      }
+
+      if (!wardNumber) {
+        wardNumber = community?.ward_number || 3;
+        wardId = `ward-0${wardNumber}`;
+        wardName = `Ward ${wardNumber}`;
       }
 
       // Content moderation check
@@ -105,6 +111,9 @@ export class CommunityHeadController {
         return;
       }
 
+      const isDraft = req.body.save_as_draft === true;
+      const initialApprovalStatus = isDraft ? 'draft' : 'pending_officer_review';
+
       const created = await DbRepository.createCommunityActivity({
         ...req.body,
         community_id: communityId,
@@ -112,16 +121,29 @@ export class CommunityHeadController {
         ward_id: wardId,
         ward_number: wardNumber,
         ward_name: wardName,
-        publication_status: req.body.publication_status || 'draft',
-        approval_status: 'draft',
+        publication_status: isDraft ? 'draft' : 'draft',
+        approval_status: initialApprovalStatus as any,
         registration_status: 'not_open',
         event_status: 'upcoming'
       });
 
+      // If submitted for officer review, dispatch notification to Ward Officer
+      if (!isDraft) {
+        await DbRepository.createNotification(
+          `ward-officer-${wardNumber}`,
+          'New Cleanliness Drive Proposed',
+          `Community "${community?.community_name || 'Action Team'}" submitted "${req.body.title}" in Ward ${wardNumber} for your review and approval.`,
+          created.id,
+          'drive_submitted'
+        );
+      }
+
       res.status(201).json({
         success: true,
         data: created,
-        message: 'Cleanliness activity created successfully as draft!'
+        message: isDraft
+          ? 'Cleanliness activity saved as draft.'
+          : 'Cleanliness activity submitted for official Ward Officer approval!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

@@ -1034,8 +1034,9 @@ class ApiService {
     });
   }
 
-  async getWardApprovals() {
-    return this.request<{ success: boolean; data: WardApprovalItem[] }>('/ward/approvals');
+  async getWardApprovals(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: WardApprovalItem[] }>(`/ward/approvals${q}`);
   }
 
   async reviewWardApproval(id: string, action: 'approve' | 'changes_requested' | 'reject', comments?: string) {

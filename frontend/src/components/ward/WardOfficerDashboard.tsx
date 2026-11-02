@@ -290,7 +290,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
           {activeTab === 'activities' && <WardCommunityActivities />}
 
-          {activeTab === 'approvals' && <ApprovalManagementView />}
+          {activeTab === 'approvals' && <ApprovalManagementView wardNumber={userWardNum} />}
 
           {activeTab === 'posts' && <WardCommunityPosts />}
 
