@@ -246,7 +246,10 @@ export class CommunityController {
         ward_number,
         ward_name,
         achievement_stats,
-        image_url
+        image_url,
+        before_image_url,
+        after_image_url,
+        after_photos = []
       } = req.body;
 
       if (!hero_name || !title || !description) {
@@ -254,9 +257,17 @@ export class CommunityController {
         return;
       }
 
+      const effectivePhotos = Array.isArray(after_photos) && after_photos.length > 0
+        ? after_photos
+        : image_url
+        ? [image_url]
+        : [];
+
+      const primaryImage = effectivePhotos[0] || image_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80';
+
       const newPost = await DbRepository.createRecognitionPost({
         author_name: req.user.full_name || 'Navsari Municipal Corporation',
-        author_role: 'NMC Swachhata Cell & Citizen Community',
+        author_role: req.user.role === 'ward_officer' ? 'Ward Officer · Field Operations' : 'NMC Swachhata Cell & Citizen Community',
         ward_number: Number(ward_number || 3),
         ward_name: ward_name || 'Ward 3 - Dudhiya Talao',
         hero_name,
@@ -265,7 +276,10 @@ export class CommunityController {
         title,
         description,
         achievement_stats: achievement_stats || 'Civic Transformation Milestone',
-        image_url: image_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80'
+        image_url: primaryImage,
+        before_image_url: before_image_url || undefined,
+        after_image_url: primaryImage,
+        after_photos: effectivePhotos
       });
 
       res.status(201).json({

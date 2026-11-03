@@ -220,6 +220,9 @@ export interface CommunityRecognitionPost {
   description: string;
   achievement_stats: string;
   image_url: string;
+  before_image_url?: string;
+  after_image_url?: string;
+  after_photos?: string[];
   resolved_image_url?: string;
   resolution_image_url?: string;
   likes_count: number;

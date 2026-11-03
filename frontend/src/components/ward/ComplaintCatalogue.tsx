@@ -19,7 +19,8 @@ import {
   Sparkles,
   Users,
   ClipboardCheck,
-  Activity
+  Activity,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 import { ComplaintViewModal } from './ComplaintViewModal.js';
@@ -55,6 +56,17 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const [additionalFlags, setAdditionalFlags] = useState<string>(initialFilter?.additional_flags || 'all');
   const [sortBy, setSortBy] = useState<string>('newest');
 
+  // Segregation: Active vs Resolved category
+  const [catalogueView, setCatalogueView] = useState<'active' | 'resolved'>('active');
+
+  // Reopen Modal State
+  const [reopeningComplaint, setReopeningComplaint] = useState<any | null>(null);
+  const [reopenReason, setReopenReason] = useState<string>('');
+  const [reopenUrgency, setReopenUrgency] = useState<string>('high');
+  const [submittingReopen, setSubmittingReopen] = useState<boolean>(false);
+  const [reopenSuccess, setReopenSuccess] = useState<string | null>(null);
+  const [reopenError, setReopenError] = useState<string | null>(null);
+
   // Sync when initialFilter prop changes or is cleared
   useEffect(() => {
     if (initialFilter) {
@@ -82,9 +94,10 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const fetchComplaints = async () => {
     setLoading(true);
     try {
+      const targetStatus = catalogueView === 'resolved' ? 'resolved' : (status !== 'all' ? status : undefined);
       const res = await api.getWardComplaints({
         search,
-        status,
+        status: targetStatus,
         category,
         priority,
         progress_status: progressStatus,
@@ -95,7 +108,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         additional_flags: additionalFlags,
         sort_by: sortBy,
         page,
-        limit: 10
+        limit: 15
       });
       setComplaints(res.data || []);
       setTotalPages(res.pagination?.total_pages || 1);
@@ -109,7 +122,40 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
 
   useEffect(() => {
     fetchComplaints();
-  }, [search, status, category, priority, progressStatus, wardFilter, assignment, locationFilter, additionalFlags, sortBy, page]);
+  }, [search, status, category, priority, progressStatus, wardFilter, assignment, locationFilter, additionalFlags, sortBy, page, catalogueView]);
+
+  // Handle Reopen Problem
+  const handleConfirmReopen = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reopeningComplaint || !reopenReason.trim()) return;
+    setSubmittingReopen(true);
+    setReopenError(null);
+    try {
+      await api.reopenWardComplaint(reopeningComplaint.id, {
+        reopen_reason: reopenReason.trim(),
+        urgency: reopenUrgency,
+        team_option: 'previous'
+      });
+      setReopenSuccess(`Complaint ${reopeningComplaint.complaint_number} reopened successfully! It has been returned to Active Complaints.`);
+      setReopeningComplaint(null);
+      setReopenReason('');
+      setCatalogueView('active');
+      await fetchComplaints();
+      setTimeout(() => setReopenSuccess(null), 4000);
+    } catch (err: any) {
+      setReopenError(err.message || 'Failed to reopen complaint.');
+    } finally {
+      setSubmittingReopen(false);
+    }
+  };
+
+  const displayedComplaints = complaints.filter(c => {
+    if (catalogueView === 'active') {
+      return c.status !== 'resolved' && c.status !== 'closed';
+    } else {
+      return c.status === 'resolved' || c.status === 'closed';
+    }
+  });
 
   // Reset filters
   const handleClearFilters = () => {
@@ -180,6 +226,48 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#095c54]' : ''}`} />
           </button>
         </div>
+      </div>
+
+      {/* Reopen Toast Notification */}
+      {reopenSuccess && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-black text-emerald-800 flex items-center gap-2 animate-in fade-in duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{reopenSuccess}</span>
+        </div>
+      )}
+
+      {/* 2 Primary Segments: Active Complaints vs Resolved Problems */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl w-full sm:w-fit border border-slate-200 shadow-2xs">
+        <button
+          type="button"
+          onClick={() => {
+            setCatalogueView('active');
+            setPage(1);
+          }}
+          className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 ${
+            catalogueView === 'active'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>Active Complaints (Requiring Action)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCatalogueView('resolved');
+            setPage(1);
+          }}
+          className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 ${
+            catalogueView === 'resolved'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>Resolved & Completed Problems</span>
+        </button>
       </div>
 
       {/* Comprehensive Filter Bar */}
@@ -376,13 +464,17 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
           <RefreshCw className="w-8 h-8 text-[#095c54] animate-spin mx-auto" />
           <p className="text-xs font-bold text-slate-500 mt-2">Loading complaints catalogue...</p>
         </div>
-      ) : complaints.length === 0 ? (
+      ) : displayedComplaints.length === 0 ? (
         <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
             <Layers className="w-6 h-6" />
           </div>
-          <p className="text-sm font-extrabold text-[#0f2925]">No complaints match current filters</p>
-          <p className="text-xs text-slate-500">Try adjusting search term or clearing filter criteria.</p>
+          <p className="text-sm font-extrabold text-[#0f2925]">
+            {catalogueView === 'resolved' ? 'No resolved complaints found in this category' : 'No active complaints match current filters'}
+          </p>
+          <p className="text-xs text-slate-500">
+            {catalogueView === 'resolved' ? 'Resolved complaints will appear here once verified.' : 'Try adjusting search term or clearing filter criteria.'}
+          </p>
           <button
             onClick={handleClearFilters}
             className="px-4 py-2 bg-[#095c54] text-white rounded-xl text-xs font-bold"
@@ -406,7 +498,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium">
-                {complaints.map(complaint => (
+                {displayedComplaints.map(complaint => (
                   <React.Fragment key={complaint.id}>
                     <tr className="hover:bg-slate-50/80 transition group">
                     {/* ID & Category */}
@@ -537,6 +629,21 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                           <Activity className="w-3.5 h-3.5" />
                           <span>Track</span>
                         </button>
+
+                        {(complaint.status === 'resolved' || complaint.status === 'closed') && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              setReopeningComplaint(complaint);
+                              setReopenReason('');
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 text-xs font-black transition flex items-center gap-1 shadow-2xs"
+                            title="Reopen Problem"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-purple-700" />
+                            <span>Reopen</span>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -576,7 +683,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
 
           {/* Mobile Cards View (Visible on mobile/tablet) */}
           <div className="lg:hidden space-y-3">
-            {complaints.map(complaint => (
+            {displayedComplaints.map(complaint => (
               <div
                 key={complaint.id}
                 className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 hover:border-[#095c54] transition"
@@ -653,6 +760,20 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                       <Activity className="w-3.5 h-3.5" />
                       <span>Track</span>
                     </button>
+
+                    {(complaint.status === 'resolved' || complaint.status === 'closed') && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setReopeningComplaint(complaint);
+                          setReopenReason('');
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-extrabold text-xs flex items-center gap-1 shadow-2xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-purple-700" />
+                        <span>Reopen</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -722,6 +843,98 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             setInspectingComplaintId(id);
           }}
         />
+      )}
+
+      {/* REOPEN PROBLEM MODAL */}
+      {reopeningComplaint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-purple-100 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#0f2925]">
+                    Reopen Problem
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">
+                    {reopeningComplaint.complaint_number} · {reopeningComplaint.category_name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReopeningComplaint(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reopenError && (
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">
+                {reopenError}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmReopen} className="space-y-4">
+              <div>
+                <label className="text-xs font-black text-slate-700 block mb-1">
+                  Reason for Reopening Problem *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={reopenReason}
+                  onChange={e => setReopenReason(e.target.value)}
+                  placeholder="e.g. Garbage accumulated again within 24 hours, missed corner drain clearing, citizen escalated with fresh evidence..."
+                  className="w-full p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 font-medium focus:bg-white focus:border-purple-600 outline-hidden transition resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-black text-slate-700 block mb-1">
+                  Dispatch Urgency Level
+                </label>
+                <select
+                  value={reopenUrgency}
+                  onChange={e => setReopenUrgency(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 outline-hidden"
+                >
+                  <option value="urgent">Urgent Priority (Immediate Re-dispatch)</option>
+                  <option value="high">High Priority</option>
+                  <option value="normal">Normal / Standard Priority</option>
+                </select>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-purple-50/70 border border-purple-200 text-[11px] text-purple-900 leading-relaxed">
+                <strong>Note:</strong> Reopening this complaint will immediately transition its status to <em>Reopened – New Work Required</em> and move it back into the <strong>Active Complaints</strong> queue for field crew reassignment.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setReopeningComplaint(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingReopen || !reopenReason.trim()}
+                  className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white text-xs font-black flex items-center gap-1.5 shadow-md transition"
+                >
+                  {submittingReopen ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  )}
+                  <span>Confirm Reopen & Move to Active</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>

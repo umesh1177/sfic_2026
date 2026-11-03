@@ -2,6 +2,7 @@ import { Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { DbRepository } from '../data/dbRepository.js';
+import { pool, isDbConnected } from '../data/db.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { normalizeIndianPhone } from './authController.js';
 import { store } from '../data/store.js';
@@ -658,19 +659,27 @@ export class WardOfficerController {
         );
       }
 
-      // Sorting
+      // Sorting (Urgent & high priority complaints bubble to top by default)
       if (sort_by === 'oldest') {
         enriched.sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime());
       } else if (sort_by === 'priority') {
-        const pOrder: any = { urgent: 4, high: 3, medium: 2, low: 1 };
+        const pOrder: any = { emergency: 5, urgent: 4, high: 3, medium: 2, low: 1 };
         enriched.sort((a, b) => (pOrder[b.priority] || 0) - (pOrder[a.priority] || 0));
       } else if (sort_by === 'overdue') {
         enriched.sort((a, b) => (b.is_overdue ? 1 : 0) - (a.is_overdue ? 1 : 0));
       } else if (sort_by === 'most_reopened') {
         enriched.sort((a, b) => b.reopen_count - a.reopen_count);
       } else {
-        // default newest
-        enriched.sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime());
+        // default: high urgency complaints always at top, then newest
+        const pOrder: any = { emergency: 5, urgent: 4, high: 3, medium: 2, low: 1 };
+        enriched.sort((a, b) => {
+          const scoreA = (a as any).is_urgent ? 5 : (pOrder[a.priority?.toLowerCase()] || 2);
+          const scoreB = (b as any).is_urgent ? 5 : (pOrder[b.priority?.toLowerCase()] || 2);
+          if (scoreB !== scoreA) {
+            return scoreB - scoreA;
+          }
+          return new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime();
+        });
       }
 
       const totalItems = enriched.length;
@@ -1627,7 +1636,39 @@ export class WardOfficerController {
   public static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const officerWard = (req.user as any)?.ward_number || 3;
-      const teams = await DbRepository.getTeamsList(officerWard);
+      const rawTeams = await DbRepository.getTeamsList(officerWard);
+
+      const activeAssignments = (store.workAssignments || []).filter(a =>
+        ['assigned', 'in_progress', 'pending_review', 'under_review', 'action_required'].includes(a.status?.toLowerCase())
+      );
+      const activeComplaints = (store.complaints || []).filter(c =>
+        !['resolved', 'closed', 'rejected', 'verified_complete'].includes(c.status?.toLowerCase())
+      );
+
+      const teams = rawTeams.map(team => {
+        const matchingAssignments = activeAssignments.filter(a =>
+          (a as any).team_id === team.id ||
+          (a as any).team_name === team.team_name ||
+          (team.worker_ids || []).includes((a as any).assigned_to) ||
+          (team.temporary_leader_id && (a as any).assigned_to === team.temporary_leader_id)
+        );
+        const matchingComplaints = activeComplaints.filter(c =>
+          (c as any).assigned_team_id === team.id ||
+          (c as any).assigned_team_name === team.team_name ||
+          (team.temporary_leader_id && (c as any).temporary_leader_id === team.temporary_leader_id)
+        );
+        const uniqueTaskIds = new Set([
+          ...matchingAssignments.map(a => a.id),
+          ...matchingComplaints.map(c => c.id)
+        ]);
+
+        return {
+          ...team,
+          work_type: team.work_type || 'General Civic Sanitation Squad',
+          active_tasks_count: uniqueTaskIds.size
+        };
+      });
+
       store.teams = teams;
       res.status(200).json({ success: true, data: teams });
     } catch (err: any) {
@@ -1637,7 +1678,7 @@ export class WardOfficerController {
 
   public static async createTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { team_name, worker_ids = [], temporary_leader_id } = req.body;
+      const { team_name, worker_ids = [], temporary_leader_id, work_type } = req.body;
 
       if (!team_name || !worker_ids || worker_ids.length === 0) {
         res.status(400).json({ success: false, error: 'Team name and at least one worker are required' });
@@ -1649,6 +1690,7 @@ export class WardOfficerController {
       const newTeam = {
         id: `team-${Date.now()}`,
         team_name: team_name.trim(),
+        work_type: work_type || 'General Civic Sanitation Squad',
         ward_number: 3,
         ward_name: 'Ward 3 - Dudhiya Talao',
         worker_ids,
@@ -1676,7 +1718,7 @@ export class WardOfficerController {
   public static async updateTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { team_name, worker_ids, temporary_leader_id } = req.body;
+      const { team_name, worker_ids, temporary_leader_id, work_type } = req.body;
 
       const teamIndex = (store.teams || []).findIndex(t => t.id === id);
       if (teamIndex === -1) {
@@ -1691,6 +1733,7 @@ export class WardOfficerController {
       const updated = {
         ...existing,
         team_name: team_name?.trim() || existing.team_name,
+        work_type: work_type || existing.work_type || 'General Civic Sanitation Squad',
         worker_ids: newWorkerIds,
         temporary_leader_id: leaderWorker?.id || existing.temporary_leader_id,
         temporary_leader_name: leaderWorker?.full_name || existing.temporary_leader_name,
@@ -2259,13 +2302,33 @@ export class WardOfficerController {
         title: postTitle,
         description: postDesc,
         achievement_stats: `${waste_kg} kg waste cleared`,
-        image_url: primaryAfterPhoto
+        image_url: primaryAfterPhoto,
+        before_image_url: primaryBeforePhoto,
+        after_image_url: primaryAfterPhoto,
+        after_photos: allAfterPhotos
       }).catch(() => {});
 
-      // Update complaint status & photos
+      // Update complaint status & photos to fully resolved
+      complaint.status = 'resolved';
+      complaint.resolved_at = new Date().toISOString();
       complaint.resolved_image_url = primaryAfterPhoto;
       (complaint as any).is_published_to_community = true;
       (complaint as any).work_done_photos = allAfterPhotos;
+
+      if (!(complaint as any).progress_updates) (complaint as any).progress_updates = [];
+      (complaint as any).progress_updates.push({
+        status: 'Verified Complete',
+        message: 'Ward Officer verified work done completion, sent resolution photos to citizen, and published to community feed.',
+        timestamp: new Date().toISOString(),
+        by: officerName
+      });
+
+      if (isDbConnected()) {
+        await pool.query(
+          `UPDATE complaints SET status = 'resolved', resolved_image_url = $1, resolved_at = NOW(), updated_at = NOW() WHERE id = $2`,
+          [primaryAfterPhoto, complaint.id]
+        ).catch(() => {});
+      }
 
       // Automatically send live notification to the citizen who filed this complaint!
       if (complaint.citizen_id) {

@@ -28,6 +28,7 @@ export const TeamManagementView: React.FC = () => {
   // Create Team Modal State
   const [showCreateTeamModal, setShowCreateTeamModal] = useState<boolean>(false);
   const [newTeamName, setNewTeamName] = useState<string>('Sanitation Squad 3B');
+  const [workType, setWorkType] = useState<string>('Waste Collection & Dumping Clearance');
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
   const [temporaryLeaderId, setTemporaryLeaderId] = useState<string>('');
   const [submittingTeam, setSubmittingTeam] = useState<boolean>(false);
@@ -35,6 +36,7 @@ export const TeamManagementView: React.FC = () => {
   // Edit Team State
   const [editingTeam, setEditingTeam] = useState<any | null>(null);
   const [editTeamName, setEditTeamName] = useState<string>('');
+  const [editWorkType, setEditWorkType] = useState<string>('Waste Collection & Dumping Clearance');
   const [editWorkerIds, setEditWorkerIds] = useState<string[]>([]);
   const [editTemporaryLeaderId, setEditTemporaryLeaderId] = useState<string>('');
   const [submittingEditTeam, setSubmittingEditTeam] = useState<boolean>(false);
@@ -42,6 +44,7 @@ export const TeamManagementView: React.FC = () => {
   const handleOpenEditTeam = (team: any) => {
     setEditingTeam(team);
     setEditTeamName(team.team_name);
+    setEditWorkType(team.work_type || 'Waste Collection & Dumping Clearance');
     setEditWorkerIds(Array.isArray(team.worker_ids) ? [...team.worker_ids] : []);
     setEditTemporaryLeaderId(team.temporary_leader_id);
   };
@@ -54,6 +57,7 @@ export const TeamManagementView: React.FC = () => {
     try {
       const res = await api.updateWardTeam(editingTeam.id, {
         team_name: editTeamName,
+        work_type: editWorkType,
         worker_ids: editWorkerIds,
         temporary_leader_id: editTemporaryLeaderId
       });
@@ -137,6 +141,7 @@ export const TeamManagementView: React.FC = () => {
     try {
       const res = await api.createWardTeam({
         team_name: newTeamName.trim(),
+        work_type: workType,
         worker_ids: selectedWorkerIds,
         temporary_leader_id: temporaryLeaderId
       });
@@ -232,6 +237,7 @@ export const TeamManagementView: React.FC = () => {
             <thead>
               <tr className="bg-slate-50 border-b border-[#e2e8f0] text-slate-500 font-black uppercase text-[10px] tracking-wider">
                 <th className="py-3 px-4">Team Unit Name</th>
+                <th className="py-3 px-4">Specialization & Workload</th>
                 <th className="py-3 px-4">Temporary Team Leader</th>
                 <th className="py-3 px-4">Assigned Members</th>
                 <th className="py-3 px-4">Operational Status</th>
@@ -241,14 +247,14 @@ export const TeamManagementView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-500">
+                  <td colSpan={6} className="py-10 text-center text-slate-500">
                     <RefreshCw className="w-5 h-5 text-[#095c54] animate-spin mx-auto mb-2" />
                     Loading teams...
                   </td>
                 </tr>
               ) : teams.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-500">
+                  <td colSpan={6} className="py-10 text-center text-slate-500">
                     No teams formed yet. Click "Create New Team" above to assemble your first unit.
                   </td>
                 </tr>
@@ -260,6 +266,27 @@ export const TeamManagementView: React.FC = () => {
                       <td className="py-3.5 px-4">
                         <span className="font-extrabold text-[#0f2925] text-xs block">{team.team_name}</span>
                         <span className="text-[10px] text-slate-400 font-mono">Ward {team.ward_number || 3} Unit</span>
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <span className="font-extrabold text-[#095c54] text-xs block">
+                          {team.work_type || 'General Civic Sanitation Squad'}
+                        </span>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
+                              (team.active_tasks_count || 0) === 0
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : (team.active_tasks_count || 0) === 1
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-purple-50 text-purple-800 border-purple-200'
+                            }`}
+                          >
+                            {(team.active_tasks_count || 0) === 0
+                              ? '0 Active Tasks (Available)'
+                              : `${team.active_tasks_count} Active ${team.active_tasks_count === 1 ? 'Task' : 'Tasks'} (Busy)`}
+                          </span>
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -426,6 +453,24 @@ export const TeamManagementView: React.FC = () => {
               </div>
 
               <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Type of Work / Work Specialization *
+                </label>
+                <select
+                  value={workType}
+                  onChange={e => setWorkType(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-bold text-[#0f2925]"
+                >
+                  <option value="Waste Collection & Dumping Clearance">Waste Collection & Dumping Clearance</option>
+                  <option value="Drainage & Gutter Cleaning">Drainage & Gutter Cleaning</option>
+                  <option value="Street Sweeping & Roadside Scraping">Street Sweeping & Roadside Scraping</option>
+                  <option value="Debris, Construction & Tree Waste">Debris, Construction & Tree Waste</option>
+                  <option value="Public Toilet & Sanitation Maintenance">Public Toilet & Sanitation Maintenance</option>
+                  <option value="General Civic Sanitation Squad">General Civic Sanitation Squad</option>
+                </select>
+              </div>
+
+              <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-extrabold text-slate-700">
                     Select Team Members ({selectedWorkerIds.length} Selected)
@@ -552,6 +597,24 @@ export const TeamManagementView: React.FC = () => {
                   onChange={e => setEditTeamName(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden font-bold"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                  Type of Work / Work Specialization *
+                </label>
+                <select
+                  value={editWorkType}
+                  onChange={e => setEditWorkType(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-bold text-[#0f2925]"
+                >
+                  <option value="Waste Collection & Dumping Clearance">Waste Collection & Dumping Clearance</option>
+                  <option value="Drainage & Gutter Cleaning">Drainage & Gutter Cleaning</option>
+                  <option value="Street Sweeping & Roadside Scraping">Street Sweeping & Roadside Scraping</option>
+                  <option value="Debris, Construction & Tree Waste">Debris, Construction & Tree Waste</option>
+                  <option value="Public Toilet & Sanitation Maintenance">Public Toilet & Sanitation Maintenance</option>
+                  <option value="General Civic Sanitation Squad">General Civic Sanitation Squad</option>
+                </select>
               </div>
 
               <div>

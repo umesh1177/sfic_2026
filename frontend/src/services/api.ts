@@ -443,6 +443,9 @@ class ApiService {
     ward_name?: string;
     achievement_stats?: string;
     image_url?: string;
+    before_image_url?: string;
+    after_image_url?: string;
+    after_photos?: string[];
   }) {
     return this.request<{ success: boolean; data: CommunityRecognitionPost }>(
       '/community/recognition-posts',
@@ -979,6 +982,7 @@ class ApiService {
     team_name: string;
     worker_ids: string[];
     temporary_leader_id?: string;
+    work_type?: string;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>('/ward/teams', {
       method: 'POST',
@@ -990,6 +994,7 @@ class ApiService {
     team_name?: string;
     worker_ids?: string[];
     temporary_leader_id?: string;
+    work_type?: string;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/teams/${id}`, {
       method: 'PUT',

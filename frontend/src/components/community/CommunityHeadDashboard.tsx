@@ -20,7 +20,8 @@ import {
   PlusCircle,
   HelpCircle,
   ExternalLink,
-  HeartHandshake
+  HeartHandshake,
+  Award
 } from 'lucide-react';
 import { Profile, CommunityDashboardSummary, CommunityActivity, CommunityProblem } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -40,6 +41,7 @@ import { ApprovalTracking } from './ApprovalTracking.js';
 import { CommunityAnalytics } from './CommunityAnalytics.js';
 import { CommunityNotifications } from './CommunityNotifications.js';
 import { CommunitySettings } from './CommunitySettings.js';
+import { RewardsRecognition } from '../RewardsRecognition.js';
 
 const buildDynamicInitialSummary = (user: Profile): CommunityDashboardSummary => ({
   community: {
@@ -147,6 +149,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
     { id: 'overview', label: t.ch_nav_overview, icon: LayoutDashboard },
     { id: 'activities', label: t.ch_nav_activities, icon: Calendar },
     { id: 'ward_problems', label: t.ch_nav_ward_problems, icon: HeartHandshake },
+    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Award },
     { id: 'community', label: t.ch_nav_community, icon: Building2 },
     { id: 'analytics', label: t.ch_nav_analytics, icon: TrendingUp },
     { id: 'notifications', label: t.ch_nav_notifications, icon: Bell },
@@ -467,6 +470,11 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
                 setOpenCreateWizardDirectly(true);
               }}
             />
+          )}
+
+          {/* Tab: Posts & Cleanliness Spotlights */}
+          {activeTab === 'posts' && (
+            <RewardsRecognition lang={lang} />
           )}
 
           {/* Tab 4: Reports & Analytics */}

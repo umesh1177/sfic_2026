@@ -184,29 +184,11 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 </div>
               </button>
 
-              {/* Community Challenges */}
-              <button
-                onClick={() => handleSelectTab('challenges')}
-                className={`p-3.5 sm:p-4 rounded-2xl border text-left flex flex-col gap-2 transition touch-press ${
-                  currentTab === 'challenges'
-                    ? 'border-[#095c54] bg-[#e6f4f1] text-[#095c54]'
-                    : 'border-[#e2e8f0] bg-white text-[#0f2925] hover:border-[#b8e0d7]'
-                }`}
-              >
-                <div className="w-9 h-9 rounded-xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center font-bold">
-                  <Trophy className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="block font-bold text-xs">{t.nav_challenges}</span>
-                  <span className="block text-[10px] text-[#64748b]">Ward Missions</span>
-                </div>
-              </button>
-
-              {/* Rewards & Badges */}
+              {/* Civic Posts & Cleanliness Feeds */}
               <button
                 onClick={() => handleSelectTab('rewards')}
                 className={`p-3.5 sm:p-4 rounded-2xl border text-left flex flex-col gap-2 transition touch-press ${
-                  currentTab === 'rewards'
+                  currentTab === 'rewards' || currentTab === 'posts'
                     ? 'border-[#095c54] bg-[#e6f4f1] text-[#095c54]'
                     : 'border-[#e2e8f0] bg-white text-[#0f2925] hover:border-[#b8e0d7]'
                 }`}
@@ -216,7 +198,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 </div>
                 <div>
                   <span className="block font-bold text-xs">{t.nav_rewards}</span>
-                  <span className="block text-[10px] text-[#64748b]">Karma & Honors</span>
+                  <span className="block text-[10px] text-[#64748b]">Ward & Community Feeds</span>
                 </div>
               </button>
 

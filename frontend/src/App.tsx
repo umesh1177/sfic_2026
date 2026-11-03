@@ -302,7 +302,7 @@ export const App: React.FC = () => {
             <CleanlinessDrives lang={lang} />
           )}
 
-          {currentTab === 'rewards' && (
+          {(currentTab === 'rewards' || currentTab === 'posts') && (
             <RewardsRecognition lang={lang} />
           )}
 
