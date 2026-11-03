@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NAVSARI_WARDS = void 0;
+exports.DEFAULT_NAVSARI_CITY_BOUNDARY = exports.NAVSARI_WARDS = void 0;
 exports.isPointInPolygon = isPointInPolygon;
 exports.findWardByCoordinates = findWardByCoordinates;
 exports.calculateDistanceMeters = calculateDistanceMeters;
@@ -227,6 +227,14 @@ exports.NAVSARI_WARDS = [
             [72.8800, 20.9200],
         ]
     }
+];
+// Official Navsari Municipal Corporation Outer City Boundary (Lng, Lat order)
+exports.DEFAULT_NAVSARI_CITY_BOUNDARY = [
+    [72.8750, 20.8850],
+    [72.9650, 20.8850],
+    [72.9650, 20.9750],
+    [72.8750, 20.9750],
+    [72.8750, 20.8850]
 ];
 // Point-in-polygon ray casting algorithm (PostGIS ST_Contains equivalent in Node.js)
 function isPointInPolygon(point, vs) {

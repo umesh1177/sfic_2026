@@ -228,6 +228,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // Quick Demo NMC Central Executive Admin Login
+  const handleQuickDemoAdminLogin = async () => {
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await api.login('9825199999', 'Admin@123', 'captcha-verified-token');
+      localStorage.setItem('clean_navsari_token', res.data.token);
+      onSuccess(res.data.profile, false);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Demo NMC Admin login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 1. Submit Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -682,6 +697,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   </div>
                   <span className="text-[10px] bg-white border border-[#86efac] text-[#166534] px-2 py-0.5 rounded-full font-bold">
                     9825130008
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickDemoAdminLogin}
+                  disabled={loading}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#095c54] to-[#043e39] text-white hover:opacity-95 text-xs font-black transition flex items-center justify-between shadow-xs group"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                    <span>NMC Admin Demo (Navsari Municipal Executive)</span>
+                  </div>
+                  <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                    9825199999
                   </span>
                 </button>
               </div>

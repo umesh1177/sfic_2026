@@ -1163,6 +1163,219 @@ class ApiService {
       body: JSON.stringify({ action_type, payload })
     });
   }
+
+  // ============================================================================
+  // NMC ADMIN DASHBOARD APIs
+  // ============================================================================
+  async getAdminOverview() {
+    return this.request<{
+      success: boolean;
+      data: {
+        summary: {
+          total_wards: number;
+          total_officers: number;
+          total_workers: number;
+          total_complaints: number;
+          active_complaints: number;
+          resolved_complaints: number;
+          pending_approval_complaints: number;
+          flagged_officers_count: number;
+          avg_cleanliness_score: number;
+          sla_compliance_rate: number;
+        };
+        flagged_officers: Array<{
+          officer: import('../types/index.js').WardOfficerRecord;
+          overdue_complaints: Array<{
+            complaint_number: string;
+            category_name: string;
+            submitted_at: string;
+            days_pending: number;
+            max_approval_days: number;
+            ward_number: number;
+          }>;
+        }>;
+        category_breakdown: Array<{
+          id: string;
+          name: string;
+          name_gu: string;
+          icon: string;
+          count: number;
+          max_approval_days: number;
+          max_work_days: number;
+        }>;
+        recent_complaints: any[];
+      };
+    }>('/admin/overview');
+  }
+
+  async getAdminWards() {
+    return this.request<{ success: boolean; data: (import('../types/index.js').Ward & {
+      assigned_officers: Array<{ id: string; name: string; phone: string }>;
+      active_complaints_count: number;
+      total_workers_count: number;
+    })[] }>('/admin/wards');
+  }
+
+  async updateWardBoundary(wardId: string, boundary_coordinates: [number, number][]) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/admin/wards/${wardId}/boundary`, {
+      method: 'PUT',
+      body: JSON.stringify({ boundary_coordinates })
+    });
+  }
+
+  async getCityBoundary() {
+    return this.request<{
+      success: boolean;
+      data: {
+        city_name: string;
+        city_boundary: [number, number][];
+        last_updated: string;
+      };
+    }>('/admin/city-boundary');
+  }
+
+  async updateCityBoundary(city_boundary: [number, number][]) {
+    return this.request<{ success: boolean; message: string; data: any }>('/admin/city-boundary', {
+      method: 'PUT',
+      body: JSON.stringify({ city_boundary })
+    });
+  }
+
+  async getWardOfficers() {
+    return this.request<{ success: boolean; data: (import('../types/index.js').WardOfficerRecord & {
+      flagged_count?: number;
+    })[] }>('/admin/ward-officers');
+  }
+
+  async createWardOfficer(data: {
+    full_name: string;
+    phone: string;
+    email?: string;
+    password: string;
+    designation?: string;
+    assigned_wards: number[];
+  }) {
+    return this.request<{ success: boolean; message: string; data: import('../types/index.js').WardOfficerRecord }>('/admin/ward-officers', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateWardOfficer(id: string, data: {
+    full_name?: string;
+    phone?: string;
+    email?: string;
+    password?: string;
+    designation?: string;
+    assigned_wards?: number[];
+    is_active?: boolean;
+  }) {
+    return this.request<{ success: boolean; message: string; data: import('../types/index.js').WardOfficerRecord }>(`/admin/ward-officers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getAdminWorkers() {
+    return this.request<{ success: boolean; data: Array<{
+      id: string;
+      worker_code: string;
+      full_name: string;
+      phone: string;
+      email: string;
+      ward_number: number;
+      ward_name: string;
+      designation: string;
+      preferred_language: string;
+      is_active: boolean;
+      created_at: string;
+    }> }>('/admin/workers');
+  }
+
+  async createAdminWorker(data: {
+    full_name: string;
+    phone: string;
+    password: string;
+    designation: string;
+    ward_number: number;
+    preferred_language?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/admin/workers', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateAdminWorker(id: string, data: {
+    full_name?: string;
+    phone?: string;
+    password?: string;
+    designation?: string;
+    ward_number?: number;
+    is_active?: boolean;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/admin/workers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteAdminWorker(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/admin/workers/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getAdminCategories() {
+    return this.request<{ success: boolean; data: Array<import('../types/index.js').ComplaintCategory & {
+      active_complaints_count: number;
+      total_complaints_count: number;
+    }> }>('/admin/categories');
+  }
+
+  async createAdminCategory(data: {
+    category_name: string;
+    category_name_gu: string;
+    category_name_hi?: string;
+    description: string;
+    icon: string;
+    max_approval_days: number;
+    max_work_days: number;
+  }) {
+    return this.request<{ success: boolean; message: string; data: import('../types/index.js').ComplaintCategory }>('/admin/categories', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateAdminCategory(id: string, data: {
+    category_name?: string;
+    category_name_gu?: string;
+    category_name_hi?: string;
+    description?: string;
+    icon?: string;
+    max_approval_days?: number;
+    max_work_days?: number;
+    is_active?: boolean;
+  }) {
+    return this.request<{ success: boolean; message: string; data: import('../types/index.js').ComplaintCategory }>(`/admin/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteAdminCategory(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/admin/categories/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getAdminFlaggedOfficers() {
+    return this.request<{ success: boolean; data: Array<{
+      officer: import('../types/index.js').WardOfficerRecord;
+      overdue_complaints: any[];
+    }> }>('/admin/flagged-officers');
+  }
 }
 
 export const api = new ApiService();

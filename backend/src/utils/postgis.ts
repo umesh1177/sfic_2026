@@ -225,6 +225,15 @@ export const NAVSARI_WARDS: Ward[] = [
   }
 ];
 
+// Official Navsari Municipal Corporation Outer City Boundary (Lng, Lat order)
+export const DEFAULT_NAVSARI_CITY_BOUNDARY: [number, number][] = [
+  [72.8750, 20.8850],
+  [72.9650, 20.8850],
+  [72.9650, 20.9750],
+  [72.8750, 20.9750],
+  [72.8750, 20.8850]
+];
+
 // Point-in-polygon ray casting algorithm (PostGIS ST_Contains equivalent in Node.js)
 export function isPointInPolygon(point: [number, number], vs: [number, number][]): boolean {
   const x = point[0]; // lng

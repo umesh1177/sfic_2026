@@ -65,16 +65,45 @@ export interface Ward {
   contact_phone: string;
   cleanliness_score: number;
   boundary_coordinates: [number, number][]; // [lng, lat] polygon
+  assigned_officer_ids?: string[];
+  total_workers_count?: number;
+  active_complaints_count?: number;
 }
 
 export interface ComplaintCategory {
   id: string;
   category_name: string;
   category_name_gu: string;
-  category_name_hi: string;
+  category_name_hi?: string;
   description: string;
   icon: string;
   is_active: boolean;
+  max_approval_days?: number; // SLA: Max days to approve before officer is flagged
+  max_work_days?: number;     // SLA: Max days to resolve problem
+  created_at?: string;
+}
+
+export interface WardOfficerRecord {
+  id: string;
+  user_id: string;
+  full_name: string;
+  phone: string;
+  email: string;
+  designation: string;
+  assigned_wards: number[]; // Supports allocating multiple wards to one officer
+  is_active: boolean;
+  cleanliness_score?: number;
+  total_resolved?: number;
+  flagged?: boolean;
+  flagged_reasons?: string[];
+  created_at: string;
+}
+
+export interface AdminBoundarySettings {
+  city_name: string;
+  city_boundary: [number, number][]; // Outer polygon of Navsari
+  ward_boundary_overrides?: Record<string, [number, number][]>;
+  last_updated: string;
 }
 
 export interface ComplaintLocation {

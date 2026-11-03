@@ -62,6 +62,15 @@ class ComplaintsController {
                 res.status(400).json({ success: false, error: 'Valid numeric latitude and longitude are required' });
                 return;
             }
+            const cityBoundary = store_js_1.store.adminBoundarySettings?.city_boundary || postgis_js_1.DEFAULT_NAVSARI_CITY_BOUNDARY;
+            const isInside = (0, postgis_js_1.isPointInPolygon)([lng, lat], cityBoundary);
+            if (!isInside) {
+                res.status(422).json({
+                    success: false,
+                    error: 'Location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
+                });
+                return;
+            }
             const ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
             res.status(200).json({
                 success: true,
@@ -140,6 +149,16 @@ class ComplaintsController {
                 || (ward_id ? postgis_js_1.NAVSARI_WARDS.find(w => w.id === ward_id) : null);
             let lat = Number(latitude);
             let lng = Number(longitude);
+            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                const cityBoundary = store_js_1.store.adminBoundarySettings?.city_boundary || postgis_js_1.DEFAULT_NAVSARI_CITY_BOUNDARY;
+                if (!(0, postgis_js_1.isPointInPolygon)([lng, lat], cityBoundary)) {
+                    res.status(422).json({
+                        success: false,
+                        error: 'The reported location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
+                    });
+                    return;
+                }
+            }
             if (!ward) {
                 ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
             }

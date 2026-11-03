@@ -8,6 +8,7 @@ import { CommunityController } from '../controllers/communityController.js';
 import { CommunityHeadController } from '../controllers/communityHeadController.js';
 import { WorkerController } from '../controllers/workerController.js';
 import { WardOfficerController } from '../controllers/wardOfficerController.js';
+import { AdminController } from '../controllers/adminController.js';
 import { SupportController } from '../controllers/supportController.js';
 import { NotificationsController } from '../controllers/notificationsController.js';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth.js';
@@ -229,6 +230,32 @@ apiRouter.get('/ward/ai-analytics/seasonal-predictions', softAuthenticate, WardO
 apiRouter.get('/ward/ai-analytics/performers-suggestions', softAuthenticate, WardOfficerController.getAIPerformersSuggestions);
 apiRouter.get('/ward/ai-analytics/chronic-hotspots', softAuthenticate, WardOfficerController.getAIChronicHotspots);
 apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, WardOfficerController.executeAIQuickAction);
+
+// ============================================================================
+// NMC ADMIN DASHBOARD ROUTES (Navsari Municipal Corporation)
+// ============================================================================
+apiRouter.get('/admin/overview', softAuthenticate, AdminController.getOverview);
+apiRouter.get('/admin/wards', softAuthenticate, AdminController.getWards);
+apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, AdminController.updateWardBoundary);
+apiRouter.get('/admin/city-boundary', softAuthenticate, AdminController.getCityBoundary);
+apiRouter.put('/admin/city-boundary', softAuthenticate, AdminController.updateCityBoundary);
+
+apiRouter.get('/admin/ward-officers', softAuthenticate, AdminController.getWardOfficers);
+apiRouter.post('/admin/ward-officers', softAuthenticate, AdminController.createWardOfficer);
+apiRouter.put('/admin/ward-officers/:id', softAuthenticate, AdminController.updateWardOfficer);
+
+apiRouter.get('/admin/workers', softAuthenticate, AdminController.getWorkers);
+apiRouter.post('/admin/workers', softAuthenticate, AdminController.createWorker);
+apiRouter.put('/admin/workers/:id', softAuthenticate, AdminController.updateWorker);
+apiRouter.delete('/admin/workers/:id', softAuthenticate, AdminController.deleteWorker);
+
+apiRouter.get('/admin/categories', softAuthenticate, AdminController.getCategories);
+apiRouter.post('/admin/categories', softAuthenticate, AdminController.createCategory);
+apiRouter.put('/admin/categories/:id', softAuthenticate, AdminController.updateCategory);
+apiRouter.delete('/admin/categories/:id', softAuthenticate, AdminController.deleteCategory);
+
+apiRouter.get('/admin/flagged-officers', softAuthenticate, AdminController.getFlaggedOfficers);
+
 
 
 
