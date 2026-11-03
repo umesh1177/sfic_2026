@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
+  Send,
   Plus,
   Trash2,
   MapPin,
@@ -324,7 +325,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                       <option value="low">Low Priority</option>
                       <option value="medium">Medium Priority</option>
                       <option value="high">High Urgency</option>
-                      <option value="critical">🚨 Critical / Health Hazard</option>
+                      <option value="critical">Critical / Health Hazard</option>
                     </select>
                   </div>
                   <div>
@@ -409,7 +410,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                 disabled={submitting}
                 className="px-8 py-2.5 rounded-2xl bg-[#095c54] text-white font-black text-sm shadow-md hover:bg-[#074741] transition disabled:opacity-50"
               >
-                {submitting ? 'Publishing Problem...' : '🚀 Publish Problem for Community Drives'}
+                {submitting ? 'Publishing Problem...' : <><Send className="h-4 w-4" /> Publish Problem for Community Drives</>}
               </button>
             </div>
           </form>

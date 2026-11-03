@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime, formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
@@ -33,6 +34,7 @@ import 'leaflet/dist/leaflet.css';
 import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
 import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
+import { ComplaintEvidenceImage } from '../common/ComplaintEvidenceImage.js';
 
 // Custom Map Marker
 const customIcon = new L.Icon({
@@ -110,9 +112,9 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
       }
       setIsPublished(!!(res.data?.overview as any)?.is_published_to_community);
       const bPhoto = res.data?.work_progress_evidence?.before_photo_url || res.data?.citizen_report?.photo_url || res.data?.overview?.image_url || '';
-      const aPhoto = res.data?.work_progress_evidence?.after_photo_url || res.data?.overview?.resolved_image_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
+      const aPhoto = res.data?.work_progress_evidence?.after_photo_url || res.data?.overview?.resolved_image_url || '';
       setBeforePhoto(bPhoto);
-      setAfterPhotos([aPhoto]);
+      setAfterPhotos(aPhoto ? [aPhoto] : []);
     } catch (err: any) {
       setActionError(err.message || 'Failed to load complaint inspect details.');
     } finally {
@@ -149,21 +151,21 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     setPublishing(true);
     setActionError(null);
     try {
-      const beforeUrl = beforePhoto || details?.work_progress_evidence?.before_photo_url || details?.citizen_report?.photo_url || 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80';
-      const afterUrl = afterPhotos[0] || details?.work_progress_evidence?.after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
+      const beforeUrl = beforePhoto || details?.work_progress_evidence?.before_photo_url || details?.citizen_report?.photo_url || '';
+      const afterUrl = afterPhotos[0] || details?.work_progress_evidence?.after_photo_url || '';
 
       const res = await api.publishWardComplaintToCommunity(complaintId, {
         title: postTitle,
         description: postDescription,
         before_photo_url: beforeUrl,
         after_photo_url: afterUrl,
-        after_photos: afterPhotos.length > 0 ? afterPhotos : [afterUrl],
+        after_photos: afterPhotos.length > 0 ? afterPhotos : afterUrl ? [afterUrl] : [],
         waste_kg: 380
       });
 
       setIsPublished(true);
       setShowPublishModal(false);
-      setActionSuccess('✓ Work Done successfully sent to Citizen and posted to Community Wall!');
+      setActionSuccess('Work Done successfully sent to Citizen and posted to Community Wall!');
       confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
       if (onComplaintUpdated) onComplaintUpdated();
     } catch (err: any) {
@@ -335,9 +337,10 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-4/3 relative">
                   {(citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url) ? (
-                    <img
+                    <ComplaintEvidenceImage
                       src={citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url}
                       alt="Citizen complaint photo"
+                      categoryName={overview.category_name}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -374,7 +377,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                       Privacy Protected (Anonymous Submission)
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Logged: {new Date(citizen_report?.submitted_at || overview.submitted_at).toLocaleString('en-IN')}
+                      Logged: {formatDateTime(citizen_report?.submitted_at || overview.submitted_at)}
                     </p>
                   </div>
                 </div>
@@ -504,7 +507,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
                         member.is_temporary_leader ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700'
                       }`}>
-                        {member.is_temporary_leader ? '👑' : idx + 1}
+                        {member.is_temporary_leader ? <Crown className="h-4 w-4" /> : idx + 1}
                       </div>
                       <div>
                         <p className="text-xs font-black text-[#0f2925]">{member.name || member.full_name || member.worker_name}</p>
@@ -586,11 +589,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 const verifiedCount = members.filter((m: any) =>
                   records.some((r: any) => r.worker_id === m.worker_id || r.worker_id === m.id)
                 ).length;
-                const dateDisplay = new Date(overview.submitted_at || Date.now()).toLocaleDateString('en-IN', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric'
-                });
+                const dateDisplay = formatDate(overview.submitted_at || Date.now());
 
                 return (
                   <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
@@ -620,7 +619,15 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                             ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                             : 'bg-amber-100 text-amber-900 border border-amber-300'
                         }`}>
-                          {verifiedCount > 0 ? `✓ ${verifiedCount}/${members.length} Verified Present` : `⏳ 0/${members.length} Checked In`}
+                          {verifiedCount > 0 ? (
+                            <span className="inline-flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3" /> {verifiedCount}/{members.length} Verified Present
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" /> 0/{members.length} Checked In
+                            </span>
+                          )}
                         </span>
                         <div className="p-1 rounded-lg hover:bg-slate-200/60 text-slate-500 transition">
                           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -664,7 +671,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                       )}
                                     </td>
                                     <td className="py-3 px-3 font-mono text-slate-600">
-                                      {isPresent ? new Date(attRec.attendance_timestamp || attRec.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                      {isPresent ? formatTime(attRec.attendance_timestamp || attRec.created_at) : '—'}
                                     </td>
                                     <td className="py-3 px-3">
                                       {isPresent ? (
@@ -679,11 +686,11 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                     <td className="py-3 px-3 text-right">
                                       {isPresent ? (
                                         <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-black text-[10px]">
-                                          ✓ Verified Present
+                                          <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Verified Present</span>
                                         </span>
                                       ) : (
                                         <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 font-bold text-[10px] border border-amber-200">
-                                          ⏳ Not Yet Checked In
+                                          <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> Not Yet Checked In</span>
                                         </span>
                                       )}
                                     </td>
@@ -743,22 +750,16 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                       Before Cleanup Stage
                     </span>
                     <span className="text-[10px] text-slate-500 font-mono">
-                      {beforeEv ? new Date(beforeEv.device_capture_timestamp || beforeEv.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Citizen Initial'}
+                      {beforeEv ? formatTime(beforeEv.device_capture_timestamp || beforeEv.created_at) : 'Citizen Initial'}
                     </span>
                   </div>
                   <div className="h-56 rounded-xl overflow-hidden border border-amber-200 bg-slate-100 relative group">
-                    {(beforeEv?.storage_path || citizenPhoto) ? (
-                      <img
-                        src={beforeEv?.storage_path || citizenPhoto}
-                        alt="Before cleanup"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-4 text-center">
-                        <Camera className="w-8 h-8 text-slate-300 mb-1" />
-                        <span className="text-xs font-bold text-slate-500">No Before Photo</span>
-                      </div>
-                    )}
+                    <ComplaintEvidenceImage
+                      src={beforeEv?.storage_path || citizenPhoto}
+                      alt="Before cleanup"
+                      categoryName={overview.category_name}
+                      className="w-full h-full object-cover"
+                    />
                     <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white px-2 py-0.5 rounded-md text-[10px] font-bold">
                       {beforeEv ? 'Field Leader Photo' : 'Citizen Initial Report'}
                     </div>
@@ -778,7 +779,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                       After Cleanup Stage (Completion Proof)
                     </span>
                     <span className="text-[10px] text-slate-500 font-mono">
-                      {afterEv ? new Date(afterEv.device_capture_timestamp || afterEv.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Pending'}
+                      {afterEv ? formatTime(afterEv.device_capture_timestamp || afterEv.created_at) : 'Pending'}
                     </span>
                   </div>
                   <div className="h-56 rounded-xl overflow-hidden border border-emerald-200 bg-slate-100 relative group">
@@ -955,11 +956,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
             const evidenceList = work_progress_evidence?.evidence_items || [];
             const dayKey = 'day-1';
             const isExpanded = !!expandedEvidenceDays[dayKey];
-            const dateDisplay = new Date(overview.submitted_at || Date.now()).toLocaleDateString('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric'
-            });
+            const dateDisplay = formatDate(overview.submitted_at || Date.now());
 
             return (
               <div className="space-y-4">
@@ -1010,7 +1007,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                   {item.evidence_type?.toUpperCase()} STAGE
                                 </span>
                                 <span className="text-[10px] font-mono text-slate-500">
-                                  {new Date(item.device_capture_timestamp || item.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                  {formatTime(item.device_capture_timestamp || item.created_at)}
                                 </span>
                               </div>
 
@@ -1034,7 +1031,9 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                   <LocateFixed className="w-3 h-3 text-emerald-600" />
                                   <span>{item.distance_from_assignment_meters ? `${item.distance_from_assignment_meters}m from site` : 'GPS Verified'}</span>
                                 </span>
-                                <span className="font-extrabold text-[#095c54]">✓ Validated</span>
+                                <span className="inline-flex items-center gap-1 font-extrabold text-[#095c54]">
+                                  <CheckCircle2 className="h-3 w-3" /> Validated
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -1073,7 +1072,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                     action: 'Ward Officer Review & Team Assigned',
                     created_at: overview.last_updated || overview.submitted_at,
                     actor_name: 'Ward Officer',
-                    description: `Assigned to ${overview.current_assigned_team || 'Sanitation Team'}. Deadline: ${new Date(overview.deadline || overview.sla_deadline).toLocaleDateString('en-IN')}.`
+                    description: `Assigned to ${overview.current_assigned_team || 'Sanitation Team'}. Deadline: ${formatDate(overview.deadline || overview.sla_deadline)}.`
                   }
                 ] : [])
               ]).map((step: any, idx: number) => (
@@ -1083,7 +1082,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-black text-[#0f2925]">{step.action || step.title}</span>
                       <span className="text-[10px] text-slate-400 font-mono">
-                        {step.created_at ? new Date(step.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : step.time}
+                        {step.created_at ? formatTime(step.created_at) : step.time}
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 font-medium">{step.description || step.desc}</p>
@@ -1359,4 +1358,3 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 </div>
   );
 };
-

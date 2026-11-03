@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
@@ -275,10 +276,10 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
               <div className="p-4 rounded-2xl bg-[#f8faf9] border border-slate-200 space-y-1.5 text-xs">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Schedule & Timings</span>
                 <p className="font-bold text-slate-700">
-                  Starts: {new Date(activity.proposed_start_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  Starts: {formatDateTime(activity.proposed_start_at)}
                 </p>
                 <p className="font-bold text-slate-700">
-                  Ends: {new Date(activity.proposed_end_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  Ends: {formatDateTime(activity.proposed_end_at)}
                 </p>
               </div>
 
@@ -402,7 +403,7 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                       <td className="p-3 text-slate-600">{reg.citizen_phone || 'N/A'}</td>
                       <td className="p-3 font-mono text-slate-600">{reg.registration_number}</td>
                       <td className="p-3 text-slate-500">
-                        {new Date(reg.registered_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        {formatDateTime(reg.registered_at)}
                       </td>
                       <td className="p-3">
                         <span
@@ -453,7 +454,7 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                   <div className="p-3 space-y-1">
                     <p className="text-xs font-semibold text-slate-800">{ev.caption || 'Sanitation documentation'}</p>
                     <p className="text-[10px] text-slate-400">
-                      Uploaded by {(ev as any).uploaded_by_name || ev.uploaded_by || 'Community Head'} · {new Date(ev.created_at).toLocaleDateString()}
+                      Uploaded by {(ev as any).uploaded_by_name || ev.uploaded_by || 'Community Head'} · {formatDate(ev.created_at)}
                     </p>
                   </div>
                 </div>
@@ -485,7 +486,7 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 <div key={q.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-900">
                     <span>Q: {q.question_text}</span>
-                    <span className="text-[10px] text-slate-400">{new Date(q.created_at).toLocaleDateString()}</span>
+                    <span className="text-[10px] text-slate-400">{formatDate(q.created_at)}</span>
                   </div>
                   {q.answer_text ? (
                     <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-900 text-xs font-medium">

@@ -1,3 +1,4 @@
+import { formatDate, formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Clock,
@@ -10,7 +11,7 @@ import {
   FileQuestion,
   History,
   Send,
-  Navigation
+  X
 } from 'lucide-react';
 import { WorkAssignment, WorkerAttendance as AttendanceType, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
@@ -243,8 +244,9 @@ export const WorkerAttendance: React.FC<WorkerAttendanceProps> = ({
                     </span>
                   </div>
                   {deviceCoords.accuracy > 65 && (
-                    <p className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200">
-                      ⚠️ Accuracy is weak. Please step under open sky for accurate geofence verification.
+                    <p className="flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>Accuracy is weak. Please step under open sky for accurate geofence verification.</span>
                     </p>
                   )}
                 </div>
@@ -316,7 +318,7 @@ export const WorkerAttendance: React.FC<WorkerAttendanceProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#64748b]">Punch Time:</span>
-                    <span className="font-mono">{new Date(latestAttendance.attendance_timestamp || latestAttendance.created_at).toLocaleTimeString()}</span>
+                    <span className="font-mono">{formatTime(latestAttendance.attendance_timestamp || latestAttendance.created_at)}</span>
                   </div>
                 </div>
               </div>
@@ -351,10 +353,10 @@ export const WorkerAttendance: React.FC<WorkerAttendanceProps> = ({
                     >
                       <div>
                         <span className="font-bold text-slate-800 block">
-                          {new Date(att.attendance_timestamp || att.created_at).toLocaleDateString()}
+                          {formatDate(att.attendance_timestamp || att.created_at)}
                         </span>
                         <span className="text-slate-500 text-[11px]">
-                          {new Date(att.attendance_timestamp || att.created_at).toLocaleTimeString()} • {att.distance_from_assignment_meters}m
+                          {formatTime(att.attendance_timestamp || att.created_at)} • {att.distance_from_assignment_meters}m
                         </span>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -387,7 +389,7 @@ export const WorkerAttendance: React.FC<WorkerAttendanceProps> = ({
                 onClick={() => setShowExceptionModal(false)}
                 className="text-slate-400 hover:text-slate-600 font-bold text-sm"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 

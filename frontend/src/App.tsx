@@ -4,7 +4,6 @@ import { DesktopSidebar } from './components/DesktopSidebar.js';
 import { MobileBottomNavigation } from './components/MobileBottomNavigation.js';
 import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
-import { NavsariMap } from './components/NavsariMap.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
@@ -294,9 +293,7 @@ export const App: React.FC = () => {
             />
           )}
 
-          {currentTab === 'map' && (
-            <NavsariMap categories={categories} lang={lang} />
-          )}
+          {/* Citizen map browsing is temporarily disabled; complaint locations are detected automatically. */}
 
           {currentTab === 'drives' && (
             <CleanlinessDrives lang={lang} />

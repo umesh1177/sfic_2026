@@ -1,19 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MapContainer,
-  TileLayer,
-  useMap,
-  useMapEvents
-} from 'react-leaflet';
-import L from 'leaflet';
-import {
   ArrowLeft,
   Camera,
   Upload,
   Mic,
   MicOff,
   MapPin,
-  Compass,
   AlertTriangle,
   CheckCircle2,
   RefreshCw,
@@ -27,14 +19,13 @@ import {
   ExternalLink,
   AlertCircle,
   Volume2,
-  MousePointerClick,
   FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
 import { checkTextForAbuse } from '../utils/moderation.js';
 import { ComplaintCategory, Complaint } from '../types/index.js';
-import { Language, translations } from '../i18n/translations.js';
+import { Language } from '../i18n/translations.js';
 import { MAP_CONFIG } from '../config/mapConfig.js';
 import { CategoryVisualSymbol } from './CategoryVisualSymbol.js';
 
@@ -44,34 +35,6 @@ interface ReportIssuePageProps {
   onComplaintSubmitted: (complaint: Complaint) => void;
   lang: Language;
   onNavigateToComplaints: () => void;
-}
-
-// Controller component to smoothly fly/pan map to target position
-function MapCenterController({ center }: { center: [number, number] }) {
-  const map = useMap();
-  useEffect(() => {
-    map.flyTo(center, 16, { duration: 1.2 });
-  }, [center, map]);
-  return null;
-}
-
-// Map event listener: updates picked location as user drags or clicks the map (Uber/Rapido style)
-function MapMoveListener({ onLocationChanged }: { onLocationChanged: (lat: number, lng: number) => void }) {
-  const map = useMapEvents({
-    dragend() {
-      const c = map.getCenter();
-      onLocationChanged(c.lat, c.lng);
-    },
-    zoomend() {
-      const c = map.getCenter();
-      onLocationChanged(c.lat, c.lng);
-    },
-    click(e) {
-      map.flyTo(e.latlng, map.getZoom(), { duration: 0.5 });
-      onLocationChanged(e.latlng.lat, e.latlng.lng);
-    }
-  });
-  return null;
 }
 
 // Comprehensive civic categories with visual illustrations
@@ -278,8 +241,6 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   lang,
   onNavigateToComplaints
 }) => {
-  const t = translations[lang];
-
   // 1. Photo & Evidence State (Starts empty - no prefilled dummy photo)
   const [imageUrl, setImageUrl] = useState<string>('');
   const [imageFileName, setImageFileName] = useState<string>('');
@@ -297,16 +258,18 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   // 2. Form & Category State (Starts empty - citizen enters their own issue)
   const [description, setDescription] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('cat-03');
-  const [aiIdentifiedCategory, setAiIdentifiedCategory] = useState<{ id: string; name: string; confidence: number } | null>(null);
   const [isUrgent, setIsUrgent] = useState<boolean>(false);
+  const descriptionRef = useRef(description);
 
-  // 3. Location & Map State (Uber/Rapido style)
+  // 3. Automatically detected complaint location
   const [selectedWardNumber, setSelectedWardNumber] = useState<number>(3);
   const [mapCenter, setMapCenter] = useState<[number, number]>(MAP_CONFIG.center);
   const [address, setAddress] = useState<string>('Detecting location...');
-  const [landmark, setLandmark] = useState<string>('');
   const [isGpsLoading, setIsGpsLoading] = useState<boolean>(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const classificationRequestIdRef = useRef(0);
+  const imageReadRequestIdRef = useRef(0);
+  const categorySelectionRevisionRef = useRef(0);
 
   const NAVSARI_WARDS_LIST = [
     { number: 1, name: 'Ward 1 - Lunsikui / Tower Road', center: [20.9475, 72.9275] as [number, number] },
@@ -338,15 +301,6 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       }
     }
     return closestWard;
-  };
-
-  const handleWardChange = (wardNum: number) => {
-    setSelectedWardNumber(wardNum);
-    const wardInfo = NAVSARI_WARDS_LIST.find(w => w.number === wardNum);
-    if (wardInfo) {
-      setMapCenter(wardInfo.center);
-      setAddress(`${wardInfo.name.split(' - ')[1]}, Navsari`);
-    }
   };
 
   // 4. Real Speech-To-Text State
@@ -386,25 +340,24 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         const neighbourhood = data.address?.neighbourhood || data.address?.residential || '';
         const city = data.address?.city || data.address?.town || data.address?.state_district || 'Navsari';
         const formatted = [road, neighbourhood, city].filter(Boolean).join(', ');
-        if (formatted) {
-          setAddress(formatted);
-          return;
-        }
+        if (formatted) return setAddress(formatted);
       }
     } catch {
-      // Fallback
+      // Use the municipal-area fallback when reverse geocoding is unavailable.
     }
 
-    setAddress('Near Station Road, Navsari Civic Area');
+    setAddress('Navsari Municipal Area');
   };
 
-  // Fetch GPS location automatically on mount
+  // Fetch GPS location automatically on mount; the citizen does not choose a map point.
   const fetchCurrentLocation = () => {
     setIsGpsLoading(true);
     setGpsError(null);
 
     if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser. Please tap on the map to set your location.');
+      setGpsError('Location access is not supported by your browser. Using the approximate municipal area.');
+      setAddress('Navsari Municipal Area');
+      setSelectedWardNumber(detectWardFromCoordinates(mapCenter[0], mapCenter[1]));
       setIsGpsLoading(false);
       return;
     }
@@ -421,9 +374,9 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       err => {
         setIsGpsLoading(false);
         if (err.code === err.PERMISSION_DENIED) {
-          setGpsError('Location access is disabled. Please enable GPS permissions or drag the map below.');
+          setGpsError('Location access is disabled. Enable location permissions and retry, or continue with the approximate municipal area.');
         } else {
-          setGpsError('Could not detect exact GPS position. Tap or drag the map to select the location.');
+          setGpsError('Could not detect your exact location. Enable location access and retry, or continue with the approximate municipal area.');
         }
         reverseGeocode(mapCenter[0], mapCenter[1]);
       },
@@ -435,17 +388,11 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     fetchCurrentLocation();
   }, []);
 
-  // Handle map movement / center update
-  const handleMapLocationChanged = (lat: number, lng: number) => {
-    setMapCenter([lat, lng]);
-    const detected = detectWardFromCoordinates(lat, lng);
-    setSelectedWardNumber(detected);
-    reverseGeocode(lat, lng);
-  };
-
   // Live Description Input Handler with Instant Abuse Detection & AI Category Match
   const descDebounceRef = useRef<any>(null);
   const handleDescriptionChange = (newVal: string) => {
+    const requestId = ++classificationRequestIdRef.current;
+    descriptionRef.current = newVal;
     setDescription(newVal);
 
     // 1. Instant client-side Profanity & Abuse Check
@@ -480,7 +427,11 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             newVal,
             imageUrl.startsWith('data:') ? imageUrl : undefined
           );
-          if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
+          if (
+            requestId === classificationRequestIdRef.current &&
+            mlRes.data?.matched_category_id &&
+            categories.some(c => c.id === mlRes.data.matched_category_id)
+          ) {
             setSelectedCategoryId(mlRes.data.matched_category_id);
           }
         } catch {
@@ -503,40 +454,56 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     }
 
     setFormError(null);
+    classificationRequestIdRef.current += 1;
+    const imageReadRequestId = ++imageReadRequestIdRef.current;
+    const categoryRevision = categorySelectionRevisionRef.current;
     setImageFileName(file.name);
     setImageValidationStatus(`Photo attached (${(file.size / 1024).toFixed(0)} KB, verifying...)`);
 
     const reader = new FileReader();
     reader.onload = async e => {
+      if (imageReadRequestId !== imageReadRequestIdRef.current) return;
       const b64 = e.target?.result as string;
       setImageUrl(b64);
 
       // Fast immediate keyword detection
-      const autoCat = detectCategoryFromText(description, file.name);
-      if (autoCat && categories.some(c => c.id === autoCat)) {
+      const autoCat = detectCategoryFromText(descriptionRef.current, file.name);
+      if (
+        categoryRevision === categorySelectionRevisionRef.current &&
+        autoCat &&
+        categories.some(c => c.id === autoCat)
+      ) {
         setSelectedCategoryId(autoCat);
       }
 
       // PyTorch Deep Learning Image Classification via ML Microservice
+      const analysisRequestId = ++classificationRequestIdRef.current;
       try {
-        const mlRes = await api.classifyImage(file.name, file.size, description, b64);
-        if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
+        const mlRes = await api.classifyImage(file.name, file.size, descriptionRef.current, b64);
+        if (analysisRequestId !== classificationRequestIdRef.current) return;
+        if (
+          categoryRevision === categorySelectionRevisionRef.current &&
+          mlRes.data?.matched_category_id &&
+          categories.some(c => c.id === mlRes.data.matched_category_id)
+        ) {
           setSelectedCategoryId(mlRes.data.matched_category_id);
-          const catObj = categories.find(c => c.id === mlRes.data.matched_category_id);
-          setAiIdentifiedCategory({
-            id: mlRes.data.matched_category_id,
-            name: catObj?.category_name || mlRes.data.predicted_category_name || 'Civic Issue',
-            confidence: Math.round((mlRes.data as any).confidence_score || (mlRes.data.confidence ? mlRes.data.confidence * 100 : 94))
-          });
           setImageValidationStatus(`Photo verified: ${mlRes.data.predicted_category_name}`);
         } else {
           setImageValidationStatus('Photo verified (JPEG, Clear visual)');
         }
       } catch {
-        setImageValidationStatus('Photo verified (JPEG, Clear visual)');
+        if (analysisRequestId === classificationRequestIdRef.current) {
+          setImageValidationStatus('Photo verified (JPEG, Clear visual)');
+        }
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSelectCategory = (categoryId: string) => {
+    categorySelectionRevisionRef.current += 1;
+    classificationRequestIdRef.current += 1;
+    setSelectedCategoryId(categoryId);
   };
 
   // Short-Range Duplicate Detection Check
@@ -614,25 +581,29 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        imageReadRequestIdRef.current += 1;
+        const categoryRevision = categorySelectionRevisionRef.current;
+        const requestId = ++classificationRequestIdRef.current;
         setImageUrl(dataUrl);
         setImageFileName(`camera_capture_${Date.now()}.jpg`);
         setImageValidationStatus('Photo captured from camera (verifying...)');
 
         api.classifyImage('camera_capture.jpg', 500000, description, dataUrl).then(res => {
-          if (res.data?.matched_category_id && categories.some(c => c.id === res.data.matched_category_id)) {
+          if (requestId !== classificationRequestIdRef.current) return;
+          if (
+            categoryRevision === categorySelectionRevisionRef.current &&
+            res.data?.matched_category_id &&
+            categories.some(c => c.id === res.data.matched_category_id)
+          ) {
             setSelectedCategoryId(res.data.matched_category_id);
-            const catObj = categories.find(c => c.id === res.data.matched_category_id);
-            setAiIdentifiedCategory({
-              id: res.data.matched_category_id,
-              name: catObj?.category_name || res.data.predicted_category_name || 'Civic Issue',
-              confidence: Math.round((res.data as any).confidence_score || (res.data.confidence ? res.data.confidence * 100 : 95))
-            });
             setImageValidationStatus(`Photo verified: ${res.data.predicted_category_name}`);
           } else {
             setImageValidationStatus('Photo captured from live camera (JPEG, verified)');
           }
         }).catch(() => {
-          setImageValidationStatus('Photo captured from live camera (JPEG, verified)');
+          if (requestId === classificationRequestIdRef.current) {
+            setImageValidationStatus('Photo captured from live camera (JPEG, verified)');
+          }
         });
       }
     }
@@ -705,13 +676,12 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     }
   };
 
-  // Preset quick tester
-  const handleSelectPreset = (preset: { name: string; url: string; file: string; desc: string; catId: string }) => {
-    setImageUrl(preset.url);
-    setImageFileName(preset.file);
+  const handleSelectPreset = (preset: { name: string; desc: string; catId: string }) => {
+    categorySelectionRevisionRef.current += 1;
+    classificationRequestIdRef.current += 1;
+    descriptionRef.current = preset.desc;
     setDescription(preset.desc);
     setSelectedCategoryId(preset.catId);
-    setImageValidationStatus(`Photo verified: ${preset.name}`);
     setFormError(null);
   };
 
@@ -762,7 +732,6 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         latitude: mapCenter[0],
         longitude: mapCenter[1],
         address: address || 'Navsari Municipal Area',
-        landmark: landmark || undefined,
         description: description,
         original_language: lang,
         image_url: imageUrl,
@@ -837,10 +806,21 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             <button
               onClick={() => {
                 setSubmittedComplaint(null);
+                classificationRequestIdRef.current += 1;
+                imageReadRequestIdRef.current += 1;
+                categorySelectionRevisionRef.current += 1;
+                setImageUrl('');
+                setImageFileName('');
+                setImageValidationStatus('');
                 setDescription('');
-                setLandmark('');
+                descriptionRef.current = '';
+                setSelectedCategoryId(categories[0]?.id || 'cat-03');
+                setIsUrgent(false);
+                setFormError(null);
                 setDismissedDuplicates(false);
                 setDuplicateMatches([]);
+                if (nativeCameraInputRef.current) nativeCameraInputRef.current.value = '';
+                if (galleryInputRef.current) galleryInputRef.current.value = '';
               }}
               className="btn-outline-custom py-3 px-6 text-xs sm:text-sm font-extrabold"
             >
@@ -853,6 +833,13 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   }
 
   const selectedCategoryObj = categories.find(c => c.id === selectedCategoryId);
+  const selectedCategoryLabel = selectedCategoryObj
+    ? lang === 'gu'
+      ? selectedCategoryObj.category_name_gu
+      : lang === 'hi'
+      ? selectedCategoryObj.category_name_hi
+      : selectedCategoryObj.category_name
+    : '';
 
   // ========================================================
   // COMPLAINT FORM
@@ -907,24 +894,33 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           {/* SECTION 1 (TOP): PHOTO EVIDENCE & VALIDATION             */}
           {/* ======================================================== */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
                 <Camera className="w-4 h-4 text-[#095c54]" />
                 Photo Evidence
               </label>
-              <span className="text-[11px] text-[#10b981] font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {imageValidationStatus}
-              </span>
+              {imageValidationStatus && (
+                <span className="text-[11px] text-[#10b981] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  {imageValidationStatus}
+                </span>
+              )}
             </div>
 
             {/* Photo Preview Container */}
             <div className="relative rounded-2xl overflow-hidden border-2 border-dashed border-[#b8e0d7] bg-[#f8faf9] aspect-video flex items-center justify-center">
-              <img
-                src={imageUrl}
-                alt="Issue preview"
-                className="w-full h-full object-cover"
-              />
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt="Issue preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-[#64748b]">
+                  <Camera className="h-8 w-8" />
+                  <span className="text-xs font-bold">Upload or capture an issue photo</span>
+                </div>
+              )}
 
               {/* Floating Camera Actions on Image (Responsive for small phones) */}
               <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-wrap items-center justify-center gap-2 p-2.5 sm:p-4">
@@ -986,27 +982,21 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
             {/* Quick Sample Presets */}
             <div className="flex items-center gap-2 text-[11px] overflow-x-auto pb-1 no-scrollbar">
               <span className="text-[10px] font-bold text-[#64748b] whitespace-nowrap">
-                Sample photos:
+                Issue examples:
               </span>
               {[
                 {
                   name: 'Overflowing Bin',
-                  url: 'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80',
-                  file: 'dustbin_overflow.jpg',
                   desc: 'Public community dustbin is completely filled and overflowing onto the pedestrian path.',
                   catId: 'cat-03'
                 },
                 {
                   name: 'Choked Gutter',
-                  url: 'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80',
-                  file: 'gutter_drainage.jpg',
                   desc: 'Severely choked drainage gutter causing dirty stagnant wastewater to spill over street.',
                   catId: 'cat-05'
                 },
                 {
                   name: 'Roadside Dump',
-                  url: 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-                  file: 'road_dump.jpg',
                   desc: 'Heavy roadside dumping of uncollected plastic debris and domestic waste.',
                   catId: 'cat-04'
                 }
@@ -1016,7 +1006,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                   type="button"
                   onClick={() => handleSelectPreset(s)}
                   className={`px-2.5 py-1 rounded-xl font-bold whitespace-nowrap transition border ${
-                    imageUrl === s.url
+                    selectedCategoryId === s.catId
                       ? 'bg-[#095c54] text-white border-[#095c54]'
                       : 'bg-white text-[#64748b] border-[#e2e8f0] hover:bg-[#f0f6f4]'
                   }`}
@@ -1045,9 +1035,9 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                     className="text-[11px] font-bold text-[#095c54] bg-[#f0f6f4] px-2 py-1 rounded-xl border border-[#b8e0d7] outline-none cursor-pointer"
                     title="Select spoken language"
                   >
-                    <option value="gu-IN">🇬🇯 ગુજરાતી</option>
-                    <option value="hi-IN">🇮🇳 हिन्दी</option>
-                    <option value="en-IN">🇬🇧 English</option>
+                    <option value="gu-IN">ગુજરાતી</option>
+                    <option value="hi-IN">हिन्दी</option>
+                    <option value="en-IN">English</option>
                   </select>
 
                   <button
@@ -1124,14 +1114,14 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 
             {/* Category Selector with AI Auto-Detected Indicator */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="block text-xs font-extrabold text-[#095c54]">
                   Issue Category
                 </label>
                 {selectedCategoryObj && (
-                  <span className="text-[11px] font-extrabold text-[#095c54] bg-[#e6f4f1] px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-[#b8e0d7]">
-                    <Sparkles className="w-3 h-3 text-[#095c54]" />
-                    AI Assigned: {selectedCategoryObj.category_name}
+                  <span className="max-w-full break-words text-[11px] font-extrabold text-[#095c54] bg-[#e6f4f1] px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-[#b8e0d7]">
+                    <Sparkles className="w-3 h-3 shrink-0 text-[#095c54]" />
+                    <span>Current selection: {selectedCategoryLabel}</span>
                   </span>
                 )}
               </div>
@@ -1139,11 +1129,13 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5">
                 {categories.map(c => {
                   const isSelected = selectedCategoryId === c.id;
+                  const categoryLabel = lang === 'gu' ? c.category_name_gu : lang === 'hi' ? c.category_name_hi : c.category_name;
+                  const secondaryLabel = lang === 'en' ? c.category_name_gu : c.category_name;
                   return (
                     <button
                       key={c.id}
                       type="button"
-                      onClick={() => setSelectedCategoryId(c.id)}
+                      onClick={() => handleSelectCategory(c.id)}
                       className={`p-2.5 sm:p-3 rounded-2xl text-left transition-all touch-press border relative flex items-center gap-2.5 ${
                         isSelected
                           ? 'bg-[#095c54] text-white border-[#095c54] shadow-md shadow-[#095c54]/20 ring-2 ring-[#095c54]/30'
@@ -1160,17 +1152,30 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-black truncate">{c.category_name}</span>
+                          <span className="whitespace-normal break-words text-xs font-black leading-snug">{categoryLabel}</span>
                           {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
                         </div>
-                        <div className={`text-[10px] font-semibold truncate mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-[#64748b]'}`}>
-                          {c.category_name_gu}
+                        <div className={`mt-0.5 whitespace-normal break-words text-[10px] font-semibold leading-snug ${isSelected ? 'text-emerald-100' : 'text-[#64748b]'}`}>
+                          {secondaryLabel}
                         </div>
                       </div>
                     </button>
                   );
                 })}
               </div>
+              {selectedCategoryObj && (
+                <div className="flex items-start gap-2 rounded-2xl border border-[#b8e0d7] bg-[#f0f6f4] p-3" aria-live="polite">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#095c54]" />
+                  <div className="min-w-0">
+                    <span className="block text-[10px] font-extrabold uppercase tracking-wide text-[#095c54]">
+                      Current issue insight
+                    </span>
+                    <p className="mt-0.5 break-words text-xs font-semibold leading-relaxed text-[#0f2925]">
+                      {selectedCategoryObj.description}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Urgency Checkbox */}
@@ -1233,8 +1238,9 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e]">
                       {duplicateMatches[0].complaint_number}
                     </span>
-                    <span className="text-[10px] font-bold text-[#10b981] capitalize">
-                      ● {duplicateMatches[0].status}
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#10b981] capitalize">
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      {duplicateMatches[0].status}
                     </span>
                   </div>
                   <p className="text-xs font-semibold text-[#0f2925] truncate mt-1">
@@ -1274,142 +1280,42 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* SECTION 4 (BOTTOM): UBER/RAPIDO MAP & ADDRESS CONFIRM    */}
+          {/* SECTION 4: AUTOMATICALLY DETECTED LOCATION              */}
           {/* ======================================================== */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-[#095c54]" />
-                Incident Location & Municipal Ward
-              </label>
-              <span className="text-[11px] text-[#64748b] font-medium">
-                Drag map or choose ward
+          <div className="rounded-2xl border border-[#b8e0d7] bg-[#f8faf9] p-3.5">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e6f4f1] text-[#095c54]">
+                <MapPin className="h-4 w-4" />
               </span>
-            </div>
-
-            {/* Municipal Ward Selector */}
-            <div className="p-3 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="min-w-0">
-                <span className="text-[10px] font-black uppercase text-[#095c54] block tracking-wider">
-                  Target Municipal Ward *
+              <div className="min-w-0 flex-1">
+                <span className="block text-[10px] font-extrabold uppercase tracking-wide text-[#64748b]">
+                  Automatically detected location
                 </span>
-                <span className="text-[11px] text-[#64748b] font-medium">
-                  Auto-centers map and dispatches to that ward's officer
-                </span>
+                <p className="mt-1 break-words text-xs font-bold text-[#0f2925]">
+                  {isGpsLoading ? 'Detecting your location...' : address}
+                </p>
+                <p className="mt-1 text-[11px] font-semibold text-[#64748b]">
+                  Ward {selectedWardNumber} · Used to route this report to the right team
+                </p>
+                {gpsError && (
+                  <p className="mt-2 text-[11px] font-semibold text-[#92400e]" role="status">
+                    {gpsError}
+                  </p>
+                )}
               </div>
-              <select
-                value={selectedWardNumber}
-                onChange={e => handleWardChange(Number(e.target.value))}
-                className="text-xs font-bold text-[#0f2925] bg-[#f8faf9] border border-[#cbd5e1] rounded-xl px-3 py-2 outline-none focus:border-[#095c54] cursor-pointer"
-              >
-                {NAVSARI_WARDS_LIST.map(w => (
-                  <option key={w.number} value={w.number}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* GPS Notification if Location is Disabled */}
-            {gpsError && (
-              <div className="p-3 rounded-2xl bg-[#fef3c7] border border-[#fde68a] text-xs font-bold text-[#92400e] flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#d97706]" />
-                  <span>{gpsError}</span>
-                </div>
+              {isGpsLoading ? (
+                <RefreshCw className="mt-1 h-4 w-4 shrink-0 animate-spin text-[#095c54]" />
+              ) : gpsError ? (
                 <button
                   type="button"
                   onClick={fetchCurrentLocation}
-                  className="px-2.5 py-1 rounded-xl bg-white border border-[#d97706] text-[11px] font-black text-[#92400e] hover:bg-[#fffbeb] shrink-0"
+                  className="shrink-0 rounded-xl border border-[#b8e0d7] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#095c54] hover:bg-[#e6f4f1]"
                 >
-                  Turn On GPS
+                  Retry
                 </button>
-              </div>
-            )}
-
-            {/* Interactive Uber/Rapido Map with Center Target Pin */}
-            <div className="relative rounded-2xl overflow-hidden border border-[#b8e0d7] shadow-md h-60 sm:h-64 bg-slate-100">
-              <MapContainer
-                center={mapCenter}
-                zoom={16}
-                minZoom={4}
-                maxZoom={19}
-                scrollWheelZoom={true}
-                style={{ height: '100%', width: '100%', zIndex: 10 }}
-              >
-                <MapCenterController center={mapCenter} />
-                <MapMoveListener onLocationChanged={handleMapLocationChanged} />
-
-                {/* Clean CartoDB / OSM Tiles */}
-                <TileLayer
-                  url={MAP_CONFIG.tileProvider.url}
-                  attribution={MAP_CONFIG.tileProvider.attribution}
-                  subdomains={MAP_CONFIG.tileProvider.subdomains}
-                  maxZoom={19}
-                />
-              </MapContainer>
-
-              {/* Fixed Uber-Style Center Pin with Pulse */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[20] pointer-events-none flex flex-col items-center">
-                <div className="relative">
-                  <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center shadow-2xl border-2 border-white font-black text-sm uber-pin-bounce">
-                    <MapPin className="w-5 h-5 text-white fill-white/20" />
-                  </div>
-                  <div className="gps-pulse-ring"></div>
-                </div>
-                {/* Pin Tip */}
-                <div className="w-2 h-2 bg-[#095c54] rotate-45 -mt-1 shadow-sm"></div>
-              </div>
-
-              {/* Floating "Locate Me" GPS Button */}
-              <button
-                type="button"
-                onClick={fetchCurrentLocation}
-                disabled={isGpsLoading}
-                className="absolute bottom-3 right-3 z-[20] bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-lg border border-[#b8e0d7] text-[#095c54] hover:bg-[#e6f4f1] transition disabled:opacity-50"
-                title="Detect current GPS location"
-              >
-                {isGpsLoading ? (
-                  <RefreshCw className="w-5 h-5 animate-spin text-[#095c54]" />
-                ) : (
-                  <Compass className="w-5 h-5 text-[#095c54]" />
-                )}
-              </button>
-
-              {/* Floating Instructions */}
-              <div className="absolute top-2.5 left-2.5 z-[20] bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-[10px] font-semibold pointer-events-none">
-                Pin set at map center
-              </div>
-            </div>
-
-            {/* Readable Address Card (NO raw coordinates shown to user) */}
-            <div className="p-3.5 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-[#095c54] shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <span className="text-[10px] font-extrabold uppercase text-[#64748b] block">
-                    Detected Street / Area
-                  </span>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={e => setAddress(e.target.value)}
-                    placeholder="Enter street or area name"
-                    className="w-full text-xs font-bold text-[#0f2925] bg-transparent outline-none mt-0.5"
-                  />
-                </div>
-              </div>
-
-              {/* Optional Landmark */}
-              <div className="pt-2 border-t border-[#e2e8f0]/80">
-                <input
-                  type="text"
-                  value={landmark}
-                  onChange={e => setLandmark(e.target.value)}
-                  placeholder="Nearby Landmark (e.g. Opp. Station, Near Water Tank)"
-                  className="w-full text-xs font-semibold text-[#0f2925] bg-transparent outline-none placeholder:text-[#94a3b8]"
-                />
-              </div>
+              ) : (
+                <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-[#10b981]" />
+              )}
             </div>
           </div>
 

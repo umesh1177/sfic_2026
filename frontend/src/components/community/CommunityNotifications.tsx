@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Bell,
@@ -156,12 +157,7 @@ export const CommunityNotifications: React.FC<CommunityNotificationsProps> = ({ 
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-xs font-bold text-slate-900 truncate">{notif.title}</h3>
                   <span className="text-[11px] text-slate-400 whitespace-nowrap">
-                    {new Date(notif.created_at).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    {formatDate(notif.created_at)}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">{notif.message}</p>

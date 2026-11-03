@@ -1,25 +1,20 @@
+import { formatDate } from '../utils/dateFormat.js';
 import React from 'react';
 import {
-  Sparkles,
   Camera,
   FileText,
-  MapPin,
-  Calendar,
   Trophy,
-  ArrowRight,
   TrendingUp,
   Clock,
   CheckCircle2,
-  AlertCircle,
-  Flame,
   Award,
   ChevronRight,
-  Plus,
-  Map as MapIcon,
+  MapPin,
   Users
 } from 'lucide-react';
 import { Profile } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { ComplaintEvidenceImage } from './common/ComplaintEvidenceImage.js';
 
 interface DashboardHomeProps {
   user: Profile | null;
@@ -41,10 +36,7 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
   const nearbyIssues = dashboardData?.nearby_issues || [];
   const wardScores = dashboardData?.ward_scores || [];
 
-  const currentDateFormatted = new Date().toLocaleDateString(
-    lang === 'gu' ? 'gu-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN',
-    { weekday: 'short', day: 'numeric', month: 'short' }
-  );
+  const currentDateFormatted = formatDate(new Date());
 
   // Time-of-day greeting (multilingual)
   const currentHour = new Date().getHours();
@@ -181,24 +173,7 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
       {/* ======================================================== */}
       {/* 3. QUICK CIVIC ACCESS CHIPS (RESPONSIVE 3-COLUMN)        */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        {/* Cleanliness Map */}
-        <button
-          onClick={() => onNavigateTab('map')}
-          className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#095c54] transition text-left flex flex-col sm:flex-row items-center sm:items-center justify-between gap-2 group touch-press"
-        >
-          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left min-w-0">
-            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center font-bold shrink-0">
-              <MapIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_map_title}</div>
-              <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_map_sub}</div>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition hidden sm:block shrink-0" />
-        </button>
-
+      <div className="grid grid-cols-2 gap-2 sm:gap-4">
         {/* Cleanliness Drives */}
         <button
           onClick={() => onNavigateTab('drives')}
@@ -209,7 +184,7 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
               <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_drives_title}</div>
+              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] whitespace-normal break-words leading-snug">{t.action_drives_title}</div>
               <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_drives_sub}</div>
             </div>
           </div>
@@ -226,7 +201,7 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
               <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_challenges_title}</div>
+              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] whitespace-normal break-words leading-snug">{t.action_challenges_title}</div>
               <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_challenges_sub}</div>
             </div>
           </div>
@@ -265,9 +240,10 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-slate-200 overflow-hidden shrink-0">
-                    <img
-                      src={issue.image_url || 'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=400&q=80'}
+                    <ComplaintEvidenceImage
+                      src={issue.image_url}
                       alt="report"
+                      categoryName={issue.category_name}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -283,14 +259,15 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full capitalize ${
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2 py-0.5 rounded-full capitalize ${
                     issue.status === 'resolved'
                       ? 'bg-[#ecfdf5] text-[#047857]'
                       : issue.status === 'in_progress'
                       ? 'bg-[#f0f9ff] text-[#0284c7]'
                       : 'bg-[#fef3c7] text-[#b45309]'
                   }`}>
-                    ● {issue.status === 'resolved' ? t.tab_resolved : issue.status === 'in_progress' ? t.tab_in_progress : t.tab_submitted}
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    {issue.status === 'resolved' ? t.tab_resolved : issue.status === 'in_progress' ? t.tab_in_progress : t.tab_submitted}
                   </span>
                 </div>
               </div>
@@ -335,14 +312,6 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
             ))}
           </div>
 
-          <div className="pt-2 text-center">
-            <button
-              onClick={() => onNavigateTab('map')}
-              className="text-xs font-extrabold text-[#095c54] hover:underline"
-            >
-              {t.action_map} →
-            </button>
-          </div>
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -17,7 +18,8 @@ import {
   Layers,
   Sparkles,
   Eye,
-  Camera
+  Camera,
+  Wrench
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
@@ -25,6 +27,7 @@ import 'leaflet/dist/leaflet.css';
 import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
 import { StatusProgressionStepper } from '../common/StatusProgressionStepper.js';
+import { ComplaintEvidenceImage } from '../common/ComplaintEvidenceImage.js';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
@@ -237,9 +240,10 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-4/3 relative">
               {(citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url) ? (
-                <img
+                <ComplaintEvidenceImage
                   src={citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url}
                   alt="Citizen complaint photograph"
+                  categoryName={overview.category_name}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -281,7 +285,7 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Date:</span>
-                  <span>{new Date(citizen_report?.submitted_at || overview.submitted_at).toLocaleDateString('en-IN')}</span>
+                  <span>{formatDate(citizen_report?.submitted_at || overview.submitted_at)}</span>
                 </div>
               </div>
             </div>
@@ -579,7 +583,7 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
                         isLeader ? 'bg-amber-400 text-slate-950' : 'bg-slate-200 text-slate-600'
                       }`}>
-                        {isLeader ? '👑' : '👷'}
+                        {isLeader ? <Crown className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
@@ -620,4 +624,3 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
     </div>
   );
 };
-

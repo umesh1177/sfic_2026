@@ -21,7 +21,8 @@ import {
   ChevronRight,
   ShieldCheck,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Wrench
 } from 'lucide-react';
 import { Profile, WorkerProfile, WorkerDashboardSummary, WorkAssignment } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -120,7 +121,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
       id: 'assign_work',
       label: t.wrk_nav_assign_work,
       icon: Briefcase,
-      badge: isLeader ? '👑 Leader' : undefined
+      badge: isLeader ? 'Leader' : undefined
     },
     { id: 'work_history', label: t.wrk_nav_work_history, icon: FileCheck2 },
     { id: 'notifications', label: t.wrk_nav_notifications, icon: Bell },
@@ -162,7 +163,8 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 {workerProfile?.full_name || 'Kanti Solanki'}
               </p>
               <p className="text-[10px] text-[#047857] font-bold truncate">
-                🛠️ {workerProfile?.designation_name || 'Drainage Worker'}
+                <Wrench className="mr-1 inline h-3 w-3" />
+                {workerProfile?.designation_name || 'Drainage Worker'}
               </p>
               <span className="text-[9px] font-mono text-slate-500">
                 {workerProfile?.worker_code || 'NMC-WRK-001'} · Ward 3
@@ -194,7 +196,10 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     isActive ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-900'
                   }`}>
-                    {item.badge}
+                    <span className="inline-flex items-center gap-1">
+                      <Crown className="h-3 w-3" />
+                      {item.badge}
+                    </span>
                   </span>
                 )}
               </button>
@@ -285,7 +290,8 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                   {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
                 </span>
                 <span className="block text-[10px] font-bold text-[#047857] truncate">
-                  🛠️ {workerProfile?.designation_name || 'Worker'}
+                  <Wrench className="mr-1 inline h-3 w-3" />
+                  {workerProfile?.designation_name || 'Worker'}
                 </span>
               </div>
             </div>
@@ -364,7 +370,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 <Briefcase className="w-5 h-5" />
                 {isLeader && (
                   <span className="absolute -top-1 -right-2 text-[8px] bg-amber-400 text-slate-950 font-black px-1 rounded-full">
-                    👑
+                    <Crown className="h-3 w-3" />
                   </span>
                 )}
               </div>

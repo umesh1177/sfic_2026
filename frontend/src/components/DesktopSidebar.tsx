@@ -2,9 +2,7 @@ import React from 'react';
 import {
   Home,
   FileText,
-  Map as MapIcon,
   Users,
-  Trophy,
   Award,
   Headphones,
   User,
@@ -16,7 +14,7 @@ import {
   Wrench,
   Building2
 } from 'lucide-react';
-import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
+import { SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
 
@@ -44,7 +42,6 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   const navItems = [
     { id: 'home', label: t.nav_home, icon: Home },
     { id: 'complaints', label: t.nav_complaints, icon: FileText, badge: unreadCount > 0 ? unreadCount : undefined },
-    { id: 'map', label: t.nav_map, icon: MapIcon },
     { id: 'drives', label: t.nav_drives, icon: Users },
     { id: 'rewards', label: t.nav_rewards, icon: Award },
     { id: 'notifications', label: t.nav_notifications, icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },

@@ -1,3 +1,4 @@
+import { formatDate, formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   FileText,
@@ -273,7 +274,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
               </h3>
             </div>
             <span className="text-xs font-mono font-bold text-slate-500">
-              {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              {formatDate(new Date())}
             </span>
           </div>
 
@@ -407,7 +408,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
                   <span className="truncate">{act.title}</span>
                   <span className="text-[10px] font-bold text-slate-400">·</span>
                   <span className="text-[10px] text-slate-500 font-mono">
-                    {new Date(act.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(act.timestamp)}
                   </span>
                 </p>
                 <p className="text-xs text-slate-600 line-clamp-2">{act.description}</p>

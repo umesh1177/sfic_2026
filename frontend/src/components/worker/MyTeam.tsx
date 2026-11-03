@@ -144,7 +144,7 @@ export const MyTeam: React.FC<MyTeamProps> = ({
           >
             {assignments.map(a => (
               <option key={a.id} value={a.id}>
-                {a.task_code} - {a.title.slice(0, 30)}... {a.is_temporary_leader ? '(👑 Team Leader)' : ''}
+                {a.task_code} - {a.title.slice(0, 30)}... {a.is_temporary_leader ? '(Team Leader)' : ''}
               </option>
             ))}
           </select>
@@ -309,4 +309,3 @@ export const MyTeam: React.FC<MyTeamProps> = ({
     </div>
   );
 };
-

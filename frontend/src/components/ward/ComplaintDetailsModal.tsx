@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime, formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -359,12 +360,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                 <div className="p-4 rounded-2xl bg-white border border-[#e2e8f0]">
                   <p className="text-[11px] font-bold text-slate-500 uppercase">SLA Deadline</p>
                   <p className="text-sm font-extrabold text-[#0f2925] mt-1">
-                    {new Date(overview.sla_deadline).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    {formatDate(overview.sla_deadline)}
                   </p>
                 </div>
                 <div className="p-4 rounded-2xl bg-white border border-[#e2e8f0]">
@@ -433,7 +429,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                     </span>
                   </div>
                   <span className="text-xs text-slate-500 font-medium">
-                    {new Date(citizen_report.submitted_at).toLocaleString('en-IN')}
+                    {formatDateTime(citizen_report.submitted_at)}
                   </span>
                 </div>
 
@@ -543,11 +539,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                           Attempt #{ah.attempt_number}
                         </span>
                         <span className="text-[10px] font-bold text-slate-500">
-                          {new Date(ah.assigned_date).toLocaleDateString('en-IN', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
+                          {formatDate(ah.assigned_date)}
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 flex items-center gap-2">
@@ -598,7 +590,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                           </h4>
                           <p className="text-[11px] font-mono text-slate-500">
                             Task ID: {attempt.task_code} · Dispatched:{' '}
-                            {new Date(attempt.assigned_date).toLocaleString('en-IN')}
+                            {formatDateTime(attempt.assigned_date)}
                           </p>
                         </div>
                       </div>
@@ -627,7 +619,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                         </p>
                         <p className="text-purple-800">
                           Reopened by {attempt.reopened_by} on{' '}
-                          {new Date(attempt.reopened_at).toLocaleDateString('en-IN')}.
+                          {formatDate(attempt.reopened_at)}.
                         </p>
                       </div>
                     )}
@@ -673,10 +665,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                                 </p>
                               </div>
                               <span className="text-[10px] text-slate-400">
-                                {new Date(att.attendance_timestamp).toLocaleTimeString('en-IN', {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
+                                {formatTime(att.attendance_timestamp)}
                               </span>
                             </div>
                           ))}
@@ -1006,7 +995,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                         Attempt #{rev.attempt_number} · {rev.reviewer}
                       </span>
                       <span className="text-[10px] font-bold text-slate-500">
-                        {new Date(rev.timestamp).toLocaleDateString('en-IN')}
+                        {formatDate(rev.timestamp)}
                       </span>
                     </div>
                     <p className="text-xs text-slate-700">Decision: <strong>{rev.decision}</strong></p>
@@ -1029,7 +1018,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-[#0f2925]">{log.action || log.description}</span>
                       <span className="text-[10px] font-mono text-slate-500">
-                        {new Date(log.created_at).toLocaleDateString('en-IN')}
+                        {formatDate(log.created_at)}
                       </span>
                     </div>
                     <p className="text-slate-600">

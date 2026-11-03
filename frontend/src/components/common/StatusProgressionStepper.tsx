@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, AlertCircle, XCircle } from 'lucide-react';
+import { Check, Clock, XCircle } from 'lucide-react';
 
 export interface StatusProgressionStepperProps {
   status: string;
@@ -37,6 +37,7 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
     let currentNorm = status;
     if (status === 'awaiting_verification' || status === 'evidence_submitted') currentNorm = 'in_progress';
     if (status === 'verified_complete' || status === 'closed') currentNorm = 'resolved';
+    if (stepKey === 'resolved' && currentNorm === 'resolved') return 'completed';
 
     const currentIndex = order.indexOf(currentNorm);
     const stepIndex = order.indexOf(stepKey);
@@ -126,4 +127,3 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
     </div>
   );
 };
-

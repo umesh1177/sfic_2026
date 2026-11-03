@@ -13,9 +13,10 @@ import {
   Wrench,
   Building2
 } from 'lucide-react';
-import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
+import { SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile, AppNotification } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { formatTime } from '../utils/dateFormat.js';
 
 interface AppHeaderProps {
   currentTab: string;
@@ -62,22 +63,22 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-40 glass-nav transition-all duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           
           {/* Logo & Brand Identity */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentTab('home')}>
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3 cursor-pointer" onClick={() => setCurrentTab('home')}>
             <div className="shrink-0 transition-transform hover:scale-105 duration-200">
               <SwachhSetuIcon size={38} />
             </div>
             <div className="leading-tight min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="font-black text-[#095c54] text-base tracking-tight truncate max-w-[160px] sm:max-w-none">{t.app_title}</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0] shrink-0">
+                <span className="font-black text-[#095c54] text-[13px] min-[400px]:text-base tracking-tight truncate max-w-[120px] min-[400px]:max-w-[160px] sm:max-w-none">{t.app_title}</span>
+                <span className="hidden min-[380px]:inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#e6f4f1] text-[#047857] border border-[#a7f3d0] shrink-0">
                   NMC
                 </span>
               </div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
+              <p className="hidden min-[380px]:block text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
                 {t.citizen_portal}
               </p>
             </div>
@@ -88,7 +89,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             {[
               { id: 'home', label: t.nav_home },
               { id: 'complaints', label: t.nav_complaints },
-              { id: 'map', label: t.nav_map },
               { id: 'drives', label: t.nav_drives },
               { id: 'rewards', label: t.nav_rewards },
               { id: 'support', label: t.nav_support }
@@ -108,7 +108,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           </nav>
 
           {/* Actions & Utilities */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3">
             
             {/* Quick Report Issue Button (Desktop & Tablet only) */}
             <button
@@ -123,7 +123,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <button
               onClick={() => handleReadAloud(`${t.app_title}. ${t.tagline}. ${t.welcome_back} ${user?.full_name || 'Citizen'}.`)}
               title={t.read_aloud}
-              className="p-2 rounded-lg text-[#64748b] hover:text-[#095c54] hover:bg-[#e6f4f1] transition"
+              className="hidden sm:inline-flex p-2 rounded-lg text-[#64748b] hover:text-[#095c54] hover:bg-[#e6f4f1] transition"
             >
               <Volume2 className="w-5 h-5" />
             </button>
@@ -136,6 +136,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                   setShowNotifications(false);
                 }}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[#e2e8f0] bg-white text-xs font-bold text-[#0f2925] hover:border-[#095c54] transition"
+                aria-label={`Language: ${lang === 'en' ? 'English' : lang === 'gu' ? 'ગુજરાતી' : 'हिन्दी'}`}
+                title={lang === 'en' ? 'English' : lang === 'gu' ? 'ગુજરાતી' : 'हिन्दी'}
               >
                 <Globe className="w-3.5 h-3.5 text-[#095c54]" />
                 <span>{lang === 'en' ? 'EN' : lang === 'gu' ? 'ગુજ' : 'हिं'}</span>
@@ -223,7 +225,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                   {n.title}
                                 </h4>
                                 <span className="text-[10px] text-[#64748b]">
-                                  {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {formatTime(n.created_at, lang)}
                                 </span>
                               </div>
                               <p className="text-[11px] text-[#64748b] mt-0.5 line-clamp-2">
@@ -331,7 +333,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {[
             { id: 'home', label: t.nav_home },
             { id: 'complaints', label: t.nav_complaints },
-            { id: 'map', label: t.nav_map },
             { id: 'drives', label: t.nav_drives },
             { id: 'rewards', label: t.nav_rewards },
             { id: 'support', label: t.nav_support },

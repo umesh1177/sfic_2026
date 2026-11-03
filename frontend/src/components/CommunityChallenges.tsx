@@ -1,3 +1,4 @@
+import { formatDate } from '../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import { Trophy, Users, CheckCircle2, Flame, ArrowRight, ShieldCheck } from 'lucide-react';
 import { api } from '../services/api.js';
@@ -78,7 +79,7 @@ export const CommunityChallenges: React.FC<CommunityChallengesProps> = ({ lang }
                       <Flame className="w-3 h-3" /> Live Challenge
                     </span>
                     <span className="text-[11px] text-[#64748b]">
-                      Ends: {new Date(ch.end_date).toLocaleDateString()}
+                      Ends: {formatDate(ch.end_date)}
                     </span>
                   </div>
 

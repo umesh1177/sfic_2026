@@ -6,8 +6,8 @@ import {
   Clock,
   Camera,
   Crown,
+  MapPin,
   Star,
-  ThumbsUp,
   Sparkles,
   ShieldCheck
 } from 'lucide-react';
@@ -22,8 +22,7 @@ interface WorkerPerformanceProps {
 
 export const WorkerPerformance: React.FC<WorkerPerformanceProps> = ({
   profile,
-  summary,
-  lang
+  summary
 }) => {
   const completedCount = summary?.metrics?.completed_tasks ?? 0;
   const attendanceRate = summary?.metrics?.on_time_attendance_rate ?? 0;
@@ -131,7 +130,7 @@ export const WorkerPerformance: React.FC<WorkerPerformanceProps> = ({
             completedCount >= 10 ? 'border-[#095c54]/30 bg-white' : 'border-[#e2e8f0] bg-slate-50/60 opacity-80'
           }`}>
             <div className="p-3 bg-[#e6f4f1] text-[#095c54] rounded-2xl text-xl w-fit mb-2">
-              🏆
+              <Award className="h-5 w-5" />
             </div>
             <div>
               <h4 className="font-black text-[#0f2925] text-sm">Swachhta Senani · Ward {wardNum}</h4>
@@ -147,7 +146,7 @@ export const WorkerPerformance: React.FC<WorkerPerformanceProps> = ({
             attendanceRate >= 90 && completedCount > 0 ? 'border-[#095c54]/30 bg-white' : 'border-[#e2e8f0] bg-slate-50/60 opacity-80'
           }`}>
             <div className="p-3 bg-[#ecfdf5] text-[#047857] rounded-2xl text-xl w-fit mb-2">
-              📍
+              <MapPin className="h-5 w-5" />
             </div>
             <div>
               <h4 className="font-black text-[#0f2925] text-sm">Zero-Deviation GPS Attendance</h4>
@@ -163,7 +162,7 @@ export const WorkerPerformance: React.FC<WorkerPerformanceProps> = ({
             isLeader ? 'border-[#095c54]/30 bg-white' : 'border-[#e2e8f0] bg-slate-50/60 opacity-80'
           }`}>
             <div className="p-3 bg-[#e6f4f1] text-[#095c54] rounded-2xl text-xl w-fit mb-2">
-              ⭐
+              <Star className="h-5 w-5" />
             </div>
             <div>
               <h4 className="font-black text-[#0f2925] text-sm">Exemplary Team Leadership</h4>

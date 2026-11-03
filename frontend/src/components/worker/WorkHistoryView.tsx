@@ -10,7 +10,8 @@ import {
   Filter,
   Search,
   Award,
-  Crown
+  Crown,
+  X
 } from 'lucide-react';
 import { WorkAssignment, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
@@ -129,7 +130,9 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
 
                     <td className="py-3.5 px-4">
                       <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        ✓ Present (GPS)
+                        <span className="inline-flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Present (GPS)
+                        </span>
                       </span>
                     </td>
 
@@ -179,7 +182,7 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
                 onClick={() => setSelectedTask(null)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 

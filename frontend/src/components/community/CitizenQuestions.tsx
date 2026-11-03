@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   MessageSquare,
@@ -291,10 +292,7 @@ export const CitizenQuestions: React.FC<CitizenQuestionsProps> = ({ activities }
                       {q.citizen_name || 'Citizen'}
                     </span>
                     <span>
-                      {new Date(q.created_at).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short'
-                      })}
+                      {formatDate(q.created_at)}
                     </span>
                   </div>
                 </div>
@@ -335,7 +333,7 @@ export const CitizenQuestions: React.FC<CitizenQuestionsProps> = ({ activities }
                     <span className="font-bold text-slate-800">
                       {selectedQuestion.citizen_name || 'Citizen Volunteer'} asked:
                     </span>
-                    <span>{new Date(selectedQuestion.created_at).toLocaleString()}</span>
+                    <span>{formatDateTime(selectedQuestion.created_at)}</span>
                   </div>
                   <p className="text-sm font-extrabold text-slate-900 leading-relaxed">
                     "{selectedQuestion.question_text}"
@@ -428,7 +426,7 @@ export const CitizenQuestions: React.FC<CitizenQuestionsProps> = ({ activities }
                       Official Response Sent to Citizen
                     </span>
                     <span className="text-[11px] text-emerald-700 font-normal">
-                      {selectedQuestion.answered_at ? new Date(selectedQuestion.answered_at).toLocaleString() : ''}
+                      {selectedQuestion.answered_at ? formatDateTime(selectedQuestion.answered_at) : ''}
                     </span>
                   </div>
                   <p className="text-xs text-emerald-950 font-medium leading-relaxed">

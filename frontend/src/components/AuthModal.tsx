@@ -422,8 +422,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       Enter Mobile Number <span className="text-[#dc2626]">*</span>
                     </label>
                     <div className="flex gap-2">
-                      <div className="px-3 py-2.5 rounded-xl border border-[#e2e8f0] bg-slate-50 text-xs font-extrabold text-[#095c54] flex items-center gap-1">
-                        🇮🇳 <span>+91</span>
+                      <div className="px-3 py-2.5 rounded-xl border border-[#e2e8f0] bg-slate-50 text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5" /> <span>+91</span>
                       </div>
                       <div className="relative flex-1">
                         <Phone className="w-4 h-4 text-[#64748b] absolute left-3 top-3" />
@@ -706,8 +706,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   Mobile Number <span className="text-[#dc2626]">*</span>
                 </label>
                 <div className="flex gap-2">
-                  <div className="px-3 py-2.5 rounded-xl border border-[#e2e8f0] bg-slate-50 text-xs font-extrabold text-[#095c54] flex items-center gap-1">
-                    🇮🇳 <span>+91</span>
+                  <div className="px-3 py-2.5 rounded-xl border border-[#e2e8f0] bg-slate-50 text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5" /> <span>+91</span>
                   </div>
                   <div className="relative flex-1">
                     <Phone className="w-4 h-4 text-[#64748b] absolute left-3 top-3" />

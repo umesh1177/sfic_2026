@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Calendar,
@@ -338,7 +339,7 @@ export const WardCommunityActivities: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1 border-t border-slate-100">
                   <div className="flex items-center gap-1.5 text-slate-600">
                     <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Proposed: {new Date(act.proposed_start_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span>Proposed: {formatDate(act.proposed_start_at)}</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-slate-600">
                     <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />

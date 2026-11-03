@@ -1,3 +1,4 @@
+import { formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Camera,
@@ -324,7 +325,7 @@ export const BeforeAfterEvidence: React.FC<BeforeAfterEvidenceProps> = ({
                     <div className="p-2.5 text-xs space-y-1">
                       <p className="font-semibold text-slate-800 line-clamp-1">{ev.description}</p>
                       <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>{new Date(ev.created_at).toLocaleTimeString()}</span>
+                        <span>{formatTime(ev.created_at)}</span>
                         <span className={`font-semibold ${
                           ev.location_validation_status === 'location_matched' ? 'text-emerald-700' : 'text-slate-600'
                         }`}>

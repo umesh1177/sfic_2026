@@ -134,7 +134,9 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
                   key={idx}
                   className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0]"
                 >
-                  ✓ {skill}
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> {skill}
+                  </span>
                 </span>
               ))}
             </div>
@@ -186,4 +188,3 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
     </div>
   );
 };
-

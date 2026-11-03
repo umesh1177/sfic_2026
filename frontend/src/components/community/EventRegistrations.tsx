@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Users,
@@ -148,7 +149,7 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
         >
           {activities.map(act => (
             <option key={act.id} value={act.id}>
-              {act.title} ({new Date(act.proposed_start_at).toLocaleDateString()}) - {act.ward_name}
+              {act.title} ({formatDate(act.proposed_start_at)}) - {act.ward_name}
             </option>
           ))}
         </select>
@@ -266,7 +267,7 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
                 </div>
 
                 <div className="text-[11px] text-slate-400">
-                  Registered: {new Date(reg.registered_at).toLocaleString()}
+                  Registered: {formatDateTime(reg.registered_at)}
                 </div>
 
                 {/* Attendance Action Buttons */}
@@ -321,12 +322,7 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
                       {reg.citizen_phone || 'N/A'}
                     </td>
                     <td className="py-3 px-4 text-slate-500">
-                      {new Date(reg.registered_at).toLocaleString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatDateTime(reg.registered_at)}
                     </td>
                     <td className="py-3 px-4">
                       <span

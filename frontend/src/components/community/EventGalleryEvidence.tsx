@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Image as ImageIcon,
@@ -95,12 +96,12 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
       try {
         const res = await api.aiCheckEvidenceQuality(b64);
         if (res.data?.passes_quality) {
-          setAiQualityFeedback('✓ Verified by AI: Genuine Cleanliness Drive Photo (' + (res.data.feedback_message || 'High clarity visual') + ')');
+          setAiQualityFeedback('Verified by AI: Genuine Cleanliness Drive Photo (' + (res.data.feedback_message || 'High clarity visual') + ')');
         } else {
-          setAiQualityFeedback('✓ Image accepted for municipal verification');
+          setAiQualityFeedback('Image accepted for municipal verification');
         }
       } catch {
-        setAiQualityFeedback('✓ Image accepted for municipal verification');
+        setAiQualityFeedback('Image accepted for municipal verification');
       }
     };
     reader.readAsDataURL(file);
@@ -168,7 +169,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
       if (res.success && res.data) {
         setAiQualityFeedback(
           res.data.passes_quality
-            ? `✓ Photo verified: High clarity (score ${res.data.blur_score}/100) and balanced illumination.`
+            ? `Photo verified: High clarity (score ${res.data.blur_score}/100) and balanced illumination.`
             : `Quality warning: ${res.data.feedback_message || 'Image might be blurry or poorly lit'}`
         );
       }
@@ -559,7 +560,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
                       {item.caption || `${item.stage} cleanliness evidence`}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {new Date(item.created_at).toLocaleDateString()}
+                      {formatDate(item.created_at)}
                     </p>
                   </div>
                 </div>
@@ -571,4 +572,3 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
     </div>
   );
 };
-

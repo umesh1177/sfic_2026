@@ -7,7 +7,6 @@ import {
   RotateCcw,
   Star,
   Search,
-  ChevronRight,
   ShieldCheck,
   Trash2,
   ArrowLeft,
@@ -17,18 +16,18 @@ import {
   Building2,
   Calendar,
   Sparkles,
-  Layers,
-  Send,
-  Eye,
   Camera,
   Check,
-  AlertTriangle
+  ImageOff,
+  Image as ImageIcon,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
 import { Complaint, ComplaintStatus } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
 import { StatusProgressionStepper } from './common/StatusProgressionStepper.js';
+import { ComplaintEvidenceImage } from './common/ComplaintEvidenceImage.js';
+import { formatDate, formatDateTime } from '../utils/dateFormat.js';
 
 interface MyComplaintsProps {
   onOpenReport: () => void;
@@ -96,6 +95,13 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
   };
 
   const handleFeedback = async (complaintId: string) => {
+    if (!feedbackText.trim()) {
+      setActionError('Please add a short description with your rating.');
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
+    setActionError('');
     try {
       const res = await api.submitFeedback(complaintId, feedbackRating, feedbackText, feedbackRating >= 3);
       setIsSubmittingFeedback(false);
@@ -106,22 +112,24 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
         setSelectedComplaint(prev =>
           prev
             ? {
-                ...prev,
-                feedback: res.data || {
-                  id: 'fb-new',
-                  complaint_id: complaintId,
-                  citizen_id: 'me',
-                  rating: feedbackRating,
-                  feedback_text: feedbackText,
-                  resolution_satisfactory: feedbackRating >= 3,
-                  created_at: new Date().toISOString()
-                }
+              ...prev,
+              feedback: res.data || {
+                id: 'fb-new',
+                complaint_id: complaintId,
+                citizen_id: 'me',
+                rating: feedbackRating,
+                feedback_text: feedbackText,
+                resolution_satisfactory: feedbackRating >= 3,
+                created_at: new Date().toISOString()
               }
+            }
             : null
         );
       }
     } catch (err: any) {
       setActionError(err.message || 'Failed to submit feedback');
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -162,7 +170,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
 
     const c = config[status] || { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700', dot: 'bg-slate-400', label: status };
     return (
-      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black border uppercase tracking-wider ${c.bg} ${c.text}`}>
+      <span className={`inline-flex max-w-full items-center gap-1.5 whitespace-normal break-words px-3 py-1 rounded-full text-[11px] font-black border uppercase tracking-wider ${c.bg} ${c.text}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
         <span>{c.label}</span>
       </span>
@@ -173,13 +181,28 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
   // FULL PAGE VIEW: COMPLAINT DETAILS & RESOLUTION TIMELINE
   // =========================================================================
   if (selectedComplaint) {
-    const isResolved = selectedComplaint.status === 'resolved';
+    const isResolved = ['resolved', 'verified_complete', 'closed'].includes(selectedComplaint.status);
+    const resolutionImageSrc = selectedComplaint.resolved_image_url;
+    const hasResolutionImage = Boolean(resolutionImageSrc);
+    const isIllustrativeResolutionImage = Boolean(resolutionImageSrc?.startsWith('/images/complaints/'));
+    const resolutionImageCredit = resolutionImageSrc === '/images/complaints/resolved-drain.jpg'
+      ? 'Nimatu15 - CC BY-SA 4.0'
+      : 'Unsplash license';
+    const resolutionImageCreditUrl = resolutionImageSrc === '/images/complaints/resolved-drain.jpg'
+      ? 'https://commons.wikimedia.org/wiki/File:Roadside_Stormwater_Drainage_Gutter.jpg'
+      : 'https://unsplash.com/license';
+    const isIllustrativeReportImage = selectedComplaint.image_url.startsWith('/images/complaints/');
+    const resolutionLog = selectedComplaint.activity_logs
+      ?.slice()
+      .reverse()
+      .find(log => log.new_status === 'resolved' || /resolved|closed/i.test(log.action));
+    const resolvedAt = selectedComplaint.resolved_at || resolutionLog?.created_at;
 
     return (
       <div className="space-y-6 animate-fadeIn pb-16">
         {/* Navigation Breadcrumb Bar */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-center">
             <button
               onClick={() => {
                 setSelectedComplaint(null);
@@ -192,8 +215,8 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
               <span>Back to My Complaints</span>
             </button>
 
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[11px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                   {selectedComplaint.complaint_number}
                 </span>
@@ -240,18 +263,18 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
         {/* Visual Comparison / Photo Showcase */}
         {isResolved ? (
           <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-black text-[#0f2925]">
-                    Resolution Visual Verification (Before vs After)
+                    Resolution Photos (When Available)
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Municipal inspection proof confirming waste clearing and site restoration
-                  </p>
+                  {/* <p className="text-xs text-slate-500">
+                    Report and municipal photos are shown when available; illustrative images are clearly marked.
+                  </p> */}
                 </div>
               </div>
 
@@ -264,21 +287,23 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
               {/* Before Photo */}
               <div className="space-y-2">
                 <div className="relative aspect-[16/10] rounded-2xl overflow-hidden border-2 border-rose-200 bg-rose-50 shadow-xs group">
-                  <img
+                  <ComplaintEvidenceImage
                     src={selectedComplaint.image_url}
                     alt="Citizen Reported (Before)"
+                    categoryName={selectedComplaint.category_name}
+                    showIllustrativeNotice
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-3">
                     <span className="px-3 py-1 rounded-xl bg-rose-600 text-white text-xs font-black shadow-sm">
-                      Before Cleanup (Reported)
+                      {isIllustrativeReportImage ? 'Your uploaded issue photo' : 'Before Cleanup (Reported)'}
                     </span>
                   </div>
                 </div>
                 <div className="text-xs text-slate-600 flex items-center justify-between px-1">
-                  <span>Reported by You</span>
+                  {/* <span>{isIllustrativeReportImage ? 'Sample image, not report evidence' : 'Reported by You'}</span> */}
                   <span className="font-mono text-[11px] text-slate-400">
-                    {new Date(selectedComplaint.submitted_at).toLocaleDateString()}
+                    {formatDate(selectedComplaint.submitted_at, lang)}
                   </span>
                 </div>
               </div>
@@ -286,29 +311,49 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
               {/* After Photo */}
               <div className="space-y-2">
                 <div className="relative aspect-[16/10] rounded-2xl overflow-hidden border-2 border-emerald-300 bg-emerald-50 shadow-xs group">
-                  <img
-                    src={
-                      selectedComplaint.resolved_image_url ||
-                      (selectedComplaint as any).resolution_image_url ||
-                      'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'
-                    }
+                  <ComplaintEvidenceImage
+                    src={resolutionImageSrc}
                     alt="Municipal Resolution (After)"
+                    categoryName={selectedComplaint.category_name}
+                    after
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-3">
-                    <span className="px-3 py-1 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-sm flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5" />
-                      After Cleanup (Verified)
+                    <span className={`px-3 py-1 rounded-xl text-white text-xs font-black shadow-sm flex items-center gap-1.5 ${hasResolutionImage && !isIllustrativeResolutionImage ? 'bg-emerald-600' : 'bg-slate-700'}`}>
+                      {hasResolutionImage && !isIllustrativeResolutionImage
+                        ? <Check className="w-3.5 h-3.5" />
+                        : hasResolutionImage
+                          ? <ImageIcon className="w-3.5 h-3.5" />
+                          : <ImageOff className="w-3.5 h-3.5" />}
+                      {hasResolutionImage
+                        ? isIllustrativeResolutionImage ? ' After Photo' : 'Municipal Resolution Photo'
+                        : 'No Resolution Photo'}
                     </span>
                   </div>
                 </div>
                 <div className="text-xs text-slate-600 flex items-center justify-between px-1">
-                  <span className="text-emerald-700 font-extrabold flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    Verified by Ward Officer
-                  </span>
-                  <span className="font-mono text-[11px] text-slate-400">
-                    {selectedComplaint.resolved_at ? new Date(selectedComplaint.resolved_at).toLocaleDateString() : 'Completed'}
+                  <span className={`font-extrabold flex items-center gap-1 ${hasResolutionImage && !isIllustrativeResolutionImage ? 'text-emerald-700' : 'text-slate-500'}`}>
+                    {hasResolutionImage && !isIllustrativeResolutionImage ? (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Municipal photo supplied
+                      </>
+                    ) : isIllustrativeResolutionImage ? (
+                      <span>
+                        Sample photo - not field evidence.{' '}
+                        <a
+                          href={resolutionImageCreditUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={event => event.stopPropagation()}
+                          className="underline underline-offset-2"
+                        >
+                          {resolutionImageCredit}
+                        </a>
+                      </span>
+                    ) : (
+                      'No municipal resolution photo supplied'
+                    )}
                   </span>
                 </div>
               </div>
@@ -324,9 +369,11 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
             </div>
 
             <div className="relative aspect-[21/9] sm:aspect-[24/8] rounded-2xl overflow-hidden border border-slate-200 bg-slate-100">
-              <img
+              <ComplaintEvidenceImage
                 src={selectedComplaint.image_url}
                 alt={selectedComplaint.category_name}
+                categoryName={selectedComplaint.category_name}
+                showIllustrativeNotice
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-4">
@@ -376,25 +423,45 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
 
             <div className="space-y-2 text-xs">
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">Incident Address</span>
+                <span className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold uppercase">
+                  <MapPin className="h-3.5 w-3.5 text-[#095c54]" /> Location
+                </span>
                 <p className="font-extrabold text-slate-800">{selectedComplaint.location.address}</p>
                 {selectedComplaint.location.landmark && (
                   <p className="text-slate-500 text-[11px]">Landmark: {selectedComplaint.location.landmark}</p>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Ward Division</span>
-                  <p className="font-bold text-slate-800">Ward {selectedComplaint.location.ward_number}</p>
-                  <p className="text-[10px] text-slate-500 truncate">{selectedComplaint.location.ward_name}</p>
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold uppercase">
+                    <Building2 className="h-3.5 w-3.5 text-[#095c54]" /> Ward
+                  </span>
+                  <p className="mt-1 font-bold text-slate-800">Ward {selectedComplaint.location.ward_number}</p>
+                  <p className="text-[10px] text-slate-500">{selectedComplaint.location.ward_name}</p>
                 </div>
                 <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Priority Level</span>
-                  <p className="font-bold text-slate-800 capitalize">{selectedComplaint.priority || 'Medium'}</p>
-                  <p className="text-[10px] text-emerald-700 font-semibold">AI Assessed</p>
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold uppercase">
+                    <Calendar className="h-3.5 w-3.5 text-[#095c54]" /> Submitted
+                  </span>
+                  <p className="mt-1 font-bold text-slate-800">{formatDateTime(selectedComplaint.submitted_at, lang)}</p>
                 </div>
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Priority</span>
+                  <p className="mt-1 font-bold text-slate-800 capitalize">{selectedComplaint.priority || 'Medium'}</p>
+                </div>
+                {isResolved && (
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 sm:col-span-2">
+                    <span className="flex items-center gap-1.5 text-[10px] text-emerald-700 font-bold uppercase">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Resolved
+                    </span>
+                    <p className="mt-1 font-bold text-emerald-900">
+                      {resolvedAt ? formatDateTime(resolvedAt, lang) : 'Resolution date is not available yet'}
+                    </p>
+                  </div>
+                )}
               </div>
+
             </div>
           </div>
 
@@ -451,7 +518,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                         {log.action || (log as any).status}
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">
-                        {new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        {formatDateTime(log.created_at, lang)}
                       </span>
                     </div>
                     <p className="text-xs text-slate-700 leading-relaxed font-medium">
@@ -489,11 +556,10 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                     {[1, 2, 3, 4, 5].map(star => (
                       <Star
                         key={star}
-                        className={`w-5 h-5 ${
-                          star <= selectedComplaint.feedback!.rating
+                        className={`w-5 h-5 ${star <= selectedComplaint.feedback!.rating
                             ? 'text-amber-500 fill-amber-500'
                             : 'text-slate-300'
-                        }`}
+                          }`}
                       />
                     ))}
                     <span className="text-xs font-black text-emerald-900 ml-2">
@@ -506,7 +572,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                     </p>
                   )}
                   <span className="text-[10px] text-emerald-700 block">
-                    Submitted on {new Date(selectedComplaint.feedback.created_at).toLocaleDateString()}
+                    Submitted on {formatDate(selectedComplaint.feedback.created_at, lang)}
                   </span>
                 </div>
               </div>
@@ -533,13 +599,14 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                           type="button"
                           onClick={() => setFeedbackRating(star)}
                           className="p-1 hover:scale-110 transition"
+                          aria-label={`Rate ${star} out of 5 stars`}
+                          aria-pressed={feedbackRating === star}
                         >
                           <Star
-                            className={`w-6 h-6 ${
-                              star <= feedbackRating
+                            className={`w-6 h-6 ${star <= feedbackRating
                                 ? 'text-amber-500 fill-amber-500'
                                 : 'text-slate-300'
-                            }`}
+                              }`}
                           />
                         </button>
                       ))}
@@ -550,14 +617,16 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                     rows={2}
                     value={feedbackText}
                     onChange={e => setFeedbackText(e.target.value)}
-                    placeholder="Write a quick comment for the municipal sanitation team..."
+                    placeholder="Describe your experience with the resolution..."
+                    aria-label="Describe your experience with the resolution"
+                    required
                     className="w-full p-3 rounded-xl border border-slate-200 text-xs bg-white text-slate-900 outline-none focus:border-[#095c54]"
                   />
 
                   <div className="flex justify-end gap-2">
                     <button
                       type="button"
-                      disabled={isSubmittingFeedback}
+                      disabled={isSubmittingFeedback || !feedbackText.trim()}
                       onClick={() => handleFeedback(selectedComplaint.id)}
                       className="px-5 py-2.5 rounded-xl bg-[#095c54] text-white text-xs font-bold hover:bg-[#074741] transition disabled:opacity-50"
                     >
@@ -571,7 +640,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
         )}
 
         {/* Actions Bar (Reopen or Delete) */}
-        <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-center gap-3">
           <div className="flex items-center gap-2">
             {(selectedComplaint.status === 'resolved' || selectedComplaint.status === 'rejected') && (
               <button
@@ -588,13 +657,14 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
           <button
             type="button"
             onClick={() => handleDelete(selectedComplaint.id)}
-            className="px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition ml-auto"
+            className="px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition"
             title="Delete this complaint from database"
           >
             <Trash2 className="w-4 h-4 text-rose-600" />
             <span>Delete Complaint Record</span>
           </button>
         </div>
+
 
         {/* Reopen Modal Sheet */}
         {isReopening && (
@@ -684,21 +754,22 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
           />
         </div>
 
-        {/* Scrollable Status Tabs */}
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setSelectedStatus(tab.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition touch-press ${
-                selectedStatus === tab.id
-                  ? 'bg-[#095c54] text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-[#095c54]'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div>
+          <label htmlFor="complaint-status-filter" className="mb-1.5 block text-[11px] font-bold text-slate-600">
+            Filter by status
+          </label>
+          <select
+            id="complaint-status-filter"
+            value={selectedStatus}
+            onChange={e => setSelectedStatus(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-[#0f2925] outline-none focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/10"
+          >
+            {tabs.map(tab => (
+              <option key={tab.id} value={tab.id}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -743,9 +814,11 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
               <div>
                 {/* Photo Header & Status Badges */}
                 <div className="relative aspect-video bg-slate-100 overflow-hidden">
-                  <img
+                  <ComplaintEvidenceImage
                     src={c.image_url}
                     alt={c.category_name}
+                    categoryName={c.category_name}
+                    showIllustrativeNotice
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                   <div className="absolute top-3 left-3">
@@ -765,12 +838,12 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
 
                 {/* Card Content */}
                 <div className="p-4 sm:p-5 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-[#095c54]">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 whitespace-normal break-words text-xs font-black leading-snug text-[#095c54]">
                       {c.category_name}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {new Date(c.submitted_at).toLocaleDateString()}
+                    <span className="shrink-0 text-right text-[10px] font-mono text-slate-400">
+                      {formatDate(c.submitted_at, lang)}
                     </span>
                   </div>
 

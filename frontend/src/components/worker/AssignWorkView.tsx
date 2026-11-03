@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime, formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Briefcase,
@@ -28,7 +29,8 @@ import {
   Image as ImageIcon,
   CheckCheck,
   Video,
-  X
+  X,
+  XCircle
 } from 'lucide-react';
 import {
   MapContainer,
@@ -246,7 +248,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             stage: e.stage || e.evidence_type || 'during',
             photo_url: e.photo_url || e.storage_path,
             description: e.description || `${e.stage || 'Work'} evidence captured.`,
-            timestamp: e.created_at ? new Date(e.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Today',
+            timestamp: e.created_at ? formatTime(e.created_at) : 'Today',
             distance: e.gps_accuracy || 12,
             aiCategory: 'Municipal Sanitation Verification'
           }));
@@ -348,7 +350,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     }
 
     setSubmittingAttendance(true);
-    const nowTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const nowTime = formatTime(new Date());
 
     try {
       await api.markWorkerAttendance({
@@ -366,7 +368,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         };
         setDailyAttendance(record);
         localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-In confirmed at ${nowTime}! You are on duty within the ${distanceToTask}m geofence.`);
+        setAttendanceSuccess(`Check-In confirmed at ${nowTime}! You are on duty within the ${distanceToTask}m geofence.`);
       } else {
         const record: DailyAttendanceRecord = {
           ...dailyAttendance,
@@ -375,7 +377,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         };
         setDailyAttendance(record);
         localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-Out confirmed at ${nowTime}! Your duty attendance is now complete for today.`);
+        setAttendanceSuccess(`Check-Out confirmed at ${nowTime}! Your duty attendance is now complete for today.`);
       }
 
       confetti({ particleCount: 30, spread: 60, origin: { y: 0.7 } });
@@ -390,7 +392,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         };
         setDailyAttendance(record);
         localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-In recorded at ${nowTime} (~${distanceToTask}m from task site).`);
+        setAttendanceSuccess(`Check-In recorded at ${nowTime} (~${distanceToTask}m from task site).`);
       } else {
         const record: DailyAttendanceRecord = {
           ...dailyAttendance,
@@ -399,7 +401,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         };
         setDailyAttendance(record);
         localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-Out recorded at ${nowTime}. Today's duty completed.`);
+        setAttendanceSuccess(`Check-Out recorded at ${nowTime}. Today's duty completed.`);
       }
       if (onRefresh) onRefresh();
     } finally {
@@ -588,7 +590,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         stage: evidenceStage,
         photo_url: evidencePreview,
         description: evidenceDescription || `${evidenceStage.toUpperCase()} site cleanup evidence recorded at assigned location.`,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: formatTime(new Date()),
         distance: distanceToTask,
         aiCategory: aiResult?.category || 'Civic Cleanliness Verification'
       };
@@ -597,7 +599,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       setSubmittedEvidences(updated);
       localStorage.setItem(`evidences_task_${currentTask.id}`, JSON.stringify(updated));
 
-      setEvidenceSuccess(`✓ ${evidenceStage.toUpperCase()} evidence successfully verified & submitted to Ward Officer!`);
+      setEvidenceSuccess(`${evidenceStage.toUpperCase()} evidence successfully verified & submitted to Ward Officer!`);
       setEvidencePreview('');
       setEvidenceDescription('');
       setAiResult(null);
@@ -609,7 +611,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         stage: evidenceStage,
         photo_url: evidencePreview,
         description: evidenceDescription || `${evidenceStage.toUpperCase()} cleanup stage recorded.`,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: formatTime(new Date()),
         distance: distanceToTask,
         aiCategory: aiResult?.category || 'Civic Cleanliness Verification'
       };
@@ -617,7 +619,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       setSubmittedEvidences(updated);
       localStorage.setItem(`evidences_task_${currentTask.id}`, JSON.stringify(updated));
 
-      setEvidenceSuccess(`✓ ${evidenceStage.toUpperCase()} evidence recorded and geotagged!`);
+      setEvidenceSuccess(`${evidenceStage.toUpperCase()} evidence recorded and geotagged!`);
       setEvidencePreview('');
       setEvidenceDescription('');
       setAiResult(null);
@@ -652,11 +654,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         issues_encountered: 'Heavy leachate stains washed with lime powder.'
       });
 
-      setReportSuccess('✓ Completion report submitted to Ward Officer for final verification.');
+      setReportSuccess('Completion report submitted to Ward Officer for final verification.');
       confetti({ particleCount: 45, spread: 65, origin: { y: 0.6 } });
       if (onRefresh) onRefresh();
     } catch {
-      setReportSuccess('✓ Completion report recorded and dispatched to Ward Officer.');
+      setReportSuccess('Completion report recorded and dispatched to Ward Officer.');
       if (onRefresh) onRefresh();
     } finally {
       setSubmittingReport(false);
@@ -706,12 +708,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             <span className="flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 text-[11px]">
               <Clock className="w-3 h-3 text-rose-600" />
               <span>
-                Deadline: {new Date(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000).toLocaleString('en-IN', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                Deadline: {formatDateTime(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000)}
               </span>
             </span>
           </div>
@@ -1002,10 +999,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                         Completion Deadline / SLA
                       </span>
                       <p className="text-xs font-black text-rose-950">
-                        {new Date(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000).toLocaleString('en-IN', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short'
-                        })}
+                        {formatDateTime(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000)}
                       </p>
                     </div>
                   </div>
@@ -1098,7 +1092,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                     </p>
                   </div>
                   <div className="w-9 h-9 rounded-full bg-white border border-amber-200 flex items-center justify-center text-amber-700 font-bold text-xs shadow-2xs">
-                    👑
+                    <Crown className="h-4 w-4" />
                   </div>
                 </div>
 
@@ -1218,7 +1212,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
           <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                Today's Shift Log ({new Date().toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })})
+                Today's Shift Log ({formatDate(new Date())})
               </span>
               <span
                 className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
@@ -1229,11 +1223,17 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                     : 'bg-amber-100 text-amber-900 border border-amber-300'
                 }`}
               >
-                {dailyAttendance.status === 'completed_for_day'
-                  ? '✓ Shift Completed'
-                  : dailyAttendance.status === 'checked_in'
-                  ? '● On Duty (Checked In)'
-                  : '○ Awaiting Check-In'}
+                {dailyAttendance.status === 'completed_for_day' ? (
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Shift Completed
+                  </span>
+                ) : dailyAttendance.status === 'checked_in' ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" /> On Duty (Checked In)
+                  </span>
+                ) : (
+                  'Awaiting Check-In'
+                )}
               </span>
             </div>
 
@@ -1247,7 +1247,9 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                   {dailyAttendance.checkInTime || '—'}
                 </p>
                 <span className="text-[10px] text-slate-500">
-                  {dailyAttendance.checkInTime ? '✓ Verified on-site' : 'Pending start'}
+                  {dailyAttendance.checkInTime ? (
+                    <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Verified on-site</span>
+                  ) : 'Pending start'}
                 </span>
               </div>
 
@@ -1260,7 +1262,9 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                   {dailyAttendance.checkOutTime || '—'}
                 </p>
                 <span className="text-[10px] text-slate-500">
-                  {dailyAttendance.checkOutTime ? '✓ Duty closed' : 'Pending completion'}
+                  {dailyAttendance.checkOutTime ? (
+                    <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Duty closed</span>
+                  ) : 'Pending completion'}
                 </span>
               </div>
             </div>
@@ -1381,10 +1385,14 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                 {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E (~{distanceToTask}m from task pin)
               </span>
             </div>
-            <span className={`px-2.5 py-0.5 rounded-full font-black text-[10px] uppercase tracking-wider ${
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-black text-[10px] uppercase tracking-wider ${
               isWithinGeofence ? 'bg-emerald-200 text-emerald-950' : 'bg-rose-200 text-rose-950'
             }`}>
-              {isWithinGeofence ? '✓ Geotag Validated (<150m)' : '❌ Geotag Mismatch (>150m)'}
+              {isWithinGeofence ? (
+                <><CheckCircle2 className="h-3 w-3" /> Geotag Validated (&lt;150m)</>
+              ) : (
+                <><XCircle className="h-3 w-3" /> Geotag Mismatch (&gt;150m)</>
+              )}
             </span>
           </div>
 
@@ -1420,7 +1428,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                       <span>WARD {currentTask.ward_number || 3} NAVSARI</span>
                     </div>
                     <div className="text-white/80 font-mono text-[9px]">
-                      GPS: {userCoords[0].toFixed(5)}, {userCoords[1].toFixed(5)} · {new Date().toLocaleTimeString()}
+                      GPS: {userCoords[0].toFixed(5)}, {userCoords[1].toFixed(5)} · {formatTime(new Date())}
                     </div>
                   </div>
                   <button
@@ -1633,9 +1641,9 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                     Completion Quality Rating *
                   </label>
                   <select className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-white focus:border-[#095c54] outline-hidden">
-                    <option value="5">⭐⭐⭐⭐⭐ 100% Cleared & Disinfected</option>
-                    <option value="4">⭐⭐⭐⭐ Satisfactory Cleanliness</option>
-                    <option value="3">⭐⭐⭐ Standard Clearance</option>
+                    <option value="5">5 - 100% Cleared & Disinfected</option>
+                    <option value="4">4 - Satisfactory Cleanliness</option>
+                    <option value="3">3 - Standard Clearance</option>
                   </select>
                 </div>
               </div>

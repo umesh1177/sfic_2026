@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
@@ -237,7 +238,7 @@ export const ApprovalTracking: React.FC<ApprovalTrackingProps> = ({
                     <span className="text-slate-400">({log.reviewer_role?.replace(/_/g, ' ')})</span>
                   </div>
                   <span className="text-slate-400 text-[11px]">
-                    {new Date(log.created_at).toLocaleString()}
+                    {formatDateTime(log.created_at)}
                   </span>
                 </div>
 

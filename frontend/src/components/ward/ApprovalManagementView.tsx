@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
@@ -166,7 +167,7 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
                       {item.type.replace('_', ' ')}
                     </span>
                     <span className="text-[10px] font-bold text-slate-400">
-                      Submitted {new Date(item.submission_time).toLocaleDateString('en-IN')}
+                      Submitted {formatDate(item.submission_time)}
                     </span>
                   </div>
                   <h3 className="text-sm font-extrabold text-[#0f2925] mt-1">{item.title}</h3>
@@ -248,7 +249,7 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
                 onClick={() => setRejectModalItem(null)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-sm font-bold"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -295,4 +296,3 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
     </div>
   );
 };
-

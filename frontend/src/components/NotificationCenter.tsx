@@ -1,3 +1,4 @@
+import { formatDateTime } from '../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Bell,
@@ -317,12 +318,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                     </div>
                     <span className="text-[11px] text-[#94a3b8] font-medium flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {new Date(n.created_at).toLocaleString([], {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatDateTime(n.created_at)}
                     </span>
                   </div>
 

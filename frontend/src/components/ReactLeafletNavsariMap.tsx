@@ -1,3 +1,4 @@
+import { formatDate } from '../utils/dateFormat.js';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   MapContainer,
@@ -320,7 +321,7 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
           font-weight: 900;
           font-size: 11px;
         ">
-          ●
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: white; display: block;"></span>
         </div>
       `,
       iconSize: [24, 24],
@@ -644,10 +645,11 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
                             : 'bg-[#fef3c7] text-[#b45309]'
                         }`}
                       >
-                        ● {c.status.replace('_', ' ')}
+                        <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                        {c.status.replace('_', ' ')}
                       </span>
                       <span className="text-[10px] text-[#94a3b8]">
-                        {new Date(c.submitted_at).toLocaleDateString()}
+                        {formatDate(c.submitted_at)}
                       </span>
                     </div>
                   </div>
@@ -852,7 +854,8 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
                           : 'bg-[#fef3c7] text-[#b45309]'
                       }`}
                     >
-                      ● {c.status.replace('_', ' ')}
+                      <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                      {c.status.replace('_', ' ')}
                     </span>
                   </div>
                   <h4 className="font-extrabold text-sm text-[#095c54]">
@@ -865,7 +868,7 @@ export const ReactLeafletNavsariMap: React.FC<ReactLeafletNavsariMapProps> = ({
                 </div>
 
                 <div className="mt-3 pt-2 border-t border-[#e2e8f0] flex items-center justify-between text-[11px] text-[#64748b]">
-                  <span>Submitted: {new Date(c.submitted_at).toLocaleDateString()}</span>
+                  <span>Submitted: {formatDate(c.submitted_at)}</span>
                   <button
                     onClick={() => {
                       setViewMode('map');

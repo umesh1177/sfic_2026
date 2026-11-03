@@ -1,3 +1,4 @@
+import { formatDate } from '../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Award,
@@ -321,7 +322,7 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
                     <p className="text-[11px] text-[#64748b] font-medium flex items-center gap-1 mt-0.5">
                       <span>{post.author_role}</span>
                       <span>·</span>
-                      <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                      <span>{formatDate(post.created_at)}</span>
                     </p>
                   </div>
                 </div>
@@ -451,7 +452,7 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
                               {c.citizen_name}
                             </span>
                             <span className="text-[10px] text-[#94a3b8]">
-                              {new Date(c.created_at).toLocaleDateString()}
+                              {formatDate(c.created_at)}
                             </span>
                           </div>
                           <p className="text-xs text-[#475569] leading-relaxed">

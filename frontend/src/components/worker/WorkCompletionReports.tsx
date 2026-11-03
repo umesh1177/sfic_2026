@@ -113,7 +113,7 @@ export const WorkCompletionReports: React.FC<WorkCompletionReportsProps> = ({
           >
             {assignments.map(a => (
               <option key={a.id} value={a.id}>
-                {a.task_code} - {a.location_name} {a.is_temporary_leader ? '(👑 Team Leader)' : ''}
+                {a.task_code} - {a.location_name} {a.is_temporary_leader ? '(Team Leader)' : ''}
               </option>
             ))}
           </select>
@@ -294,4 +294,3 @@ export const WorkCompletionReports: React.FC<WorkCompletionReportsProps> = ({
     </div>
   );
 };
-

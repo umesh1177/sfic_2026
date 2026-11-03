@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime, formatTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar,
@@ -333,9 +334,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     try {
       setAiGeneratingQuestion(prev => ({ ...prev, [question.id]: true }));
       // Generate intelligent contextual response using activity metadata
-      const promptContext = `Cleanliness drive: "${activity.title}" at ${activity.target_area} on ${new Date(
-        activity.proposed_start_at
-      ).toLocaleDateString()}. Meeting point: ${activity.meeting_point}. Equipment: ${(
+      const promptContext = `Cleanliness drive: "${activity.title}" at ${activity.target_area} on ${formatDate(activity.proposed_start_at)}. Meeting point: ${activity.meeting_point}. Equipment: ${(
         activity.equipment_needed || []
       ).join(', ')}.`;
 
@@ -345,9 +344,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         suggested = res.data?.suggested_answer || '';
       } catch {
         // Fallback intelligent civic chatbot answer
-        suggested = `Namaste ${question.citizen_name}! Thank you for your question regarding "${activity.title}". The drive begins at ${new Date(
-          activity.proposed_start_at
-        ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} at ${activity.meeting_point}. All essential tools and safety gloves will be provided by NMC on site. We look forward to your active civic participation!`;
+        suggested = `Namaste ${question.citizen_name}! Thank you for your question regarding "${activity.title}". The drive begins at ${formatTime(activity.proposed_start_at)} at ${activity.meeting_point}. All essential tools and safety gloves will be provided by NMC on site. We look forward to your active civic participation!`;
       }
 
       setQuestionAnswers(prev => ({ ...prev, [question.id]: suggested }));
@@ -477,18 +474,18 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         if (res.data?.passes_quality) {
           setEvidenceAiStatus(prev => ({
             ...prev,
-            [activityId]: `✓ Verified by AI: Genuine Cleanliness Drive Photo (${res.data.feedback_message || 'Civic quality verified'})`
+            [activityId]: `Verified by AI: Genuine Cleanliness Drive Photo (${res.data.feedback_message || 'Civic quality verified'})`
           }));
         } else {
           setEvidenceAiStatus(prev => ({
             ...prev,
-            [activityId]: '✓ Photo accepted (JPEG, verified civic evidence)'
+            [activityId]: 'Photo accepted (JPEG, verified civic evidence)'
           }));
         }
       } catch {
         setEvidenceAiStatus(prev => ({
           ...prev,
-          [activityId]: '✓ Photo accepted (Clear civic evidence visual)'
+          [activityId]: 'Photo accepted (Clear civic evidence visual)'
         }));
       }
     };
@@ -1221,15 +1218,11 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                       <div className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
                         <Calendar className="w-3.5 h-3.5 text-[#095c54]" />
                         <span>
-                          {new Date(act.proposed_start_at).toLocaleDateString('en-IN', {
-                            weekday: 'short',
-                            day: 'numeric',
-                            month: 'short'
-                          })}
+                          {formatDate(act.proposed_start_at)}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 font-medium">
-                        {new Date(act.proposed_start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(act.proposed_end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatTime(act.proposed_start_at)} - {formatTime(act.proposed_end_at)}
                       </p>
                       <p className="text-[11px] text-slate-500 flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
@@ -1397,7 +1390,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                     <div className="min-w-0">
                                       <p className="font-bold text-slate-900 truncate">{reg.citizen_name || 'Citizen'}</p>
                                       <p className="text-[11px] text-slate-500">
-                                        {reg.citizen_phone || 'Mobile verified'} · Reg #{reg.registration_number || '001'} · {new Date(reg.registered_at).toLocaleDateString()}
+                                        {reg.citizen_phone || 'Mobile verified'} · Reg #{reg.registration_number || '001'} · {formatDate(reg.registered_at)}
                                       </p>
                                     </div>
                                   </div>
@@ -1461,7 +1454,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                       {q.citizen_name || 'Citizen'}
                                     </span>
                                     <span className="text-[10px] text-slate-400 ml-2">
-                                      {new Date(q.created_at).toLocaleString()}
+                                      {formatDateTime(q.created_at)}
                                     </span>
                                     <p className="text-xs text-slate-900 font-semibold mt-1">
                                       "{q.question_text}"
@@ -1595,7 +1588,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                               <div className="space-y-1 text-xs">
                                 <span className="font-bold text-slate-900 block">Photo Attached</span>
                                 <span className="text-emerald-700 font-bold block">
-                                  {evidenceAiStatus[act.id] || '✓ Clear civic photo attached'}
+                                  {evidenceAiStatus[act.id] || 'Clear civic photo attached'}
                                 </span>
                               </div>
                             </div>
@@ -1668,7 +1661,9 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                               return (
                                 <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
                                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                  <span>✓ Description verified by AI moderation</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Description verified by AI moderation
+                                  </span>
                                 </p>
                               );
                             })()}
@@ -1732,7 +1727,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                   <div className="px-3 text-xs space-y-1">
                                     <p className="text-slate-800 font-medium line-clamp-2">{ev.caption}</p>
                                     <p className="text-[10px] text-slate-400">
-                                      {new Date(ev.created_at).toLocaleString()}
+                                      {formatDateTime(ev.created_at)}
                                     </p>
                                   </div>
                                 </div>

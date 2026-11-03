@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Award,
@@ -262,10 +263,7 @@ export const WardCommunityPosts: React.FC = () => {
                         <span>Ward {post.ward_number || 3} ({post.ward_name || 'Navsari'})</span>
                         <span>·</span>
                         <span className="font-mono text-[10px] text-slate-400">
-                          {new Date(post.created_at).toLocaleDateString('en-IN', {
-                            day: 'numeric',
-                            month: 'short'
-                          })}
+                          {formatDate(post.created_at)}
                         </span>
                       </p>
                     </div>
@@ -386,7 +384,7 @@ export const WardCommunityPosts: React.FC = () => {
                           <div className="flex items-center justify-between">
                             <span className="font-extrabold text-[#0f2925]">{c.citizen_name}</span>
                             <span className="text-[10px] text-slate-400 font-mono">
-                              {new Date(c.created_at).toLocaleDateString('en-IN')}
+                              {formatDate(c.created_at)}
                             </span>
                           </div>
                           <p className="text-slate-700">{c.comment_text}</p>

@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Search,
@@ -425,10 +426,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         {complaint.category_name}
                       </p>
                       <p className="text-[10px] text-slate-400">
-                        {new Date(complaint.submitted_at).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'short'
-                        })} · By Anonymous Citizen
+                        {formatDate(complaint.submitted_at)} · By Anonymous Citizen
                       </p>
                     </td>
 
@@ -557,7 +555,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                               onClick={() => setTrackingComplaintId(null)}
                               className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-0.5 rounded-lg hover:bg-slate-100"
                             >
-                              ✕ Close
+                              <><X className="mr-1 inline h-3 w-3" /> Close</>
                             </button>
                           </div>
                           <StatusProgressionStepper
@@ -670,7 +668,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         }}
                         className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
                       >
-                        ✕ Close
+                        <><X className="mr-1 inline h-3 w-3" /> Close</>
                       </button>
                     </div>
                     <StatusProgressionStepper
@@ -727,4 +725,3 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     </div>
   );
 };
-

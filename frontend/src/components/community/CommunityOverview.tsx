@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React from 'react';
 import {
   Calendar,
@@ -345,13 +346,7 @@ export const CommunityOverview: React.FC<CommunityOverviewProps> = ({
                     <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
                       <span className="flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        {new Date(act.proposed_start_at).toLocaleDateString('en-IN', {
-                          weekday: 'short',
-                          day: 'numeric',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                        {formatDate(act.proposed_start_at)}
                       </span>
                       <span className="flex items-center gap-1.5">
                         <MapPin className="w-3.5 h-3.5 text-slate-400" />

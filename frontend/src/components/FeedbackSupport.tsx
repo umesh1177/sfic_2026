@@ -1,3 +1,4 @@
+import { formatDate } from '../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   HelpCircle,
@@ -9,7 +10,8 @@ import {
   ChevronRight,
   ShieldCheck,
   User,
-  Ticket
+  Ticket,
+  X
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { SupportTicket } from '../types/index.js';
@@ -152,9 +154,7 @@ export const FeedbackSupport: React.FC<FeedbackSupportProps> = ({ lang }) => {
               </div>
 
               <div className="px-4 pb-4 pt-2 border-t border-[#f1f5f9] flex items-center justify-between text-[11px] text-[#94a3b8]">
-                <span>{new Date(ticket.created_at).toLocaleDateString(
-                  lang === 'gu' ? 'gu-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN'
-                )}</span>
+                <span>{formatDate(ticket.created_at)}</span>
                 <span className="font-bold text-[#095c54] flex items-center gap-1">
                   {ticket.messages.length} {lang === 'gu' ? 'સંદેશા' : lang === 'hi' ? 'संदेश' : 'messages'} <ChevronRight className="w-3.5 h-3.5" />
                 </span>
@@ -182,7 +182,7 @@ export const FeedbackSupport: React.FC<FeedbackSupportProps> = ({ lang }) => {
                 {t.create_ticket}
               </h3>
               <button onClick={() => setShowNewTicketModal(false)} className="text-slate-400 hover:text-slate-700 text-lg leading-none touch-press">
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -276,7 +276,7 @@ export const FeedbackSupport: React.FC<FeedbackSupportProps> = ({ lang }) => {
                 </h3>
               </div>
               <button onClick={() => setSelectedTicket(null)} className="p-1 hover:bg-white/20 rounded-full text-white">
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 

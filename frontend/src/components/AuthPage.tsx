@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Phone,
-  Lock,
   Eye,
   EyeOff,
   Shield,
@@ -12,7 +11,6 @@ import {
   ArrowRight,
   RefreshCw,
   User,
-  MapPin,
   Check,
   Building,
   Globe,
@@ -341,18 +339,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#f0f6f4] via-[#f8faf9] to-[#e6f4f1] flex flex-col justify-between p-4 sm:p-6 lg:p-8">
       {/* Top Bar with Language Selector */}
-      <div className="max-w-md w-full mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <SwachhSetuLogo size="sm" showText={true} />
+      <div className="max-w-md w-full mx-auto flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 max-w-[calc(100%-6.5rem)] items-center gap-2">
+          <SwachhSetuLogo size="sm" showText={true} className="max-w-full" />
         </div>
 
         {/* Language Switcher */}
-        <div className="flex items-center gap-1 bg-white p-1 rounded-xl shadow-sm border border-[#e2e8f0]">
+        <div className="flex shrink-0 items-center gap-1 bg-white p-1 rounded-xl shadow-sm border border-[#e2e8f0]">
           <Globe className="w-3.5 h-3.5 text-[#095c54] ml-1.5" />
           <select
             value={lang}
             onChange={e => onLanguageChange(e.target.value as Language)}
-            className="text-xs font-bold text-[#095c54] bg-transparent outline-none cursor-pointer pr-1"
+            className="max-w-[66px] text-xs font-bold text-[#095c54] bg-transparent outline-none cursor-pointer pr-1"
           >
             <option value="en">English</option>
             <option value="gu">ગુજરાતી</option>
@@ -433,8 +431,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <span className="text-[10px] text-[#64748b] font-normal">Phone, Worker Code, or Email</span>
                 </label>
                 <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] focus-within:ring-2 focus-within:ring-[#095c54]/10 bg-white overflow-hidden transition">
-                  <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
-                    {/^\d+$/.test(phone.trim()) && phone.trim().length <= 10 ? '🇮🇳 +91' : '👤 ID'}
+                  <span className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
+                    {/^\d+$/.test(phone.trim()) && phone.trim().length <= 10 ? (
+                      <><Phone className="h-3.5 w-3.5" /> +91</>
+                    ) : (
+                      <><User className="h-3.5 w-3.5" /> ID</>
+                    )}
                   </span>
                   <input
                     type="text"
@@ -442,7 +444,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     placeholder="e.g. 9825120005, WRK-2026-003, or username"
                     value={phone}
                     onChange={e => setPhone(e.target.value)}
-                    className="flex-1 px-3 py-2.5 text-sm font-semibold text-[#0f2925] outline-none"
+                    className="min-w-0 flex-1 px-3 py-2.5 text-sm font-semibold text-[#0f2925] outline-none"
                     required
                   />
                 </div>
@@ -679,8 +681,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       Mobile Number
                     </label>
                     <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
-                      <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
-                        🇮🇳 +91
+                      <span className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
+                        <Phone className="h-3.5 w-3.5" /> +91
                       </span>
                       <input
                         type="tel"
@@ -909,8 +911,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   Registered Mobile Number
                 </label>
                 <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
-                  <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
-                    🇮🇳 +91
+                  <span className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
+                    <Phone className="h-3.5 w-3.5" /> +91
                   </span>
                   <input
                     type="tel"

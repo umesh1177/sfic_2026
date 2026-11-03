@@ -1,3 +1,4 @@
+import { formatDate } from '../../utils/dateFormat.js';
 import React, { useState } from 'react';
 import {
   ShieldCheck,
@@ -114,7 +115,7 @@ export const MyCommunityProfile: React.FC<MyCommunityProfileProps> = ({
               Verified by NMC Officer: <strong className="text-slate-900">{community.verified_by_officer_name || 'Dr. Ketan Parekh (NMC Admin)'}</strong>
             </span>
             <span className="text-slate-500">
-              Verified on: {new Date(community.verified_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              Verified on: {formatDate(community.verified_at)}
             </span>
           </div>
         )}

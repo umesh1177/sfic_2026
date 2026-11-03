@@ -3,7 +3,6 @@ import {
   Home,
   PlusCircle,
   FileText,
-  MapPin,
   MoreHorizontal,
   Calendar,
   Trophy,
@@ -47,12 +46,12 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
         aria-label="Mobile Navigation"
         className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] pt-1.5 pb-[max(0.4rem,env(safe-area-inset-bottom))] px-2 sm:px-4 lg:hidden shadow-[0_-4px_24px_rgba(9,92,84,0.08)]"
       >
-        <div className="flex items-center justify-around max-w-lg mx-auto">
+        <div className="flex items-center justify-between max-w-lg mx-auto">
           
           {/* 1. Home */}
           <button
             onClick={() => handleSelectTab('home')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all touch-press ${
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all touch-press ${
               currentTab === 'home'
                 ? 'bg-[#e6f4f1] text-[#095c54] font-extrabold shadow-xs'
                 : 'text-[#64748b] hover:text-[#095c54]'
@@ -60,7 +59,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
             aria-label={t.nav_home}
           >
             <Home className={`w-5 h-5 transition-transform ${currentTab === 'home' ? 'scale-110 text-[#095c54]' : ''}`} />
-            <span className="text-[10px] mt-0.5 tracking-tight">
+            <span className="max-w-full break-words text-center text-[10px] leading-tight mt-0.5 tracking-tight">
               {t.nav_home}
             </span>
           </button>
@@ -68,7 +67,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
           {/* 2. My Complaints */}
           <button
             onClick={() => handleSelectTab('complaints')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all touch-press relative ${
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all touch-press relative ${
               currentTab === 'complaints'
                 ? 'bg-[#e6f4f1] text-[#095c54] font-extrabold shadow-xs'
                 : 'text-[#64748b] hover:text-[#095c54]'
@@ -81,7 +80,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#10b981] ring-2 ring-white animate-pulse" />
               )}
             </div>
-            <span className="text-[10px] mt-0.5 tracking-tight">
+            <span className="max-w-full break-words text-center text-[10px] leading-tight mt-0.5 tracking-tight">
               {t.nav_complaints}
             </span>
           </button>
@@ -89,37 +88,21 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
           {/* 3. Primary Report Action (Raised Center Floating Button) */}
           <button
             onClick={onOpenReport}
-            className="flex flex-col items-center justify-center -mt-5 group touch-press px-1"
+            className="flex min-w-0 flex-1 flex-col items-center justify-center -mt-5 group touch-press px-1"
             aria-label={t.action_report}
           >
             <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-[#095c54] via-[#0d6e65] to-[#10b981] p-2.5 sm:p-3 text-white shadow-lg shadow-[#095c54]/30 flex items-center justify-center ring-4 ring-white group-active:scale-90 transition-all">
               <PlusCircle className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.4]" />
             </div>
-            <span className="text-[10px] font-black text-[#095c54] mt-0.5 tracking-tight">
+            <span className="max-w-full break-words text-center text-[10px] leading-tight font-black text-[#095c54] mt-0.5 tracking-tight">
               {t.nav_report_short || t.nav_report}
             </span>
           </button>
 
-          {/* 4. Map */}
-          <button
-            onClick={() => handleSelectTab('map')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all touch-press ${
-              currentTab === 'map'
-                ? 'bg-[#e6f4f1] text-[#095c54] font-extrabold shadow-xs'
-                : 'text-[#64748b] hover:text-[#095c54]'
-            }`}
-            aria-label={t.nav_map}
-          >
-            <MapPin className={`w-5 h-5 transition-transform ${currentTab === 'map' ? 'scale-110 text-[#095c54]' : ''}`} />
-            <span className="text-[10px] mt-0.5 tracking-tight">
-              {t.nav_map}
-            </span>
-          </button>
-
-          {/* 5. More */}
+          {/* More */}
           <button
             onClick={() => setMoreSheetOpen(!moreSheetOpen)}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all touch-press ${
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all touch-press ${
               isMoreTabActive || moreSheetOpen
                 ? 'bg-[#e6f4f1] text-[#095c54] font-extrabold shadow-xs'
                 : 'text-[#64748b] hover:text-[#095c54]'
@@ -127,7 +110,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
             aria-label={t.nav_more}
           >
             <MoreHorizontal className={`w-5 h-5 transition-transform ${isMoreTabActive ? 'scale-110 text-[#095c54]' : ''}`} />
-            <span className="text-[10px] mt-0.5 tracking-tight">
+            <span className="max-w-full break-words text-center text-[10px] leading-tight mt-0.5 tracking-tight">
               {t.nav_more}
             </span>
           </button>

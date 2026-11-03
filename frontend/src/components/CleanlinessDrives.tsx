@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Calendar,
@@ -211,7 +212,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           if (distanceMeters > MAX_DISTANCE_METERS) {
             setAttendanceError(
-              `⚠️ Location Verification Failed: You are currently ${Math.round(
+              `Location Verification Failed: You are currently ${Math.round(
                 distanceMeters
               )}m away from the drive location (${selectedDrive.location_name}). You must be within ${MAX_DISTANCE_METERS}m of the assembly site to mark attendance.`
             );
@@ -221,7 +222,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           // Within 150m! Proceed with recording attendance
           const res = await api.markCitizenDriveAttendance(selectedDrive.id, userLat, userLng);
-          setAttendanceMessage(res.message || '✓ Attendance verified and recorded! 150 Civic Karma points awarded.');
+          setAttendanceMessage(res.message || 'Attendance verified and recorded! 150 Civic Karma points awarded.');
           setSelectedDrive({
             ...selectedDrive,
             attendance_status: 'present',
@@ -366,7 +367,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-teal-300" />
-                  {new Date(selectedDrive.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  {formatDateTime(selectedDrive.start_time)}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-teal-300" />
@@ -508,13 +509,13 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     <div>
                       <span className="text-[#64748b]">Commencement: </span>
                       <strong className="text-[#0f2925]">
-                        {new Date(selectedDrive.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                        {formatDateTime(selectedDrive.start_time)}
                       </strong>
                     </div>
                     <div>
                       <span className="text-[#64748b]">Conclusion: </span>
                       <strong className="text-[#0f2925]">
-                        {new Date(selectedDrive.end_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                        {formatDateTime(selectedDrive.end_time)}
                       </strong>
                     </div>
                   </div>
@@ -633,12 +634,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   <p className="text-xs text-[#64748b] max-w-md mx-auto mt-1 leading-relaxed">
                     Attendance verification unlocks strictly on the day of the drive (
                     <strong className="text-[#095c54]">
-                      {new Date(selectedDrive.start_time).toLocaleDateString([], {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
+                      {formatDate(selectedDrive.start_time)}
                     </strong>
                     ).
                   </p>
@@ -733,8 +729,9 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 <div className="pt-2">
                   {!selectedDrive.is_registered ? (
                     <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-2">
-                      <p className="font-bold">
-                        ⚠️ Please register as a volunteer for this drive before marking your attendance.
+                      <p className="flex items-start gap-1.5 font-bold">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>Please register as a volunteer for this drive before marking your attendance.</span>
                       </p>
                       <button
                         onClick={() => handleRegister(selectedDrive.id)}
@@ -860,7 +857,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
-                        <span>{new Date(d.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                        <span>{formatDateTime(d.start_time)}</span>
                       </div>
                     </div>
 

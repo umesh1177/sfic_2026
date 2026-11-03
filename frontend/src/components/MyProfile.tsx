@@ -1,3 +1,4 @@
+import { formatDate } from '../utils/dateFormat.js';
 import React, { useState } from 'react';
 import {
   User,
@@ -150,7 +151,7 @@ export const MyProfile: React.FC<MyProfileProps> = ({
               <Phone className="w-3.5 h-3.5" /> {user.phone}
             </p>
             <p className="text-[11px] text-[#94a3b8] mt-0.5">
-              Member since {new Date(user.created_at).toLocaleDateString()}
+              Member since {formatDate(user.created_at)}
             </p>
           </div>
         </div>

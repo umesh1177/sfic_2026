@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '../../utils/dateFormat.js';
 import React, { useState, useEffect } from 'react';
 import {
   Bell,
@@ -128,7 +129,7 @@ export const EventNotifications: React.FC<EventNotificationsProps> = ({ activiti
             >
               {activities.map(act => (
                 <option key={act.id} value={act.id}>
-                  {act.title} ({new Date(act.proposed_start_at).toLocaleDateString()}) - {act.ward_name}
+                  {act.title} ({formatDate(act.proposed_start_at)}) - {act.ward_name}
                 </option>
               ))}
             </select>
@@ -251,7 +252,7 @@ export const EventNotifications: React.FC<EventNotificationsProps> = ({ activiti
                       {(an.priority || 'NORMAL').toUpperCase()}
                     </span>
                     <span className="text-[11px] text-slate-400">
-                      {new Date(an.created_at).toLocaleString()}
+                      {formatDateTime(an.created_at)}
                     </span>
                   </div>
 
