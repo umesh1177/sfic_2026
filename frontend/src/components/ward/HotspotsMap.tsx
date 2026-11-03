@@ -1,19 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   MapPin,
-  Filter,
   RefreshCw,
-  AlertTriangle,
   Flame,
-  CheckCircle2,
-  Clock,
-  Layers,
   ChevronRight,
-  Eye,
   Info,
-  Calendar,
   Sparkles
 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Circle, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { api } from '../../services/api.js';
 import { WardHotspot } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -23,6 +18,53 @@ interface HotspotsMapProps {
   ward?: number;
   lang?: Language;
 }
+
+// Controller component to animate map view when a hotspot is selected
+function MapRecenter({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(center, 16, { duration: 1 });
+  }, [center, map]);
+  return null;
+}
+
+// Custom Leaflet DivIcon for pins based on frequency level
+const createHotspotIcon = (frequency: string, isSelected: boolean) => {
+  const color = frequency === 'high' ? '#ef4444' : frequency === 'medium' ? '#f59e0b' : '#10b981';
+  const scale = isSelected ? 'scale(1.2)' : 'scale(1)';
+  const zIndex = isSelected ? 1000 : 100;
+
+  return L.divIcon({
+    className: 'custom-hotspot-pin',
+    html: `
+      <div style="
+        background-color: ${color};
+        width: 26px;
+        height: 26px;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg) ${scale};
+        border: 2.5px solid white;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s ease;
+        z-index: ${zIndex};
+      ">
+        <div style="
+          width: 9px;
+          height: 9px;
+          background: white;
+          border-radius: 50%;
+          transform: rotate(45deg);
+        "></div>
+      </div>
+    `,
+    iconSize: [26, 26],
+    iconAnchor: [13, 26],
+    popupAnchor: [0, -26]
+  });
+};
 
 export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' }) => {
   const [hotspots, setHotspots] = useState<WardHotspot[]>([]);
@@ -36,6 +78,9 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
 
   const t = translations[lang];
 
+  // Default coordinate center based on officer's ward
+  const defaultWardCoords: [number, number] = ward === 8 ? [20.9410, 72.9350] : [20.9470, 72.9280];
+
   const fetchHotspots = async () => {
     setLoading(true);
     try {
@@ -44,10 +89,19 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
         frequency: frequencyFilter,
         ward: ward
       });
-      setHotspots(res.data || []);
-      if (res.data && res.data.length > 0) {
-        if (!selectedHotspot || !res.data.some((h: WardHotspot) => h.id === selectedHotspot.id)) {
-          setSelectedHotspot(res.data[0]);
+
+      // Filter strictly by the officer's ward
+      const wardOnlyHotspots = (res.data || []).filter(
+        (h: WardHotspot) =>
+          !h.ward_number ||
+          h.ward_number === ward ||
+          ((h as any).ward_name && (h as any).ward_name.includes(String(ward)))
+      );
+
+      setHotspots(wardOnlyHotspots);
+      if (wardOnlyHotspots.length > 0) {
+        if (!selectedHotspot || !wardOnlyHotspots.some((h: WardHotspot) => h.id === selectedHotspot.id)) {
+          setSelectedHotspot(wardOnlyHotspots[0]);
         }
       } else {
         setSelectedHotspot(null);
@@ -63,6 +117,10 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
     fetchHotspots();
   }, [categoryFilter, frequencyFilter, ward]);
 
+  const mapCenter: [number, number] = selectedHotspot
+    ? [selectedHotspot.latitude, selectedHotspot.longitude]
+    : defaultWardCoords;
+
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
       {/* Header */}
@@ -73,7 +131,7 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
             <span>{t.hotspots_title}</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            {t.hotspots_subtitle} · Ward {ward} · {hotspots.length} {lang === 'gu' ? 'ક્લસ્ટર્સ' : lang === 'hi' ? 'क्लस्टर्स' : 'Active Clusters'}
+            {t.hotspots_subtitle} · Ward {ward} Only · {hotspots.length} {lang === 'gu' ? 'ક્લસ્ટર્સ' : lang === 'hi' ? 'क्लस्टर्स' : 'Active Clusters'}
           </p>
         </div>
 
@@ -141,42 +199,108 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
 
       {/* Main Grid: Interactive Map + Hotspot Intelligence Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
-        {/* Map View (2 Cols on lg) */}
+        {/* Real Leaflet Map View (2 Cols on lg) */}
         <div className="lg:col-span-2 rounded-3xl border border-[#e2e8f0] overflow-hidden bg-white shadow-xs relative flex flex-col h-[360px] sm:h-[480px]">
-          {selectedHotspot ? (
-            <iframe
-              title="Hotspot Geographic View"
-              width="100%"
-              height="100%"
-              frameBorder="0"
-              scrolling="no"
-              marginHeight={0}
-              marginWidth={0}
-              src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedHotspot.longitude - 0.006}%2C${
-                selectedHotspot.latitude - 0.005
-              }%2C${selectedHotspot.longitude + 0.006}%2C${
-                selectedHotspot.latitude + 0.005
-              }&layer=mapnik&marker=${selectedHotspot.latitude}%2C${selectedHotspot.longitude}`}
-            />
-          ) : (
+          {loading ? (
             <div className="flex-1 flex items-center justify-center bg-slate-50 text-slate-400 text-xs font-bold p-4">
-              {loading ? t.loading : t.empty}
+              <RefreshCw className="w-6 h-6 text-[#095c54] animate-spin mb-2" />
+              <span>{t.loading}</span>
             </div>
+          ) : (
+            <MapContainer
+              center={mapCenter}
+              zoom={15}
+              scrollWheelZoom={false}
+              className="h-full w-full z-0"
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+
+              {selectedHotspot && (
+                <MapRecenter center={[selectedHotspot.latitude, selectedHotspot.longitude]} />
+              )}
+
+              {/* Render Every Hotspot in Officer's Ward with Permanent Location Name Tooltip */}
+              {hotspots.map(hs => {
+                const isSelected = selectedHotspot?.id === hs.id;
+                const circleColor = hs.frequency_level === 'high' ? '#ef4444' : hs.frequency_level === 'medium' ? '#f59e0b' : '#10b981';
+
+                return (
+                  <React.Fragment key={hs.id}>
+                    <Marker
+                      position={[hs.latitude, hs.longitude]}
+                      icon={createHotspotIcon(hs.frequency_level, isSelected)}
+                      eventHandlers={{
+                        click: () => setSelectedHotspot(hs)
+                      }}
+                    >
+                      {/* Permanent Location Name Tooltip on Every Pin! */}
+                      <Tooltip
+                        permanent
+                        direction="top"
+                        offset={[0, -28]}
+                        className="hotspot-permanent-tooltip"
+                      >
+                        <div className="font-black text-[11px] text-slate-900 bg-white/95 px-2.5 py-1 rounded-xl shadow-md border border-slate-200 flex items-center gap-1.5 whitespace-nowrap">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              hs.frequency_level === 'high'
+                                ? 'bg-red-500 animate-pulse'
+                                : hs.frequency_level === 'medium'
+                                ? 'bg-amber-500'
+                                : 'bg-emerald-500'
+                            }`}
+                          />
+                          <span>{hs.title || hs.locality || `Ward ${ward}`}</span>
+                        </div>
+                      </Tooltip>
+
+                      <Popup>
+                        <div className="p-1 space-y-1">
+                          <p className="font-extrabold text-xs text-[#095c54]">{hs.title}</p>
+                          <p className="text-[11px] text-slate-600">{hs.address}</p>
+                          <p className="text-[10px] font-bold text-orange-700">
+                            {hs.total_complaints} incidents · {hs.active_complaints} active
+                          </p>
+                        </div>
+                      </Popup>
+                    </Marker>
+
+                    {/* Geofence area cluster indicator */}
+                    <Circle
+                      center={[hs.latitude, hs.longitude]}
+                      radius={120}
+                      pathOptions={{
+                        color: circleColor,
+                        fillColor: circleColor,
+                        fillOpacity: isSelected ? 0.25 : 0.1,
+                        weight: isSelected ? 2.5 : 1
+                      }}
+                    />
+                  </React.Fragment>
+                );
+              })}
+            </MapContainer>
           )}
 
           {/* Map Overlay Badge */}
           {selectedHotspot && (
-            <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-2xl border border-slate-200 text-xs font-bold text-[#0f2925] shadow-md flex items-center gap-2 max-w-[85%]">
+            <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs px-3.5 py-2 rounded-2xl border border-slate-200 text-xs font-bold text-[#0f2925] shadow-md flex items-center gap-2 max-w-[85%] z-10">
               <MapPin className="w-4 h-4 text-orange-600 shrink-0" />
               <span className="truncate">
-                {selectedHotspot.locality || `Ward ${ward}`}
+                {selectedHotspot.locality || selectedHotspot.title || `Ward ${ward}`}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-[#095c54] text-white ml-1">
+                Ward {ward}
               </span>
             </div>
           )}
 
           {/* Quick Hotspot selector pills */}
           {hotspots.length > 0 && (
-            <div className="absolute bottom-3 inset-x-3 bg-white/95 backdrop-blur-xs p-2 rounded-2xl border border-slate-200 shadow-lg flex items-center gap-2 overflow-x-auto scrollbar-none">
+            <div className="absolute bottom-3 inset-x-3 bg-white/95 backdrop-blur-xs p-2 rounded-2xl border border-slate-200 shadow-lg flex items-center gap-2 overflow-x-auto scrollbar-none z-10">
               {hotspots.map(hs => (
                 <button
                   key={hs.id}

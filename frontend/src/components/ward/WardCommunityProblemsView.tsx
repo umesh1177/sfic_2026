@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CommunityProblem } from '../../types/index.js';
 import { api } from '../../services/api.js';
+import { MiniMapLocationPicker } from '../MiniMapLocationPicker.js';
 import { Language } from '../../i18n/translations.js';
 
 interface WardCommunityProblemsViewProps {
@@ -57,6 +58,8 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
   const [description, setDescription] = useState<string>('');
   const [locationName, setLocationName] = useState<string>('');
   const [address, setAddress] = useState<string>(`Ward ${wardNumber}, Navsari Civic Area`);
+  const [latitude, setLatitude] = useState<number>(20.9470);
+  const [longitude, setLongitude] = useState<number>(72.9280);
   const [actionPlan, setActionPlan] = useState<string>('');
   const [urgency, setUrgency] = useState<'low' | 'medium' | 'high' | 'critical'>('high');
   const [volunteersNeeded, setVolunteersNeeded] = useState<number>(20);
@@ -121,6 +124,8 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
         title: title.trim(),
         description: description.trim(),
         location_name: locationName.trim() || `Ward ${wardNumber} Focus Area`,
+        latitude,
+        longitude,
         address: address.trim(),
         action_plan: actionPlan.trim(),
         urgency,
@@ -144,6 +149,17 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
       setErrorMsg(err.message || 'Failed to post civic problem.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReopen = async (id: string) => {
+    try {
+      await api.reopenWardCommunityProblem(id);
+      setSuccessMsg('Civic problem reopened! It is now available for all community groups to adopt.');
+      fetchProblems();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Could not reopen problem.');
     }
   };
 
@@ -243,7 +259,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                      Location Landmark
+                      Location Landmark *
                     </label>
                     <input
                       type="text"
@@ -263,6 +279,32 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                       onChange={e => setAddress(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#095c54] font-medium"
                     />
+                  </div>
+                </div>
+
+                {/* Interactive Map Location Picker */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-black uppercase text-slate-700 tracking-wider">
+                    Pinpoint Exact Location on Map *
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Click on the map or drag the pin. This geographic locus will be visible to Community Heads & Citizens for GPS attendance verification.
+                  </p>
+                  <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-2xs">
+                    <MiniMapLocationPicker
+                      initialLat={latitude}
+                      initialLng={longitude}
+                      onLocationChange={(lat, lng, ward, snippet) => {
+                        setLatitude(lat);
+                        setLongitude(lng);
+                        if (snippet && !locationName) {
+                          setLocationName(snippet);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-500">
+                    Coordinates: {latitude.toFixed(5)}, {longitude.toFixed(5)}
                   </div>
                 </div>
               </div>
@@ -576,13 +618,26 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                     Posted by: {prob.officer_name || officerName}
                   </span>
 
-                  <button
-                    onClick={() => handleDelete(prob.id)}
-                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 transition"
-                    title="Delete listing"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {prob.status && prob.status !== 'open' && (
+                      <button
+                        type="button"
+                        onClick={() => handleReopen(prob.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition"
+                        title="Reopen problem so other communities can plan a drive"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Reopen Problem</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(prob.id)}
+                      className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 transition"
+                      title="Delete listing"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

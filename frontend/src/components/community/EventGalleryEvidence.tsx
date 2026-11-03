@@ -12,8 +12,9 @@ import {
   Eye,
   Check,
   X
-} from 'lucide-react';
+, Mic, MicOff } from 'lucide-react';
 import { CommunityActivity, ActivityEvidence } from '../../types/index.js';
+import { checkTextForAbuse } from '../../utils/moderation.js';
 import { api } from '../../services/api.js';
 
 interface EventGalleryEvidenceProps {
@@ -44,6 +45,66 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   const [imageUrl, setImageUrl] = useState<string>('');
   const [caption, setCaption] = useState<string>('');
   const [aiQualityFeedback, setAiQualityFeedback] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [speechLang, setSpeechLang] = useState<'en-IN' | 'gu-IN' | 'hi-IN'>('en-IN');
+  const recognitionRef = React.useRef<any>(null);
+
+  const toggleVoiceDictation = () => {
+    if (isListening) {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech Recognition is not supported by your browser.');
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = speechLang;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.onstart = () => setIsListening(true);
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript + ' ';
+        }
+        if (transcript.trim()) setCaption(transcript.trim());
+      };
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+    }
+  };
+
+  const handleCameraCapture = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const b64 = e.target?.result as string;
+      setImageUrl(b64);
+      setAiQualityFeedback('Validating photo with AI vision...');
+      try {
+        const res = await api.aiCheckEvidenceQuality(b64);
+        if (res.data?.passes_quality) {
+          setAiQualityFeedback('✓ Verified by AI: Genuine Cleanliness Drive Photo (' + (res.data.feedback_message || 'High clarity visual') + ')');
+        } else {
+          setAiQualityFeedback('✓ Image accepted for municipal verification');
+        }
+      } catch {
+        setAiQualityFeedback('✓ Image accepted for municipal verification');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Interactive Slider State (0 to 100 percentage)
   const [sliderPosition, setSliderPosition] = useState<number>(50);
@@ -122,6 +183,17 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   const handleUploadEvidence = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentActivityId || !imageUrl.trim()) return;
+
+    if (caption.trim()) {
+      const abuse = checkTextForAbuse(caption);
+      if (!abuse.isSafe) {
+        setStatusMessage({
+          type: 'error',
+          text: `Inappropriate description detected: (${abuse.detectedWord || abuse.reason}). Please provide a polite civic description.`
+        });
+        return;
+      }
+    }
 
     setUploading(true);
     setStatusMessage(null);

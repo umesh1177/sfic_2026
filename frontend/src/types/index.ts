@@ -123,6 +123,8 @@ export interface CleanlinessDrive {
   ward_id: string;
   ward_name: string;
   location_name: string;
+  latitude?: number;
+  longitude?: number;
   start_time: string;
   end_time: string;
   registration_deadline: string;
@@ -132,6 +134,8 @@ export interface CleanlinessDrive {
   max_volunteers: number;
   registered_volunteers_count: number;
   is_registered?: boolean;
+  attendance_status?: string;
+  attended?: boolean;
 }
 
 export interface Challenge {

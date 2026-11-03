@@ -71,8 +71,9 @@ exports.apiRouter.get('/map/nearby', mapController_js_1.MapController.getNearby)
 exports.apiRouter.get('/drives', softAuthenticate, drivesController_js_1.DrivesController.getDrives);
 exports.apiRouter.get('/drives/my-registrations', auth_js_1.authenticate, drivesController_js_1.DrivesController.getMyRegistrations);
 exports.apiRouter.get('/drives/:id', softAuthenticate, drivesController_js_1.DrivesController.getDriveById);
-exports.apiRouter.post('/drives/:id/register', auth_js_1.authenticate, drivesController_js_1.DrivesController.registerForDrive);
-exports.apiRouter.delete('/drives/:id/register', auth_js_1.authenticate, drivesController_js_1.DrivesController.cancelRegistration);
+exports.apiRouter.post('/drives/:id/register', softAuthenticate, drivesController_js_1.DrivesController.registerForDrive);
+exports.apiRouter.delete('/drives/:id/register', softAuthenticate, drivesController_js_1.DrivesController.cancelRegistration);
+exports.apiRouter.post('/drives/:id/attendance', softAuthenticate, drivesController_js_1.DrivesController.markAttendance);
 // 7. Community Challenges & Rewards
 exports.apiRouter.get('/challenges', softAuthenticate, communityController_js_1.CommunityController.getChallenges);
 exports.apiRouter.post('/challenges/:id/join', auth_js_1.authenticate, communityController_js_1.CommunityController.joinChallenge);
@@ -192,6 +193,7 @@ exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
 exports.apiRouter.get('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityProblems);
 exports.apiRouter.post('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunityProblem);
+exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenCommunityProblem);
 exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
 exports.apiRouter.get('/ward/reports', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getReports);

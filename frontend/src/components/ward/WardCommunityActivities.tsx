@@ -21,6 +21,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { api } from '../../services/api.js';
+import { DriveInspectView } from './DriveInspectView.js';
 
 export const WardCommunityActivities: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'drives' | 'communities'>('drives');
@@ -29,6 +30,7 @@ export const WardCommunityActivities: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [actionMessage, setActionMessage] = useState<string>('');
   const [selectedActivity, setSelectedActivity] = useState<any | null>(null);
+  const [inspectingActivity, setInspectingActivity] = useState<any | null>(null);
 
   // Add Community Modal State
   const [showAddCommunityModal, setShowAddCommunityModal] = useState<boolean>(false);
@@ -295,6 +297,14 @@ export const WardCommunityActivities: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setInspectingActivity(act)}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200 shadow-2xs"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-[#095c54]" />
+                      <span>Inspect</span>
+                    </button>
                     {act.approval_status === 'submitted' && (
                       <>
                         <button

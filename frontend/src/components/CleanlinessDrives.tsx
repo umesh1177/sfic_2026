@@ -6,16 +6,18 @@ import {
   CheckCircle2,
   Clock,
   Search,
-  Filter,
   Check,
-  X,
   Building,
-  Phone,
-  Mail,
   ShieldCheck,
   Sparkles,
   ArrowRight,
-  Info
+  ArrowLeft,
+  Info,
+  Lock,
+  Navigation,
+  AlertCircle,
+  HelpCircle,
+  Share2
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { CleanlinessDrive } from '../types/index.js';
@@ -62,6 +64,22 @@ const ORGANIZER_DETAILS: Record<string, any> = {
   }
 };
 
+// Calculate distance between two lat/lng pairs in meters using Haversine formula
+function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Earth radius in meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
 export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) => {
   const [drives, setDrives] = useState<CleanlinessDrive[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,11 +88,20 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   const [actionSuccess, setActionSuccess] = useState('');
   const [actionError, setActionError] = useState('');
 
-  // Selected Drive for Detail Modal (Organization & Registration)
+  // Selected Drive for Full-Page View (Not a modal!)
   const [selectedDrive, setSelectedDrive] = useState<CleanlinessDrive | null>(null);
+  const [activeTab, setActiveTab] = useState<'info' | 'organizer' | 'attendance'>('info');
+
+  // Citizen Question state
   const [citizenQuestion, setCitizenQuestion] = useState<string>('');
   const [askingQuestion, setAskingQuestion] = useState<boolean>(false);
   const [questionSentMessage, setQuestionSentMessage] = useState<string>('');
+
+  // Attendance state
+  const [verifyingAttendance, setVerifyingAttendance] = useState(false);
+  const [attendanceMessage, setAttendanceMessage] = useState<string>('');
+  const [attendanceError, setAttendanceError] = useState<string>('');
+  const [distanceFromDrive, setDistanceFromDrive] = useState<number | null>(null);
 
   const t = translations[lang];
 
@@ -83,6 +110,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     try {
       const res = await api.getDrives();
       setDrives(res.data);
+      if (selectedDrive) {
+        const updated = res.data.find(d => d.id === selectedDrive.id);
+        if (updated) setSelectedDrive(updated);
+      }
     } catch (err) {
       console.error('Failed to load drives:', err);
     } finally {
@@ -101,12 +132,15 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
       const res = await api.registerForDrive(driveId);
       setActionSuccess(res.message);
       fetchDrives();
-      // Update selected drive in modal if open
       if (selectedDrive && selectedDrive.id === driveId) {
-        setSelectedDrive({ ...selectedDrive, is_registered: true, registered_volunteers_count: selectedDrive.registered_volunteers_count + 1 });
+        setSelectedDrive({
+          ...selectedDrive,
+          is_registered: true,
+          registered_volunteers_count: selectedDrive.registered_volunteers_count + 1
+        });
       }
     } catch (err: any) {
-      setActionError(err.message);
+      setActionError(err.message || 'Failed to register for drive');
     }
   };
 
@@ -117,12 +151,15 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
       const res = await api.cancelDriveRegistration(driveId);
       setActionSuccess(res.message);
       fetchDrives();
-      // Update selected drive in modal if open
       if (selectedDrive && selectedDrive.id === driveId) {
-        setSelectedDrive({ ...selectedDrive, is_registered: false, registered_volunteers_count: Math.max(0, selectedDrive.registered_volunteers_count - 1) });
+        setSelectedDrive({
+          ...selectedDrive,
+          is_registered: false,
+          registered_volunteers_count: Math.max(0, selectedDrive.registered_volunteers_count - 1)
+        });
       }
     } catch (err: any) {
-      setActionError(err.message);
+      setActionError(err.message || 'Failed to cancel registration');
     }
   };
 
@@ -143,6 +180,68 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     }
   };
 
+  // Live Location Verification & Attendance Marker
+  const handleMarkAttendance = () => {
+    if (!selectedDrive) return;
+    setAttendanceError('');
+    setAttendanceMessage('');
+    setVerifyingAttendance(true);
+
+    if (!navigator.geolocation) {
+      setAttendanceError('Geolocation is not supported by your browser or device.');
+      setVerifyingAttendance(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async position => {
+        try {
+          const userLat = position.coords.latitude;
+          const userLng = position.coords.longitude;
+
+          // Target coordinates of the drive
+          const driveLat = selectedDrive.latitude || 20.9470;
+          const driveLng = selectedDrive.longitude || 72.9280;
+
+          const distanceMeters = calculateDistanceMeters(userLat, userLng, driveLat, driveLng);
+          setDistanceFromDrive(Math.round(distanceMeters));
+
+          // Maximum allowed distance is 150 meters
+          const MAX_DISTANCE_METERS = 150;
+
+          if (distanceMeters > MAX_DISTANCE_METERS) {
+            setAttendanceError(
+              `⚠️ Location Verification Failed: You are currently ${Math.round(
+                distanceMeters
+              )}m away from the drive location (${selectedDrive.location_name}). You must be within ${MAX_DISTANCE_METERS}m of the assembly site to mark attendance.`
+            );
+            setVerifyingAttendance(false);
+            return;
+          }
+
+          // Within 150m! Proceed with recording attendance
+          const res = await api.markCitizenDriveAttendance(selectedDrive.id, userLat, userLng);
+          setAttendanceMessage(res.message || '✓ Attendance verified and recorded! 150 Civic Karma points awarded.');
+          setSelectedDrive({
+            ...selectedDrive,
+            attendance_status: 'present',
+            attended: true
+          });
+          fetchDrives();
+        } catch (err: any) {
+          setAttendanceError(err.message || 'Failed to verify attendance');
+        } finally {
+          setVerifyingAttendance(false);
+        }
+      },
+      err => {
+        setVerifyingAttendance(false);
+        setAttendanceError(`GPS Error (${err.message}). Please allow location access to verify attendance.`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
   const filtered = drives.filter(d => {
     if (selectedWard !== 'all' && !d.ward_name.includes(selectedWard)) return false;
     if (searchQuery) {
@@ -152,8 +251,521 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     return true;
   });
 
-  const activeOrganizer = selectedDrive ? (ORGANIZER_DETAILS[selectedDrive.id] || ORGANIZER_DETAILS['drive-01']) : null;
+  // Check if scheduled date has arrived for attendance unlocking
+  const isDriveDateArrived = (startTimeStr: string) => {
+    try {
+      const driveDate = new Date(startTimeStr);
+      const today = new Date();
+      // Set to midnight for date-level comparison
+      driveDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      return today.getTime() >= driveDate.getTime();
+    } catch {
+      return false;
+    }
+  };
 
+  // =========================================================================
+  // FULL PAGE VIEW FOR SELECTED DRIVE (NO MODAL POPUP!)
+  // =========================================================================
+  if (selectedDrive) {
+    const activeOrganizer =
+      ORGANIZER_DETAILS[selectedDrive.id] || {
+        org_name: selectedDrive.organiser_name || 'Navsari Civic Action Team',
+        org_type: 'Community Cleanliness Initiative',
+        lead_person: 'Ward Community Coordinator',
+        contact_phone: '+91 98251 00001',
+        contact_email: 'community@clean-navsari.gov.in',
+        meeting_spot: selectedDrive.location_name || 'Navsari Municipal Assembly Plaza',
+        reporting_time: '07:00 AM',
+        gear_provided: ['Nitrile Heavy-Duty Gloves', 'Biodegradable Waste Bags', 'Reflective Safety Vest', 'Hydration & Refreshments'],
+        karma_reward: 150
+      };
+
+    const isDateUnlocked = isDriveDateArrived(selectedDrive.start_time);
+    const isAttended = selectedDrive.attendance_status === 'present' || selectedDrive.attended;
+
+    return (
+      <div className="space-y-5 animate-fadeIn pb-16">
+        {/* Navigation Breadcrumb */}
+        <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs flex items-center justify-between">
+          <button
+            onClick={() => {
+              setSelectedDrive(null);
+              setActiveTab('info');
+              setAttendanceMessage('');
+              setAttendanceError('');
+            }}
+            className="flex items-center gap-2 text-xs font-black text-[#095c54] hover:text-[#063f3a] transition py-1 px-3 rounded-2xl bg-[#e6f4f1] hover:bg-[#d0ece6]"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Cleanliness Drives</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 rounded-full text-xs font-black bg-[#095c54] text-white">
+              {selectedDrive.ward_name}
+            </span>
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                selectedDrive.status === 'completed'
+                  ? 'bg-slate-200 text-slate-700'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}
+            >
+              {selectedDrive.status}
+            </span>
+          </div>
+        </div>
+
+        {/* Global Action Messages */}
+        {actionSuccess && (
+          <div className="p-4 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] text-xs font-bold text-[#047857] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#10b981]" />
+              <span>{actionSuccess}</span>
+            </div>
+            <button onClick={() => setActionSuccess('')} className="text-[#047857] font-black text-xs hover:underline">
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {actionError && (
+          <div className="p-4 rounded-2xl bg-[#fee2e2] border border-[#fca5a5] text-xs font-bold text-[#dc2626] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-[#dc2626]" />
+              <span>{actionError}</span>
+            </div>
+            <button onClick={() => setActionError('')} className="text-[#dc2626] font-black text-xs hover:underline">
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Full Page Hero Banner Card */}
+        <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+          <div className="relative aspect-[21/9] sm:aspect-[24/8] bg-slate-100 w-full overflow-hidden">
+            <img
+              src={selectedDrive.banner_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80'}
+              alt={selectedDrive.title}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent flex flex-col justify-end p-5 sm:p-8">
+              <span className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Building className="w-3.5 h-3.5 text-teal-400" />
+                {activeOrganizer.org_name}
+              </span>
+              <h1 className="text-xl sm:text-3xl font-black text-white leading-tight">
+                {selectedDrive.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-white/90 mt-2">
+                <span className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-teal-300" />
+                  {selectedDrive.location_name}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-teal-300" />
+                  {new Date(selectedDrive.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-teal-300" />
+                  {selectedDrive.registered_volunteers_count} / {selectedDrive.max_volunteers} Volunteers Enrolled
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Action Ribbon */}
+          <div className="p-4 sm:p-6 bg-[#f8faf9] border-t border-[#e2e8f0] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#095c54]/10 flex items-center justify-center text-[#095c54]">
+                <Sparkles className="w-5 h-5 text-[#095c54]" />
+              </div>
+              <div>
+                <div className="text-xs font-extrabold text-[#0f2925]">
+                  Civic Volunteer Participation
+                </div>
+                <div className="text-[11px] text-[#64748b]">
+                  Registered volunteers earn +150 Civic Karma upon attendance verification
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {selectedDrive.is_registered ? (
+                <div className="flex items-center gap-2">
+                  <div className="px-4 py-2.5 rounded-2xl bg-emerald-100 text-emerald-800 text-xs font-black flex items-center gap-1.5 border border-emerald-300">
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>Registered Volunteer</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCancelRegistration(selectedDrive.id)}
+                    className="px-4 py-2.5 rounded-2xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleRegister(selectedDrive.id)}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-2xl text-xs font-black text-white bg-[#095c54] hover:bg-[#074741] shadow-lg shadow-[#095c54]/20 transition flex items-center justify-center gap-2"
+                >
+                  <span>Confirm & Register as Volunteer</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Horizontal Navigation Tabs */}
+        <div className="flex border-b border-[#e2e8f0] bg-white rounded-2xl p-1.5 shadow-xs gap-1.5">
+          <button
+            onClick={() => setActiveTab('info')}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
+              activeTab === 'info'
+                ? 'bg-[#095c54] text-white shadow-sm'
+                : 'text-[#64748b] hover:bg-slate-100'
+            }`}
+          >
+            <Info className="w-4 h-4" />
+            <span>Drive Overview & Kit</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('organizer')}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
+              activeTab === 'organizer'
+                ? 'bg-[#095c54] text-white shadow-sm'
+                : 'text-[#64748b] hover:bg-slate-100'
+            }`}
+          >
+            <HelpCircle className="w-4 h-4" />
+            <span>Organizer Info & Q&A</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('attendance')}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
+              activeTab === 'attendance'
+                ? 'bg-[#095c54] text-white shadow-sm'
+                : 'text-[#64748b] hover:bg-slate-100'
+            }`}
+          >
+            {isDateUnlocked ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <Lock className="w-4 h-4 text-amber-500" />
+            )}
+            <span>Volunteer Attendance</span>
+            {!isDateUnlocked && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-extrabold hidden sm:inline">
+                Locked
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Tab 1: Drive Overview & Kit */}
+        {activeTab === 'info' && (
+          <div className="space-y-4">
+            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-4">
+              <h3 className="text-base font-black text-[#095c54]">
+                About This Cleanliness Drive
+              </h3>
+              <p className="text-xs text-[#475569] leading-relaxed">
+                {selectedDrive.description}
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-black text-[#095c54]">
+                    <MapPin className="w-4 h-4" />
+                    <span>Assembly & Meeting Venue</span>
+                  </div>
+                  <p className="text-xs text-[#1e293b] font-semibold">
+                    {activeOrganizer.meeting_spot}
+                  </p>
+                  <p className="text-[11px] text-[#64748b]">
+                    Reporting Time: <strong className="text-[#095c54]">{activeOrganizer.reporting_time}</strong>
+                  </p>
+                  {selectedDrive.latitude && selectedDrive.longitude && (
+                    <div className="text-[10px] font-mono text-[#64748b] pt-1">
+                      Geo-coordinates: {selectedDrive.latitude.toFixed(4)}, {selectedDrive.longitude.toFixed(4)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-[#f0f6f4] border border-[#b8e0d7] space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-black text-[#095c54]">
+                    <Clock className="w-4 h-4" />
+                    <span>Schedule & Timeline</span>
+                  </div>
+                  <div className="text-xs text-[#1e293b] space-y-1">
+                    <div>
+                      <span className="text-[#64748b]">Commencement: </span>
+                      <strong className="text-[#0f2925]">
+                        {new Date(selectedDrive.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[#64748b]">Conclusion: </span>
+                      <strong className="text-[#0f2925]">
+                        {new Date(selectedDrive.end_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gear Provided */}
+              <div className="pt-2">
+                <h4 className="text-xs font-black text-[#0f2925] mb-2">
+                  Sanitation Gear Provided on Site:
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {activeOrganizer.gear_provided.map((gear: string, idx: number) => (
+                    <span
+                      key={idx}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-[#e2e8f0] text-xs font-semibold text-[#0f2925] shadow-xs flex items-center gap-1.5"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      {gear}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Organizer Info & Q&A */}
+        {activeTab === 'organizer' && (
+          <div className="space-y-4">
+            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-4">
+              <h3 className="text-base font-black text-[#095c54]">
+                Community Leadership & Contacts
+              </h3>
+
+              <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-black text-[#0f2925]">
+                      {activeOrganizer.org_name}
+                    </h4>
+                    <p className="text-xs text-[#64748b]">{activeOrganizer.org_type}</p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#e6f4f1] text-[#095c54]">
+                    Verified Organizer
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-[#94a3b8] font-bold block">Designated Lead</span>
+                    <span className="font-bold text-[#0f2925]">{activeOrganizer.lead_person}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-[#94a3b8] font-bold block">Contact Helpline</span>
+                    <span className="font-bold text-[#095c54]">{activeOrganizer.contact_phone}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Have a Question / Community Head Direct Inquiry */}
+              <div className="p-5 rounded-2xl bg-teal-50/70 border border-teal-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-black text-[#095c54]">
+                    <HelpCircle className="w-4 h-4 text-[#095c54]" />
+                    <span>Ask a Question to the Community Head</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-teal-800 bg-white px-2.5 py-0.5 rounded-full border border-teal-200">
+                    Direct Inquiry
+                  </span>
+                </div>
+
+                {questionSentMessage ? (
+                  <div className="p-3.5 rounded-xl bg-emerald-100 text-emerald-900 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>{questionSentMessage}</span>
+                  </div>
+                ) : (
+                  <form onSubmit={handleAskQuestion} className="space-y-2.5">
+                    <input
+                      type="text"
+                      value={citizenQuestion}
+                      onChange={e => setCitizenQuestion(e.target.value)}
+                      placeholder="e.g. Will refreshments or certificate be provided? What is the meeting landmark?"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-teal-300 focus:border-[#095c54] text-xs bg-white text-slate-900 outline-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={askingQuestion || !citizenQuestion.trim()}
+                        className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-bold hover:bg-[#074741] transition disabled:opacity-50"
+                      >
+                        {askingQuestion ? 'Submitting Question...' : 'Submit Question'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Volunteer Attendance (Locked until drive date arrives) */}
+        {activeTab === 'attendance' && (
+          <div className="space-y-4">
+            {!isDateUnlocked ? (
+              // LOCKED STATE
+              <div className="bg-white p-8 rounded-3xl border border-amber-200 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-700">
+                  <Lock className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#0f2925]">
+                    Attendance Tab is Locked
+                  </h3>
+                  <p className="text-xs text-[#64748b] max-w-md mx-auto mt-1 leading-relaxed">
+                    Attendance verification unlocks strictly on the day of the drive (
+                    <strong className="text-[#095c54]">
+                      {new Date(selectedDrive.start_time).toLocaleDateString([], {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </strong>
+                    ).
+                  </p>
+                </div>
+
+                <div className="max-w-md mx-auto p-4 rounded-2xl bg-amber-50 border border-amber-200 text-left space-y-2 text-xs">
+                  <div className="font-extrabold text-amber-900 flex items-center gap-1.5">
+                    <Navigation className="w-4 h-4 text-amber-700" />
+                    <span>How Attendance Works on Event Day:</span>
+                  </div>
+                  <ol className="list-decimal pl-5 space-y-1 text-amber-800 text-[11px]">
+                    <li>Arrive in person at the assembly location ({activeOrganizer.meeting_spot}).</li>
+                    <li>Open this tab on your mobile device.</li>
+                    <li>Click <strong>"Verify Live GPS & Mark Attendance"</strong>.</li>
+                    <li>Your device coordinates are validated against the venue (must be within 150 meters).</li>
+                    <li>Receive +150 Civic Karma points instantly to your profile!</li>
+                  </ol>
+                </div>
+              </div>
+            ) : isAttended ? (
+              // ALREADY PRESENT / VERIFIED STATE
+              <div className="bg-white p-8 rounded-3xl border border-emerald-200 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-100 border border-emerald-200 flex items-center justify-center mx-auto text-emerald-700">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-emerald-900">
+                    Attendance Verified & Recorded!
+                  </h3>
+                  <p className="text-xs text-emerald-700 max-w-md mx-auto mt-1 leading-relaxed">
+                    You have successfully checked in for this cleanliness drive. Thank you for your active civic participation!
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-100 border border-amber-300 text-xs font-black text-amber-900">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span>+150 Civic Karma Points Credited to Your Account</span>
+                </div>
+              </div>
+            ) : (
+              // UNLOCKED: DRIVE DATE ARRIVED, PROCEED TO VERIFY GPS LOCATION
+              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-5">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 mb-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Event Day Active — Check-in Open</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-[#095c54]">
+                    Mark Volunteer Attendance via GPS
+                  </h3>
+                  <p className="text-xs text-[#64748b] mt-1 leading-relaxed">
+                    To prevent fraudulent check-ins and ensure authenticity, attendance is validated against your live GPS location. You must be physically present within 150 meters of the drive locus.
+                  </p>
+                </div>
+
+                {/* Target Venue Card */}
+                <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
+                  <div className="text-xs font-black text-[#0f2925] flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-[#095c54]" />
+                    <span>Assigned Venue Locus:</span>
+                  </div>
+                  <p className="text-xs text-[#1e293b] font-semibold">
+                    {selectedDrive.location_name}
+                  </p>
+                  <p className="text-[11px] text-[#64748b]">
+                    Ward: <strong>{selectedDrive.ward_name}</strong> | Maximum Geofence Radius: <strong>150 meters</strong>
+                  </p>
+                </div>
+
+                {/* Status Messages */}
+                {attendanceMessage && (
+                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-xs font-bold text-emerald-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>{attendanceMessage}</span>
+                  </div>
+                )}
+
+                {attendanceError && (
+                  <div className="p-4 rounded-2xl bg-red-50 border border-red-300 text-xs font-bold text-red-900 flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span>{attendanceError}</span>
+                      {distanceFromDrive !== null && (
+                        <p className="text-[11px] text-red-700">
+                          Detected Distance: <strong>{distanceFromDrive} meters</strong> (Allowed: ≤ 150m).
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Button */}
+                <div className="pt-2">
+                  {!selectedDrive.is_registered ? (
+                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-2">
+                      <p className="font-bold">
+                        ⚠️ Please register as a volunteer for this drive before marking your attendance.
+                      </p>
+                      <button
+                        onClick={() => handleRegister(selectedDrive.id)}
+                        className="btn-primary-custom py-2 px-4 text-xs font-bold rounded-xl"
+                      >
+                        Register for this Drive
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={verifyingAttendance}
+                      onClick={handleMarkAttendance}
+                      className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#095c54] text-white text-xs font-black hover:bg-[#074741] shadow-lg shadow-[#095c54]/25 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>{verifyingAttendance ? 'Verifying GPS Location...' : 'Verify Live Location & Mark Attendance'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // MAIN DRIVES LIST OVERVIEW (GRID VIEW)
+  // =========================================================================
   return (
     <div className="space-y-5 animate-fadeIn">
       {/* Header */}
@@ -221,13 +833,13 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
             return (
               <div
                 key={d.id}
-                className="rounded-3xl border border-[#e2e8f0] bg-white shadow-sm hover:shadow-md hover:border-[#b8e0d7] transition overflow-hidden flex flex-col justify-between"
+                className="rounded-3xl border border-[#e2e8f0] bg-white shadow-xs hover:shadow-md hover:border-[#b8e0d7] transition overflow-hidden flex flex-col justify-between"
               >
                 <div>
                   <div className="relative aspect-video bg-slate-100">
                     <img src={d.banner_url} alt={d.title} className="w-full h-full object-cover" />
                     <div className="absolute top-3 right-3 flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#095c54] text-white shadow-sm">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#095c54] text-white shadow-xs">
                         {d.ward_name}
                       </span>
                     </div>
@@ -272,205 +884,40 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   </div>
                 </div>
 
-                  {/* Card Action: View Details Button */}
-                  <div className="p-4 sm:p-5 pt-0">
-                    {d.is_registered ? (
-                      <div className="space-y-2">
-                        <div className="w-full py-2.5 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
-                          <Check className="w-3.5 h-3.5" /> {t.registered_badge}
-                        </div>
-                        <button
-                          onClick={() => setSelectedDrive(d)}
-                          className="w-full py-2 rounded-xl text-xs font-bold text-[#095c54] hover:bg-[#e6f4f1] transition border border-[#b8e0d7] touch-press"
-                        >
-                          {t.view_details} →
-                        </button>
+                {/* Card Action: View Details Full Page */}
+                <div className="p-4 sm:p-5 pt-0">
+                  {d.is_registered ? (
+                    <div className="space-y-2">
+                      <div className="w-full py-2.5 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
+                        <Check className="w-3.5 h-3.5" /> Registered Volunteer
                       </div>
-                    ) : (
                       <button
-                        onClick={() => setSelectedDrive(d)}
-                        className="w-full btn-outline-custom py-2.5 text-xs font-extrabold text-[#095c54] border-[#b8e0d7] hover:bg-[#e6f4f1] transition flex items-center justify-center gap-1.5 touch-press"
+                        onClick={() => {
+                          setSelectedDrive(d);
+                          setActiveTab('info');
+                        }}
+                        className="w-full py-2 rounded-xl text-xs font-bold text-[#095c54] hover:bg-[#e6f4f1] transition border border-[#b8e0d7] touch-press flex items-center justify-center gap-1.5"
                       >
-                        <span>{t.register_btn}</span>
+                        <span>{t.view_details}</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setSelectedDrive(d);
+                        setActiveTab('info');
+                      }}
+                      className="w-full btn-outline-custom py-2.5 text-xs font-extrabold text-[#095c54] border-[#b8e0d7] hover:bg-[#e6f4f1] transition flex items-center justify-center gap-1.5 touch-press"
+                    >
+                      <span>{t.register_btn}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* DETAILED MODAL: ORGANIZER INFO & REGISTRATION BUTTON     */}
-      {/* ======================================================== */}
-      {selectedDrive && activeOrganizer && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeInBackdrop"
-          onClick={() => setSelectedDrive(null)}
-        >
-          <div
-            className="w-full max-w-lg bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl border border-[#e2e8f0] overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh] animate-slideUpSheet sm:animate-scaleUp pb-safe"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="relative aspect-video sm:aspect-[21/9] bg-slate-100">
-              <img src={selectedDrive.banner_url} alt={selectedDrive.title} className="w-full h-full object-cover" />
-              <button
-                onClick={() => setSelectedDrive(null)}
-                className="absolute top-3 right-3 p-1.5 rounded-full bg-black/50 text-white hover:bg-black/70 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <div className="absolute bottom-3 left-3">
-                <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-[#095c54] text-white shadow-md">
-                  {selectedDrive.ward_name}
-                </span>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
-              <div>
-                <h3 className="text-lg font-black text-[#095c54]">
-                  {selectedDrive.title}
-                </h3>
-                <p className="text-xs text-[#64748b] mt-1 leading-relaxed">
-                  {selectedDrive.description}
-                </p>
-              </div>
-
-              {/* Organizer Information Box */}
-              <div className="p-4 rounded-2xl bg-[#f0f6f4] border border-[#b8e0d7] space-y-2.5">
-                <div className="flex items-center gap-2 text-xs font-extrabold text-[#095c54]">
-                  <Building className="w-4 h-4" />
-                  <span>Organizing Agency Information</span>
-                </div>
-                <div className="text-xs font-bold text-[#0f2925]">
-                  {activeOrganizer.org_name}
-                </div>
-                <div className="text-[11px] text-[#64748b]">
-                  {activeOrganizer.org_type}
-                </div>
-
-                <div className="pt-2 border-t border-[#b8e0d7]/60 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-[10px] text-[#94a3b8] font-bold block">Coordinator</span>
-                    <span className="font-bold text-[#0f2925]">{activeOrganizer.lead_person}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-[#94a3b8] font-bold block">Contact Helpline</span>
-                    <span className="font-bold text-[#095c54]">{activeOrganizer.contact_phone}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Event Schedule & Assembly */}
-              <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2 text-xs">
-                <div className="font-extrabold text-[#0f2925] flex items-center gap-1.5">
-                  <MapPin className="w-4 h-4 text-[#095c54]" />
-                  <span>Meeting & Assembly Point</span>
-                </div>
-                <p className="text-xs text-[#64748b]">
-                  {activeOrganizer.meeting_spot}
-                </p>
-                <div className="text-[11px] font-bold text-[#095c54] flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
-                  <span>Reporting Time: {activeOrganizer.reporting_time}</span>
-                </div>
-              </div>
-
-              {/* Gear Provided */}
-              <div>
-                <span className="text-xs font-extrabold text-[#0f2925] block mb-1.5">
-                  Gear & Kit Provided to Volunteers:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {activeOrganizer.gear_provided.map((gear: string, idx: number) => (
-                    <span key={idx} className="px-2.5 py-1 rounded-xl bg-white border border-[#e2e8f0] text-[11px] font-semibold text-[#0f2925] shadow-sm flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3 text-[#10b981]" />
-                      {gear}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Karma Rewards Notice */}
-              <div className="p-3 rounded-xl bg-[#fef3c7] border border-[#fde68a] text-xs font-bold text-[#92400e] flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#d97706] shrink-0" />
-                <span>Earn +{activeOrganizer.karma_reward} Civic Karma Points upon verified attendance.</span>
-              </div>
-
-              {/* Citizen Questions section to Community Head */}
-              <div className="p-4 rounded-2xl bg-teal-50/70 border border-teal-200/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-[#095c54]">
-                    <Info className="w-4 h-4" />
-                    <span>Have a question about this drive?</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-teal-700 bg-white px-2 py-0.5 rounded-full border border-teal-200">
-                    Direct to Community Head
-                  </span>
-                </div>
-
-                {questionSentMessage ? (
-                  <div className="p-3 rounded-xl bg-emerald-100/80 text-emerald-900 text-xs font-bold flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                    <span>{questionSentMessage}</span>
-                  </div>
-                ) : (
-                  <form onSubmit={handleAskQuestion} className="space-y-2">
-                    <input
-                      type="text"
-                      value={citizenQuestion}
-                      onChange={e => setCitizenQuestion(e.target.value)}
-                      placeholder="e.g. Will drinking water be provided? Can kids participate?"
-                      className="w-full px-3 py-2 rounded-xl border border-teal-300 focus:border-[#095c54] text-xs bg-white text-slate-900 outline-none"
-                    />
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={askingQuestion || !citizenQuestion.trim()}
-                        className="px-3.5 py-1.5 rounded-xl bg-[#095c54] text-white text-xs font-bold hover:bg-[#074741] transition disabled:opacity-50"
-                      >
-                        {askingQuestion ? 'Sending...' : 'Ask Community Head'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            </div>
-
-            {/* Modal Footer with Register Button */}
-            <div className="p-4 sm:p-5 border-t border-[#e2e8f0] bg-white flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedDrive(null)}
-                className="btn-outline-custom px-4 py-2.5 text-xs font-bold"
-              >
-                Close
-              </button>
-
-              {selectedDrive.is_registered ? (
-                <button
-                  type="button"
-                  onClick={() => handleCancelRegistration(selectedDrive.id)}
-                  className="px-5 py-2.5 rounded-2xl text-xs font-bold bg-[#fee2e2] text-[#dc2626] border border-[#fca5a5] hover:bg-[#fecaca] transition"
-                >
-                  Cancel Registration
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleRegister(selectedDrive.id)}
-                  className="flex-1 btn-primary-custom py-2.5 text-xs font-extrabold rounded-2xl shadow-lg"
-                >
-                  Confirm & Register for this Drive
-                </button>
-              )}
-            </div>
-          </div>
         </div>
       )}
     </div>

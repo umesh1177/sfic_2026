@@ -2310,6 +2310,16 @@ export class WardOfficerController {
       res.status(500).json({ success: false, error: err.message });
     }
   }
+
+  public static async reopenCommunityProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      await DbRepository.reopenCommunityProblem(id);
+      res.status(200).json({ success: true, message: 'Community problem reopened for civic action.' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
 }
 
 // =========================================================================

@@ -378,6 +378,16 @@ class ApiService {
     );
   }
 
+  async markCitizenDriveAttendance(driveId: string, latitude?: number, longitude?: number) {
+    return this.request<{ success: boolean; message: string; data: any }>(
+      `/drives/${driveId}/attendance`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ latitude, longitude })
+      }
+    );
+  }
+
   async getChallenges() {
     return this.request<{ success: boolean; data: Challenge[] }>('/challenges');
   }
@@ -1082,6 +1092,12 @@ class ApiService {
   async deleteWardCommunityProblem(id: string) {
     return this.request<{ success: boolean; message: string }>(`/ward/community-problems/${id}`, {
       method: 'DELETE'
+    });
+  }
+
+  async reopenWardCommunityProblem(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/ward/community-problems/${id}/reopen`, {
+      method: 'POST'
     });
   }
 

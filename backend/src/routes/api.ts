@@ -75,8 +75,9 @@ apiRouter.get('/map/nearby', MapController.getNearby);
 apiRouter.get('/drives', softAuthenticate, DrivesController.getDrives);
 apiRouter.get('/drives/my-registrations', authenticate, DrivesController.getMyRegistrations);
 apiRouter.get('/drives/:id', softAuthenticate, DrivesController.getDriveById);
-apiRouter.post('/drives/:id/register', authenticate, DrivesController.registerForDrive);
-apiRouter.delete('/drives/:id/register', authenticate, DrivesController.cancelRegistration);
+apiRouter.post('/drives/:id/register', softAuthenticate, DrivesController.registerForDrive);
+apiRouter.delete('/drives/:id/register', softAuthenticate, DrivesController.cancelRegistration);
+apiRouter.post('/drives/:id/attendance', softAuthenticate, DrivesController.markAttendance);
 
 // 7. Community Challenges & Rewards
 apiRouter.get('/challenges', softAuthenticate, CommunityController.getChallenges);
@@ -218,6 +219,7 @@ apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getAppr
 apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
 apiRouter.get('/ward/community-problems', softAuthenticate, WardOfficerController.getCommunityProblems);
 apiRouter.post('/ward/community-problems', softAuthenticate, WardOfficerController.addCommunityProblem);
+apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, WardOfficerController.reopenCommunityProblem);
 apiRouter.delete('/ward/community-problems/:id', softAuthenticate, WardOfficerController.deleteCommunityProblem);
 apiRouter.get('/ward/cleanliness-score', softAuthenticate, WardOfficerController.getCleanlinessScore);
 apiRouter.get('/ward/reports', softAuthenticate, WardOfficerController.getReports);

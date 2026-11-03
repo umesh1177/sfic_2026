@@ -178,47 +178,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
       if (subTab === 'registrations') {
         const res = await api.getActivityRegistrations(activityId);
         const list = res.data?.registrations || [];
-        // If DB list is empty, supply rich civic fallback registrations for live demo
-        if (list.length === 0) {
-          const mockList: ActivityRegistration[] = [
-            {
-              id: `reg-1-${activityId}`,
-              activity_id: activityId,
-              citizen_id: 'usr-1',
-              citizen_name: 'Ramesh Solanki',
-              citizen_phone: '+91 98250 11234',
-              registration_number: 'NMC-REG-001',
-              registration_status: 'registered',
-              attendance_status: 'present',
-              registered_at: new Date(Date.now() - 86400000 * 2).toISOString()
-            },
-            {
-              id: `reg-2-${activityId}`,
-              activity_id: activityId,
-              citizen_id: 'usr-2',
-              citizen_name: 'Pooja Patel',
-              citizen_phone: '+91 98251 98765',
-              registration_number: 'NMC-REG-002',
-              registration_status: 'registered',
-              attendance_status: 'not_marked',
-              registered_at: new Date(Date.now() - 86400000).toISOString()
-            },
-            {
-              id: `reg-3-${activityId}`,
-              activity_id: activityId,
-              citizen_id: 'usr-3',
-              citizen_name: 'Ketan Desai',
-              citizen_phone: '+91 98254 33445',
-              registration_number: 'NMC-REG-003',
-              registration_status: 'registered',
-              attendance_status: 'not_marked',
-              registered_at: new Date(Date.now() - 3600000 * 5).toISOString()
-            }
-          ];
-          setRegistrationsMap(prev => ({ ...prev, [activityId]: mockList }));
-        } else {
-          setRegistrationsMap(prev => ({ ...prev, [activityId]: list }));
-        }
+        setRegistrationsMap(prev => ({ ...prev, [activityId]: list }));
       } else if (subTab === 'questions') {
         const res = await api.getCommunityQuestions({ activity_id: activityId });
         const list = res.data || [];
@@ -883,7 +843,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                       className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-300 focus:border-[#095c54] text-xs font-bold text-slate-800 outline-none bg-white shadow-2xs"
                     >
                       <option value="">-- Standalone Cleanliness Drive (Create New Without Linking) --</option>
-                      {communityProblems.map(p => (
+                      {communityProblems.filter(p => !p.status || p.status === 'open').map(p => (
                         <option key={p.id} value={p.id}>
                           [Ward {p.ward_number}] {p.title} ({p.urgency.toUpperCase()} Urgency · ~{p.estimated_volunteers_needed} Volunteers Needed)
                         </option>

@@ -244,14 +244,21 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
                     Posted by: {prob.officer_name || 'Ward Officer'}
                   </span>
 
-                  <button
-                    onClick={() => handleAdoptAndPlan(prob)}
-                    disabled={claimingId === prob.id}
-                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#095c54] text-white font-black text-xs sm:text-sm shadow-sm hover:bg-[#074741] transition active:scale-95 disabled:opacity-50"
-                  >
-                    <span>Plan Cleanliness Drive</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  {prob.status && prob.status !== 'open' ? (
+                    <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-200 text-slate-700 text-xs font-black">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>{prob.claimed_by_community_name ? `Claimed by ${prob.claimed_by_community_name}` : 'Drive Claimed / In Progress'}</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleAdoptAndPlan(prob)}
+                      disabled={claimingId === prob.id}
+                      className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#095c54] text-white font-black text-xs sm:text-sm shadow-sm hover:bg-[#074741] transition active:scale-95 disabled:opacity-50"
+                    >
+                      <span>Plan Cleanliness Drive</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
