@@ -526,38 +526,25 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             <button
               onClick={() => setActiveTab('ward_problems')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'ward_problems' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'ward_problems' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <HeartHandshake className="w-5 h-5" />
               <span className={`text-[10px] mt-0.5 ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
-                {t.ch_nav_ward_problems.split(' ')[0]}
+                Problems
               </span>
             </button>
 
-            {/* 4. Community Profile */}
+            {/* 4. Posts */}
             <button
-              onClick={() => setActiveTab('community')}
+              onClick={() => setActiveTab('posts')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'community' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'posts' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Building2 className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'community' ? 'font-black' : 'font-semibold'}`}>
-                {t.ch_nav_community}
-              </span>
-            </button>
-
-            {/* 4. Analytics */}
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'analytics' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <TrendingUp className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'analytics' ? 'font-black' : 'font-semibold'}`}>
-                {t.ch_nav_analytics}
+              <Award className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'posts' ? 'font-black' : 'font-semibold'}`}>
+                Posts
               </span>
             </button>
 
@@ -565,7 +552,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             <button
               onClick={() => setMobileDrawerOpen(true)}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                ['notifications', 'settings'].includes(activeTab) ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                !['overview', 'activities', 'ward_problems', 'posts'].includes(activeTab) ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <Menu className="w-5 h-5" />

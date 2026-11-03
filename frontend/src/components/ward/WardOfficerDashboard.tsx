@@ -339,16 +339,16 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               </span>
             </button>
 
-            {/* 3. Hotspots */}
+            {/* 3. AI Analytics */}
             <button
-              onClick={() => handleTabClick('hotspots')}
+              onClick={() => handleTabClick('ai_analytics')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'hotspots' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'ai_analytics' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <MapPin className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'hotspots' ? 'font-black' : 'font-semibold'}`}>
-                {t.wo_nav_hotspots}
+              <BrainCircuit className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'ai_analytics' ? 'font-black' : 'font-semibold'}`}>
+                {t.wo_nav_ai_analytics || 'AI Analytics'}
               </span>
             </button>
 
@@ -356,7 +356,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
             <button
               onClick={() => handleTabClick('teams')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'teams' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'teams' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <Users className="w-5 h-5" />
@@ -369,8 +369,8 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
             <button
               onClick={() => setMobileMenuOpen(true)}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                !['overview', 'complaints', 'hotspots', 'teams'].includes(activeTab)
-                  ? 'text-[#095c54]'
+                !['overview', 'complaints', 'ai_analytics', 'teams'].includes(activeTab)
+                  ? 'text-[#095c54] font-black'
                   : 'text-slate-500 hover:text-slate-900'
               }`}
             >
