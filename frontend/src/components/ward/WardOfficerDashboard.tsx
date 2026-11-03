@@ -156,27 +156,21 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
         </nav>
 
         {/* User Card & Logout Footer */}
-        <div className="p-4 border-t border-[#e2e8f0] bg-slate-50/70 space-y-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white font-black text-xs flex items-center justify-center shrink-0">
-              {officerInitials}
+        <div className="p-3.5 border-t border-[#e2e8f0] bg-white space-y-2">
+          {/* Identity Box from user screenshot */}
+          <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1]/80 border border-[#99f6e4] shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <ShieldCheck className="w-5 h-5 text-emerald-300" />
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-black text-[#0f2925] truncate">{officerName}</p>
-              <p className="text-[10px] text-slate-500 font-bold truncate">Chief Sanitary Inspector</p>
-              <p className="text-[10px] text-[#095c54] font-extrabold truncate">Ward {userWardNum} · {wardArea}</p>
+            <div className="min-w-0 leading-tight">
+              <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                {officerName} · Ward Officer
+              </h4>
+              <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                Ward {userWardNum} · {wardArea}
+              </p>
             </div>
           </div>
-
-          {onSwitchToCitizenView && (
-            <button
-              onClick={onSwitchToCitizenView}
-              className="w-full py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-[#095c54] border border-slate-200 text-xs font-extrabold transition flex items-center justify-center gap-1.5 shadow-2xs"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-              <span>{t.action_switch_citizen}</span>
-            </button>
-          )}
 
           <button
             onClick={onLogout}
@@ -242,17 +236,6 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
             </button>
-
-            {/* Switch to citizen (Mobile) */}
-            {onSwitchToCitizenView && (
-              <button
-                onClick={onSwitchToCitizenView}
-                className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100"
-                title={t.action_switch_citizen}
-              >
-                <ArrowRightLeft className="w-4 h-4 text-[#095c54]" />
-              </button>
-            )}
 
             {/* Logout (Mobile) */}
             <button
@@ -431,19 +414,22 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               })}
             </nav>
 
-            <div className="p-4 border-t border-[#e2e8f0] bg-slate-50 space-y-2">
-              {onSwitchToCitizenView && (
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onSwitchToCitizenView();
-                  }}
-                  className="w-full py-2 px-3 rounded-xl bg-white text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-                  <span>{t.action_switch_citizen}</span>
-                </button>
-              )}
+            <div className="p-4 border-t border-[#e2e8f0] bg-white space-y-2.5">
+              {/* Identity Box from user screenshot */}
+              <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1]/80 border border-[#99f6e4] shadow-2xs">
+                <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div className="min-w-0 leading-tight">
+                  <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                    {officerName} · Ward Officer
+                  </h4>
+                  <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                    Ward {userWardNum} · {wardArea}
+                  </p>
+                </div>
+              </div>
+
               <button
                 onClick={onLogout}
                 className="w-full py-2.5 px-3 rounded-xl bg-white text-red-600 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5"
