@@ -1118,6 +1118,51 @@ class ApiService {
       body: JSON.stringify({ activity_id: activityId })
     });
   }
+
+  // AI Analytics Suite Endpoints
+  async getAISeasonalPredictions(ward?: number) {
+    const qStr = ward ? `?ward=${ward}` : '';
+    return this.request<{
+      success: boolean;
+      data: {
+        current_season: string;
+        forecast_month: string;
+        total_predictions: number;
+        predictions: import('../types/index.js').SeasonalPrediction[];
+      };
+    }>(`/ward/ai-analytics/seasonal-predictions${qStr}`);
+  }
+
+  async getAIPerformersSuggestions(ward?: number) {
+    const qStr = ward ? `?ward=${ward}` : '';
+    return this.request<{
+      success: boolean;
+      data: {
+        top_workers: import('../types/index.js').WorkerPerformerSuggestion[];
+        top_communities: import('../types/index.js').CommunityPerformerSuggestion[];
+        top_citizens: import('../types/index.js').CitizenPerformerSuggestion[];
+      };
+    }>(`/ward/ai-analytics/performers-suggestions${qStr}`);
+  }
+
+  async getAIChronicHotspots(ward?: number) {
+    const qStr = ward ? `?ward=${ward}` : '';
+    return this.request<{
+      success: boolean;
+      data: {
+        total_chronic_spots: number;
+        high_reopen_spots_count: number;
+        chronic_hotspots: import('../types/index.js').ChronicHotspotSuggestion[];
+      };
+    }>(`/ward/ai-analytics/chronic-hotspots${qStr}`);
+  }
+
+  async executeAIQuickAction(action_type: 'create_community_problem' | 'publish_performer_recognition', payload: any) {
+    return this.request<{ success: boolean; message: string; data?: any }>('/ward/ai-analytics/quick-action', {
+      method: 'POST',
+      body: JSON.stringify({ action_type, payload })
+    });
+  }
 }
 
 export const api = new ApiService();

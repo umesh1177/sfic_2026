@@ -918,3 +918,90 @@ export interface CommunityProblem {
   created_at: string;
   updated_at: string;
 }
+
+// AI Analytics Interfaces
+export interface SeasonalPrediction {
+  id: string;
+  season_code: 'monsoon' | 'post_monsoon_festive' | 'winter_uttarayan' | 'summer_pre_monsoon';
+  season_name: string;
+  season_label_gu: string;
+  season_label_hi: string;
+  category: string;
+  primary_location: string;
+  landmark: string;
+  ward_number: number;
+  latitude: number;
+  longitude: number;
+  risk_level: 'CRITICAL' | 'HIGH' | 'MODERATE';
+  probability_score: number;
+  predicted_window: string;
+  historical_incidents_count: number;
+  ai_root_cause: string;
+  preventive_actions: string[];
+  recommended_squad_type: string;
+  urgency: 'high' | 'medium';
+}
+
+export interface WorkerPerformerSuggestion {
+  worker_id: string;
+  worker_code: string;
+  full_name: string;
+  designation: string;
+  ward_number: number;
+  avatar_url?: string;
+  tasks_assigned: number;
+  tasks_completed: number;
+  completion_rate_pct: number;
+  avg_turnaround_hours: number;
+  avg_truth_score_pct: number;
+  attendance_days: number;
+  geofence_match_pct: number;
+  composite_score: number;
+  ai_accolade: string;
+  ai_reason: string;
+}
+
+export interface CommunityPerformerSuggestion {
+  community_id: string;
+  community_name: string;
+  head_name: string;
+  ward_number: number;
+  drives_completed: number;
+  total_volunteers_attended: number;
+  ward_problems_resolved: number;
+  avg_satisfaction_rating: number;
+  composite_score: number;
+  ai_accolade: string;
+  ai_reason: string;
+}
+
+export interface CitizenPerformerSuggestion {
+  citizen_id: string;
+  alias_display: string;
+  ward_number: number;
+  events_attended_count: number;
+  valid_complaints_count: number;
+  composite_score: number;
+  ai_badge: string;
+  ai_reason: string;
+}
+
+export interface ChronicHotspotSuggestion {
+  id: string;
+  location_name: string;
+  landmark: string;
+  ward_number: number;
+  latitude: number;
+  longitude: number;
+  incident_count: number;
+  reopen_count: number;
+  reopen_rate_pct: number;
+  severity: 'CRITICAL_CHRONIC' | 'RECURRENT' | 'EMERGING_HOTSPOT';
+  primary_category: string;
+  avg_days_between_recurrence: number;
+  ai_root_cause_diagnosis: string;
+  ai_permanent_remediation: string[];
+  recommended_work_type: string;
+  urgency?: string;
+  last_reported_date: string;
+}

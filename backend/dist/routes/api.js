@@ -197,3 +197,8 @@ exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, 
 exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
 exports.apiRouter.get('/ward/reports', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getReports);
+// AI Analytics Suite Routes
+exports.apiRouter.get('/ward/ai-analytics/seasonal-predictions', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAISeasonalPredictions);
+exports.apiRouter.get('/ward/ai-analytics/performers-suggestions', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAIPerformersSuggestions);
+exports.apiRouter.get('/ward/ai-analytics/chronic-hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAIChronicHotspots);
+exports.apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, wardOfficerController_js_1.WardOfficerController.executeAIQuickAction);

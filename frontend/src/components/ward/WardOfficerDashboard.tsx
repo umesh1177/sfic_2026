@@ -20,7 +20,8 @@ import {
   Shield,
   Sparkles,
   ArrowRightLeft,
-  HeartHandshake
+  HeartHandshake,
+  BrainCircuit
 } from 'lucide-react';
 import { Profile } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -37,6 +38,7 @@ import { WardCommunityActivities } from './WardCommunityActivities.js';
 import { ApprovalManagementView } from './ApprovalManagementView.js';
 import { WardCommunityPosts } from './WardCommunityPosts.js';
 import { WardCommunityProblemsView } from './WardCommunityProblemsView.js';
+import { WardAIAnalytics } from './WardAIAnalytics.js';
 import { WardNotificationsView } from './WardNotificationsView.js';
 import { WardSettingsView } from './WardSettingsView.js';
 
@@ -86,8 +88,9 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
     { id: 'approvals', label: `7. ${t.wo_nav_approvals}`, icon: ShieldCheck },
     { id: 'posts', label: `8. ${t.wo_nav_posts}`, icon: Megaphone },
     { id: 'community_problems', label: `9. ${t.wo_nav_community_problems}`, icon: HeartHandshake },
-    { id: 'notifications', label: `10. ${t.wo_nav_notifications}`, icon: Bell },
-    { id: 'settings', label: `11. ${t.wo_nav_settings}`, icon: Settings }
+    { id: 'ai_analytics', label: `10. ${t.wo_nav_ai_analytics || 'AI Analytics'}`, icon: BrainCircuit },
+    { id: 'notifications', label: `11. ${t.wo_nav_notifications}`, icon: Bell },
+    { id: 'settings', label: `12. ${t.wo_nav_settings}`, icon: Settings }
   ];
 
   // Callback from overview cards to open catalogue with pre-applied filter
@@ -296,6 +299,10 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
           {activeTab === 'community_problems' && (
             <WardCommunityProblemsView wardNumber={userWardNum} officerName={officerName} lang={lang} />
+          )}
+
+          {activeTab === 'ai_analytics' && (
+            <WardAIAnalytics wardNumber={userWardNum} />
           )}
 
           {activeTab === 'notifications' && <WardNotificationsView />}

@@ -50,47 +50,43 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. HERO GREETING BANNER (CITIZEN GOLD STANDARD) */}
-      <div className="relative rounded-3xl bg-gradient-to-r from-[#095c54] via-[#0d6e65] to-[#10b981] p-5 sm:p-7 text-white shadow-xl shadow-[#095c54]/15 overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-2xl space-y-2.5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-bold text-[#e6f4f1]">
+      {/* 1. Clean Header (Removed bulky banner box) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e2e8f0] pb-5">
+        <div>
+          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
             <span className="w-2 h-2 rounded-full bg-[#10b981] animate-ping" />
             NMC Field Sanitation Operations · Navsari
           </div>
-
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-white">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0f2925] tracking-tight">
             Welcome back, {profile?.full_name ? profile.full_name.split(' ')[0] : 'Worker'}!
           </h1>
-
-          <p className="text-xs sm:text-sm text-[#e6f4f1] font-medium leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl font-medium">
             {profile?.designation_name || 'Sanitation Worker'} · Ward {profile?.ward_number || 3} {profile?.ward_name ? `(${profile.ward_name})` : ''}. Check today's assigned operations, team attendance, and before-and-after work evidence.
           </p>
+        </div>
 
-          <div className="pt-2 flex flex-wrap gap-2.5">
-            <button
-              onClick={() => onNavigateTab('assign_work')}
-              className="px-4 sm:px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-xs sm:text-sm shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition flex items-center gap-2"
-            >
-              <Clock className="w-4 h-4 text-[#10b981]" />
-              <span>Mark GPS Attendance</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('assign_work')}
-              className="px-4 py-2.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm hover:bg-white/25 transition flex items-center gap-2"
-            >
-              <Calendar className="w-4 h-4" />
-              <span>Today's Tasks</span>
-            </button>
-            <button
-              onClick={() => speakText(`નમસ્તે ${profile?.full_name || 'સાથી'}. તમારા આજના કાર્યો તૈયાર છે.`)}
-              className="p-2.5 bg-white/15 backdrop-blur-md border border-white/20 text-white rounded-2xl hover:bg-white/25 transition"
-              title="Voice assistant in regional language"
-            >
-              <Volume2 className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto shrink-0">
+          <button
+            onClick={() => onNavigateTab('assign_work')}
+            className="px-4 py-2.5 rounded-xl bg-[#095c54] text-white font-extrabold text-xs sm:text-sm shadow-xs hover:bg-[#074741] transition active:scale-95 flex items-center gap-2"
+          >
+            <Clock className="w-4 h-4 text-emerald-300" />
+            <span>Mark GPS Attendance</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab('assign_work')}
+            className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-[#e2e8f0] font-bold text-xs sm:text-sm transition shadow-2xs flex items-center gap-2"
+          >
+            <Calendar className="w-4 h-4 text-slate-500" />
+            <span>Today's Tasks</span>
+          </button>
+          <button
+            onClick={() => speakText(`નમસ્તે ${profile?.full_name || 'સાથી'}. તમારા આજના કાર્યો તૈયાર છે.`)}
+            className="p-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#e2e8f0] transition shadow-2xs"
+            title="Voice assistant in regional language"
+          >
+            <Volume2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 

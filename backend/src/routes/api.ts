@@ -224,4 +224,11 @@ apiRouter.delete('/ward/community-problems/:id', softAuthenticate, WardOfficerCo
 apiRouter.get('/ward/cleanliness-score', softAuthenticate, WardOfficerController.getCleanlinessScore);
 apiRouter.get('/ward/reports', softAuthenticate, WardOfficerController.getReports);
 
+// AI Analytics Suite Routes
+apiRouter.get('/ward/ai-analytics/seasonal-predictions', softAuthenticate, WardOfficerController.getAISeasonalPredictions);
+apiRouter.get('/ward/ai-analytics/performers-suggestions', softAuthenticate, WardOfficerController.getAIPerformersSuggestions);
+apiRouter.get('/ward/ai-analytics/chronic-hotspots', softAuthenticate, WardOfficerController.getAIChronicHotspots);
+apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, WardOfficerController.executeAIQuickAction);
+
+
 

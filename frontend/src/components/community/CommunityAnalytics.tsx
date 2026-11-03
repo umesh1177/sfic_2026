@@ -71,32 +71,32 @@ export const CommunityAnalytics: React.FC<CommunityAnalyticsProps> = ({ summary 
       </div>
 
       {/* AI INTELLIGENCE & FORECASTING CARD */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-[#095c54] via-[#0d7369] to-[#04433d] text-white shadow-lg space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+      <div className="p-6 rounded-3xl bg-white border border-emerald-200/80 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center text-emerald-300">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#095c54]">
               <BrainCircuit className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold tracking-tight">
+              <h2 className="text-base font-extrabold text-[#0f2925] tracking-tight">
                 AI Civic Intelligence & Predictions
               </h2>
-              <p className="text-xs text-emerald-100/80">
+              <p className="text-xs text-slate-500">
                 Trained on verified Navsari Municipal Corporation ground statistics
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="px-3 py-1.5 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-sm text-center">
-              <span className="text-[10px] text-emerald-200 block uppercase font-bold">Predicted Next Turnout</span>
-              <span className="text-base font-extrabold text-white">
+            <div className="px-3 py-1.5 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+              <span className="text-[10px] text-slate-500 block uppercase font-bold">Predicted Next Turnout</span>
+              <span className="text-base font-extrabold text-[#095c54]">
                 {aiInsights?.predicted_next_turnout || 45} Volunteers
               </span>
             </div>
-            <div className="px-3 py-1.5 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-sm text-center">
-              <span className="text-[10px] text-emerald-200 block uppercase font-bold">Civic Sentiment</span>
-              <span className="text-base font-extrabold text-emerald-300">
+            <div className="px-3 py-1.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
+              <span className="text-[10px] text-emerald-700 block uppercase font-bold">Civic Sentiment</span>
+              <span className="text-base font-extrabold text-emerald-800">
                 {aiInsights?.sentiment_score || 94}% Positive
               </span>
             </div>
@@ -105,38 +105,38 @@ export const CommunityAnalytics: React.FC<CommunityAnalyticsProps> = ({ summary 
 
         {/* Key Insights & Recommendations */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/15 space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-200">
-              <Sparkles className="w-4 h-4 text-emerald-300" />
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+              <Sparkles className="w-4 h-4 text-[#095c54]" />
               <span>Key Civic Findings</span>
             </div>
-            <ul className="space-y-1.5 text-xs text-emerald-50/90 leading-relaxed">
+            <ul className="space-y-1.5 text-xs text-slate-700 leading-relaxed">
               {(aiInsights?.key_insights || [
                 'Early morning drives (6:30 AM – 9:00 AM) achieve 88% higher attendance than evening drives.',
                 'Dudhiya Talao lakefront cleanups show the highest volunteer return rate in Ward 3.',
                 'Targeted event notifications delivered 24 hours in advance improve attendance by 34%.'
               ]).map((ins, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 mt-1.5 flex-shrink-0" />
                   <span>{ins}</span>
                 </li>
               ))}
             </ul>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/15 space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-200">
-              <Lightbulb className="w-4 h-4 text-amber-300" />
+          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+              <Lightbulb className="w-4 h-4 text-amber-600" />
               <span>Strategic Recommendations</span>
             </div>
-            <ul className="space-y-1.5 text-xs text-emerald-50/90 leading-relaxed">
+            <ul className="space-y-1.5 text-xs text-amber-900 leading-relaxed">
               {(aiInsights?.recommendations || [
                 'Schedule next drive at Dudhiya Talao North Promenade to maintain zero-litter status.',
                 'Partner with local youth sports clubs to boost morning plogging participation.',
                 'Upload Before & After photographs within 2 hours of completion for faster NMC approval.'
               ]).map((rec, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600 mt-1.5 flex-shrink-0" />
                   <span>{rec}</span>
                 </li>
               ))}

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { DbRepository } from '../data/dbRepository.js';
 import { pool, isDbConnected } from '../data/db.js';
+import { AIAnalyticsService } from '../services/aiAnalyticsService.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { normalizeIndianPhone } from './authController.js';
 import { store } from '../data/store.js';
@@ -2436,6 +2437,86 @@ export class WardOfficerController {
       const { id } = req.params;
       await DbRepository.reopenCommunityProblem(id);
       res.status(200).json({ success: true, message: 'Community problem reopened for civic action.' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // AI ANALYTICS SUITE (Seasonal Predictions, Performers, Chronic Hotspots)
+  // =========================================================================
+
+  public static async getAISeasonalPredictions(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const wardNumber = req.query.ward ? Number(req.query.ward) : undefined;
+      const data = await AIAnalyticsService.getSeasonalPredictions(wardNumber);
+      res.status(200).json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async getAIPerformersSuggestions(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const wardNumber = req.query.ward ? Number(req.query.ward) : undefined;
+      const data = await AIAnalyticsService.getPerformersSuggestions(wardNumber);
+      res.status(200).json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async getAIChronicHotspots(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const wardNumber = req.query.ward ? Number(req.query.ward) : undefined;
+      const data = await AIAnalyticsService.getChronicHotspots(wardNumber);
+      res.status(200).json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async executeAIQuickAction(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { action_type, payload } = req.body;
+      if (action_type === 'create_community_problem') {
+        const problem = await DbRepository.saveCommunityProblem({
+          ward_number: payload.ward_number || 3,
+          created_by_officer_id: req.user?.id || 'd0000000-0000-0000-0000-000000000003',
+          officer_name: req.user?.full_name || 'Ramesh Patel (Ward 3 Officer)',
+          title: payload.title,
+          category: payload.category || 'Drainage / Waste Accumulation',
+          description: payload.description,
+          action_required: payload.action_required || 'Conduct preemptive cleanliness and clearing drive with volunteers.',
+          location_name: payload.location_name,
+          landmark: payload.landmark,
+          latitude: payload.latitude || 20.9312,
+          longitude: payload.longitude || 72.9284,
+          photo_urls: payload.photo_urls || []
+        });
+        res.status(201).json({ success: true, message: 'AI Suggested Civic Challenge added to Community Hub successfully!', data: problem });
+        return;
+      }
+
+      if (action_type === 'publish_performer_recognition') {
+        const post = await DbRepository.createRecognitionPost({
+          author_name: req.user?.full_name || 'Ramesh Patel',
+          author_role: 'Ward 3 Officer',
+          hero_name: payload.hero_name,
+          hero_role: payload.hero_role || 'Sanitation Star',
+          badge_title: payload.badge_title || 'AI Verified Civic Champion',
+          title: payload.title,
+          description: payload.description,
+          ward_number: payload.ward_number || 3,
+          ward_name: payload.ward_name || 'Ward 3 (Dudhiya Talao)',
+          achievement_stats: payload.achievement_stats || 'Top Performance Index Rating',
+          image_url: payload.image_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=600&q=80'
+        });
+        res.status(201).json({ success: true, message: 'Performer recognition post broadcast to Citizen & Community posts successfully!', data: post });
+        return;
+      }
+
+      res.status(400).json({ success: false, error: 'Unknown AI quick action type' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
