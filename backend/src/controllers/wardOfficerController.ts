@@ -2184,7 +2184,7 @@ export class WardOfficerController {
   public static async publishComplaintToCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { title, description, before_photo_url, after_photo_url, waste_kg = 380 } = req.body;
+      const { title, description, before_photo_url, after_photo_url, after_photos = [], waste_kg = 380 } = req.body;
 
       const complaint = (store.complaints || []).find(c => c.id === id);
       if (!complaint) {
@@ -2192,38 +2192,95 @@ export class WardOfficerController {
         return;
       }
 
+      const allAfterPhotos = Array.isArray(after_photos) && after_photos.length > 0
+        ? after_photos
+        : after_photo_url
+        ? [after_photo_url]
+        : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'];
+
+      const primaryAfterPhoto = allAfterPhotos[0];
+      const primaryBeforePhoto = before_photo_url || complaint.image_url;
+
       const postTitle = title || `Cleanliness Restored at ${complaint.location?.landmark || complaint.location?.address || 'Ward 3'}`;
       const postDesc = description || `NMC Sanitation Squad cleared ${waste_kg} kg of accumulated waste, disinfected the curb, and restored civic hygiene following citizen report ${complaint.complaint_number}.`;
+
+      const officerWard = (req.user as any)?.ward_number || complaint.location?.ward_number || 3;
+      const officerName = req.user?.full_name || (officerWard === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)');
 
       const newPost: any = {
         id: `rec-post-${Date.now()}`,
         title: postTitle,
         description: postDesc,
         author_id: req.user?.id || 'w0000000-0000-0000-0000-000000000003',
-        author_name: 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)',
+        author_name: officerName,
         author_role: 'ward_officer',
         author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        location_name: complaint.location?.landmark || complaint.location?.address || 'Navsari Ward 3',
-        image_url: after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
-        before_image_url: before_photo_url || complaint.image_url,
-        after_image_url: after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
-        likes_count: 18,
-        comments_count: 0,
+        ward_id: `ward-0${officerWard}`,
+        ward_number: officerWard,
+        ward_name: complaint.location?.ward_name || `Ward ${officerWard}`,
+        location_name: complaint.location?.landmark || complaint.location?.address || `Navsari Ward ${officerWard}`,
+        image_url: primaryAfterPhoto,
+        before_image_url: primaryBeforePhoto,
+        after_image_url: primaryAfterPhoto,
+        after_photos: allAfterPhotos,
+        hero_name: 'Sanitation Squad Lead',
+        hero_role: 'NMC Field Hero',
+        badge_title: 'Hygiene Champion',
+        achievement_stats: `${waste_kg} kg waste cleared`,
+        likes_count: 24,
+        comments_count: 2,
         is_verified_by_officer: true,
         created_at: new Date().toISOString(),
-        comments: []
+        comments: [
+          {
+            id: `c-1-${Date.now()}`,
+            user_id: 'cit-10',
+            user_name: 'Navsari Civic Watch',
+            user_role: 'citizen',
+            user_avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+            text: 'Huge kudos to the municipal team for clearing this so swiftly!',
+            created_at: new Date().toISOString()
+          }
+        ]
       };
 
       if (!store.recognitionPosts) store.recognitionPosts = [];
       store.recognitionPosts.unshift(newPost);
+
+      // Persist to DB if connected
+      await DbRepository.createRecognitionPost({
+        author_name: officerName,
+        author_role: 'ward_officer',
+        ward_number: officerWard,
+        ward_name: complaint.location?.ward_name || `Ward ${officerWard}`,
+        hero_name: 'Sanitation Squad Lead',
+        hero_role: 'Field Sanitation Squad',
+        badge_title: 'Civic Champion',
+        title: postTitle,
+        description: postDesc,
+        achievement_stats: `${waste_kg} kg waste cleared`,
+        image_url: primaryAfterPhoto
+      }).catch(() => {});
+
+      // Update complaint status & photos
+      complaint.resolved_image_url = primaryAfterPhoto;
       (complaint as any).is_published_to_community = true;
+      (complaint as any).work_done_photos = allAfterPhotos;
+
+      // Automatically send live notification to the citizen who filed this complaint!
+      if (complaint.citizen_id) {
+        await DbRepository.createNotification(
+          complaint.citizen_id,
+          'Cleanliness Work Done & Verified! 🎉',
+          `Your complaint ${complaint.complaint_number} at ${complaint.location?.landmark || complaint.location?.address || 'Navsari'} has been successfully resolved! Ward Officer has verified the field crew's work and sent work done completion photos to your dashboard.`,
+          complaint.id,
+          'complaint_resolved'
+        );
+      }
 
       res.status(201).json({
         success: true,
-        message: 'Work completion story has been published to the Community Wall for all citizens to see!',
+        message: 'Work done proof sent to citizen and published to community feed successfully! Citizen notified.',
         data: newPost
       });
     } catch (err: any) {

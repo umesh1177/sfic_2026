@@ -907,6 +907,7 @@ class ApiService {
     description: string;
     before_photo_url: string;
     after_photo_url: string;
+    after_photos?: string[];
     waste_kg?: number;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/publish-community`, {

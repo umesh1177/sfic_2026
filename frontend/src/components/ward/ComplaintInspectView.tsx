@@ -22,7 +22,10 @@ import {
   Award,
   Check,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Plus,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
@@ -74,6 +77,9 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
   const [postDescription, setPostDescription] = useState<string>('');
   const [publishing, setPublishing] = useState<boolean>(false);
   const [isPublished, setIsPublished] = useState<boolean>(false);
+  const [beforePhoto, setBeforePhoto] = useState<string>('');
+  const [afterPhotos, setAfterPhotos] = useState<string[]>([]);
+  const [newAfterPhotoUrl, setNewAfterPhotoUrl] = useState<string>('');
 
   // Accordion Expand/Collapse States for Day-to-Day Attendance & Evidence History
   const [expandedAttendanceDays, setExpandedAttendanceDays] = useState<Record<string, boolean>>({
@@ -103,6 +109,10 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
         setPostDescription(`Ward ${wardNum} (${wardNm}) Sanitation Squad successfully cleared accumulated waste, disinfected the perimeter, and restored civic hygiene following complaint ${res.data.overview.complaint_number}.`);
       }
       setIsPublished(!!(res.data?.overview as any)?.is_published_to_community);
+      const bPhoto = res.data?.work_progress_evidence?.before_photo_url || res.data?.citizen_report?.photo_url || res.data?.overview?.image_url || '';
+      const aPhoto = res.data?.work_progress_evidence?.after_photo_url || res.data?.overview?.resolved_image_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
+      setBeforePhoto(bPhoto);
+      setAfterPhotos([aPhoto]);
     } catch (err: any) {
       setActionError(err.message || 'Failed to load complaint inspect details.');
     } finally {
@@ -139,24 +149,25 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     setPublishing(true);
     setActionError(null);
     try {
-      const beforeUrl = details?.work_progress_evidence?.before_photo_url || details?.citizen_report?.photo_url || 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80';
-      const afterUrl = details?.work_progress_evidence?.after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
+      const beforeUrl = beforePhoto || details?.work_progress_evidence?.before_photo_url || details?.citizen_report?.photo_url || 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80';
+      const afterUrl = afterPhotos[0] || details?.work_progress_evidence?.after_photo_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
 
       const res = await api.publishWardComplaintToCommunity(complaintId, {
         title: postTitle,
         description: postDescription,
         before_photo_url: beforeUrl,
         after_photo_url: afterUrl,
+        after_photos: afterPhotos.length > 0 ? afterPhotos : [afterUrl],
         waste_kg: 380
       });
 
       setIsPublished(true);
       setShowPublishModal(false);
-      setActionSuccess('✓ Published to Community Wall! Every citizen can now view and applaud this achievement.');
+      setActionSuccess('✓ Work Done successfully sent to Citizen and posted to Community Wall!');
       confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
       if (onComplaintUpdated) onComplaintUpdated();
     } catch (err: any) {
-      setActionError(err.message || 'Failed to publish to Community Wall.');
+      setActionError(err.message || 'Failed to send work done to citizen.');
     } finally {
       setPublishing(false);
     }
@@ -243,15 +254,15 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 {!isPublished ? (
                   <button
                     onClick={() => setShowPublishModal(true)}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition"
                   >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>Publish to Community Wall</span>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Work Done to Citizen</span>
                   </button>
                 ) : (
                   <span className="px-3 py-1.5 rounded-xl bg-purple-50 text-purple-900 border border-purple-200 text-xs font-extrabold flex items-center gap-1.5">
-                    <Award className="w-4 h-4 text-purple-600" />
-                    <span>Live on Citizen Feed</span>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Work Done Sent to Citizen & Feeds</span>
                   </span>
                 )}
               </div>
@@ -1137,68 +1148,215 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
         </div>
       )}
 
-      {/* 9. PUBLISH TO COMMUNITY WALL MODAL */}
+      {/* 9. SEND WORK DONE TO CITIZEN & COMMUNITY WALL MODAL */}
       {showPublishModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 my-8">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                <Share2 className="w-6 h-6" />
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                <Send className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-[#0f2925]">
-                  Publish Work Story to Community Wall
+                  Send Work Done to Citizen & Post
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Feature this successful cleanup on the citizen feed with before & after photos for all citizens to see!
+                  Notify the citizen with before & after proof of completion and share this success story to community feeds.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Story Title *</label>
-                <input
-                  type="text"
-                  value={postTitle}
-                  onChange={e => setPostTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
-                />
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              {/* Photo Submitted by Citizen (Before) */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Citizen's Submitted Photo (Before)</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    Before Cleanup
+                  </span>
+                </div>
+                {beforePhoto ? (
+                  <div className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 group">
+                    <img src={beforePhoto} alt="Before cleanup" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setBeforePhoto('')}
+                      className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black text-white rounded-lg text-xs transition"
+                      title="Clear photo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter Before Photo URL..."
+                      value={beforePhoto}
+                      onChange={e => setBeforePhoto(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Public Story Description *</label>
-                <textarea
-                  rows={3}
-                  value={postDescription}
-                  onChange={e => setPostDescription(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:border-[#095c54] outline-hidden resize-none"
-                />
+              {/* Work Done Photos (After) */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Work Done Photos (After) — {afterPhotos.length} Added</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                    Proof of Resolution
+                  </span>
+                </div>
+
+                {afterPhotos.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {afterPhotos.map((photo, idx) => (
+                      <div key={idx} className="relative aspect-video rounded-xl overflow-hidden border border-emerald-300 bg-slate-100 group shadow-xs">
+                        <img src={photo} alt={`After work ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setAfterPhotos(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-1.5 right-1.5 p-1 bg-rose-600/90 hover:bg-rose-700 text-white rounded-md transition shadow-xs"
+                          title="Remove photo"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                        <span className="absolute bottom-1 left-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                          After #{idx + 1}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                    Please add at least one photo showing the successfully completed work.
+                  </p>
+                )}
+
+                {/* Add Photo Controls: URL + Camera Upload */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Add another After Photo URL..."
+                      value={newAfterPhotoUrl}
+                      onChange={e => setNewAfterPhotoUrl(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newAfterPhotoUrl.trim()) {
+                          setAfterPhotos(prev => [...prev, newAfterPhotoUrl.trim()]);
+                          setNewAfterPhotoUrl('');
+                        }
+                      }}
+                      className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-white text-emerald-800 text-xs font-bold cursor-pointer transition">
+                      <Camera className="w-4 h-4 text-emerald-600" />
+                      <span>Upload / Capture After Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = ev => {
+                            const res = ev.target?.result;
+                            if (typeof res === 'string') {
+                              setAfterPhotos(prev => [...prev, res]);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Title & Description */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Notification & Post Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={postTitle}
+                    onChange={e => setPostTitle(e.target.value)}
+                    placeholder="e.g. Cleanliness Restored at Landmark"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Resolution Description for Citizen & Public Feed *
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={postDescription}
+                    onChange={e => setPostDescription(e.target.value)}
+                    placeholder="Describe how the problem was resolved, sanitation measures taken, and area disinfection..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:border-[#095c54] outline-hidden resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Informational banner */}
+              <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-200 text-[11px] text-blue-900 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Shield className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Automatic Notifications & Cross-Feed Integration</span>
+                </div>
+                <p className="text-slate-600 pl-5">
+                  1. An instant direct notification with before & after photos will be sent to the citizen.
+                  <br />
+                  2. This post will automatically appear in both the Citizen and Community Head Posts sections.
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowPublishModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handlePublishToCommunity}
-                disabled={publishing}
-                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold flex items-center gap-2 shadow-xs transition disabled:opacity-50"
+                disabled={publishing || afterPhotos.length === 0}
+                className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold flex items-center gap-2 shadow-xs transition disabled:opacity-50"
               >
                 {publishing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                <span>Publish to Citizens</span>
+                <span>Send to Citizen & Post</span>
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+</div>
   );
 };
 
