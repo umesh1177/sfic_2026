@@ -752,3 +752,4 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
     </div>
   );
 };
+

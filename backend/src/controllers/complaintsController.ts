@@ -76,6 +76,8 @@ export class ComplaintsController {
         return;
       }
 
+      // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
+      /*
       const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
       const isInside = isPointInPolygon([lng, lat], cityBoundary);
 
@@ -86,6 +88,7 @@ export class ComplaintsController {
         });
         return;
       }
+      */
 
       const ward = findWardByCoordinates(lat, lng);
 
@@ -189,6 +192,8 @@ export class ComplaintsController {
       let lat = Number(latitude);
       let lng = Number(longitude);
 
+      // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
+      /*
       if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
         const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
         if (!isPointInPolygon([lng, lat], cityBoundary)) {
@@ -199,6 +204,7 @@ export class ComplaintsController {
           return;
         }
       }
+      */
 
       if (!ward) {
         ward = findWardByCoordinates(lat, lng);

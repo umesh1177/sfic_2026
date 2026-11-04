@@ -824,3 +824,4 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
     </div>
   );
 };
+

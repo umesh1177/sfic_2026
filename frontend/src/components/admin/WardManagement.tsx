@@ -308,3 +308,4 @@ export const WardManagement: React.FC<WardManagementProps> = ({ lang, onNavigate
     </div>
   );
 };
+
