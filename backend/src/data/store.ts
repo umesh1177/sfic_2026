@@ -13,9 +13,11 @@ import {
   CommunityRecognitionPost,
   CommunityActivity,
   WorkAssignment,
-  CommunityProblem
+  CommunityProblem,
+  WardOfficerRecord,
+  AdminBoundarySettings
 } from '../types/index.js';
-import { NAVSARI_WARDS } from '../utils/postgis.js';
+import { NAVSARI_WARDS, DEFAULT_NAVSARI_CITY_BOUNDARY } from '../utils/postgis.js';
 
 export interface DataStore {
   profiles: Profile[];
@@ -40,6 +42,8 @@ export interface DataStore {
   communityActivities: CommunityActivity[];
   recognitionPosts: CommunityRecognitionPost[];
   communityProblems: CommunityProblem[];
+  wardOfficers: WardOfficerRecord[];
+  adminBoundarySettings: AdminBoundarySettings;
 }
 
 // Initial seed categories
@@ -51,7 +55,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'कचरा फैलाना',
     description: 'Public litter on streets, sidewalks, and market areas',
     icon: 'Trash2',
-    is_active: true
+    is_active: true,
+    max_approval_days: 2,
+    max_work_days: 3,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-02',
@@ -60,7 +67,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'खुले में कचरा डंपिंग',
     description: 'Unauthorized garbage dump heaps on vacant plots or roadside',
     icon: 'AlertTriangle',
-    is_active: true
+    is_active: true,
+    max_approval_days: 2,
+    max_work_days: 4,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-03',
@@ -69,7 +79,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'कूड़ेदान का ओवरफ्लो',
     description: 'Community dustbins and municipal bins overflowing with waste',
     icon: 'Archive',
-    is_active: true
+    is_active: true,
+    max_approval_days: 1,
+    max_work_days: 2,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-04',
@@ -78,7 +91,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'सड़क किनारे कचरा',
     description: 'Accumulated debris, plastic packaging, and leaves along roads',
     icon: 'Truck',
-    is_active: true
+    is_active: true,
+    max_approval_days: 2,
+    max_work_days: 3,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-05',
@@ -87,7 +103,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'नाली या जल जमाव और कचरा',
     description: 'Choked drains, sewage overflow, and stagnant filthy waste water',
     icon: 'Droplets',
-    is_active: true
+    is_active: true,
+    max_approval_days: 2,
+    max_work_days: 5,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-06',
@@ -96,7 +115,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'अन्य स्वच्छता समस्याएं',
     description: 'Dead animal disposal, construction debris, or public toilet issues',
     icon: 'HelpCircle',
-    is_active: true
+    is_active: true,
+    max_approval_days: 3,
+    max_work_days: 6,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-07',
@@ -105,7 +127,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'सड़क के गड्ढे / खराब सड़क',
     description: 'Potholes, cracks, and degraded road surface causing traffic hazards',
     icon: 'Road',
-    is_active: true
+    is_active: true,
+    max_approval_days: 3,
+    max_work_days: 7,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-08',
@@ -114,7 +139,10 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'गिरा हुआ पेड़ / मार्ग अवरोध',
     description: 'Fallen branches, uprooted trees, or uncollected garden green waste',
     icon: 'TreePine',
-    is_active: true
+    is_active: true,
+    max_approval_days: 1,
+    max_work_days: 2,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-09',
@@ -123,22 +151,70 @@ const initialCategories: ComplaintCategory[] = [
     category_name_hi: 'क्षतिग्रस्त रेलिंग / संरचना',
     description: 'Damaged pedestrian railings, parapet walls, or culvert slabs',
     icon: 'ShieldAlert',
-    is_active: true
+    is_active: true,
+    max_approval_days: 3,
+    max_work_days: 10,
+    created_at: '2026-10-01T08:00:00Z'
   },
   {
     id: 'cat-10',
     category_name: 'Road Overtopped / Waterlogging',
     category_name_gu: 'રસ્તા પર પાણી ભરાવું',
-    category_name_hi: 'सड़क पर जलभराव / ओवरफ्लो',
+    category_name_hi: 'સડક પર જલભરાવ / ઓવરફ્લો',
     description: 'Severe waterlogging or flood water overtopping the road',
     icon: 'Waves',
-    is_active: true
+    is_active: true,
+    max_approval_days: 1,
+    max_work_days: 2,
+    created_at: '2026-10-01T08:00:00Z'
   }
 ];
 
 // Initial default citizen profile for testing convenience
 const defaultCitizenId = 'c0000000-0000-0000-0000-000000000001';
 const initialProfiles: Profile[] = [
+  {
+    id: 'a0000000-0000-0000-0000-000000000001',
+    full_name: 'NMC Municipal Admin',
+    phone: '+919825199999',
+    email: 'admin@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: 'NMC Administrative Headquarters, Junathana, Navsari',
+    locality: 'Navsari Municipal Corporation HQ',
+    is_active: true,
+    role: 'nmc_admin',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'w0000000-0000-0000-0000-000000000001',
+    full_name: 'Bhavin Desai',
+    phone: '+919825130001',
+    email: 'bhavin.desai@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: 'NMC Ward 1 Administrative Office, Lunsikui, Navsari',
+    locality: 'Lunsikui - Tower Road Ward 1',
+    is_active: true,
+    role: 'ward_officer',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
+  },
+  {
+    id: 'w0000000-0000-0000-0000-000000000004',
+    full_name: 'Jignesh Shah',
+    phone: '+919825130004',
+    email: 'jignesh.shah@navsarimunicipal.gov.in',
+    avatar_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=256&q=80',
+    preferred_language: 'en',
+    address: 'NMC Ward 4 Administrative Office, Kaliawadi, Navsari',
+    locality: 'Kaliawadi - Sayaji Road Ward 4',
+    is_active: true,
+    role: 'ward_officer',
+    created_at: '2026-10-15T09:00:00Z',
+    updated_at: '2026-10-30T10:00:00Z'
+  },
   {
     id: defaultCitizenId,
     full_name: 'Harshil Mehta',
@@ -1681,9 +1757,105 @@ const initialRecognitionPosts: CommunityRecognitionPost[] = [
   }
 ];
 
+
+export const initialWardOfficers: WardOfficerRecord[] = [
+  {
+    id: 'wo-01',
+    user_id: 'w0000000-0000-0000-0000-000000000003',
+    full_name: 'Ramesh Patel',
+    phone: '+919825130003',
+    email: 'ramesh.patel@navsarimunicipal.gov.in',
+    designation: 'Senior Ward Officer',
+    assigned_wards: [3],
+    is_active: true,
+    cleanliness_score: 91.4,
+    total_resolved: 42,
+    created_at: '2026-10-15T09:00:00Z'
+  },
+  {
+    id: 'wo-02',
+    user_id: 'w0000000-0000-0000-0000-000000000008',
+    full_name: 'Cyrus Contractor',
+    phone: '+919825130008',
+    email: 'cyrus.contractor@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_wards: [8],
+    is_active: true,
+    cleanliness_score: 88.7,
+    total_resolved: 38,
+    created_at: '2026-10-15T09:00:00Z'
+  },
+  {
+    id: 'wo-03',
+    user_id: 'w0000000-0000-0000-0000-000000000001',
+    full_name: 'Bhavin Desai',
+    phone: '+919825130001',
+    email: 'bhavin.desai@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_wards: [1, 2],
+    is_active: true,
+    cleanliness_score: 93.1,
+    total_resolved: 29,
+    created_at: '2026-10-15T09:00:00Z'
+  },
+  {
+    id: 'wo-04',
+    user_id: 'w0000000-0000-0000-0000-000000000004',
+    full_name: 'Jignesh Shah',
+    phone: '+919825130004',
+    email: 'jignesh.shah@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_wards: [4, 5],
+    is_active: true,
+    cleanliness_score: 89.5,
+    total_resolved: 33,
+    created_at: '2026-10-15T09:00:00Z'
+  }
+];
+
 export const store: DataStore = {
+  wardOfficers: initialWardOfficers,
+  adminBoundarySettings: {
+    city_name: 'Navsari Municipal Corporation',
+    city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
+    ward_boundary_overrides: {},
+    last_updated: new Date().toISOString()
+  },
   profiles: initialProfiles,
   authProfiles: [
+    {
+      id: 'auth-admin-01',
+      user_id: 'a0000000-0000-0000-0000-000000000001',
+      mobile_number: '+919825199999',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s', // Admin@123
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w1-desai',
+      user_id: 'w0000000-0000-0000-0000-000000000001',
+      mobile_number: '+919825130001',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
+    {
+      id: 'auth-w4-shah',
+      user_id: 'w0000000-0000-0000-0000-000000000004',
+      mobile_number: '+919825130004',
+      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
+      mobile_verified: true,
+      verification_completed_at: '2026-10-15T09:00:00Z',
+      account_status: 'active',
+      created_at: '2026-10-15T09:00:00Z',
+      updated_at: '2026-10-15T09:00:00Z'
+    },
     {
       id: 'auth-01',
       user_id: defaultCitizenId,

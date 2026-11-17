@@ -11,6 +11,7 @@ const communityController_js_1 = require("../controllers/communityController.js"
 const communityHeadController_js_1 = require("../controllers/communityHeadController.js");
 const workerController_js_1 = require("../controllers/workerController.js");
 const wardOfficerController_js_1 = require("../controllers/wardOfficerController.js");
+const adminController_js_1 = require("../controllers/adminController.js");
 const supportController_js_1 = require("../controllers/supportController.js");
 const notificationsController_js_1 = require("../controllers/notificationsController.js");
 const auth_js_1 = require("../middleware/auth.js");
@@ -197,3 +198,28 @@ exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, 
 exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
 exports.apiRouter.get('/ward/reports', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getReports);
+// AI Analytics Suite Routes
+exports.apiRouter.get('/ward/ai-analytics/seasonal-predictions', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAISeasonalPredictions);
+exports.apiRouter.get('/ward/ai-analytics/performers-suggestions', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAIPerformersSuggestions);
+exports.apiRouter.get('/ward/ai-analytics/chronic-hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAIChronicHotspots);
+exports.apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, wardOfficerController_js_1.WardOfficerController.executeAIQuickAction);
+// ============================================================================
+// NMC ADMIN DASHBOARD ROUTES (Navsari Municipal Corporation)
+// ============================================================================
+exports.apiRouter.get('/admin/overview', softAuthenticate, adminController_js_1.AdminController.getOverview);
+exports.apiRouter.get('/admin/wards', softAuthenticate, adminController_js_1.AdminController.getWards);
+exports.apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, adminController_js_1.AdminController.updateWardBoundary);
+exports.apiRouter.get('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.getCityBoundary);
+exports.apiRouter.put('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.updateCityBoundary);
+exports.apiRouter.get('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.getWardOfficers);
+exports.apiRouter.post('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.createWardOfficer);
+exports.apiRouter.put('/admin/ward-officers/:id', softAuthenticate, adminController_js_1.AdminController.updateWardOfficer);
+exports.apiRouter.get('/admin/workers', softAuthenticate, adminController_js_1.AdminController.getWorkers);
+exports.apiRouter.post('/admin/workers', softAuthenticate, adminController_js_1.AdminController.createWorker);
+exports.apiRouter.put('/admin/workers/:id', softAuthenticate, adminController_js_1.AdminController.updateWorker);
+exports.apiRouter.delete('/admin/workers/:id', softAuthenticate, adminController_js_1.AdminController.deleteWorker);
+exports.apiRouter.get('/admin/categories', softAuthenticate, adminController_js_1.AdminController.getCategories);
+exports.apiRouter.post('/admin/categories', softAuthenticate, adminController_js_1.AdminController.createCategory);
+exports.apiRouter.put('/admin/categories/:id', softAuthenticate, adminController_js_1.AdminController.updateCategory);
+exports.apiRouter.delete('/admin/categories/:id', softAuthenticate, adminController_js_1.AdminController.deleteCategory);
+exports.apiRouter.get('/admin/flagged-officers', softAuthenticate, adminController_js_1.AdminController.getFlaggedOfficers);

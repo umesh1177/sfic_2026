@@ -1059,6 +1059,9 @@ export class DbRepository {
           description: r.description,
           achievement_stats: r.achievement_stats,
           image_url: r.image_url,
+          before_image_url: r.before_image_url || undefined,
+          after_image_url: r.after_image_url || undefined,
+          after_photos: r.after_photos ? (typeof r.after_photos === 'string' ? JSON.parse(r.after_photos) : r.after_photos) : undefined,
           likes_count: r.likes_count,
           comments_count: r.comments_count,
           is_liked: likedPostIds.has(r.id),
@@ -1173,15 +1176,20 @@ export class DbRepository {
     description: string;
     achievement_stats: string;
     image_url: string;
+    before_image_url?: string;
+    after_image_url?: string;
+    after_photos?: string[];
   }): Promise<CommunityRecognitionPost | null> {
     if (isDbConnected()) {
       try {
+        const afterPhotosJson = data.after_photos ? JSON.stringify(data.after_photos) : null;
         const res = await pool.query(
           `INSERT INTO community_recognition_posts (
             author_name, author_role, is_verified_nmc, ward_number, ward_name,
             hero_name, hero_role, badge_title, title, description,
-            achievement_stats, image_url, likes_count, comments_count
-          ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0)
+            achievement_stats, image_url, likes_count, comments_count,
+            before_image_url, after_image_url, after_photos
+          ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14)
           RETURNING *`,
           [
             data.author_name,
@@ -1194,11 +1202,14 @@ export class DbRepository {
             data.title,
             data.description,
             data.achievement_stats,
-            data.image_url
+            data.image_url,
+            data.before_image_url || null,
+            data.after_image_url || null,
+            afterPhotosJson
           ]
         );
         const r = res.rows[0];
-        const postObj: CommunityRecognitionPost = {
+        const postObj: any = {
           id: r.id,
           author_name: r.author_name,
           author_role: r.author_role,
@@ -1213,6 +1224,9 @@ export class DbRepository {
           description: r.description,
           achievement_stats: r.achievement_stats,
           image_url: r.image_url,
+          before_image_url: r.before_image_url || data.before_image_url,
+          after_image_url: r.after_image_url || data.after_image_url,
+          after_photos: r.after_photos || data.after_photos,
           likes_count: r.likes_count,
           comments_count: r.comments_count,
           is_liked: false,
@@ -1242,6 +1256,9 @@ export class DbRepository {
       description: data.description,
       achievement_stats: data.achievement_stats,
       image_url: data.image_url,
+      before_image_url: data.before_image_url,
+      after_image_url: data.after_image_url,
+      after_photos: data.after_photos,
       likes_count: 1,
       comments_count: 0,
       is_liked: false,
@@ -4703,6 +4720,7 @@ export class DbRepository {
             worker_ids: parsedWorkerIds,
             temporary_leader_id: r.temporary_leader_id,
             temporary_leader_name: r.temporary_leader_name,
+            work_type: r.work_type || 'General Civic Sanitation Squad',
             shift: r.shift || 'Morning (06:00 - 14:00)',
             status: r.status || 'active',
             active_task_code: r.active_task_code,
@@ -4724,8 +4742,8 @@ export class DbRepository {
         await pool.query(
           `INSERT INTO worker_teams (
              id, team_name, ward_number, ward_name, temporary_leader_id, temporary_leader_name,
-             worker_ids, shift, status
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             worker_ids, shift, status, work_type
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            ON CONFLICT (id) DO UPDATE SET
              team_name = EXCLUDED.team_name,
              temporary_leader_id = EXCLUDED.temporary_leader_id,
@@ -4733,6 +4751,7 @@ export class DbRepository {
              worker_ids = EXCLUDED.worker_ids,
              shift = EXCLUDED.shift,
              status = EXCLUDED.status,
+             work_type = EXCLUDED.work_type,
              updated_at = CURRENT_TIMESTAMP`,
           [
             teamId,
@@ -4743,7 +4762,8 @@ export class DbRepository {
             team.temporary_leader_name,
             workerIdsJson,
             team.shift || 'Morning (06:00 - 14:00)',
-            team.status || 'active'
+            team.status || 'active',
+            team.work_type || 'General Civic Sanitation Squad'
           ]
         );
       } catch (err: any) {

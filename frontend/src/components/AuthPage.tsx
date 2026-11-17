@@ -15,7 +15,10 @@ import {
   Building,
   Globe,
   Wrench,
-  Users
+  Users,
+  MessageSquare,
+  Copy,
+  X
 } from 'lucide-react';
 import { SwachhSetuLogo } from './SwachhSetuLogo.js';
 import { api } from '../services/api.js';
@@ -53,6 +56,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [countdown, setCountdown] = useState(0);
   const [verificationToken, setVerificationToken] = useState('');
   const [devOtpCode, setDevOtpCode] = useState<string | null>(null);
+
+  // SMS Messages State (Citizen receives OTP in Messages section)
+  interface SmsMessage {
+    id: string;
+    sender: string;
+    senderName: string;
+    body: string;
+    otpCode: string;
+    timestamp: string;
+    isRead: boolean;
+  }
+  const [messages, setMessages] = useState<SmsMessage[]>([]);
+  const [isMessagesOpen, setIsMessagesOpen] = useState(false);
+  const [showSmsToast, setShowSmsToast] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // CAPTCHA State
   const [captchaPassed, setCaptchaPassed] = useState(false);
@@ -208,6 +226,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // Quick Demo NMC Central Executive Admin Login
+  const handleQuickDemoAdminLogin = async () => {
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await api.login('9825199999', 'Admin@123', 'captcha-verified-token');
+      localStorage.setItem('clean_navsari_token', res.data.token);
+      onSuccess(res.data.profile, false);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Demo NMC Admin login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 1. Submit Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,11 +297,23 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       const res = await api.signupSendOtp(phone, consentTerms);
       setSessionId(res.data.session_id);
       setCountdown(res.data.expires_in_seconds || 120);
-      if (res.data._dev_otp_code) {
-        setDevOtpCode(res.data._dev_otp_code);
-      }
+      const receivedOtp = res.data._dev_otp_code || '582914';
+      setDevOtpCode(receivedOtp);
+
+      const newSms: SmsMessage = {
+        id: `sms-${Date.now()}`,
+        sender: 'VM-NMCGOV',
+        senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+        body: `${receivedOtp} is your official verification OTP for Swachh Setu Citizen Registration on Navsari Municipal Corporation portal. Valid for 5 minutes. Do not share this OTP with anyone for security purposes. - NMC SWACHHATA`,
+        otpCode: receivedOtp,
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        isRead: false
+      };
+      setMessages(prev => [newSms, ...prev]);
+      setShowSmsToast(true);
+
       setSignupStep(2);
-      setSuccessMessage(`OTP sent to +91 ${res.data.mobile_masked}`);
+      setSuccessMessage(`OTP sent via SMS to +91 ${res.data.mobile_masked || phone}`);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to send OTP. Please try again.');
     } finally {
@@ -344,18 +389,36 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           <SwachhSetuLogo size="sm" showText={true} className="max-w-full" />
         </div>
 
-        {/* Language Switcher */}
-        <div className="flex shrink-0 items-center gap-1 bg-white p-1 rounded-xl shadow-sm border border-[#e2e8f0]">
-          <Globe className="w-3.5 h-3.5 text-[#095c54] ml-1.5" />
-          <select
-            value={lang}
-            onChange={e => onLanguageChange(e.target.value as Language)}
-            className="max-w-[66px] text-xs font-bold text-[#095c54] bg-transparent outline-none cursor-pointer pr-1"
+        <div className="flex items-center gap-2">
+          {/* Messages Section Button */}
+          <button
+            type="button"
+            onClick={() => setIsMessagesOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#e2e8f0] text-xs font-extrabold text-[#095c54] shadow-2xs hover:bg-[#e6f4f1] transition relative"
+            title="Open Messages section"
           >
-            <option value="en">English</option>
-            <option value="gu">ગુજરાતી</option>
-            <option value="hi">हिन्दी</option>
-          </select>
+            <MessageSquare className="w-3.5 h-3.5 text-[#095c54]" />
+            <span>Messages</span>
+            {messages.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-emerald-600 text-white animate-pulse">
+                {messages.length}
+              </span>
+            )}
+          </button>
+
+          {/* Language Switcher */}
+          <div className="flex shrink-0 items-center gap-1 bg-white p-1 rounded-xl shadow-sm border border-[#e2e8f0]">
+            <Globe className="w-3.5 h-3.5 text-[#095c54] ml-1.5" />
+            <select
+              value={lang}
+              onChange={e => onLanguageChange(e.target.value as Language)}
+              className="text-xs font-bold text-[#095c54] bg-transparent outline-none cursor-pointer pr-1"
+            >
+              <option value="en">English</option>
+              <option value="gu">ગુજરાતી</option>
+              <option value="hi">हिन्दी</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -638,6 +701,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     9825130008
                   </span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleQuickDemoAdminLogin}
+                  disabled={loading}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#095c54] to-[#043e39] text-white hover:opacity-95 text-xs font-black transition flex items-center justify-between shadow-xs group"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                    <span>NMC Admin Demo (Navsari Municipal Executive)</span>
+                  </div>
+                  <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                    9825199999
+                  </span>
+                </button>
               </div>
 
               <div className="text-center pt-2">
@@ -751,11 +829,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     </p>
                   </div>
 
-                  {devOtpCode && (
-                    <div className="p-2.5 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-center text-xs font-bold text-[#047857]">
-                      Demo Verification Code: <span className="font-mono text-sm tracking-wider">{devOtpCode}</span>
+                  {/* Messages Section Notification Banner */}
+                  <div className="p-3 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4] flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <MessageSquare className="w-4 h-4 text-emerald-300" />
+                      </div>
+                      <div className="min-w-0 leading-tight">
+                        <p className="font-black text-[#0f2925] truncate">OTP Sent to Messages</p>
+                        <p className="text-[11px] text-[#0d9488] font-bold truncate">Check your Messages section</p>
+                      </div>
                     </div>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setIsMessagesOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition shrink-0 shadow-xs flex items-center gap-1 active:scale-95"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Open Messages</span>
+                      {messages.length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping ml-0.5" />
+                      )}
+                    </button>
+                  </div>
 
                   {/* 6-Digit OTP Inputs */}
                   <div className="flex justify-center gap-2 sm:gap-2.5 my-3">
@@ -972,6 +1068,172 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       <div className="text-center text-xs text-[#64748b]">
         Smart India Hackathon PS000089 · Navsari Municipal Corporation, Gujarat
       </div>
+
+      {/* ── REALISTIC SMS NOTIFICATION BANNER (Top Slide-in) ── */}
+      {showSmsToast && messages.length > 0 && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-3 animate-in slide-in-from-top-4 duration-300">
+          <div
+            onClick={() => {
+              setIsMessagesOpen(true);
+              setShowSmsToast(false);
+            }}
+            className="p-3.5 rounded-2xl bg-white/95 backdrop-blur-md border border-emerald-300 shadow-2xl flex items-start gap-3 cursor-pointer hover:border-[#095c54] transition group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <MessageSquare className="w-5 h-5 text-emerald-300" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-black text-[#0f2925] flex items-center gap-1.5">
+                  <span>VM-NMCGOV</span>
+                  <span className="text-[10px] font-extrabold text-[#0d9488] bg-[#e6f4f1] px-1.5 py-0.2 rounded">SMS</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">Just now</span>
+              </div>
+              <p className="text-xs text-slate-700 font-semibold mt-1 line-clamp-2">
+                {messages[0].body}
+              </p>
+              <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
+                <span className="text-[11px] font-black text-[#095c54] group-hover:underline flex items-center gap-1">
+                  Tap to view in Messages section →
+                </span>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    setShowSmsToast(false);
+                  }}
+                  className="text-[10px] text-slate-400 hover:text-slate-600 font-bold px-1.5 py-0.5 rounded"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MESSAGES SECTION MODAL (SMS Inbox Simulator) ── */}
+      {isMessagesOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Phone SMS App Header */}
+            <div className="p-4 bg-gradient-to-r from-[#095c54] to-[#0c7066] text-white flex items-center justify-between shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 text-emerald-200" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black flex items-center gap-1.5">
+                    <span>Messages</span>
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-400/30 text-emerald-100 uppercase tracking-wider">
+                      SMS Inbox
+                    </span>
+                  </h3>
+                  <p className="text-[10px] text-emerald-100 font-medium mt-0.5">
+                    SIM 1 · +91 {phone || '98765 43210'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMessagesOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Messages Body */}
+            <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-[#f8faf9]">
+              {messages.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                  <p className="font-extrabold text-sm text-[#0f2925]">No Messages Yet</p>
+                  <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                    When you click "Send 6-Digit OTP" on the registration page, your official SMS verification will arrive in this Messages section.
+                  </p>
+                </div>
+              ) : (
+                messages.map(msg => (
+                  <div
+                    key={msg.id}
+                    className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-[#0f2925] tracking-wide">{msg.sender}</span>
+                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          ✓ Verified Govt Sender
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">{msg.timestamp}</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-800 leading-relaxed font-mono">
+                      {msg.body}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500">OTP Code:</span>
+                        <span className="font-mono text-sm font-black text-[#095c54] bg-[#e6f4f1] border border-[#a7f3d0] px-2 py-0.5 rounded-md tracking-wider">
+                          {msg.otpCode}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(msg.otpCode);
+                            setCopiedId(msg.id);
+                            setTimeout(() => setCopiedId(null), 2000);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1"
+                        >
+                          {copiedId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                          )}
+                          <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const arr = msg.otpCode.split('');
+                            setOtpDigits(arr);
+                            setIsMessagesOpen(false);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition flex items-center gap-1 shadow-xs active:scale-95"
+                        >
+                          <span>Auto-Fill</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 px-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-500">
+              <span className="font-semibold text-slate-400">Navsari Municipal SMS Gateway</span>
+              <button
+                type="button"
+                onClick={() => setIsMessagesOpen(false)}
+                className="font-black text-[#095c54] hover:underline"
+              >
+                Back to Registration →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

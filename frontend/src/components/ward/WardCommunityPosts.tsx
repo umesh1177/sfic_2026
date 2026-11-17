@@ -18,7 +18,8 @@ import {
   RefreshCw,
   Bell,
   Eye,
-  Megaphone
+  Megaphone,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
@@ -39,10 +40,32 @@ export const WardCommunityPosts: React.FC = () => {
   const [postCategory, setPostCategory] = useState<string>('Cleanliness Drive Update');
   const [targetAudience, setTargetAudience] = useState<string>('Ward 3 Citizens & Public Feed');
   const [achievementStats, setAchievementStats] = useState<string>('Pavement Sanitized · 380 kg cleared');
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [postImageUrl, setPostImageUrl] = useState<string>(
     'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80'
   );
   const [isSubmittingPost, setIsSubmittingPost] = useState<boolean>(false);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        if (ev.target?.result) {
+          setSelectedFiles(prev => [...prev, ev.target!.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -126,6 +149,7 @@ export const WardCommunityPosts: React.FC = () => {
     }
     setIsSubmittingPost(true);
     try {
+      const primaryPhoto = selectedFiles.length > 0 ? selectedFiles[0] : postImageUrl;
       const res = await api.createRecognitionPost({
         hero_name: 'Ward 3 Sanitation Team',
         hero_role: postCategory,
@@ -134,7 +158,10 @@ export const WardCommunityPosts: React.FC = () => {
         description: postDescription,
         ward_number: 3,
         achievement_stats: achievementStats,
-        image_url: postImageUrl
+        image_url: primaryPhoto,
+        before_image_url: selectedFiles.length > 1 ? selectedFiles[0] : undefined,
+        after_image_url: selectedFiles.length > 1 ? selectedFiles[1] : primaryPhoto,
+        after_photos: selectedFiles
       });
 
       if (res.data) {
@@ -142,12 +169,13 @@ export const WardCommunityPosts: React.FC = () => {
         setIsCreateModalOpen(false);
         setPostTitle('');
         setPostDescription('');
+        setSelectedFiles([]);
         confetti({
           particleCount: 50,
           spread: 70,
           origin: { y: 0.6 }
         });
-        showToast('Official municipal notice published and broadcast to Ward 3 citizens');
+        showToast('Official post published successfully across Citizen and Community feeds');
       }
     } catch (err) {
       console.error('Create post failed:', err);
@@ -184,7 +212,7 @@ export const WardCommunityPosts: React.FC = () => {
           className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-emerald-800 transition flex items-center gap-1.5 shadow-xs self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
-          <span>Publish Ward Notice</span>
+          <span>Add Post</span>
         </button>
       </div>
 
@@ -197,7 +225,7 @@ export const WardCommunityPosts: React.FC = () => {
           onClick={() => setIsCreateModalOpen(true)}
           className="flex-1 text-left px-4 py-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-500 border border-slate-200 transition"
         >
-          Publish official cleanliness announcement or update for Ward 3...
+          Add official cleanliness post, photo updates, or announcements...
         </button>
         <button
           onClick={() => setIsCreateModalOpen(true)}
@@ -291,16 +319,50 @@ export const WardCommunityPosts: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Full-bleed Post Image */}
-                {post.image_url && (
+                {/* Before & After or Gallery Photos */}
+                {(post as any).before_image_url && ((post as any).after_image_url || ((post as any).after_photos && (post as any).after_photos.length > 0)) ? (
+                  <div className="mt-4 px-4 sm:px-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="relative rounded-2xl overflow-hidden border border-rose-200 bg-slate-900 group shadow-sm">
+                      <img
+                        src={(post as any).before_image_url}
+                        alt="Before Cleanup"
+                        className="w-full h-48 object-cover group-hover:scale-105 transition duration-300"
+                        loading="lazy"
+                      />
+                      <span className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-rose-600/95 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
+                        Before Cleanup
+                      </span>
+                    </div>
+                    <div className="relative rounded-2xl overflow-hidden border border-emerald-200 bg-slate-900 group shadow-sm">
+                      <img
+                        src={(post as any).after_image_url || (post as any).after_photos[0]}
+                        alt="After Cleanup"
+                        className="w-full h-48 object-cover group-hover:scale-105 transition duration-300"
+                        loading="lazy"
+                      />
+                      <span className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-emerald-600/95 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
+                        Restored & Clean ✓
+                      </span>
+                    </div>
+                  </div>
+                ) : (post as any).after_photos && (post as any).after_photos.length > 1 ? (
+                  <div className="mt-4 px-4 sm:px-5 grid grid-cols-2 gap-2">
+                    {(post as any).after_photos.map((ph: string, idx: number) => (
+                      <div key={idx} className="relative rounded-2xl overflow-hidden border border-slate-200 aspect-video bg-slate-900">
+                        <img src={ph} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                    ))}
+                  </div>
+                ) : post.image_url ? (
                   <div className="mt-4 border-y border-slate-100 bg-slate-50 overflow-hidden">
                     <img
                       src={post.image_url}
                       alt={post.title}
                       className="w-full max-h-[420px] object-cover hover:scale-[1.01] transition duration-300"
+                      loading="lazy"
                     />
                   </div>
-                )}
+                ) : null}
 
                 {/* Engagement Bar (Likes & Comments count) */}
                 <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-slate-500 border-b border-slate-100">
@@ -410,7 +472,7 @@ export const WardCommunityPosts: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Megaphone className="w-5 h-5 text-[#095c54]" />
                 <h3 className="text-base font-extrabold text-[#0f2925]">
-                  Publish Official Ward 3 Notice
+                  Add Post
                 </h3>
               </div>
               <button
@@ -476,15 +538,56 @@ export const WardCommunityPosts: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Photographic Evidence URL</label>
-                <input
-                  type="text"
-                  value={postImageUrl}
-                  onChange={e => setPostImageUrl(e.target.value)}
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] outline-hidden"
-                />
-                <div className="mt-2 rounded-xl overflow-hidden aspect-video max-h-36 border border-slate-200 bg-slate-50">
-                  <img src={postImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Upload Photos from Device (Multiple Pictures Supported)
+                  </label>
+                  <span className="text-[10px] font-black text-[#095c54]">
+                    {selectedFiles.length} {selectedFiles.length === 1 ? 'photo' : 'photos'} chosen
+                  </span>
+                </div>
+
+                <div className="space-y-2.5">
+                  <label
+                    htmlFor="ward-post-files-input"
+                    className="w-full p-3.5 rounded-2xl bg-emerald-50/70 hover:bg-emerald-100 text-[#095c54] border-2 border-dashed border-[#a7f3d0] font-black text-xs cursor-pointer transition flex items-center justify-center gap-2"
+                  >
+                    <Camera className="w-4 h-4 text-[#095c54]" />
+                    <span>Choose Pictures from Device / Camera</span>
+                  </label>
+                  <input
+                    id="ward-post-files-input"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+
+                  {selectedFiles.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-200 max-h-48 overflow-y-auto">
+                      {selectedFiles.map((photo, idx) => (
+                        <div key={idx} className="relative rounded-xl overflow-hidden aspect-video border border-slate-200 group bg-slate-900">
+                          <img src={photo} alt={`Device upload ${idx + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700 shadow-sm"
+                            title="Remove picture"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                          <span className="absolute bottom-1 left-1.5 text-[9px] font-black px-1.5 py-0.2 rounded-md bg-black/60 text-white backdrop-blur-xs">
+                            #{idx + 1}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">
+                      Click the button above to pick images from your computer or phone gallery. You can select multiple pictures at once.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -500,9 +603,9 @@ export const WardCommunityPosts: React.FC = () => {
               <button
                 type="submit"
                 disabled={isSubmittingPost}
-                className="px-5 py-2 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-emerald-800 transition"
+                className="px-5 py-2 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-emerald-800 transition shadow-xs"
               >
-                {isSubmittingPost ? 'Publishing...' : 'Broadcast to Ward 3 Feed'}
+                {isSubmittingPost ? 'Publishing...' : 'Add Post to Public Feeds'}
               </button>
             </div>
           </form>

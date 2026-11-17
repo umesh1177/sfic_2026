@@ -358,24 +358,80 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
           )}
 
           {/* 4. APPROVE & ASSIGN TEAM FORM (WITH PROPER LIST OF ALL TEAMS) */}
-          {showAssignForm && (
+          {showAssignForm && (() => {
+            const isUrgent = details?.overview?.is_urgent || details?.overview?.priority === 'urgent' || details?.overview?.priority === 'emergency';
+            const complaintCategory = (details?.overview?.category_name || details?.overview?.title || '').toLowerCase();
+
+            const matchesCategory = (teamWorkType: string, cat: string) => {
+              const wt = (teamWorkType || '').toLowerCase();
+              if (cat.includes('dustbin') || cat.includes('garbage') || cat.includes('dump') || cat.includes('litter') || cat.includes('waste')) {
+                return wt.includes('waste') || wt.includes('dumping');
+              }
+              if (cat.includes('drain') || cat.includes('gutter') || cat.includes('sewage') || cat.includes('culvert') || cat.includes('overflow')) {
+                return wt.includes('drainage') || wt.includes('gutter');
+              }
+              if (cat.includes('road') || cat.includes('street') || cat.includes('sweeping') || cat.includes('pavement')) {
+                return wt.includes('street') || wt.includes('sweeping');
+              }
+              if (cat.includes('debris') || cat.includes('construction') || cat.includes('tree') || cat.includes('branches')) {
+                return wt.includes('debris') || wt.includes('tree');
+              }
+              if (cat.includes('toilet') || cat.includes('urinal') || cat.includes('washroom')) {
+                return wt.includes('toilet');
+              }
+              return wt.includes('general');
+            };
+
+            const sortedTeamsList = [...teamsList].sort((a, b) => {
+              const activeCountA = a.active_tasks_count || 0;
+              const activeCountB = b.active_tasks_count || 0;
+              const matchA = matchesCategory(a.work_type, complaintCategory);
+              const matchB = matchesCategory(b.work_type, complaintCategory);
+
+              if (isUrgent) {
+                // Urgent: squads with 0 active tasks (idle / available) are prioritized first
+                if (activeCountA === 0 && activeCountB > 0) return -1;
+                if (activeCountB === 0 && activeCountA > 0) return 1;
+                if (matchA && !matchB) return -1;
+                if (!matchA && matchB) return 1;
+                return activeCountA - activeCountB;
+              } else {
+                // Normal: squads matching specialization first, then lowest workload
+                if (matchA && !matchB) return -1;
+                if (!matchA && matchB) return 1;
+                return activeCountA - activeCountB;
+              }
+            });
+
+            return (
             <form onSubmit={handleAssignTeam} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4 animate-in fade-in duration-150">
-              <div className="border-b border-slate-200 pb-3">
-                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                  <Users className="w-4 h-4 text-[#095c54]" />
-                  <span>Select Sanitation Squad to Assign (Active Formed Teams)</span>
-                </h4>
-                <p className="text-[11px] text-slate-500">
-                  Select a team from the list below. Assigned workers will immediately see this task in their dashboard.
-                </p>
+              <div className="border-b border-slate-200 pb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#095c54]" />
+                    <span>Select Sanitation Squad to Assign</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {isUrgent
+                      ? '⚡ Urgent Complaint: Available squads with 0 active tasks are shown at the top for immediate dispatch.'
+                      : 'Squads specialized in this type of work are prioritized at the top.'}
+                  </p>
+                </div>
+                {isUrgent && (
+                  <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-800 text-[10px] font-black uppercase tracking-wider shrink-0 border border-red-200">
+                    Urgent Priority
+                  </span>
+                )}
               </div>
 
-              {/* PROPER LIST OF ALL TEAMS (NOT A DROPDOWN!) */}
-              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                {teamsList.map(team => {
+              {/* PROPER LIST OF ALL TEAMS (RANKED BY SPECIALIZATION & WORKLOAD) */}
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {sortedTeamsList.map(team => {
                   const isSelected = selectedTeamId === team.id;
                   const memberCount = (team.worker_ids || []).length;
                   const leaderWorker = workersList.find(w => w.id === team.temporary_leader_id);
+                  const activeTasks = team.active_tasks_count || 0;
+                  const isMatch = matchesCategory(team.work_type, complaintCategory);
 
                   return (
                     <div
@@ -405,11 +461,37 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
                             <span className="px-2 py-0.2 rounded-md bg-emerald-50 text-[10px] font-bold text-emerald-800 border border-emerald-200">
                               {memberCount} Workers
                             </span>
+                            {/* Specialization Match Badge */}
+                            {isMatch && (
+                              <span className="px-2 py-0.2 rounded-md bg-teal-50 text-[10px] font-black text-teal-800 border border-teal-200 flex items-center gap-1">
+                                <span>🎯 Best Match</span>
+                              </span>
+                            )}
+                            {/* Workload Badge */}
+                            <span
+                              className={`px-2 py-0.2 rounded-md text-[10px] font-black border ${
+                                activeTasks === 0
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  : activeTasks === 1
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                  : 'bg-purple-50 text-purple-800 border-purple-300'
+                              }`}
+                            >
+                              {activeTasks === 0
+                                ? '✓ 0 Active Tasks (Available)'
+                                : `${activeTasks} Active ${activeTasks === 1 ? 'Task' : 'Tasks'} (Busy)`}
+                            </span>
                           </div>
-                          <p className="text-[11px] text-slate-600 mt-0.5 flex items-center gap-1 font-medium">
-                            <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <span>Team Leader: <strong>{team.temporary_leader_name || leaderWorker?.full_name || 'Kanti Solanki'}</strong></span>
-                          </p>
+
+                          <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-slate-600">
+                            <span className="font-semibold text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-lg text-[10px]">
+                              Specialization: <strong>{team.work_type || 'General Civic Sanitation Squad'}</strong>
+                            </span>
+                            <span className="flex items-center gap-1 font-medium text-[11px]">
+                              <Crown className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>Leader: <strong>{team.temporary_leader_name || leaderWorker?.full_name || 'Kanti Solanki'}</strong></span>
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -488,7 +570,8 @@ export const ComplaintViewModal: React.FC<ComplaintViewModalProps> = ({
                 </button>
               </div>
             </form>
-          )}
+            );
+          })()}
         </div>
 
         {/* Modal Footer Actions: Two Action Buttons Approve & Reject */}

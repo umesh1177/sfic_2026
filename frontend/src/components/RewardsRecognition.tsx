@@ -371,8 +371,43 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
                 </p>
               </div>
 
-              {/* Post Photo */}
-              {post.image_url && (
+              {/* Before & After Photo Comparison if available */}
+              {(post as any).before_image_url && ((post as any).after_image_url || ((post as any).after_photos && (post as any).after_photos.length > 0)) ? (
+                <div className="mx-4 sm:mx-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative rounded-2xl overflow-hidden border border-rose-200 bg-slate-900 group shadow-sm">
+                    <img
+                      src={(post as any).before_image_url}
+                      alt="Before Cleanup"
+                      className="w-full h-52 object-cover group-hover:scale-105 transition duration-300"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-rose-600/95 text-white text-[10px] font-black uppercase tracking-wider backdrop-blur-xs flex items-center gap-1 shadow-md">
+                      <span>Before Cleanup</span>
+                    </div>
+                  </div>
+                  <div className="relative rounded-2xl overflow-hidden border border-emerald-200 bg-slate-900 group shadow-sm">
+                    <img
+                      src={(post as any).after_image_url || (post as any).after_photos[0]}
+                      alt="After Cleanup"
+                      className="w-full h-52 object-cover group-hover:scale-105 transition duration-300"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-emerald-600/95 text-white text-[10px] font-black uppercase tracking-wider backdrop-blur-xs flex items-center gap-1 shadow-md">
+                      <CheckCircle2 className="w-3 h-3 text-white" />
+                      <span>Work Done & Restored ✓</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (post as any).after_photos && (post as any).after_photos.length > 1 ? (
+                /* Multi-photo device upload gallery */
+                <div className="mx-4 sm:mx-5 mb-4 grid grid-cols-2 gap-2">
+                  {(post as any).after_photos.map((ph: string, idx: number) => (
+                    <div key={idx} className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900">
+                      <img src={ph} alt={`Photo ${idx + 1}`} className="w-full h-44 object-cover hover:scale-105 transition duration-300" loading="lazy" />
+                    </div>
+                  ))}
+                </div>
+              ) : post.image_url ? (
                 <div className="relative bg-slate-900 overflow-hidden">
                   <img
                     src={post.image_url}
@@ -381,7 +416,7 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
                     loading="lazy"
                   />
                 </div>
-              )}
+              ) : null}
 
               {/* Engagement Counter */}
               <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-[#64748b] border-b border-[#f1f5f9]">

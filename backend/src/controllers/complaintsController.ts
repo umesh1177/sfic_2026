@@ -4,7 +4,7 @@ import { DbRepository } from '../data/dbRepository.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { Complaint, ComplaintLocation, ComplaintActivityLog } from '../types/index.js';
 import { AIService } from '../services/aiService.js';
-import { findWardByCoordinates, calculateDistanceMeters, NAVSARI_WARDS } from '../utils/postgis.js';
+import { findWardByCoordinates, calculateDistanceMeters, NAVSARI_WARDS, isPointInPolygon, DEFAULT_NAVSARI_CITY_BOUNDARY } from '../utils/postgis.js';
 
 export class ComplaintsController {
   /**
@@ -75,6 +75,20 @@ export class ComplaintsController {
         res.status(400).json({ success: false, error: 'Valid numeric latitude and longitude are required' });
         return;
       }
+
+      // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
+      /*
+      const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
+      const isInside = isPointInPolygon([lng, lat], cityBoundary);
+
+      if (!isInside) {
+        res.status(422).json({
+          success: false,
+          error: 'Location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
+        });
+        return;
+      }
+      */
 
       const ward = findWardByCoordinates(lat, lng);
 
@@ -177,6 +191,20 @@ export class ComplaintsController {
 
       let lat = Number(latitude);
       let lng = Number(longitude);
+
+      // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
+      /*
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
+        if (!isPointInPolygon([lng, lat], cityBoundary)) {
+          res.status(422).json({
+            success: false,
+            error: 'The reported location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
+          });
+          return;
+        }
+      }
+      */
 
       if (!ward) {
         ward = findWardByCoordinates(lat, lng);

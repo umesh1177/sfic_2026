@@ -15,6 +15,7 @@ import { PwaOfflineBanner } from './components/PwaOfflineBanner.js';
 import { CommunityHeadDashboard } from './components/community/CommunityHeadDashboard.js';
 import { WorkerDashboard } from './components/worker/WorkerDashboard.js';
 import { WardOfficerDashboard } from './components/ward/WardOfficerDashboard.js';
+import { NMCAdminDashboard } from './components/admin/NMCAdminDashboard.js';
 import { api } from './services/api.js';
 import { Profile, AppNotification, ComplaintCategory, Complaint } from './types/index.js';
 import { Language, translations } from './i18n/translations.js';
@@ -22,7 +23,7 @@ import { Phone, Mail, MapPin, Sparkles, Shield, Heart } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('home');
-  const [viewMode, setViewMode] = useState<'citizen' | 'community_head' | 'worker' | 'ward_officer'>('citizen');
+  const [viewMode, setViewMode] = useState<'citizen' | 'community_head' | 'worker' | 'ward_officer' | 'nmc_admin'>('citizen');
   const [user, setUser] = useState<Profile | null>(null);
   const [lang, setLangState] = useState<Language>(() => {
     const saved = localStorage.getItem('swachh_setu_lang');
@@ -58,7 +59,9 @@ export const App: React.FC = () => {
           const meRes = await api.getMe();
           setUser(meRes.data.profile);
           setLang(meRes.data.profile.preferred_language || 'en');
-          if (meRes.data.profile.role === 'ward_officer') {
+          if (meRes.data.profile.role === 'nmc_admin' || (meRes.data.profile.role as any) === 'super_admin') {
+            setViewMode('nmc_admin');
+          } else if (meRes.data.profile.role === 'ward_officer') {
             setViewMode('ward_officer');
           } else if (meRes.data.profile.role === 'community_head') {
             setViewMode('community_head');
@@ -86,7 +89,9 @@ export const App: React.FC = () => {
   const handleAuthSuccess = (profile: Profile) => {
     setUser(profile);
     setLang(profile.preferred_language || 'en');
-    if (profile.role === 'ward_officer') {
+    if (profile.role === 'nmc_admin' || (profile.role as any) === 'super_admin') {
+      setViewMode('nmc_admin');
+    } else if (profile.role === 'ward_officer') {
       setViewMode('ward_officer');
     } else if (profile.role === 'community_head') {
       setViewMode('community_head');
@@ -108,7 +113,9 @@ export const App: React.FC = () => {
   };
 
   const handleNavigateTab = (tab: string) => {
-    if (tab === 'ward_officer') {
+    if (tab === 'nmc_admin' || tab === 'admin') {
+      setViewMode('nmc_admin');
+    } else if (tab === 'ward_officer') {
       setViewMode('ward_officer');
     } else if (tab === 'community_head') {
       setViewMode('community_head');
@@ -206,6 +213,18 @@ export const App: React.FC = () => {
     );
   }
 
+  // 6. NMC Central Admin Dashboard View
+  if (viewMode === 'nmc_admin') {
+    return (
+      <NMCAdminDashboard
+        user={user}
+        lang={lang}
+        setLang={setLang}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   // 4. Authenticated Citizen Application
   return (
     <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
@@ -299,7 +318,7 @@ export const App: React.FC = () => {
             <CleanlinessDrives lang={lang} />
           )}
 
-          {currentTab === 'rewards' && (
+          {(currentTab === 'rewards' || currentTab === 'posts') && (
             <RewardsRecognition lang={lang} />
           )}
 

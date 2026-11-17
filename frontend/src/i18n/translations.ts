@@ -36,6 +36,7 @@ export interface AppTranslations {
   wo_nav_approvals: string;
   wo_nav_posts: string;
   wo_nav_community_problems: string;
+  wo_nav_ai_analytics: string;
   wo_nav_cleanliness_score: string;
   wo_nav_reports: string;
   wo_nav_notifications: string;
@@ -254,7 +255,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_more: 'More',
     nav_drives: 'Cleanliness Drives',
     nav_challenges: 'Community Challenges',
-    nav_rewards: 'Community Wall',
+    nav_rewards: 'Posts',
     nav_support: 'Feedback & Support',
     nav_notifications: 'Notifications',
     nav_profile: 'My Profile',
@@ -271,6 +272,7 @@ export const translations: Record<Language, AppTranslations> = {
     wo_nav_approvals: 'Approval Management',
     wo_nav_posts: 'Community & Citizen Posts',
     wo_nav_community_problems: 'Add Problem for Community',
+    wo_nav_ai_analytics: 'AI Analytics',
     wo_nav_cleanliness_score: 'Ward Cleanliness Score',
     wo_nav_reports: 'Reports & Analytics',
     wo_nav_notifications: 'Notifications',
@@ -441,7 +443,7 @@ export const translations: Record<Language, AppTranslations> = {
     registered_badge: 'Registered',
     challenges_title: 'City Cleanliness Challenges',
     join_challenge: 'Join Challenge',
-    rewards_title: 'Civic Rewards & Recognition',
+    rewards_title: 'Civic & Ward Cleanliness Posts',
     leaderboard_title: 'Navsari Cleanliness Champions',
 
     // Support
@@ -486,7 +488,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_more: 'વધુ સેવાઓ',
     nav_drives: 'સફાઈ અભિયાન',
     nav_challenges: 'સામુદાયિક પડકારો',
-    nav_rewards: 'કમ્યુનિટી વૉલ',
+    nav_rewards: 'સ્વચ્છતા પોસ્ટ્સ',
     nav_support: 'પ્રતિસાદ અને સહાય',
     nav_notifications: 'સૂચનાઓ',
     nav_profile: 'મારી પ્રોફાઇલ',
@@ -503,6 +505,7 @@ export const translations: Record<Language, AppTranslations> = {
     wo_nav_approvals: 'મંજૂરી સંચાલન',
     wo_nav_posts: 'નાગરિક પોસ્ટ્સ',
     wo_nav_community_problems: 'સમુદાય માટે સમસ્યા ઉમેરો',
+    wo_nav_ai_analytics: 'AI એનાલિટિક્સ',
     wo_nav_cleanliness_score: 'વોર્ડ સ્વચ્છતા સ્કોર',
     wo_nav_reports: 'અહેવાલો અને આંકડા',
     wo_nav_notifications: 'સૂચનાઓ',
@@ -673,7 +676,7 @@ export const translations: Record<Language, AppTranslations> = {
     registered_badge: 'નોંધાયેલ',
     challenges_title: 'શહેર સ્વચ્છતા પડકારો',
     join_challenge: 'પડકારમાં જોડાઓ',
-    rewards_title: 'પુરસ્કારો અને સિદ્ધિ બેજ',
+    rewards_title: 'સ્વચ્છતા અને વોર્ડ પોસ્ટ્સ',
     leaderboard_title: 'સ્વચ્છતા ચેમ્પિયન લીડરબોર્ડ',
 
     // Support
@@ -718,7 +721,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_more: 'अधिक सेवाएं',
     nav_drives: 'स्वच्छता अभियान',
     nav_challenges: 'सामुदायिक चुनौतियां',
-    nav_rewards: 'कम्युनिटी वॉल',
+    nav_rewards: 'स्वच्छता पोस्ट्स',
     nav_support: 'प्रतिक्रिया व सहायता',
     nav_notifications: 'सूचनाएं',
     nav_profile: 'मेरी प्रोफ़ाइल',
@@ -735,6 +738,7 @@ export const translations: Record<Language, AppTranslations> = {
     wo_nav_approvals: 'स्वीकृति प्रबंधन',
     wo_nav_posts: 'नागरिक पोस्ट्स',
     wo_nav_community_problems: 'समुदाय के लिए समस्या जोड़ें',
+    wo_nav_ai_analytics: 'एआई एनालिटिक्स',
     wo_nav_cleanliness_score: 'वार्ड स्वच्छता स्कोर',
     wo_nav_reports: 'रिपोर्ट और विश्लेषण',
     wo_nav_notifications: 'सूचनाएं',
@@ -905,7 +909,7 @@ export const translations: Record<Language, AppTranslations> = {
     registered_badge: 'पंजीकृत',
     challenges_title: 'शहर स्वच्छता चुनौतियां',
     join_challenge: 'चुनौती में शामिल हों',
-    rewards_title: 'पुरस्कार एवं बैज',
+    rewards_title: 'सामुदायिक एवं वार्ड स्वच्छता पोस्ट्स',
     leaderboard_title: 'स्वच्छता चैंपियंस लीडरबोर्ड',
 
     // Support

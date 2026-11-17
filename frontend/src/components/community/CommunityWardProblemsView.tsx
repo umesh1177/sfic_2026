@@ -70,47 +70,45 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
 
   return (
     <div className="space-y-6">
-      {/* 1. Header Banner */}
-      <div className="bg-gradient-to-r from-[#095c54] to-[#128c7e] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold uppercase tracking-wider backdrop-blur-xs mb-3">
-            <HeartHandshake className="w-3.5 h-3.5" />
+      {/* 1. Clean Header (Removed bulky banner box) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e2e8f0] pb-5">
+        <div>
+          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
+            <HeartHandshake className="w-3.5 h-3.5 text-emerald-600" />
             Civic Partnership · Ward {community?.ward_number || 3}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0f2925] tracking-tight">
             Ward Problems for Community Action
           </h1>
-          <p className="text-sm sm:text-base text-emerald-100 font-medium leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl font-medium">
             These civic issues have been flagged by Municipal Ward Officers specifically for community-led volunteer intervention.
             Review the problem, inspect the officer's recommended action plan, and adopt the issue to organize a citizen cleanliness drive.
           </p>
-
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 bg-white/10 rounded-2xl px-3 py-1.5 backdrop-blur-xs border border-white/20">
-              <span className="text-xs font-bold text-emerald-100">Ward Filter:</span>
-              <select
-                value={wardFilter}
-                onChange={e => setWardFilter(e.target.value)}
-                className="bg-emerald-950/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 outline-none border border-white/20"
-              >
-                <option value="all" className="bg-[#095c54] text-white">All Wards (Entire Navsari)</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(w => (
-                  <option key={w} value={String(w)} className="bg-[#095c54] text-white">Ward {w}</option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={fetchProblems}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition backdrop-blur-xs"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Refresh Problems
-            </button>
-          </div>
         </div>
 
-        <Sparkles className="absolute right-6 -bottom-6 w-44 h-44 text-white/10 pointer-events-none" />
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto shrink-0">
+          <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-200">
+            <span className="text-xs font-bold text-slate-600">Ward Filter:</span>
+            <select
+              value={wardFilter}
+              onChange={e => setWardFilter(e.target.value)}
+              className="bg-white text-slate-800 font-bold text-xs rounded-lg px-2 py-1 outline-none border border-slate-200"
+            >
+              <option value="all">All Wards (Entire Navsari)</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(w => (
+                <option key={w} value={String(w)}>Ward {w}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={fetchProblems}
+            className="p-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#e2e8f0] transition shadow-2xs"
+            title="Refresh Problems"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {successBanner && (

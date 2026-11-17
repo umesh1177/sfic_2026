@@ -86,6 +86,8 @@ export const MiniMapLocationPicker: React.FC<MiniMapLocationPickerProps> = ({
   const validateAndNotify = async (lat: number, lng: number) => {
     setErrorMsg(null);
 
+    // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere
+    /*
     // 1. Client-side boundary check
     if (!isWithinNavsariBoundary(lat, lng)) {
       const err = `Coordinates (${lat.toFixed(4)}, ${lng.toFixed(
@@ -96,18 +98,15 @@ export const MiniMapLocationPicker: React.FC<MiniMapLocationPickerProps> = ({
       if (onValidityChange) onValidityChange(false);
       return;
     }
+    */
 
     // 2. Server-side PostGIS point-in-polygon verification
     try {
       const res = await api.validateLocation(lat, lng);
-      if (res.data.is_inside_nmc) {
+      if (res.data) {
         setDetectedWard(res.data);
         if (onValidityChange) onValidityChange(true);
         onLocationChange(lat, lng, res.data, `Ward ${res.data.ward_number}, ${res.data.ward_name}`);
-      } else {
-        setErrorMsg('Location is outside NMC ward boundaries.');
-        setDetectedWard(null);
-        if (onValidityChange) onValidityChange(false);
       }
     } catch {
       // In offline or fallback mode
@@ -162,11 +161,13 @@ export const MiniMapLocationPicker: React.FC<MiniMapLocationPickerProps> = ({
           zoom={14}
           minZoom={MAP_CONFIG.minZoom}
           maxZoom={MAP_CONFIG.maxZoom}
+          /* [BOUNDS TEMPORARILY DISABLED] Allow freely panning and picking location anywhere
           maxBounds={[
             MAP_CONFIG.bounds.southWest,
             MAP_CONFIG.bounds.northEast
           ]}
           maxBoundsViscosity={1.0}
+          */
           scrollWheelZoom={false}
           style={{ height: '100%', width: '100%', zIndex: 10 }}
         >

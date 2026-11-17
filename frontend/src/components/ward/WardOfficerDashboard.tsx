@@ -20,7 +20,8 @@ import {
   Shield,
   Sparkles,
   ArrowRightLeft,
-  HeartHandshake
+  HeartHandshake,
+  BrainCircuit
 } from 'lucide-react';
 import { Profile } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -37,6 +38,7 @@ import { WardCommunityActivities } from './WardCommunityActivities.js';
 import { ApprovalManagementView } from './ApprovalManagementView.js';
 import { WardCommunityPosts } from './WardCommunityPosts.js';
 import { WardCommunityProblemsView } from './WardCommunityProblemsView.js';
+import { WardAIAnalytics } from './WardAIAnalytics.js';
 import { WardNotificationsView } from './WardNotificationsView.js';
 import { WardSettingsView } from './WardSettingsView.js';
 
@@ -86,8 +88,9 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
     { id: 'approvals', label: `7. ${t.wo_nav_approvals}`, icon: ShieldCheck },
     { id: 'posts', label: `8. ${t.wo_nav_posts}`, icon: Megaphone },
     { id: 'community_problems', label: `9. ${t.wo_nav_community_problems}`, icon: HeartHandshake },
-    { id: 'notifications', label: `10. ${t.wo_nav_notifications}`, icon: Bell },
-    { id: 'settings', label: `11. ${t.wo_nav_settings}`, icon: Settings }
+    { id: 'ai_analytics', label: `10. ${t.wo_nav_ai_analytics || 'AI Analytics'}`, icon: BrainCircuit },
+    { id: 'notifications', label: `11. ${t.wo_nav_notifications}`, icon: Bell },
+    { id: 'settings', label: `12. ${t.wo_nav_settings}`, icon: Settings }
   ];
 
   // Callback from overview cards to open catalogue with pre-applied filter
@@ -153,27 +156,21 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
         </nav>
 
         {/* User Card & Logout Footer */}
-        <div className="p-4 border-t border-[#e2e8f0] bg-slate-50/70 space-y-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white font-black text-xs flex items-center justify-center shrink-0">
-              {officerInitials}
+        <div className="p-3.5 border-t border-[#e2e8f0] bg-white space-y-2">
+          {/* Identity Box from user screenshot */}
+          <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1]/80 border border-[#99f6e4] shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <ShieldCheck className="w-5 h-5 text-emerald-300" />
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-black text-[#0f2925] truncate">{officerName}</p>
-              <p className="text-[10px] text-slate-500 font-bold truncate">Chief Sanitary Inspector</p>
-              <p className="text-[10px] text-[#095c54] font-extrabold truncate">Ward {userWardNum} · {wardArea}</p>
+            <div className="min-w-0 leading-tight">
+              <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                {officerName} · Ward Officer
+              </h4>
+              <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                Ward {userWardNum} · {wardArea}
+              </p>
             </div>
           </div>
-
-          {onSwitchToCitizenView && (
-            <button
-              onClick={onSwitchToCitizenView}
-              className="w-full py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-[#095c54] border border-slate-200 text-xs font-extrabold transition flex items-center justify-center gap-1.5 shadow-2xs"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-              <span>{t.action_switch_citizen}</span>
-            </button>
-          )}
 
           <button
             onClick={onLogout}
@@ -240,17 +237,6 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
             </button>
 
-            {/* Switch to citizen (Mobile) */}
-            {onSwitchToCitizenView && (
-              <button
-                onClick={onSwitchToCitizenView}
-                className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100"
-                title={t.action_switch_citizen}
-              >
-                <ArrowRightLeft className="w-4 h-4 text-[#095c54]" />
-              </button>
-            )}
-
             {/* Logout (Mobile) */}
             <button
               onClick={onLogout}
@@ -298,6 +284,10 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
             <WardCommunityProblemsView wardNumber={userWardNum} officerName={officerName} lang={lang} />
           )}
 
+          {activeTab === 'ai_analytics' && (
+            <WardAIAnalytics wardNumber={userWardNum} />
+          )}
+
           {activeTab === 'notifications' && <WardNotificationsView />}
 
           {activeTab === 'settings' && <WardSettingsView />}
@@ -332,16 +322,16 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               </span>
             </button>
 
-            {/* 3. Hotspots */}
+            {/* 3. AI Analytics */}
             <button
-              onClick={() => handleTabClick('hotspots')}
+              onClick={() => handleTabClick('ai_analytics')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'hotspots' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'ai_analytics' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <MapPin className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'hotspots' ? 'font-black' : 'font-semibold'}`}>
-                {t.wo_nav_hotspots}
+              <BrainCircuit className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'ai_analytics' ? 'font-black' : 'font-semibold'}`}>
+                {t.wo_nav_ai_analytics || 'AI Analytics'}
               </span>
             </button>
 
@@ -349,7 +339,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
             <button
               onClick={() => handleTabClick('teams')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'teams' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'teams' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <Users className="w-5 h-5" />
@@ -362,8 +352,8 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
             <button
               onClick={() => setMobileMenuOpen(true)}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                !['overview', 'complaints', 'hotspots', 'teams'].includes(activeTab)
-                  ? 'text-[#095c54]'
+                !['overview', 'complaints', 'ai_analytics', 'teams'].includes(activeTab)
+                  ? 'text-[#095c54] font-black'
                   : 'text-slate-500 hover:text-slate-900'
               }`}
             >
@@ -424,19 +414,22 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               })}
             </nav>
 
-            <div className="p-4 border-t border-[#e2e8f0] bg-slate-50 space-y-2">
-              {onSwitchToCitizenView && (
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onSwitchToCitizenView();
-                  }}
-                  className="w-full py-2 px-3 rounded-xl bg-white text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-                  <span>{t.action_switch_citizen}</span>
-                </button>
-              )}
+            <div className="p-4 border-t border-[#e2e8f0] bg-white space-y-2.5">
+              {/* Identity Box from user screenshot */}
+              <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1]/80 border border-[#99f6e4] shadow-2xs">
+                <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div className="min-w-0 leading-tight">
+                  <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                    {officerName} · Ward Officer
+                  </h4>
+                  <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                    Ward {userWardNum} · {wardArea}
+                  </p>
+                </div>
+              </div>
+
               <button
                 onClick={onLogout}
                 className="w-full py-2.5 px-3 rounded-xl bg-white text-red-600 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5"

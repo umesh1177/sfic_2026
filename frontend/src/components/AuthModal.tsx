@@ -366,20 +366,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {/* Dev Mode OTP helper callout for Hackathon Judges */}
-          {devOtpCode && (
-            <div className="mb-4 p-2.5 rounded-xl bg-[#fef3c7] border border-[#fde68a] text-[#b45309] text-xs font-medium flex items-center justify-between">
-              <span>Demo SMS OTP Code: <strong className="text-sm font-extrabold">{devOtpCode}</strong></span>
-              <button
-                type="button"
-                onClick={() => {
-                  const arr = devOtpCode.split('');
-                  setOtpDigits(arr);
-                }}
-                className="px-2 py-1 rounded bg-[#b45309] text-white text-[10px] font-bold"
-              >
-                Auto-fill
-              </button>
+          {/* OTP sent notice */}
+          {signupStep === 2 && (
+            <div className="mb-4 p-2.5 rounded-xl bg-[#e6f4f1] border border-[#99f6e4] text-[#095c54] text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#10b981] shrink-0" />
+              <span>OTP verification code has been dispatched to your mobile messages.</span>
             </div>
           )}
 

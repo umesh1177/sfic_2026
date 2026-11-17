@@ -84,13 +84,16 @@ export const ReportIssueModal: React.FC<ReportIssueModalProps> = ({
     setLocationError('');
     try {
       const res = await api.validateLocation(lat, lng);
-      if (res.data.is_inside_nmc) {
+      // [CONSTRAINT TEMPORARILY DISABLED] - allow any location
+      // if (res.data.is_inside_nmc) {
         setDetectedWard(res.data);
         setLocationValid(true);
-      }
+      // }
     } catch (err: any) {
-      setLocationValid(false);
-      setLocationError(err.message || t.outside_nmc_error);
+      // [CONSTRAINT TEMPORARILY DISABLED] - don't block on validation error
+      setLocationValid(true);
+      // setLocationValid(false);
+      // setLocationError(err.message || t.outside_nmc_error);
     }
   };
 
@@ -504,10 +507,11 @@ export const ReportIssueModal: React.FC<ReportIssueModalProps> = ({
                     }
                   }}
                   onValidityChange={isValid => {
-                    setLocationValid(isValid);
-                    if (!isValid) {
-                      setLocationError('Selected point is outside Navsari Municipal Corporation bounds');
-                    }
+                    setLocationValid(true); // [CONSTRAINT TEMPORARILY DISABLED]
+                    // setLocationValid(isValid);
+                    // if (!isValid) {
+                    //   setLocationError('Selected point is outside Navsari Municipal Corporation bounds');
+                    // }
                   }}
                 />
               </div>

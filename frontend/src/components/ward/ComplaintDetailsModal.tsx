@@ -1223,19 +1223,59 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Select Sanitation Team <span className="text-red-500">*</span>
                 </label>
-                {teamsList.length > 0 ? (
-                  <select
-                    value={selectedTeamId}
-                    onChange={e => setSelectedTeamId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-slate-50 focus:bg-white focus:border-[#095c54] outline-hidden transition"
-                  >
-                    {teamsList.map(team => (
-                      <option key={team.id} value={team.id}>
-                        {team.team_name} — Leader: {team.temporary_leader_name} ({team.worker_ids?.length || 0} members)
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                {teamsList.length > 0 ? (() => {
+                  const isUrgent = overview?.is_urgent || overview?.priority === 'urgent' || overview?.priority === 'emergency';
+                  const cat = (overview?.category_name || overview?.title || '').toLowerCase();
+
+                  const matchesCategory = (teamWorkType: string) => {
+                    const wt = (teamWorkType || '').toLowerCase();
+                    if (cat.includes('dustbin') || cat.includes('garbage') || cat.includes('dump') || cat.includes('waste')) return wt.includes('waste');
+                    if (cat.includes('drain') || cat.includes('gutter') || cat.includes('sewage')) return wt.includes('drainage');
+                    if (cat.includes('road') || cat.includes('street') || cat.includes('sweeping')) return wt.includes('street');
+                    if (cat.includes('debris') || cat.includes('tree')) return wt.includes('debris');
+                    if (cat.includes('toilet') || cat.includes('urinal')) return wt.includes('toilet');
+                    return wt.includes('general');
+                  };
+
+                  const sorted = [...teamsList].sort((a, b) => {
+                    const countA = a.active_tasks_count || 0;
+                    const countB = b.active_tasks_count || 0;
+                    const matchA = matchesCategory(a.work_type);
+                    const matchB = matchesCategory(b.work_type);
+
+                    if (isUrgent) {
+                      if (countA === 0 && countB > 0) return -1;
+                      if (countB === 0 && countA > 0) return 1;
+                      if (matchA && !matchB) return -1;
+                      if (!matchA && matchB) return 1;
+                      return countA - countB;
+                    } else {
+                      if (matchA && !matchB) return -1;
+                      if (!matchA && matchB) return 1;
+                      return countA - countB;
+                    }
+                  });
+
+                  return (
+                    <select
+                      value={selectedTeamId}
+                      onChange={e => setSelectedTeamId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-slate-50 focus:bg-white focus:border-[#095c54] outline-hidden transition"
+                    >
+                      {sorted.map(team => {
+                        const isMatch = matchesCategory(team.work_type);
+                        const count = team.active_tasks_count || 0;
+                        const availStr = count === 0 ? '✓ 0 Active Tasks (Available)' : `${count} Active Tasks (Busy)`;
+                        const matchPrefix = isMatch ? '🎯 ' : '';
+                        return (
+                          <option key={team.id} value={team.id}>
+                            {matchPrefix}{team.team_name} — {team.work_type || 'General Squad'} — [{availStr}] — Leader: {team.temporary_leader_name} ({team.worker_ids?.length || 0} members)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  );
+                })() : (
                   <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
                     No custom teams found. Default team (Sanitation Unit 4B led by Kanti Solanki) will be auto-assigned.
                   </div>

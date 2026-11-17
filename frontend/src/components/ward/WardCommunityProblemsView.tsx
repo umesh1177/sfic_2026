@@ -421,41 +421,38 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
 
   return (
     <div className="space-y-6">
-      {/* 1. Header Banner */}
-      <div className="bg-gradient-to-r from-[#095c54] to-[#128c7e] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold uppercase tracking-wider backdrop-blur-xs mb-3">
-            <Users className="w-3.5 h-3.5" />
+      {/* 1. Clean Header (Removed bulky banner box) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e2e8f0] pb-5">
+        <div>
+          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
+            <Users className="w-3.5 h-3.5 text-emerald-600" />
             Ward {wardNumber} · Community Action Hub
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0f2925] tracking-tight">
             Add Problem for Community Cleanliness Drive
           </h1>
-          <p className="text-sm sm:text-base text-emerald-100 font-medium leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl font-medium">
             Post civic cleanliness challenges directly to registered Community Heads and RWAs in Navsari.
             Outline the issue, upload evidence photos, and specify what action should be taken so citizen volunteers can organize weekend drives.
           </p>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white text-[#095c54] font-black text-sm shadow-md hover:bg-emerald-50 transition active:scale-95"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              Post New Problem for Community
-            </button>
-            <button
-              onClick={fetchProblems}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 text-white font-bold text-sm hover:bg-white/20 transition backdrop-blur-xs"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
-          </div>
         </div>
 
-        {/* Decorative corner icon */}
-        <Sparkles className="absolute right-6 -bottom-6 w-44 h-44 text-white/10 pointer-events-none" />
+        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#095c54] text-white font-extrabold text-xs sm:text-sm shadow-xs hover:bg-[#074741] transition active:scale-95"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>Post New Problem for Community</span>
+          </button>
+          <button
+            onClick={fetchProblems}
+            className="p-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#e2e8f0] transition shadow-2xs"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Notifications */}

@@ -20,7 +20,8 @@ import {
   PlusCircle,
   HelpCircle,
   ExternalLink,
-  HeartHandshake
+  HeartHandshake,
+  Award
 } from 'lucide-react';
 import { Profile, CommunityDashboardSummary, CommunityActivity, CommunityProblem } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
@@ -40,6 +41,7 @@ import { ApprovalTracking } from './ApprovalTracking.js';
 import { CommunityAnalytics } from './CommunityAnalytics.js';
 import { CommunityNotifications } from './CommunityNotifications.js';
 import { CommunitySettings } from './CommunitySettings.js';
+import { RewardsRecognition } from '../RewardsRecognition.js';
 
 const buildDynamicInitialSummary = (user: Profile): CommunityDashboardSummary => ({
   community: {
@@ -147,6 +149,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
     { id: 'overview', label: t.ch_nav_overview, icon: LayoutDashboard },
     { id: 'activities', label: t.ch_nav_activities, icon: Calendar },
     { id: 'ward_problems', label: t.ch_nav_ward_problems, icon: HeartHandshake },
+    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Award },
     { id: 'community', label: t.ch_nav_community, icon: Building2 },
     { id: 'analytics', label: t.ch_nav_analytics, icon: TrendingUp },
     { id: 'notifications', label: t.ch_nav_notifications, icon: Bell },
@@ -172,23 +175,6 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               </div>
               <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
                 {t.community_head_portal}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Community Verified Identity Card */}
-        <div className="p-4 mx-3 my-3 rounded-2xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200/80">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0">
-              <ShieldCheck className="w-5 h-5 text-emerald-300" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-extrabold text-slate-900 truncate">
-                {dashboardSummary?.community?.community_name || 'Navsari Green Warriors RWA'}
-              </p>
-              <p className="text-[10px] text-teal-800 font-bold truncate">
-                Ward {dashboardSummary?.community?.ward_number || 3} · {dashboardSummary?.community?.locality || 'Navsari'}
               </p>
             </div>
           </div>
@@ -229,15 +215,23 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
           })}
         </nav>
 
-        {/* Sidebar Footer: Switcher & Logout */}
-        <div className="p-4 border-t border-[#f1f5f9] space-y-2">
-          <button
-            onClick={onSwitchToCitizenView}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition border border-slate-200"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-            <span>{t.action_switch_citizen}</span>
-          </button>
+        {/* Sidebar Footer: Identity Box & Logout */}
+        <div className="p-3.5 border-t border-[#f1f5f9] space-y-2.5">
+          {/* Identity Box from user screenshot */}
+          <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1]/80 border border-[#99f6e4] shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <ShieldCheck className="w-5 h-5 text-emerald-300" />
+            </div>
+            <div className="min-w-0 leading-tight">
+              <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                {dashboardSummary?.community?.community_name || 'Navsari Green Warriors RWA'}
+              </h4>
+              <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                Ward {dashboardSummary?.community?.ward_number || user?.ward_number || 3} · {dashboardSummary?.community?.locality || user?.locality || 'Dudhiya Talao Ward 3'}
+              </p>
+            </div>
+          </div>
+
           <button
             onClick={onLogout}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 text-xs font-bold transition border border-slate-100"
@@ -276,10 +270,6 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               </button>
             </div>
 
-            <div className="p-3 mx-3 my-2 rounded-xl bg-teal-50 border border-teal-200 text-xs text-teal-900 font-bold truncate">
-              {dashboardSummary?.community?.community_name || 'Navsari Green Warriors RWA'}
-            </div>
-
             <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
               {navItems.map(item => {
                 const Icon = item.icon;
@@ -312,17 +302,22 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               })}
             </nav>
 
-            <div className="p-4 border-t border-slate-100 space-y-2">
-              <button
-                onClick={() => {
-                  setMobileDrawerOpen(false);
-                  onSwitchToCitizenView();
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-                <span>{t.action_switch_citizen}</span>
-              </button>
+            <div className="p-4 border-t border-slate-100 space-y-2.5">
+              {/* Identity Box from user screenshot */}
+              <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1]/80 border border-[#99f6e4] shadow-2xs">
+                <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div className="min-w-0 leading-tight">
+                  <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                    {dashboardSummary?.community?.community_name || 'Navsari Green Warriors RWA'}
+                  </h4>
+                  <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                    Ward {dashboardSummary?.community?.ward_number || user?.ward_number || 3} · {dashboardSummary?.community?.locality || user?.locality || 'Dudhiya Talao Ward 3'}
+                  </p>
+                </div>
+              </div>
+
               <button
                 onClick={onLogout}
                 className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 text-rose-600 text-xs font-bold hover:bg-rose-50 transition"
@@ -469,6 +464,11 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             />
           )}
 
+          {/* Tab: Posts & Cleanliness Spotlights */}
+          {activeTab === 'posts' && (
+            <RewardsRecognition lang={lang} />
+          )}
+
           {/* Tab 4: Reports & Analytics */}
           {activeTab === 'analytics' && (
             <CommunityAnalytics summary={dashboardSummary} />
@@ -518,38 +518,25 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             <button
               onClick={() => setActiveTab('ward_problems')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'ward_problems' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'ward_problems' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <HeartHandshake className="w-5 h-5" />
               <span className={`text-[10px] mt-0.5 ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
-                {t.ch_nav_ward_problems.split(' ')[0]}
+                Problems
               </span>
             </button>
 
-            {/* 4. Community Profile */}
+            {/* 4. Posts */}
             <button
-              onClick={() => setActiveTab('community')}
+              onClick={() => setActiveTab('posts')}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'community' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                activeTab === 'posts' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Building2 className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'community' ? 'font-black' : 'font-semibold'}`}>
-                {t.ch_nav_community}
-              </span>
-            </button>
-
-            {/* 4. Analytics */}
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'analytics' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <TrendingUp className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'analytics' ? 'font-black' : 'font-semibold'}`}>
-                {t.ch_nav_analytics}
+              <Award className="w-5 h-5" />
+              <span className={`text-[10px] mt-0.5 ${activeTab === 'posts' ? 'font-black' : 'font-semibold'}`}>
+                Posts
               </span>
             </button>
 
@@ -557,7 +544,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             <button
               onClick={() => setMobileDrawerOpen(true)}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                ['notifications', 'settings'].includes(activeTab) ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                !['overview', 'activities', 'ward_problems', 'posts'].includes(activeTab) ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <Menu className="w-5 h-5" />

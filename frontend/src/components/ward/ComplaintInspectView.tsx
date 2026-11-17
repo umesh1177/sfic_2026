@@ -110,7 +110,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
         setPostTitle(`Cleanliness Restored at ${res.data.overview.location?.landmark || res.data.overview.location?.address || `Ward ${wardNum}`}`);
         setPostDescription(`Ward ${wardNum} (${wardNm}) Sanitation Squad successfully cleared accumulated waste, disinfected the perimeter, and restored civic hygiene following complaint ${res.data.overview.complaint_number}.`);
       }
-      setIsPublished(!!(res.data?.overview as any)?.is_published_to_community);
+      setIsPublished(!!(res.data?.overview as any)?.is_published_to_community || res.data?.overview?.status === 'resolved');
       const bPhoto = res.data?.work_progress_evidence?.before_photo_url || res.data?.citizen_report?.photo_url || res.data?.overview?.image_url || '';
       const aPhoto = res.data?.work_progress_evidence?.after_photo_url || res.data?.overview?.resolved_image_url || '';
       setBeforePhoto(bPhoto);
@@ -164,8 +164,12 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
       });
 
       setIsPublished(true);
+      if (details?.overview) {
+        details.overview.status = 'resolved';
+        details.overview.is_published_to_community = true;
+      }
       setShowPublishModal(false);
-      setActionSuccess('Work Done successfully sent to Citizen and posted to Community Wall!');
+      setActionSuccess('Work Done successfully sent to Citizen and posted to Posts Feed! Complaint resolved.');
       confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
       if (onComplaintUpdated) onComplaintUpdated();
     } catch (err: any) {
@@ -262,10 +266,13 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                     <span>Send Work Done to Citizen</span>
                   </button>
                 ) : (
-                  <span className="px-3 py-1.5 rounded-xl bg-purple-50 text-purple-900 border border-purple-200 text-xs font-extrabold flex items-center gap-1.5">
+                  <button
+                    disabled
+                    className="px-4 py-2 rounded-xl bg-slate-100 text-emerald-800 border border-emerald-300 text-xs font-black flex items-center gap-1.5 opacity-90 cursor-not-allowed shadow-2xs"
+                  >
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Work Done Sent to Citizen & Feeds</span>
-                  </span>
+                    <span>Work Done Sent & Resolved ✓</span>
+                  </button>
                 )}
               </div>
             )}

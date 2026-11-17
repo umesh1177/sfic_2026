@@ -17,7 +17,6 @@ import {
   LogOut,
   Crown,
   Globe,
-  ArrowRightLeft,
   ChevronRight,
   ShieldCheck,
   CheckCircle2,
@@ -152,26 +151,6 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
           </div>
         </div>
 
-        {/* Worker Verified Identity Card */}
-        <div className="p-4 mx-3 my-3 rounded-2xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200/80">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
-              {workerProfile?.full_name ? workerProfile.full_name.slice(0, 2).toUpperCase() : 'KW'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-extrabold text-[#0f2925] truncate">
-                {workerProfile?.full_name || 'Kanti Solanki'}
-              </p>
-              <p className="text-[10px] text-[#047857] font-bold truncate">
-                <Wrench className="mr-1 inline h-3 w-3" />
-                {workerProfile?.designation_name || 'Drainage Worker'}
-              </p>
-              <span className="text-[9px] font-mono text-slate-500">
-                {workerProfile?.worker_code || 'NMC-WRK-001'} · Ward 3
-              </span>
-            </div>
-          </div>
-        </div>
 
         {/* 5 Navigation Tabs List */}
         <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
@@ -207,15 +186,22 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
           })}
         </nav>
 
-        {/* Sidebar Footer: Switcher & Logout */}
-        <div className="p-4 border-t border-[#f1f5f9] space-y-2">
-          <button
-            onClick={onSwitchToCitizenView}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition border border-slate-200"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-            <span>{t.action_switch_citizen}</span>
-          </button>
+        {/* Sidebar Footer: Identity Box & Logout */}
+        <div className="p-3.5 border-t border-[#f1f5f9] space-y-2.5">
+          <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4] shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <ShieldCheck className="w-5 h-5 text-emerald-300" />
+            </div>
+            <div className="min-w-0 leading-tight">
+              <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
+              </h4>
+              <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                {workerProfile?.designation_name || 'Sanitation Worker'} · Ward {workerProfile?.ward_number || 3}
+              </p>
+            </div>
+          </div>
+
           <button
             onClick={onLogout}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 text-xs font-bold transition border border-slate-100"
@@ -447,13 +433,6 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 </button>
               </div>
 
-              {/* Worker Mini Profile */}
-              <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
-                <p className="font-extrabold text-sm text-[#0f2925]">{workerProfile?.full_name || 'Kanti Solanki'}</p>
-                <p className="text-xs text-[#047857] font-semibold">{workerProfile?.designation_name || 'Drainage Worker'}</p>
-                <p className="text-[11px] text-[#64748b] font-mono mt-0.5">{workerProfile?.worker_code || 'NMC-WRK-001'}</p>
-              </div>
-
               <div className="space-y-1">
                 {navItems.map(item => {
                   const Icon = item.icon;
@@ -485,14 +464,21 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[#e2e8f0] space-y-2">
-              <button
-                onClick={onSwitchToCitizenView}
-                className="w-full py-2.5 bg-[#f8faf9] hover:bg-[#e6f4f1] border border-[#e2e8f0] text-[#0f2925] text-xs font-extrabold rounded-2xl flex items-center justify-center gap-1.5 transition"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 text-[#095c54]" />
-                <span>{t.action_switch_citizen}</span>
-              </button>
+            <div className="pt-4 border-t border-[#e2e8f0] space-y-2.5">
+              <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4]">
+                <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div className="min-w-0 leading-tight">
+                  <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
+                    {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
+                  </h4>
+                  <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
+                    {workerProfile?.designation_name || 'Sanitation Worker'} · Ward {workerProfile?.ward_number || 3}
+                  </p>
+                </div>
+              </div>
+
               <button
                 onClick={onLogout}
                 className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold rounded-2xl flex items-center justify-center gap-1.5 transition"

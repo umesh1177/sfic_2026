@@ -189,6 +189,19 @@ export const WardCommunityActivities: React.FC = () => {
     }
   };
 
+  if (inspectingActivity) {
+    return (
+      <DriveInspectView
+        activity={inspectingActivity}
+        onBack={() => setInspectingActivity(null)}
+        onActionCompleted={() => {
+          setInspectingActivity(null);
+          fetchData();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Header */}
