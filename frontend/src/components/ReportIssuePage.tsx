@@ -121,11 +121,20 @@ export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
     is_active: true
   },
   {
+    id: 'cat-11',
+    category_name: 'Dead Animal Disposal',
+    category_name_gu: 'મૃત પ્રાણી / પશુ નિકાલ',
+    category_name_hi: 'मृत पशु निपटान',
+    description: 'Immediate removal and safe sanitary disposal of dead animals, pets, cattle, or carcasses',
+    icon: 'AlertTriangle',
+    is_active: true
+  },
+  {
     id: 'cat-06',
     category_name: 'Other Civic Issues',
     category_name_gu: 'અન્ય નાગરિક સમસ્યાઓ',
     category_name_hi: 'अन्य स्वच्छता समस्याएं',
-    description: 'Dead animal disposal, construction debris, or public toilet issues',
+    description: 'Construction debris, public toilet issues, or general civic sanitation',
     icon: 'HelpCircle',
     is_active: true
   }
@@ -134,6 +143,33 @@ export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
 // Client-side instant keyword detector for immediate responsive category assignment
 const detectCategoryFromText = (text: string, filename: string): string => {
   const combined = `${text} ${filename}`.toLowerCase();
+  if (
+    combined.includes('dead') ||
+    combined.includes('animal') ||
+    combined.includes('carcass') ||
+    combined.includes('corpse') ||
+    combined.includes('stray') ||
+    combined.includes('cattle') ||
+    combined.includes('dog') ||
+    combined.includes('cat') ||
+    combined.includes('cow') ||
+    combined.includes('મૃત') ||
+    combined.includes('પશુ') ||
+    combined.includes('પ્રાણી') ||
+    combined.includes('શબ') ||
+    combined.includes('જાનવર') ||
+    combined.includes('કૂતરું') ||
+    combined.includes('ગાય') ||
+    combined.includes('બિલાડી') ||
+    combined.includes('मृत') ||
+    combined.includes('पशु') ||
+    combined.includes('जानवर') ||
+    combined.includes('शव') ||
+    combined.includes('कुत्ता') ||
+    combined.includes('गाय')
+  ) {
+    return 'cat-11'; // Dead Animal Disposal
+  }
   if (
     combined.includes('pothole') ||
     combined.includes('crater') ||

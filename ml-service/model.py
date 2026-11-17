@@ -15,6 +15,7 @@ CATEGORIES: List[str] = [
     "Overflowing Dustbin",
     "Roadside Garbage",
     "Drainage / Waste Accumulation",
+    "Dead Animal Disposal",
     "Other Cleanliness Issues"
 ]
 
@@ -24,11 +25,18 @@ CATEGORY_GUJARATI: Dict[str, str] = {
     "Overflowing Dustbin": "ઉભરાતી કચરાપેટી",
     "Roadside Garbage": "રસ્તા કિનારે કચરો",
     "Drainage / Waste Accumulation": "ગટર / કચરો જમા થવો",
+    "Dead Animal Disposal": "મૃત પ્રાણી / પશુ નિકાલ",
     "Other Cleanliness Issues": "અન્ય સ્વચ્છતા સમસ્યાઓ"
 }
 
 # Multilingual keywords for semantic text reinforcement
 KEYWORDS = {
+    "Dead Animal Disposal": [
+        "dead animal", "animal dead", "dead dog", "dead cat", "dead cow", "dead bird", "carcass", "corpse",
+        "animal", "cattle", "stray", "dead",
+        "મૃત", "પશુ", "પ્રાણી", "કૂતરું", "ગાય", "બિલાડી", "પક્ષી", "શબ", "જાનવર",
+        "मृत", "पशु", "जानवर", "कुत्ता", "गाय", "बिल्ली", "शव"
+    ],
     "Drainage / Waste Accumulation": [
         "drain", "gutter", "drainage", "sewer", "sewage", "stagnant", "choked", "overflow", "water",
         "ગટર", "નાળું", "ગંદુ પાણી", "ભરાઈ", "પાણી",

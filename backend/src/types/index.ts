@@ -80,6 +80,9 @@ export interface ComplaintCategory {
   is_active: boolean;
   max_approval_days?: number; // SLA: Max days to approve before officer is flagged
   max_work_days?: number;     // SLA: Max days to resolve problem
+  max_approval_hours?: number; // SLA in hours for emergency civic issues
+  max_work_hours?: number;     // SLA in hours for rapid resolution
+  sla_unit?: 'hours' | 'days';
   created_at?: string;
 }
 
@@ -177,6 +180,10 @@ export interface Complaint {
   upvotes_count?: number;
   updated_at?: string;
   resolved_image_url?: string;
+  sla_deadline?: string;
+  is_escalated?: boolean;
+  escalation_reason?: string;
+  target_hours?: number;
 }
 
 export interface CleanlinessDrive {

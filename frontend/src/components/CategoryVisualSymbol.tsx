@@ -34,6 +34,7 @@ export const CategoryVisualSymbol: React.FC<CategoryVisualSymbolProps> = ({
   const isTree = normId === 'cat-08' || normName.includes('tree') || normName.includes('fallen') || normName.includes('ઝાડ') || normName.includes('વૃક્ષ') || normName.includes('पेड़');
   const isRailing = normId === 'cat-09' || normName.includes('railing') || normName.includes('parapet') || normName.includes('bridge') || normName.includes('રેલિંગ');
   const isOvertopped = normId === 'cat-10' || normName.includes('overtop') || normName.includes('flood') || normName.includes('waterlog') || normName.includes('પાણી ભરાવું');
+  const isDeadAnimal = normId === 'cat-11' || normName.includes('animal') || normName.includes('dead') || normName.includes('carcass') || normName.includes('મૃત') || normName.includes('પશુ') || normName.includes('શબ') || normName.includes('शव');
 
   // Container dimensions
   const dimensions = {
@@ -293,7 +294,29 @@ export const CategoryVisualSymbol: React.FC<CategoryVisualSymbolProps> = ({
       );
     }
 
-    // 10. Default / Other Cleanliness Issues (અન્ય સમસ્યાઓ)
+    // 10. Dead Animal Disposal (મૃત પ્રાણી / પશુ નિકાલ)
+    if (isDeadAnimal) {
+      return (
+        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-xs" fill="none">
+          <circle cx="50" cy="50" r="44" fill="#fef2f2" opacity="0.8" />
+          {/* Medical / Hygiene Sanitary Ring */}
+          <circle cx="50" cy="50" r="38" stroke="#dc2626" strokeWidth="2.5" strokeDasharray="4 2" />
+          {/* Health Shield */}
+          <path d="M50 20 L72 30 C72 54 62 70 50 78 C38 70 28 54 28 30 Z" fill="#fee2e2" stroke="#b91c1c" strokeWidth="2" />
+          {/* Sanitary Cross */}
+          <rect x="46" y="32" width="8" height="26" rx="2" fill="#dc2626" />
+          <rect x="37" y="41" width="26" height="8" rx="2" fill="#dc2626" />
+          {/* Paw / Animal Silhouette */}
+          <ellipse cx="50" cy="68" rx="7" ry="5" fill="#475569" />
+          <circle cx="43" cy="62" r="2.5" fill="#475569" />
+          <circle cx="47" cy="59" r="2.5" fill="#475569" />
+          <circle cx="53" cy="59" r="2.5" fill="#475569" />
+          <circle cx="57" cy="62" r="2.5" fill="#475569" />
+        </svg>
+      );
+    }
+
+    // 11. Default / Other Cleanliness Issues (અન્ય સમસ્યાઓ)
     return (
       <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-xs" fill="none">
         <circle cx="50" cy="50" r="44" fill="#f0fdf4" opacity="0.8" />

@@ -54,6 +54,9 @@ export interface ComplaintCategory {
   is_active: boolean;
   max_approval_days?: number;
   max_work_days?: number;
+  max_approval_hours?: number;
+  max_work_hours?: number;
+  sla_unit?: 'hours' | 'days';
   created_at?: string;
 }
 
@@ -143,6 +146,11 @@ export interface Complaint {
   feedback?: ComplaintFeedback;
   followers_count: number;
   is_following?: boolean;
+  is_urgent?: boolean;
+  sla_deadline?: string;
+  is_escalated?: boolean;
+  escalation_reason?: string;
+  target_hours?: number;
 }
 
 export interface CleanlinessDrive {

@@ -26,6 +26,8 @@ interface DesktopSidebarProps {
   lang: Language;
   setLang: (lang: Language) => void;
   unreadCount?: number;
+  unreadNotificationsCount?: number;
+  pendingComplaintsCount?: number;
 }
 
 export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
@@ -35,16 +37,21 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   onLogout,
   lang,
   setLang,
-  unreadCount = 0
+  unreadCount = 0,
+  unreadNotificationsCount,
+  pendingComplaintsCount
 }) => {
   const t = translations[lang];
 
+  const actualNotificationsBadge = unreadNotificationsCount !== undefined ? unreadNotificationsCount : unreadCount;
+  const actualComplaintsBadge = pendingComplaintsCount !== undefined ? pendingComplaintsCount : unreadCount;
+
   const navItems = [
     { id: 'home', label: t.nav_home, icon: Home },
-    { id: 'complaints', label: t.nav_complaints, icon: FileText, badge: unreadCount > 0 ? unreadCount : undefined },
+    { id: 'complaints', label: t.nav_complaints, icon: FileText, badge: actualComplaintsBadge > 0 ? actualComplaintsBadge : undefined },
     { id: 'drives', label: t.nav_drives, icon: Users },
     { id: 'rewards', label: t.nav_rewards, icon: Award },
-    { id: 'notifications', label: t.nav_notifications, icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },
+    { id: 'notifications', label: t.nav_notifications, icon: Bell, badge: actualNotificationsBadge > 0 ? actualNotificationsBadge : undefined },
     { id: 'support', label: t.nav_support, icon: Headphones },
     { id: 'profile', label: t.nav_profile, icon: User }
   ];

@@ -663,7 +663,10 @@ export class AdminController {
         description,
         icon,
         max_approval_days,
-        max_work_days
+        max_work_days,
+        max_approval_hours,
+        max_work_hours,
+        sla_unit
       } = req.body;
 
       if (!category_name || !description) {
@@ -680,8 +683,11 @@ export class AdminController {
         description: description.trim(),
         icon: icon?.trim() || 'HelpCircle',
         is_active: true,
-        max_approval_days: Math.max(1, Number(max_approval_days) || 2),
-        max_work_days: Math.max(1, Number(max_work_days) || 5),
+        sla_unit: sla_unit === 'hours' ? 'hours' : 'days',
+        max_approval_hours: max_approval_hours ? Number(max_approval_hours) : (sla_unit === 'hours' ? 2 : undefined),
+        max_work_hours: max_work_hours ? Number(max_work_hours) : (sla_unit === 'hours' ? 6 : undefined),
+        max_approval_days: Math.max(1, Number(max_approval_days) || (max_approval_hours ? Math.max(1, Math.ceil(Number(max_approval_hours) / 24)) : 2)),
+        max_work_days: Math.max(1, Number(max_work_days) || (max_work_hours ? Math.max(1, Math.ceil(Number(max_work_hours) / 24)) : 5)),
         created_at: new Date().toISOString()
       };
 
@@ -689,7 +695,7 @@ export class AdminController {
 
       res.status(201).json({
         success: true,
-        message: `Complaint Category "${newCategory.category_name}" added successfully with SLA: ${newCategory.max_approval_days} days approval / ${newCategory.max_work_days} days resolution.`,
+        message: `Complaint Category "${newCategory.category_name}" added successfully with SLA: ${newCategory.sla_unit === 'hours' ? `${newCategory.max_work_hours} hours rapid resolution` : `${newCategory.max_work_days} days resolution`}.`,
         data: newCategory
       });
     } catch (err: any) {
@@ -711,6 +717,9 @@ export class AdminController {
         icon,
         max_approval_days,
         max_work_days,
+        max_approval_hours,
+        max_work_hours,
+        sla_unit,
         is_active
       } = req.body;
 
@@ -725,6 +734,9 @@ export class AdminController {
       if (category_name_hi) category.category_name_hi = category_name_hi.trim();
       if (description) category.description = description.trim();
       if (icon) category.icon = icon.trim();
+      if (sla_unit !== undefined) category.sla_unit = sla_unit;
+      if (max_approval_hours !== undefined) category.max_approval_hours = Number(max_approval_hours);
+      if (max_work_hours !== undefined) category.max_work_hours = Number(max_work_hours);
       if (max_approval_days !== undefined) category.max_approval_days = Math.max(1, Number(max_approval_days));
       if (max_work_days !== undefined) category.max_work_days = Math.max(1, Number(max_work_days));
       if (is_active !== undefined) category.is_active = Boolean(is_active);

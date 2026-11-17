@@ -148,7 +148,39 @@ export class AIService {
       { category_name: 'Roadside Garbage', confidence: 0.02 }
     ];
 
-    if (textCorpus.includes('drain') || textCorpus.includes('gutter') || textCorpus.includes('water') || textCorpus.includes('ગટર') || textCorpus.includes('નાલી')) {
+    if (
+      textCorpus.includes('dead') ||
+      textCorpus.includes('animal') ||
+      textCorpus.includes('carcass') ||
+      textCorpus.includes('corpse') ||
+      textCorpus.includes('stray') ||
+      textCorpus.includes('dog') ||
+      textCorpus.includes('cat') ||
+      textCorpus.includes('cow') ||
+      textCorpus.includes('cattle') ||
+      textCorpus.includes('bird') ||
+      textCorpus.includes('મૃત') ||
+      textCorpus.includes('પશુ') ||
+      textCorpus.includes('પ્રાણી') ||
+      textCorpus.includes('શબ') ||
+      textCorpus.includes('જાનવર') ||
+      textCorpus.includes('કૂતરું') ||
+      textCorpus.includes('ગાય') ||
+      textCorpus.includes('બિલાડી') ||
+      textCorpus.includes('मृत') ||
+      textCorpus.includes('पशु') ||
+      textCorpus.includes('जानवर') ||
+      textCorpus.includes('शव') ||
+      textCorpus.includes('कुत्ता') ||
+      textCorpus.includes('गाय')
+    ) {
+      category = 'Dead Animal Disposal';
+      confidence = 0.97;
+      alternatives = [
+        { category_name: 'Other Cleanliness Issues', confidence: 0.02 },
+        { category_name: 'Roadside Garbage', confidence: 0.01 }
+      ];
+    } else if (textCorpus.includes('drain') || textCorpus.includes('gutter') || textCorpus.includes('water') || textCorpus.includes('ગટર') || textCorpus.includes('નાલી')) {
       category = 'Drainage / Waste Accumulation';
       confidence = 0.96;
       alternatives = [

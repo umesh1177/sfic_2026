@@ -239,7 +239,8 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         lang={lang}
         setLang={setLang}
-        unreadCount={dashboardData?.stats?.pending || 0}
+        unreadNotificationsCount={notifications.filter(n => !n.is_read).length}
+        pendingComplaintsCount={dashboardData?.stats?.pending || 0}
       />
 
       {/* Main Content Area */}
@@ -331,6 +332,12 @@ export const App: React.FC = () => {
               onBack={() => setCurrentTab('home')}
               onNavigateTab={tab => setCurrentTab(tab)}
               lang={lang}
+              onNotificationRead={id => {
+                setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+              }}
+              onNotificationReadAll={() => {
+                setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+              }}
             />
           )}
 

@@ -45,10 +45,45 @@ export class ComplaintsController {
         image_base64
       );
 
-      // Match with category ID from database
-      const matchedCategory = store.categories.find(
-        c => c.category_name.toLowerCase() === classification.predicted_category_name.toLowerCase()
+      // Intelligent matching with category ID from database / dynamic categories
+      const predName = (classification.predicted_category_name || '').toLowerCase();
+      const textCorpus = `${file_name || ''} ${description || ''}`.toLowerCase();
+      
+      let matchedCategory = store.categories.find(
+        c => c.category_name.toLowerCase() === predName
       );
+
+      // Special handling for Dead Animal / Animal dead category variations created by NMC Admin
+      if (!matchedCategory && (
+        predName.includes('animal') || predName.includes('dead') ||
+        textCorpus.includes('dead') || textCorpus.includes('animal') || textCorpus.includes('carcass') ||
+        textCorpus.includes('મૃત') || textCorpus.includes('પશુ') || textCorpus.includes('मृत') || textCorpus.includes('पशु')
+      )) {
+        matchedCategory = store.categories.find(c => {
+          const name = c.category_name.toLowerCase();
+          const nameGu = (c.category_name_gu || '').toLowerCase();
+          const nameHi = (c.category_name_hi || '').toLowerCase();
+          return (
+            c.id === 'cat-11' ||
+            name.includes('animal') || name.includes('dead') || name.includes('carcass') ||
+            nameGu.includes('મૃત') || nameGu.includes('પશુ') ||
+            nameHi.includes('मृत') || nameHi.includes('पशु')
+          );
+        });
+      }
+
+      // Fallback substring matching for other dynamic categories
+      if (!matchedCategory) {
+        matchedCategory = store.categories.find(c => {
+          const name = c.category_name.toLowerCase();
+          return predName.includes(name) || name.includes(predName);
+        });
+      }
+
+      // If matched category was found for Dead Animal, ensure predicted name reflects it cleanly
+      if (matchedCategory && (matchedCategory.id === 'cat-11' || matchedCategory.category_name.toLowerCase().includes('animal'))) {
+        classification.predicted_category_name = matchedCategory.category_name;
+      }
 
       res.status(200).json({
         success: true,
@@ -224,6 +259,20 @@ export class ComplaintsController {
       const serial = Math.floor(10000 + Math.random() * 90000);
       const complaintNumber = `NMC-2026-${serial}`;
 
+      // Determine SLA deadline and priority (Hours vs Days support)
+      const isEmergencyCat = Boolean(
+        category.max_work_hours && category.max_work_hours <= 12 ||
+        category.id === 'cat-11' ||
+        category.category_name.toLowerCase().includes('animal') ||
+        category.category_name.toLowerCase().includes('overtop') ||
+        category.category_name.toLowerCase().includes('flood') ||
+        category.category_name.toLowerCase().includes('railing')
+      );
+      const isUrgent = Boolean(req.body.is_urgent) || isEmergencyCat;
+      const targetHours = category.max_work_hours || (category.max_work_days ? category.max_work_days * 24 : 48);
+      const slaDeadline = new Date(Date.now() + targetHours * 3600 * 1000).toISOString();
+      const priority = isUrgent ? 'urgent' : (targetHours <= 24 ? 'high' : (req.body.priority || 'medium'));
+
       const newComplaint = await DbRepository.createComplaint({
         complaint_number: complaintNumber,
         citizen_id: req.user.id,
@@ -243,8 +292,11 @@ export class ComplaintsController {
         ward_name: ward.ward_name,
         assigned_officer_name: ward.ward_officer_name || 'Ramesh Patel (Chief Sanitary Inspector)',
         status: 'submitted',
-        priority: 'medium',
-        is_urgent: false,
+        priority: priority,
+        is_urgent: isUrgent,
+        sla_deadline: slaDeadline,
+        target_hours: targetHours,
+        is_escalated: false,
         confidence_score: confidence_score ? Number(confidence_score) : 0.95,
         ai_model_name: ai_model_name || 'NavsariWasteClassifier-PyTorch-ResNet50',
         ai_model_version: ai_model_version || 'v1.3.0'

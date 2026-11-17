@@ -824,7 +824,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                   </div>
                   <div className="rounded-2xl overflow-hidden aspect-video bg-slate-100 border border-slate-200">
                     <img
-                      src={work_progress_evidence.before_photo}
+                      src={work_progress_evidence.before_photo || complaint?.image_url}
                       alt="Before Work"
                       className="w-full h-full object-cover"
                     />
@@ -846,9 +846,9 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
                     </span>
                   </div>
                   <div className="rounded-2xl overflow-hidden aspect-video bg-slate-100 border border-slate-200">
-                    {work_progress_evidence.after_photo ? (
+                    {(work_progress_evidence.after_photo || complaint?.resolved_image_url || (complaint as any)?.resolution_image_url) ? (
                       <img
-                        src={work_progress_evidence.after_photo}
+                        src={work_progress_evidence.after_photo || complaint?.resolved_image_url || (complaint as any)?.resolution_image_url}
                         alt="After Work"
                         className="w-full h-full object-cover"
                       />

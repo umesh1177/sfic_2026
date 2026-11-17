@@ -79,6 +79,9 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
   const [addNameHi, setAddNameHi] = useState<string>('');
   const [addDesc, setAddDesc] = useState<string>('');
   const [addIcon, setAddIcon] = useState<string>('Trash2');
+  const [addSlaUnit, setAddSlaUnit] = useState<'hours' | 'days'>('hours');
+  const [addApprovalHours, setAddApprovalHours] = useState<number>(2);
+  const [addWorkHours, setAddWorkHours] = useState<number>(4);
   const [addApprovalDays, setAddApprovalDays] = useState<number>(2);
   const [addWorkDays, setAddWorkDays] = useState<number>(5);
   const [savingAdd, setSavingAdd] = useState<boolean>(false);
@@ -89,6 +92,9 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
   const [editNameHi, setEditNameHi] = useState<string>('');
   const [editDesc, setEditDesc] = useState<string>('');
   const [editIcon, setEditIcon] = useState<string>('Trash2');
+  const [editSlaUnit, setEditSlaUnit] = useState<'hours' | 'days'>('hours');
+  const [editApprovalHours, setEditApprovalHours] = useState<number>(2);
+  const [editWorkHours, setEditWorkHours] = useState<number>(4);
   const [editApprovalDays, setEditApprovalDays] = useState<number>(2);
   const [editWorkDays, setEditWorkDays] = useState<number>(5);
   const [editIsActive, setEditIsActive] = useState<boolean>(true);
@@ -130,6 +136,9 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
     setEditNameHi(cat.category_name_hi || '');
     setEditDesc(cat.description || '');
     setEditIcon(cat.icon || 'Trash2');
+    setEditSlaUnit(cat.sla_unit || (cat.max_work_hours ? 'hours' : 'days'));
+    setEditApprovalHours(cat.max_approval_hours || 2);
+    setEditWorkHours(cat.max_work_hours || 4);
     setEditApprovalDays(cat.max_approval_days || 2);
     setEditWorkDays(cat.max_work_days || 5);
     setEditIsActive(cat.is_active !== false);
@@ -152,8 +161,11 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         category_name_hi: addNameHi.trim() || addName.trim(),
         description: addDesc.trim(),
         icon: addIcon,
-        max_approval_days: Number(addApprovalDays) || 2,
-        max_work_days: Number(addWorkDays) || 5
+        sla_unit: addSlaUnit,
+        max_approval_hours: addSlaUnit === 'hours' ? Number(addApprovalHours) : undefined,
+        max_work_hours: addSlaUnit === 'hours' ? Number(addWorkHours) : undefined,
+        max_approval_days: addSlaUnit === 'days' ? Number(addApprovalDays) : Math.max(1, Math.ceil(Number(addApprovalHours) / 24)),
+        max_work_days: addSlaUnit === 'days' ? Number(addWorkDays) : Math.max(1, Math.ceil(Number(addWorkHours) / 24))
       });
 
       if (res.success) {
@@ -164,6 +176,8 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         setAddNameGu('');
         setAddNameHi('');
         setAddDesc('');
+        setAddApprovalHours(2);
+        setAddWorkHours(4);
         setAddApprovalDays(2);
         setAddWorkDays(5);
         fetchCategories();
@@ -188,8 +202,11 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         category_name_hi: editNameHi.trim(),
         description: editDesc.trim(),
         icon: editIcon,
-        max_approval_days: Number(editApprovalDays),
-        max_work_days: Number(editWorkDays),
+        sla_unit: editSlaUnit,
+        max_approval_hours: editSlaUnit === 'hours' ? Number(editApprovalHours) : undefined,
+        max_work_hours: editSlaUnit === 'hours' ? Number(editWorkHours) : undefined,
+        max_approval_days: editSlaUnit === 'days' ? Number(editApprovalDays) : Math.max(1, Math.ceil(Number(editApprovalHours) / 24)),
+        max_work_days: editSlaUnit === 'days' ? Number(editWorkDays) : Math.max(1, Math.ceil(Number(editWorkHours) / 24)),
         is_active: editIsActive
       });
 
@@ -348,22 +365,31 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
                 </p>
               </div>
 
-              {/* SLA Badges Section as requested */}
+              {/* SLA Badges Section with Hours & Days support */}
               <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center justify-between text-xs gap-1">
                   <div className="flex items-center gap-1.5 text-amber-800 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[11px] font-bold">
                     <Clock className="w-3 h-3 text-amber-600" />
-                    <span>Max Approval: <strong className="font-black">{cat.max_approval_days || 2} Days</strong></span>
+                    <span>Max Approval: <strong className="font-black">{cat.max_approval_hours ? `${cat.max_approval_hours} Hours` : `${cat.max_approval_days || 2} Days`}</strong></span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2 py-1 rounded-xl border border-emerald-200 text-[11px] font-bold">
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-xl border text-[11px] font-bold ${
+                    cat.max_work_hours
+                      ? 'text-rose-800 bg-rose-50 border-rose-200'
+                      : 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                  }`}>
                     <CalendarCheck className="w-3 h-3 text-emerald-600" />
-                    <span>Max Work: <strong className="font-black">{cat.max_work_days || 5} Days</strong></span>
+                    <span>Max Work: <strong className="font-black">{cat.max_work_hours ? `${cat.max_work_hours} Hours ⚡` : `${cat.max_work_days || 5} Days`}</strong></span>
                   </div>
                 </div>
 
                 <div className="text-[10px] text-slate-400 font-semibold flex items-center justify-between">
                   <span>{cat.active_complaints_count || 0} Open Complaints</span>
+                  {cat.max_work_hours && (
+                    <span className="text-rose-600 font-extrabold uppercase tracking-wider text-[9px] bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-200">
+                      Rapid Hours SLA
+                    </span>
+                  )}
                   {cat.is_active === false && <span className="text-red-500 font-bold">Inactive</span>}
                 </div>
               </div>
@@ -410,13 +436,17 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
 
                     <td className="py-3.5 px-4 text-center">
                       <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-black text-[11px]">
-                        {cat.max_approval_days || 2} Days
+                        {cat.max_approval_hours ? `${cat.max_approval_hours} Hours` : `${cat.max_approval_days || 2} Days`}
                       </span>
                     </td>
 
                     <td className="py-3.5 px-4 text-center">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-black text-[11px]">
-                        {cat.max_work_days || 5} Days
+                      <span className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
+                        cat.max_work_hours
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        {cat.max_work_hours ? `${cat.max_work_hours} Hours ⚡` : `${cat.max_work_days || 5} Days`}
                       </span>
                     </td>
 
@@ -540,50 +570,117 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
                 </div>
               </div>
 
-              {/* SLA Configuration Inputs as requested */}
+              {/* SLA Configuration Inputs with Hours vs Days toggle */}
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                <div className="text-xs font-black text-[#0f2925] flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#095c54]" />
-                  <span>SLA Rules & Deadline Configuration</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Max Approval Days (SLA) *
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      required
-                      value={addApprovalDays}
-                      onChange={e => setAddApprovalDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
-                    />
-                    <p className="text-[10px] text-amber-700 font-semibold mt-1">
-                      If deadline is missed, the Ward Officer is flagged to Admin.
-                    </p>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black text-[#0f2925] flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>SLA Rules & Action Timeframe</span>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Max Work Days (Resolution) *
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={60}
-                      required
-                      value={addWorkDays}
-                      onChange={e => setAddWorkDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
-                    />
-                    <p className="text-[10px] text-slate-500 font-medium mt-1">
-                      Maximum allowed days for workforce to fully resolve this problem.
-                    </p>
+                  {/* Unit Selector Toggle */}
+                  <div className="flex items-center p-0.5 rounded-xl bg-white border border-slate-200 text-[10px] font-black">
+                    <button
+                      type="button"
+                      onClick={() => setAddSlaUnit('hours')}
+                      className={`px-2.5 py-1 rounded-lg transition ${
+                        addSlaUnit === 'hours'
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Action in Hours ⚡
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddSlaUnit('days')}
+                      className={`px-2.5 py-1 rounded-lg transition ${
+                        addSlaUnit === 'days'
+                          ? 'bg-[#095c54] text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Action in Days
+                    </button>
                   </div>
                 </div>
+
+                {addSlaUnit === 'hours' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Max Approval Hours (SLA) *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={48}
+                        required
+                        value={addApprovalHours}
+                        onChange={e => setAddApprovalHours(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
+                      />
+                      <p className="text-[10px] text-amber-700 font-semibold mt-1">
+                        Ward Officer must review within {addApprovalHours} hours or complaint is flagged.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Max Resolution Hours (SLA) *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={168}
+                        required
+                        value={addWorkHours}
+                        onChange={e => setAddWorkHours(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-rose-300 rounded-xl text-xs font-black text-rose-800 focus:outline-none focus:border-rose-500"
+                      />
+                      <p className="text-[10px] text-rose-700 font-bold mt-1">
+                        ⚡ Rapid SLA: Auto-escalates to DC if not resolved in {addWorkHours} hours.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Max Approval Days (SLA) *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        required
+                        value={addApprovalDays}
+                        onChange={e => setAddApprovalDays(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
+                      />
+                      <p className="text-[10px] text-amber-700 font-semibold mt-1">
+                        If deadline is missed, the Ward Officer is flagged to Admin.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Max Work Days (Resolution) *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        required
+                        value={addWorkDays}
+                        onChange={e => setAddWorkDays(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
+                      />
+                      <p className="text-[10px] text-slate-500 font-medium mt-1">
+                        Maximum allowed days for workforce to fully resolve this problem.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

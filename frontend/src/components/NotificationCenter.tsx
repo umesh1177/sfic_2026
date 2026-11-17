@@ -23,12 +23,16 @@ interface NotificationCenterProps {
   onBack?: () => void;
   onNavigateTab: (tab: string) => void;
   lang: Language;
+  onNotificationRead?: (id: string) => void;
+  onNotificationReadAll?: () => void;
 }
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   onBack,
   onNavigateTab,
-  lang
+  lang,
+  onNotificationRead,
+  onNotificationReadAll
 }) => {
   const t = translations[lang];
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -118,6 +122,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const markAsRead = async (id: string) => {
     setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)));
+    if (onNotificationRead) {
+      onNotificationRead(id);
+    }
     try {
       await api.markNotificationRead(id);
     } catch {
@@ -127,6 +134,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const markAllAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    if (onNotificationReadAll) {
+      onNotificationReadAll();
+    }
     setFeedbackMsg('All notifications marked as read');
     setTimeout(() => setFeedbackMsg(null), 2500);
     try {

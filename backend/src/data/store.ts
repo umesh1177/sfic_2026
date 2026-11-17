@@ -164,8 +164,26 @@ const initialCategories: ComplaintCategory[] = [
     description: 'Severe waterlogging or flood water overtopping the road',
     icon: 'Waves',
     is_active: true,
+    max_approval_hours: 2,
+    max_work_hours: 6,
     max_approval_days: 1,
-    max_work_days: 2,
+    max_work_days: 1,
+    sla_unit: 'hours',
+    created_at: '2026-10-01T08:00:00Z'
+  },
+  {
+    id: 'cat-11',
+    category_name: 'Dead Animal Disposal',
+    category_name_gu: 'મૃત પ્રાણી / પશુ નિકાલ',
+    category_name_hi: 'मृत पशु निपटान',
+    description: 'Immediate hygienic removal and disposal of dead animals, stray carcasses, or birds',
+    icon: 'AlertTriangle',
+    is_active: true,
+    max_approval_hours: 2,
+    max_work_hours: 4,
+    max_approval_days: 1,
+    max_work_days: 1,
+    sla_unit: 'hours',
     created_at: '2026-10-01T08:00:00Z'
   }
 ];

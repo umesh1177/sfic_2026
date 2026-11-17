@@ -131,8 +131,10 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     setVerifying(true);
     setActionError(null);
     try {
+      const chosenAfterPhoto = afterPhotos[0] || details?.work_progress_evidence?.after_photo || details?.overview?.resolved_image_url || '';
       const res = await api.verifyCompleteWardComplaint(complaintId, {
-        review_notes: verificationNotes
+        review_notes: verificationNotes,
+        resolved_image_url: chosenAfterPhoto
       });
       setActionSuccess(res.message || 'Work verified and marked complete. Citizen has been notified!');
       setShowVerifyModal(false);
@@ -208,6 +210,23 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
   const isResolved = overview.status === 'resolved' || overview.status === 'verified_complete' || overview.status === 'closed';
   const coords: [number, number] = [location_map?.latitude || 20.9485, location_map?.longitude || 72.9260];
 
+  // Lifecycle & Workflow Gates
+  const isTeamAssigned = overview.status !== 'submitted' && Boolean(
+    (overview.current_assigned_team && !overview.current_assigned_team.includes('Unassigned')) ||
+    (assignment_history && assignment_history.length > 0) ||
+    (overview as any).is_team_assigned
+  );
+
+  const hasEvidenceSubmitted = Boolean(
+    work_progress_evidence?.after_photo ||
+    work_progress_evidence?.after_photo_url ||
+    overview.resolved_image_url ||
+    (overview as any).has_evidence_submitted
+  );
+
+  const canVerifyComplete = isTeamAssigned && hasEvidenceSubmitted;
+  const isEscalated = Boolean((overview as any).is_escalated || (overview.sla_deadline && new Date(overview.sla_deadline).getTime() < Date.now() && !isResolved));
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* 1. TOP HEADER & BACK NAVIGATION */}
@@ -234,6 +253,18 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-50 text-orange-800 border border-orange-200">
                   {overview.priority} Priority
                 </span>
+                {/* Target Hours SLA Badge */}
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-[#095c54]" />
+                  <span>{(overview as any).target_hours ? `${(overview as any).target_hours}h SLA Target` : 'SLA Target'}</span>
+                </span>
+                {/* Escalation Alert Badge */}
+                {isEscalated && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1 animate-pulse">
+                    <AlertTriangle className="w-3 h-3 text-rose-600" />
+                    <span>Escalated to DC</span>
+                  </span>
+                )}
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-[#0f2925] tracking-tight mt-1">
                 {overview.title}
@@ -241,16 +272,38 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
             </div>
           </div>
 
-          {/* Quick Header Actions */}
+          {/* Quick Header Actions with Workflow Enforcement */}
           <div className="flex items-center gap-2 shrink-0">
             {!isResolved ? (
-              <button
-                onClick={() => setShowVerifyModal(true)}
-                className="px-4 py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs shadow-md flex items-center gap-2 transition"
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                <span>Verify & Mark Complete</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {!isTeamAssigned ? (
+                  <button
+                    onClick={() => setActiveTab('team')}
+                    className="px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-md flex items-center gap-2 transition"
+                    title="You cannot complete this complaint until a sanitation squad is assigned"
+                  >
+                    <Users className="w-4 h-4 text-amber-200" />
+                    <span>Assign Squad First</span>
+                  </button>
+                ) : !hasEvidenceSubmitted ? (
+                  <button
+                    disabled
+                    className="px-4 py-2.5 rounded-2xl bg-slate-100 border border-slate-300 text-slate-500 font-extrabold text-xs flex items-center gap-2 cursor-not-allowed shadow-2xs"
+                    title="Assigned squad must submit cleanup photo evidence before you can verify and complete"
+                  >
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span>Awaiting Field Evidence</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowVerifyModal(true)}
+                    className="px-4 py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs shadow-md flex items-center gap-2 transition"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                    <span>Verify & Mark Complete</span>
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="flex items-center gap-2">
                 <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-black flex items-center gap-1.5">
@@ -1117,6 +1170,34 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 <p className="text-xs text-slate-500">
                   This will resolve the complaint and automatically dispatch a resolution notification to the citizen.
                 </p>
+              </div>
+            </div>
+
+            {/* Before vs After Visual Verification in Modal */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 block">
+                  Before (Citizen Photo)
+                </span>
+                <div className="aspect-video rounded-xl overflow-hidden bg-slate-200 border border-rose-200">
+                  <img
+                    src={overview.image_url}
+                    alt="Citizen Reported"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 block">
+                  After (Cleanup Evidence)
+                </span>
+                <div className="aspect-video rounded-xl overflow-hidden bg-slate-200 border border-emerald-300">
+                  <img
+                    src={afterPhotos[0] || work_progress_evidence?.after_photo || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'}
+                    alt="Cleanup Verified"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
               </div>
             </div>
 

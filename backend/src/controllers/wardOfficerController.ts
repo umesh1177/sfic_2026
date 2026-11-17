@@ -746,7 +746,20 @@ export class WardOfficerController {
           current_assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
           current_task_code: latestAttempt ? latestAttempt.task_code : null,
           deadline: (complaint as any).deadline || (complaint as any).target_completion_date || slaDeadline,
-          sla_deadline: slaDeadline,
+          sla_deadline: (complaint as any).sla_deadline || slaDeadline,
+          target_hours: (complaint as any).target_hours || 48,
+          is_escalated: Boolean((complaint as any).is_escalated || new Date(slaDeadline).getTime() < Date.now() && complaint.status !== 'resolved'),
+          is_team_assigned: complaint.status !== 'submitted' && Boolean(latestAttempt || (complaint as any).assigned_team_name),
+          has_evidence_submitted: Boolean(
+            complaint.resolved_image_url ||
+            latestAttempt?.completion_report?.after_photo_url ||
+            latestAttempt?.evidence?.some((e: any) => e.evidence_type === 'after')
+          ),
+          can_verify_complete: (complaint.status !== 'submitted' && Boolean(latestAttempt || (complaint as any).assigned_team_name)) && Boolean(
+            complaint.resolved_image_url ||
+            latestAttempt?.completion_report?.after_photo_url ||
+            latestAttempt?.evidence?.some((e: any) => e.evidence_type === 'after')
+          ),
           reopen_count: attempts.length > 1 ? attempts.length - 1 : (complaint.status === 'reopened' ? 1 : 0),
           complaint_age_days: Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24))),
           submitted_at: complaint.submitted_at,
@@ -806,10 +819,10 @@ export class WardOfficerController {
         work_progress_evidence: {
           assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
           evidence_items: latestAttempt ? (latestAttempt.evidence || []) : [],
-          before_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || null,
-          before_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || null,
-          after_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || null,
-          after_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || null
+          before_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || complaint.image_url,
+          before_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'before')?.storage_path || complaint.image_url,
+          after_photo: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || complaint.resolved_image_url || null,
+          after_photo_url: latestAttempt?.evidence?.find((e: any) => e.evidence_type === 'after')?.storage_path || complaint.resolved_image_url || null
         },
 
         // Section 8: Completion Reports
@@ -2159,7 +2172,7 @@ export class WardOfficerController {
   public static async verifyCompleteComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { review_notes } = req.body;
+      const { review_notes, resolved_image_url } = req.body;
 
       const complaint = (store.complaints || []).find(c => c.id === id);
       if (!complaint) {
@@ -2167,10 +2180,54 @@ export class WardOfficerController {
         return;
       }
 
+      const attempts = wardData.workAttempts.get(complaint.id) || [];
+      const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
+
+      // 1. Strict Workflow Check: Team must be assigned first
+      const isTeamAssigned = complaint.status !== 'submitted' || Boolean(
+        (complaint as any).assigned_team_name ||
+        (complaint as any).assignment_id ||
+        latestAttempt
+      );
+
+      if (!isTeamAssigned) {
+        res.status(400).json({
+          success: false,
+          error: 'Workflow constraint: You cannot complete this complaint until a sanitation squad has been assigned.'
+        });
+        return;
+      }
+
+      // 2. Strict Workflow Check: Assigned team must have submitted after-work cleanup evidence
+      const hasAfterEvidence = Boolean(
+        resolved_image_url ||
+        complaint.resolved_image_url ||
+        latestAttempt?.evidence?.some(e => e.evidence_type === 'after') ||
+        latestAttempt?.completion_report?.after_photo_url ||
+        (latestAttempt?.evidence && latestAttempt.evidence.length > 0)
+      );
+
+      if (!hasAfterEvidence) {
+        res.status(400).json({
+          success: false,
+          error: 'Workflow constraint: Assigned team must submit cleanup photo evidence before officer can verify and complete.'
+        });
+        return;
+      }
+
+      // 3. Link verified after-cleanup photo
+      const afterEvidenceItem = latestAttempt?.evidence?.find(e => e.evidence_type === 'after');
+      const resolvedPhoto = resolved_image_url ||
+        afterEvidenceItem?.storage_path ||
+        latestAttempt?.completion_report?.after_photo_url ||
+        complaint.resolved_image_url ||
+        'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
+
       const prevStatus = complaint.status;
       complaint.status = 'resolved';
       complaint.updated_at = new Date().toISOString();
-      (complaint as any).resolved_at = new Date().toISOString();
+      complaint.resolved_at = new Date().toISOString();
+      complaint.resolved_image_url = resolvedPhoto;
 
       // Update corresponding work assignments
       (store.workAssignments || []).forEach(wa => {
@@ -2183,7 +2240,6 @@ export class WardOfficerController {
       await DbRepository.verifyCompleteAssignment(complaint.id, complaint.category_name);
 
       // Update work attempts
-      const attempts = wardData.workAttempts.get(complaint.id) || [];
       if (attempts.length > 0) {
         attempts[attempts.length - 1].status = 'verified_complete';
         attempts[attempts.length - 1].review_decision = 'verified_complete';
@@ -2198,6 +2254,13 @@ export class WardOfficerController {
         role: 'ward_officer',
         note: review_notes || 'Ward Officer inspected evidence photos and verified 100% cleanliness clearance.'
       });
+
+      if (isDbConnected()) {
+        await pool.query(
+          `UPDATE complaints SET status = 'resolved', resolved_image_url = $1, resolved_at = NOW(), updated_at = NOW() WHERE id = $2`,
+          [resolvedPhoto, complaint.id]
+        ).catch(() => {});
+      }
 
       // Dispatch live notification to citizen
       await DbRepository.createNotification(
@@ -2214,7 +2277,8 @@ export class WardOfficerController {
         data: {
           complaint_id: complaint.id,
           status: 'resolved',
-          resolved_at: complaint.updated_at
+          resolved_at: complaint.updated_at,
+          resolved_image_url: resolvedPhoto
         }
       });
     } catch (err: any) {
