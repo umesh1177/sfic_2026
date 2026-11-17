@@ -16,7 +16,9 @@ import {
   WorkerAttendance,
   WorkEvidence,
   WorkCompletionReport,
-  WorkAssignment
+  WorkAssignment,
+  CommunityRegistrationRequest,
+  SimulatedSms
 } from '../types/index.js';
 
 // In-memory store for work attempts and hotspot tracking
@@ -1962,6 +1964,217 @@ export class WardOfficerController {
   }
 
   // =========================================================================
+  // 8D. Community Registration Requests (Pending Approval by Ward Officer)
+  // =========================================================================
+  public static async getCommunityRequests(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      let officerWardNum = (req.user as any)?.ward_number ? Number((req.user as any)?.ward_number) : undefined;
+      if (!officerWardNum && req.query.ward_number && req.query.ward_number !== 'all') {
+        officerWardNum = parseInt(req.query.ward_number as string, 10);
+      }
+      const allRequests = store.communityRegistrationRequests || [];
+      const filtered = (officerWardNum && req.query.all !== 'true')
+        ? allRequests.filter(r => (r.ward_number || 3) === officerWardNum)
+        : allRequests;
+      res.status(200).json({ success: true, data: filtered });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async approveCommunityRequest(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { password, comments = '' } = req.body;
+
+      if (!password || String(password).trim().length < 6) {
+        res.status(400).json({ success: false, error: 'Password is required and must be at least 6 characters' });
+        return;
+      }
+
+      if (!store.communityRegistrationRequests) store.communityRegistrationRequests = [];
+      const request = store.communityRegistrationRequests.find(r => r.id === id);
+      if (!request) {
+        res.status(404).json({ success: false, error: 'Community registration request not found' });
+        return;
+      }
+
+      if (request.status === 'approved') {
+        res.status(400).json({ success: false, error: 'This community has already been approved' });
+        return;
+      }
+
+      const assignedPass = String(password).trim();
+      const passwordHash = await bcrypt.hash(assignedPass, 10);
+      const newUserId = randomUUID();
+      const newCommunityId = randomUUID();
+      const normalizedPhone = request.phone;
+      const effectiveEmail = `${request.full_name.toLowerCase().replace(/\s+/g, '.')}@community.org`;
+      const effectiveUsername = normalizedPhone;
+
+      // Update request status
+      request.status = 'approved';
+      request.assigned_password = assignedPass;
+      request.reviewed_at = new Date().toISOString();
+      request.reviewed_by_officer_id = req.user?.id;
+      request.reviewed_by_officer_name = req.user?.full_name || 'Ramesh Patel (Chief Sanitary Inspector)';
+
+      // Create community head profile
+      const newProfile: any = {
+        id: newUserId,
+        full_name: request.full_name.trim(),
+        phone: normalizedPhone,
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: assignedPass,
+        preferred_language: 'en',
+        locality: request.locality || 'Dudhiya Talao',
+        address: request.address || `Ward ${request.ward_number || 3}, Navsari`,
+        is_active: true,
+        role: 'community_head',
+        ward_number: request.ward_number || 3,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const newAuthProfile: any = {
+        id: `auth-${newUserId}`,
+        user_id: newUserId,
+        mobile_number: normalizedPhone,
+        password_hash: passwordHash,
+        plain_password: assignedPass,
+        mobile_verified: true,
+        verification_completed_at: new Date().toISOString(),
+        account_status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (!store.profiles) store.profiles = [];
+      store.profiles = store.profiles.filter(p => p.phone !== normalizedPhone);
+      store.profiles.push(newProfile);
+
+      if (!store.authProfiles) store.authProfiles = [];
+      store.authProfiles = store.authProfiles.filter(a => a.mobile_number !== normalizedPhone);
+      store.authProfiles.push(newAuthProfile);
+
+      const newCommunity = {
+        id: newCommunityId,
+        user_id: newUserId,
+        community_name: request.community_name.trim(),
+        organisation_type: request.organisation_type || 'Resident Welfare Association',
+        head_name: request.full_name.trim(),
+        phone: normalizedPhone,
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: assignedPass,
+        ward_number: request.ward_number || 3,
+        ward_name: request.ward_name || `Ward ${request.ward_number || 3} - Dudhiya Talao`,
+        address: request.address || 'Navsari',
+        locality: request.locality || 'Dudhiya Talao',
+        active_drives_count: 0,
+        verification_document: request.document_url,
+        created_at: new Date().toISOString()
+      };
+
+      if (!store.communities) store.communities = [];
+      store.communities.push(newCommunity);
+
+      // Persist to Postgres if available
+      try {
+        await DbRepository.saveCommunityToDb(newCommunity, passwordHash);
+      } catch (e: any) {
+        console.log('[COMMUNITY APPROVAL DB SAVE]:', e.message);
+      }
+
+      // Send SMS message to community head's device with the password!
+      if (!store.smsMessages) store.smsMessages = [];
+      const approvalSms: SimulatedSms = {
+        id: `sms-${Date.now()}`,
+        phone: normalizedPhone,
+        sender: 'VM-NMCGOV',
+        senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+        body: `Govt. of Gujarat · Navsari Municipal Corporation (Ward ${request.ward_number || 3}): Congratulations ${request.full_name}! Your Community Head registration for "${request.community_name}" has been APPROVED by the Ward Officer. Your login credentials are: Mobile: ${normalizedPhone}, Password: ${assignedPass}. You can now log in at the Swachh Setu Portal.`,
+        password: assignedPass,
+        type: 'approval',
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        isRead: false
+      };
+      store.smsMessages.unshift(approvalSms);
+
+      // Push notification
+      if (!store.notifications) store.notifications = [];
+      store.notifications.push({
+        id: `notif-${Date.now()}`,
+        user_id: newUserId,
+        title: 'Community Head Registration Approved!',
+        message: `Your community "${request.community_name}" is approved. Your password is ${assignedPass}`,
+        notification_type: 'system_alert',
+        is_read: false,
+        created_at: new Date().toISOString()
+      });
+
+      console.log(`[COMMUNITY APPROVED] By Ward Officer: "${request.community_name}". Password set: "${assignedPass}". SMS sent to ${normalizedPhone}`);
+
+      res.status(200).json({
+        success: true,
+        message: `Community "${request.community_name}" approved! Login password "${assignedPass}" sent to head's mobile (${normalizedPhone}).`,
+        data: {
+          request,
+          community: newCommunity,
+          credentials: {
+            mobile: normalizedPhone,
+            password: assignedPass
+          }
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async rejectCommunityRequest(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { reason = 'Document verification could not be validated' } = req.body;
+
+      if (!store.communityRegistrationRequests) store.communityRegistrationRequests = [];
+      const request = store.communityRegistrationRequests.find(r => r.id === id);
+      if (!request) {
+        res.status(404).json({ success: false, error: 'Community registration request not found' });
+        return;
+      }
+
+      request.status = 'rejected';
+      request.rejection_reason = reason;
+      request.reviewed_at = new Date().toISOString();
+      request.reviewed_by_officer_id = req.user?.id;
+      request.reviewed_by_officer_name = req.user?.full_name || 'Ward Officer';
+
+      // Send rejection SMS to applicant device
+      if (!store.smsMessages) store.smsMessages = [];
+      store.smsMessages.unshift({
+        id: `sms-${Date.now()}`,
+        phone: request.phone,
+        sender: 'VM-NMCGOV',
+        senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+        body: `Navsari Municipal Corporation (Ward ${request.ward_number || 3}): Your Community Head registration request for "${request.community_name}" was rejected. Reason: ${reason}. Please visit the Ward office or re-apply with valid documents.`,
+        type: 'submission',
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        isRead: false
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Registration request for "${request.community_name}" has been rejected. Notification dispatched.`,
+        data: request
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
   // 9. Approval Management Queue (Centralized Decisions)
   // =========================================================================
   public static async getApprovals(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -1979,6 +2192,34 @@ export class WardOfficerController {
         if (m) officerWardNum = parseInt(m[1], 10);
       }
       const dynamicPending = await DbRepository.getPendingActivitiesForOfficer(officerWardNum);
+
+      // Pending Community Registration Requests mapped to WardApprovalItem
+      const pendingCommRequests: WardApprovalItem[] = (store.communityRegistrationRequests || [])
+        .filter(r => r.status === 'pending' && (!officerWardNum || r.ward_number === officerWardNum))
+        .map(r => ({
+          id: r.id,
+          type: 'community_registration' as const,
+          title: `Community Head Registration: ${r.community_name}`,
+          submitted_by_name: `${r.full_name} (${r.phone})`,
+          submitted_by_role: 'Community Head Applicant',
+          submission_time: r.submitted_at,
+          ward_number: r.ward_number || officerWardNum || 3,
+          status: 'pending' as const,
+          details: {
+            request_code: r.request_code,
+            full_name: r.full_name,
+            phone: r.phone,
+            community_name: r.community_name,
+            organisation_type: r.organisation_type,
+            locality: r.locality,
+            address: r.address,
+            document_name: r.document_name,
+            document_url: r.document_url,
+            document_type: r.document_type,
+            notes: r.notes
+          },
+          photos: r.document_url ? [r.document_url] : []
+        }));
 
       const otherApprovals: WardApprovalItem[] = [
         {
@@ -2017,7 +2258,90 @@ export class WardOfficerController {
         }
       ];
 
-      res.status(200).json({ success: true, data: [...dynamicPending, ...otherApprovals] });
+      // Pending Community Problem Drive Proposals mapped to WardApprovalItem
+      const pendingProblemProposals: WardApprovalItem[] = [];
+      const pendingEvidenceReviews: WardApprovalItem[] = [];
+      const problemsList = await DbRepository.getCommunityProblems(officerWardNum);
+      for (const p of problemsList) {
+        for (const reqItem of (p.drive_requests || [])) {
+          if (reqItem.status === 'pending') {
+            pendingProblemProposals.push({
+              id: reqItem.id || `${p.id}_${reqItem.community_id}`,
+              type: 'activity' as const,
+              title: `Cleanliness Drive Proposal: ${p.title}`,
+              submitted_by_name: `${reqItem.community_name} (${reqItem.head_name || 'Community Leader'})`,
+              submitted_by_role: 'Community Head',
+              submission_time: reqItem.submitted_at || new Date().toISOString(),
+              ward_number: p.ward_number || officerWardNum || 3,
+              status: 'pending' as const,
+              details: {
+                proposed_date: reqItem.proposed_date ? new Date(reqItem.proposed_date).toLocaleDateString() : (p.start_time ? new Date(p.start_time).toLocaleDateString() : 'Upcoming'),
+                location: p.location_name || p.address || 'Navsari',
+                expected_volunteers: reqItem.proposed_volunteers_count || p.estimated_volunteers_needed || 20,
+                safety_plan: reqItem.notes || p.action_plan,
+                linked_problem: `Civic Focus: "${p.title}" (Ward ${p.ward_number})`
+              },
+              photos: p.image_url ? [p.image_url] : []
+            });
+          }
+        }
+
+        // Completed Drive Work Evidence submitted for Officer Review (Ward Officer-created drives)
+        if (p.evidence_status === 'submitted') {
+          const evList = await DbRepository.getActivityEvidence(p.id);
+          const regRes = await DbRepository.getActivityRegistrations(p.id, { limit: 200 });
+          const presentCount = regRes.registrations.filter(r => r.attendance_status === 'present').length;
+          pendingEvidenceReviews.push({
+            id: `ev-review-${p.id}`,
+            type: 'evidence_review' as const,
+            title: `Drive Completion Evidence: ${p.title}`,
+            submitted_by_name: p.claimed_by_community_name || 'Community Organization',
+            submitted_by_role: 'Community Head',
+            submission_time: p.evidence_submitted_at || p.updated_at || new Date().toISOString(),
+            ward_number: p.ward_number || officerWardNum || 3,
+            status: 'pending' as const,
+            details: {
+              drive_source: 'Ward Officer Drive',
+              location: p.location_name || p.address || 'Navsari',
+              attendance_verified: `${presentCount} present / ${regRes.total} registered volunteers`,
+              evidence_photos_count: `${evList.length} photo(s) (${evList.map(e => e.evidence_type || e.stage).join(', ') || 'attached'})`,
+              submission_notes: p.evidence_review_comments || 'Community Head has requested Ward Officer verification of completed cleanliness work.'
+            },
+            photos: evList.map(e => e.storage_path || e.image_url || '').filter(Boolean)
+          });
+        }
+      }
+
+      // Completed Drive Work Evidence submitted for Officer Review (Community Head-created drives)
+      const submittedEvidenceActs = await DbRepository.getPendingEvidenceReviewActivities(officerWardNum);
+      for (const act of submittedEvidenceActs) {
+        const evList = await DbRepository.getActivityEvidence(act.id);
+        const regRes = await DbRepository.getActivityRegistrations(act.id, { limit: 200 });
+        const presentCount = regRes.registrations.filter(r => r.attendance_status === 'present').length;
+        pendingEvidenceReviews.push({
+          id: `ev-review-${act.id}`,
+          type: 'evidence_review' as const,
+          title: `Drive Completion Evidence: ${act.title}`,
+          submitted_by_name: (act as any).community_name || 'Community Organization',
+          submitted_by_role: 'Community Head',
+          submission_time: act.updated_at || new Date().toISOString(),
+          ward_number: act.ward_number || officerWardNum || 3,
+          status: 'pending' as const,
+          details: {
+            drive_source: 'Community Head Drive',
+            location: act.address || act.target_area || act.landmark || 'Navsari',
+            attendance_verified: `${presentCount} present / ${regRes.total} registered volunteers`,
+            evidence_photos_count: `${evList.length} photo(s) (${evList.map(e => e.evidence_type || e.stage).join(', ') || 'attached'})`,
+            submission_notes: 'Community Head has submitted completion evidence and requested Ward Officer verification.'
+          },
+          photos: evList.map(e => e.storage_path || e.image_url || '').filter(Boolean)
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: [...pendingCommRequests, ...pendingEvidenceReviews, ...pendingProblemProposals, ...dynamicPending, ...otherApprovals]
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -2029,11 +2353,123 @@ export class WardOfficerController {
   public static async reviewApproval(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { action, comments = '' } = req.body;
+      const { action, comments = '', password } = req.body;
 
       if (!action || !['approve', 'changes_requested', 'reject'].includes(action)) {
         res.status(400).json({ success: false, error: 'Valid action (approve, changes_requested, reject) required' });
         return;
+      }
+
+      // Check if this approval item is a Drive Completion Evidence Review
+      if (id.startsWith('ev-review-')) {
+        const targetDriveId = id.replace('ev-review-', '');
+        const decision = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'changes_requested';
+        const reviewerId = req.user?.id || 'w0000000-0000-0000-0000-000000000003';
+        await DbRepository.reviewActivityEvidence(
+          targetDriveId,
+          reviewerId,
+          'ward_officer',
+          decision,
+          comments || (decision === 'approved' ? 'Work verified and approved by Ward Officer.' : 'Please review officer feedback and resubmit evidence.')
+        );
+
+        // Build drive completion metadata so Officer UI can immediately post completion & send certificates
+        const prob = (store.communityProblems || []).find(p => p.id === targetDriveId);
+        const act = !prob ? ((store.communityActivities || []).find(a => a.id === targetDriveId) || await DbRepository.getActivityById(targetDriveId)) : null;
+        const evList = await DbRepository.getActivityEvidence(targetDriveId);
+        const regRes = await DbRepository.getActivityRegistrations(targetDriveId, { limit: 200 });
+
+        let participatingCommunities: string[] = [];
+        if (prob?.assigned_communities && prob.assigned_communities.length > 0) {
+          participatingCommunities = prob.assigned_communities.map(c => c.community_name);
+        } else if (prob?.claimed_by_community_name) {
+          participatingCommunities = prob.claimed_by_community_name
+            .replace(/\s*\(Joint Drive\)\s*/i, '')
+            .split('&')
+            .map(s => s.trim())
+            .filter(Boolean);
+        } else if (act) {
+          const comm = (store.communities || []).find(c => c.id === act.community_id);
+          participatingCommunities = [comm?.community_name || (act as any).community_name || 'Community Action Team'];
+        }
+
+        res.status(200).json({
+          success: true,
+          message:
+            decision === 'approved'
+              ? 'Drive completion evidence verified & approved! You can now post the drive completion and issue certificates & points.'
+              : decision === 'changes_requested'
+              ? 'Changes requested on drive completion evidence. Community Head notified.'
+              : 'Drive completion evidence rejected. Community Head notified.',
+          data: {
+            id,
+            target_drive_id: targetDriveId,
+            action,
+            decision,
+            comments,
+            ready_to_post: decision === 'approved',
+            completed_drive: decision === 'approved' ? {
+              id: targetDriveId,
+              title: prob?.title || act?.title || 'Cleanliness Drive',
+              ward_number: prob?.ward_number || act?.ward_number || 3,
+              ward_name: prob?.ward_name || act?.ward_name || `Ward ${prob?.ward_number || act?.ward_number || 3}`,
+              location_name: prob?.location_name || prob?.address || act?.address || (act as any)?.target_area || 'Navsari',
+              participating_communities: participatingCommunities,
+              volunteers_count: regRes.registrations.filter(r => r.attendance_status === 'present').length,
+              registered_count: regRes.total,
+              photos: evList.map(e => ({ url: e.storage_path || e.image_url || '', stage: e.evidence_type || e.stage || 'after', caption: e.caption })),
+              completion_posted: Boolean((prob as any)?.completion_posted || (act as any)?.completion_posted)
+            } : undefined
+          }
+        });
+        return;
+      }
+
+      // Check if this approval item is a community registration request
+      const commReq = (store.communityRegistrationRequests || []).find(r => r.id === id);
+      if (commReq) {
+        if (action === 'approve') {
+          const pass = password || (comments && comments.length >= 6 ? comments : 'Navsari@2026');
+          req.body.password = pass;
+          return WardOfficerController.approveCommunityRequest(req, res);
+        } else {
+          req.body.reason = comments || 'Verification document rejected by Ward Officer';
+          return WardOfficerController.rejectCommunityRequest(req, res);
+        }
+      }
+
+      // Check if this approval item is a community problem proposal
+      const problems = store.communityProblems || [];
+      const problemMatch = problems.find(p =>
+        (p.drive_requests || []).some(r => r.id === id || `${p.id}_${r.community_id}` === id)
+      );
+      if (problemMatch) {
+        const dReq = problemMatch.drive_requests?.find(r => r.id === id || `${problemMatch.id}_${r.community_id}` === id);
+        if (dReq) {
+          if (action === 'approve') {
+            await DbRepository.approveProblemCommunities(
+              problemMatch.id,
+              [dReq.community_id],
+              comments || 'Approved by Ward Officer for community execution',
+              req.user?.full_name || 'Ward Officer'
+            );
+            res.status(200).json({
+              success: true,
+              message: `Cleanliness Drive proposal for "${problemMatch.title}" approved for ${dReq.community_name}!`,
+              data: { id, action, comments }
+            });
+            return;
+          } else {
+            dReq.status = 'rejected';
+            dReq.reviewed_at = new Date().toISOString();
+            res.status(200).json({
+              success: true,
+              message: `Proposal rejected: ${comments}`,
+              data: { id, action, comments }
+            });
+            return;
+          }
+        }
       }
 
       const officerWard = (req.user as any)?.ward_number;
@@ -2380,7 +2816,10 @@ export class WardOfficerController {
         estimated_volunteers_needed = 15,
         suggested_equipment = ['Brooms', 'Gloves', 'Trash Bags'],
         image_url,
-        ward_number
+        ward_number,
+        start_time,
+        end_time,
+        max_volunteers_per_community = 25
       } = req.body;
 
       if (!title || !description || !action_plan) {
@@ -2408,6 +2847,9 @@ export class WardOfficerController {
         estimated_volunteers_needed,
         suggested_equipment,
         image_url,
+        start_time,
+        end_time,
+        max_volunteers_per_community: Number(max_volunteers_per_community) || 25,
         created_by: req.user?.id,
         officer_name: officerName
       });
@@ -2437,6 +2879,52 @@ export class WardOfficerController {
       const { id } = req.params;
       await DbRepository.reopenCommunityProblem(id);
       res.status(200).json({ success: true, message: 'Community problem reopened for civic action.' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async getProblemDriveRequests(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const requests = await DbRepository.getProblemDriveRequests(id);
+      res.status(200).json({ success: true, data: requests });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async approveProblemCommunities(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { community_ids, comments } = req.body;
+
+      if (!Array.isArray(community_ids) || community_ids.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Please select at least one community organization to approve for this drive.'
+        });
+        return;
+      }
+
+      const officerName = req.user?.full_name || 'Ward Officer';
+      const result = await DbRepository.approveProblemCommunities(
+        id,
+        community_ids,
+        comments,
+        officerName
+      );
+
+      if (!result.success || !result.problem) {
+        res.status(404).json({ success: false, error: 'Problem/Drive not found or approval failed.' });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Successfully approved ${result.approvedCount} ${result.approvedCount > 1 ? 'communities for joint drive' : 'community for drive'}!`,
+        data: result.problem
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -2517,6 +3005,364 @@ export class WardOfficerController {
       }
 
       res.status(400).json({ success: false, error: 'Unknown AI quick action type' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 21. COMPLETED DRIVES & COMPLETION POST + CERTIFICATES + POINTS
+  // =========================================================================
+
+  /**
+   * GET /api/ward/completed-drives
+   * Returns all verified/completed drives (Officer-created & Community-created) eligible for completion post & certificates
+   */
+  public static async getCompletedDrives(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      let officerWardNum = (req.user as any)?.ward_number ? Number((req.user as any)?.ward_number) : undefined;
+      if (req.query.ward_number && req.query.ward_number !== 'all') {
+        officerWardNum = parseInt(req.query.ward_number as string, 10);
+      }
+
+      const completedList: any[] = [];
+      const seenIds = new Set<string>();
+
+      // 1. Verified Ward Officer-created drives (communityProblems)
+      const problems = await DbRepository.getCommunityProblems(officerWardNum);
+      for (const p of problems) {
+        const isVerified =
+          p.status === 'resolved' ||
+          p.evidence_status === 'verified_complete' ||
+          p.evidence_status === 'ward_verified';
+        if (!isVerified) continue;
+
+        seenIds.add(p.id);
+        const evList = await DbRepository.getActivityEvidence(p.id);
+        const regRes = await DbRepository.getActivityRegistrations(p.id, { limit: 300 });
+        const presentCount = regRes.registrations.filter(r => r.attendance_status === 'present').length;
+
+        const participatingCommunities =
+          p.assigned_communities && p.assigned_communities.length > 0
+            ? p.assigned_communities.map(c => c.community_name)
+            : p.claimed_by_community_name
+            ? p.claimed_by_community_name.replace(/\s*\(Joint Drive\)\s*/i, '').split('&').map(s => s.trim()).filter(Boolean)
+            : ['Community Volunteers'];
+
+        completedList.push({
+          id: p.id,
+          source: 'ward_officer',
+          title: p.title,
+          description: p.description,
+          ward_number: p.ward_number,
+          ward_name: p.ward_name || `Ward ${p.ward_number}`,
+          location_name: p.location_name || p.address || 'Navsari',
+          participating_communities: participatingCommunities,
+          volunteers_count: presentCount,
+          registered_count: regRes.total,
+          photos: evList.map(e => ({ url: e.storage_path || e.image_url || '', stage: e.evidence_type || e.stage || 'after', caption: e.caption })),
+          image_url: p.image_url,
+          completion_posted: Boolean(p.completion_posted),
+          completion_post_id: p.completion_post_id,
+          completed_at: p.updated_at || new Date().toISOString()
+        });
+      }
+
+      // 2. Verified Community Head-created drives (communityActivities)
+      const memActs = (store.communityActivities || []).filter(a => {
+        const isVerified = a.evidence_status === 'verified_complete' || a.evidence_status === 'ward_verified';
+        const matchesWard = !officerWardNum || !a.ward_number || a.ward_number === officerWardNum;
+        return isVerified && matchesWard && !seenIds.has(a.id);
+      });
+
+      for (const act of memActs) {
+        seenIds.add(act.id);
+        const evList = await DbRepository.getActivityEvidence(act.id);
+        const regRes = await DbRepository.getActivityRegistrations(act.id, { limit: 300 });
+        const presentCount = regRes.registrations.filter(r => r.attendance_status === 'present').length;
+        const comm = (store.communities || []).find(c => c.id === act.community_id);
+
+        completedList.push({
+          id: act.id,
+          source: 'community_head',
+          title: act.title,
+          description: act.short_description || act.detailed_description,
+          ward_number: act.ward_number || officerWardNum || 3,
+          ward_name: act.ward_name || `Ward ${act.ward_number || 3}`,
+          location_name: act.address || (act as any).target_area || act.landmark || 'Navsari',
+          participating_communities: [comm?.community_name || (act as any).community_name || 'Community Action Team'],
+          volunteers_count: presentCount,
+          registered_count: regRes.total,
+          photos: evList.map(e => ({ url: e.storage_path || e.image_url || '', stage: e.evidence_type || e.stage || 'after', caption: e.caption })),
+          image_url: act.cover_image_path,
+          completion_posted: Boolean((act as any).completion_posted),
+          completion_post_id: (act as any).completion_post_id,
+          completed_at: act.updated_at || new Date().toISOString()
+        });
+      }
+
+      res.status(200).json({ success: true, data: completedList });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * POST /api/ward/drives/:id/publish-completion
+   * Ward Officer posts completed drive to Public Feed listing all participating communities below,
+   * sends Completion Certificates to all participated citizens AND participating communities in Notifications,
+   * and awards Civic Karma / Community Impact points to them!
+   */
+  public static async publishDriveCompletion(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const {
+        title,
+        description,
+        achievement_stats,
+        citizen_points = 150,
+        community_points = 300,
+        custom_communities
+      } = req.body || {};
+
+      const prob = (store.communityProblems || []).find(p => p.id === id);
+      const act = !prob ? ((store.communityActivities || []).find(a => a.id === id) || await DbRepository.getActivityById(id)) : null;
+
+      if (!prob && !act) {
+        res.status(404).json({ success: false, error: 'Completed drive not found.' });
+        return;
+      }
+
+      const officerWard = (req.user as any)?.ward_number || prob?.ward_number || act?.ward_number || 3;
+      const officerName = req.user?.full_name || `Ward ${officerWard} Officer (NMC)`;
+      const driveTitle = prob?.title || act?.title || 'Cleanliness Drive';
+      const wardName = prob?.ward_name || act?.ward_name || `Ward ${officerWard} - Navsari`;
+      const locationName = prob?.location_name || prob?.address || act?.address || (act as any)?.target_area || `Ward ${officerWard}, Navsari`;
+
+      // Helper to resolve a community's head userId (by created_by, phone match, or community id)
+      const resolveCommunityUserId = (commId: string, contactPhone?: string): string => {
+        const commRec = (store.communities || []).find(c => c.id === commId);
+        if (commRec?.created_by) return commRec.created_by;
+        const phoneDigits = (contactPhone || commRec?.phone || commRec?.contact_phone || '').replace(/\D/g, '').slice(-10);
+        if (phoneDigits.length === 10) {
+          const matchedProfile = (store.profiles || []).find(
+            p => p.role === 'community_head' && (p.phone || '').replace(/\D/g, '').slice(-10) === phoneDigits
+          );
+          if (matchedProfile) return matchedProfile.id;
+        }
+        return commId || 'c0000000-0000-0000-0000-000000000099';
+      };
+
+      // Gather participating communities (both id + name + owner user_id)
+      const communityTargets: { id: string; name: string; userId: string }[] = [];
+      if (prob?.assigned_communities && prob.assigned_communities.length > 0) {
+        for (const ac of prob.assigned_communities) {
+          communityTargets.push({
+            id: ac.community_id,
+            name: ac.community_name,
+            userId: resolveCommunityUserId(ac.community_id, ac.contact_phone)
+          });
+        }
+      } else if (prob?.claimed_by_community_id) {
+        const ids = prob.claimed_by_community_id.split(',').map(s => s.trim()).filter(Boolean);
+        const names = (prob.claimed_by_community_name || '')
+          .replace(/\s*\(Joint Drive\)\s*/i, '')
+          .split('&')
+          .map(s => s.trim())
+          .filter(Boolean);
+        ids.forEach((cid, i) => {
+          const commRec = (store.communities || []).find(c => c.id === cid);
+          communityTargets.push({
+            id: cid,
+            name: names[i] || commRec?.community_name || 'Community Partner',
+            userId: resolveCommunityUserId(cid)
+          });
+        });
+      } else if (act) {
+        const commRec = (store.communities || []).find(c => c.id === act.community_id);
+        communityTargets.push({
+          id: act.community_id || 'b0000000-0000-0000-0000-000000000001',
+          name: commRec?.community_name || (act as any).community_name || 'Community Action Team',
+          userId: act.created_by || resolveCommunityUserId(act.community_id || 'b0000000-0000-0000-0000-000000000001')
+        });
+      }
+
+      const participatingCommunityNames: string[] =
+        Array.isArray(custom_communities) && custom_communities.length > 0
+          ? custom_communities.map((s: any) => String(s).trim()).filter(Boolean)
+          : communityTargets.map(c => c.name);
+
+      if (participatingCommunityNames.length === 0) {
+        participatingCommunityNames.push('Navsari Community Volunteers');
+      }
+
+      // Gather evidence photos (before & after)
+      const evList = await DbRepository.getActivityEvidence(id);
+      const beforeEv = evList.find(e => (e.evidence_type || e.stage) === 'before');
+      const afterEvs = evList.filter(e => (e.evidence_type || e.stage) === 'after');
+      const allPhotos = evList.map(e => e.storage_path || e.image_url || '').filter(Boolean);
+      const beforeImg = beforeEv?.storage_path || beforeEv?.image_url || prob?.image_url;
+      const afterImg =
+        afterEvs[0]?.storage_path ||
+        afterEvs[0]?.image_url ||
+        allPhotos[0] ||
+        prob?.image_url ||
+        act?.cover_image_path ||
+        'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1000&q=80';
+
+      // STRICT CERTIFICATE ELIGIBILITY: ONLY citizens explicitly marked 'present' by their Community Head receive completion certificates & points!
+      const regRes = await DbRepository.getActivityRegistrations(id, { limit: 500 });
+      const activeRegs = regRes.registrations.filter(r => r.registration_status !== 'cancelled');
+      const participants = activeRegs.filter(r => r.attendance_status === 'present');
+
+      const ptsCitizen = Math.max(10, Number(citizen_points) || 150);
+      const ptsCommunity = Math.max(25, Number(community_points) || 300);
+      const nowIso = new Date().toISOString();
+
+      // 1. Create Official NMC Drive Completion Recognition Post listing Participating Communities below
+      const postTitle = title?.trim() || `Cleanliness Drive Completed: ${driveTitle}`;
+      const postDesc =
+        description?.trim() ||
+        `Ward ${officerWard} officially celebrates the successful completion of "${driveTitle}" at ${locationName}! Together with ${participants.length} dedicated citizen volunteers, the site has been restored to spotless civic hygiene. Official completion certificates and Civic Karma points (+${ptsCitizen} pts to volunteers, +${ptsCommunity} pts to communities) have been issued.`;
+      const statsLabel =
+        achievement_stats?.trim() ||
+        `${participants.length} Volunteers · ${participatingCommunityNames.length} ${participatingCommunityNames.length === 1 ? 'Community' : 'Communities'} · +${ptsCitizen} Karma Pts`;
+
+      const post = await DbRepository.createRecognitionPost({
+        author_name: officerName,
+        author_role: `Ward ${officerWard} Officer · Navsari Municipal Corporation`,
+        ward_number: officerWard,
+        ward_name: wardName,
+        hero_name: participatingCommunityNames.join(' & '),
+        hero_role: participatingCommunityNames.length > 1 ? 'Joint Cleanliness Drive Partners' : 'Community Cleanliness Partner',
+        badge_title: 'Official Drive Completion · NMC Verified',
+        title: postTitle,
+        description: postDesc,
+        achievement_stats: statsLabel,
+        image_url: afterImg,
+        before_image_url: beforeImg,
+        after_image_url: afterImg,
+        after_photos: allPhotos.length > 0 ? allPhotos : [afterImg],
+        participating_communities: participatingCommunityNames,
+        drive_id: id,
+        volunteers_count: participants.length,
+        points_awarded_citizen: ptsCitizen,
+        points_awarded_community: ptsCommunity
+      });
+
+      // 2. Issue Completion Certificates & Award Points to ALL Participated Citizens in Notifications
+      const sentCitizenIds = new Set<string>();
+      for (const participant of participants) {
+        if (sentCitizenIds.has(participant.citizen_id)) continue;
+        sentCitizenIds.add(participant.citizen_id);
+
+        const certCode = `NMC-CERT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const certificate = {
+          certificate_id: certCode,
+          recipient_name: participant.citizen_name || 'Citizen Volunteer',
+          recipient_type: 'citizen' as const,
+          drive_id: id,
+          drive_title: driveTitle,
+          ward_number: officerWard,
+          ward_name: wardName,
+          location_name: locationName,
+          completed_date: nowIso,
+          communities_involved: participatingCommunityNames,
+          points_awarded: ptsCitizen,
+          issued_by: officerName,
+          issued_at: nowIso
+        };
+
+        // Award Civic Karma Points to citizen profile
+        const citizenProfile = (store.profiles || []).find(p => p.id === participant.citizen_id);
+        if (citizenProfile) {
+          citizenProfile.civic_points = (citizenProfile.civic_points || 0) + ptsCitizen;
+        }
+
+        // Send Certificate Notification to Citizen
+        await DbRepository.createNotification(
+          participant.citizen_id,
+          `🏅 Completion Certificate & +${ptsCitizen} Points: ${driveTitle}`,
+          `Congratulations ${certificate.recipient_name}! Ward Officer ${officerName} has verified the completion of "${driveTitle}" (${locationName}) and awarded you +${ptsCitizen} Civic Karma Points along with your Official NMC Completion Certificate (${certCode}).`,
+          id,
+          'certificate',
+          { points_awarded: ptsCitizen, certificate }
+        );
+      }
+
+      // 3. Issue Completion Certificates & Award Points to ALL Participating Communities in Notifications
+      const notifiedCommUsers = new Set<string>();
+      for (const comm of communityTargets) {
+        const certCode = `NMC-COMM-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const certificate = {
+          certificate_id: certCode,
+          recipient_name: comm.name,
+          recipient_type: 'community' as const,
+          drive_id: id,
+          drive_title: driveTitle,
+          ward_number: officerWard,
+          ward_name: wardName,
+          location_name: locationName,
+          completed_date: nowIso,
+          communities_involved: participatingCommunityNames,
+          points_awarded: ptsCommunity,
+          issued_by: officerName,
+          issued_at: nowIso
+        };
+
+        // Award Community Impact Points
+        const commRecord = (store.communities || []).find(c => c.id === comm.id);
+        if (commRecord) {
+          commRecord.civic_points = (commRecord.civic_points || 0) + ptsCommunity;
+        }
+        const headProfile = (store.profiles || []).find(p => p.id === comm.userId);
+        if (headProfile) {
+          headProfile.civic_points = (headProfile.civic_points || 0) + ptsCommunity;
+        }
+
+        // Send Certificate Notification to Community Head
+        const recipientKey = `${comm.userId}::${comm.id}`;
+        if (!notifiedCommUsers.has(recipientKey)) {
+          notifiedCommUsers.add(recipientKey);
+          await DbRepository.createNotification(
+            comm.userId,
+            `🏆 Community Completion Certificate & +${ptsCommunity} Points: ${driveTitle}`,
+            `Congratulations ${comm.name}! Ward Officer ${officerName} has officially published the completion of "${driveTitle}" and awarded your organization +${ptsCommunity} Community Impact Points along with an Official NMC Appreciation Certificate (${certCode}).`,
+            id,
+            'certificate',
+            { points_awarded: ptsCommunity, certificate }
+          );
+        }
+      }
+
+      // 4. Mark drive as completion_posted = true
+      if (prob) {
+        prob.completion_posted = true;
+        prob.completion_post_id = post?.id;
+        prob.status = 'resolved';
+        prob.evidence_status = 'verified_complete';
+        prob.updated_at = nowIso;
+      }
+      if (act) {
+        (act as any).completion_posted = true;
+        (act as any).completion_post_id = post?.id;
+        act.evidence_status = 'verified_complete' as any;
+        act.event_status = 'completed' as any;
+        act.updated_at = nowIso;
+      }
+
+      res.status(201).json({
+        success: true,
+        message: `Drive completion posted! Certificates & points sent to ${sentCitizenIds.size} citizen(s) (+${ptsCitizen} pts each) and ${communityTargets.length} community partner(s) (+${ptsCommunity} pts each).`,
+        data: {
+          post,
+          certificates_sent_citizens: sentCitizenIds.size,
+          certificates_sent_communities: communityTargets.length,
+          citizen_points_awarded: ptsCitizen,
+          community_points_awarded: ptsCommunity,
+          participating_communities: participatingCommunityNames
+        }
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

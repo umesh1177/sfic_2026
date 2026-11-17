@@ -48,7 +48,8 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
     try {
       const res = await api.getActivityRegistrations(actId, 1, 100);
       if (res.success && res.data) {
-        setRegistrations(res.data.registrations || []);
+        const list = Array.isArray(res.data) ? res.data : (res.data.registrations || []);
+        setRegistrations(list);
       }
     } catch (err: any) {
       console.error('Failed to load registrations:', err);

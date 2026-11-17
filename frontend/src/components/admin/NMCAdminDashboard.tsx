@@ -26,6 +26,7 @@ import { WardOfficerManagement } from './WardOfficerManagement.js';
 import { StaffManagement } from './StaffManagement.js';
 import { BoundaryManagement } from './BoundaryManagement.js';
 import { CategoryManagement } from './CategoryManagement.js';
+import { RewardsRecognition } from '../RewardsRecognition.js';
 
 interface NMCAdminDashboardProps {
   user: Profile | null;
@@ -55,7 +56,8 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
     { id: 'ward_officers', label: '3. Ward Officer Management', icon: UserCheck },
     { id: 'staff', label: '4. Worker & Officer Management', icon: Users },
     { id: 'boundaries', label: '5. Set Boundary & Geofencing', icon: Compass },
-    { id: 'categories', label: '6. Manage Categories & SLA', icon: Tags }
+    { id: 'categories', label: '6. Manage Categories & SLA', icon: Tags },
+    { id: 'posts', label: '7. Community Posts & Feed', icon: Sparkles }
   ];
 
   const handleNavigateToBoundary = (wardNum?: number) => {
@@ -294,6 +296,10 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
 
           {activeTab === 'categories' && (
             <CategoryManagement lang={lang} />
+          )}
+
+          {activeTab === 'posts' && (
+            <RewardsRecognition lang={lang} />
           )}
         </main>
       </div>

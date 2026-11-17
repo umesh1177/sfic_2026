@@ -41,6 +41,7 @@ import { CommunityActivity, ActivityRegistration, ActivityQuestion, ActivityEvid
 import { api } from '../../services/api.js';
 import { MiniMapLocationPicker } from '../MiniMapLocationPicker.js';
 import { checkTextForAbuse } from '../../utils/moderation.js';
+import { DriveOperationsTabs } from './DriveOperationsTabs.js';
 
 interface ActivityManagementProps {
   activities: CommunityActivity[];
@@ -177,7 +178,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     try {
       if (subTab === 'registrations') {
         const res = await api.getActivityRegistrations(activityId);
-        const list = res.data?.registrations || [];
+        const list = Array.isArray(res.data) ? res.data : (res.data?.registrations || []);
         setRegistrationsMap(prev => ({ ...prev, [activityId]: list }));
       } else if (subTab === 'questions') {
         const res = await api.getCommunityQuestions({ activity_id: activityId });
@@ -600,6 +601,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
       ward_id: `ward-0${prob.ward_number || 3}`,
       short_description: prob.description,
       detailed_description: `${prob.description}\n\nRecommended Action Plan by Ward Officer:\n${prob.action_plan}`,
+      proposed_start_at: prob.start_time ? prob.start_time.slice(0, 16) : prev.proposed_start_at,
+      proposed_end_at: prob.end_time ? prob.end_time.slice(0, 16) : prev.proposed_end_at,
       equipment_needed: prob.suggested_equipment && prob.suggested_equipment.length > 0 ? prob.suggested_equipment : prev.equipment_needed,
       target_volunteers: prob.estimated_volunteers_needed || 30,
       max_capacity: Math.max(50, (prob.estimated_volunteers_needed || 30) * 3),
@@ -922,25 +925,41 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
               {/* STEP 2: Date & Time */}
               {wizardStep === 2 && (
                 <div className="space-y-4">
+                  {selectedProblemId && (
+                    <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-xs text-teal-900 font-bold flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-teal-600 shrink-0" />
+                      <span>Drive start and end timings are fixed by the Ward Officer for this problem.</span>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">Proposed Start Time *</label>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Proposed Start Time * {selectedProblemId && <span className="text-teal-700 font-normal">(Officer Fixed)</span>}
+                      </label>
                       <input
                         type="datetime-local"
                         name="proposed_start_at"
+                        disabled={Boolean(selectedProblemId)}
                         value={wizardForm.proposed_start_at}
                         onChange={handleInputChange}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                        className={`w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none ${
+                          selectedProblemId ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#095c54]'
+                        }`}
                       />
                     </div>
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">Proposed End Time *</label>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Proposed End Time * {selectedProblemId && <span className="text-teal-700 font-normal">(Officer Fixed)</span>}
+                      </label>
                       <input
                         type="datetime-local"
                         name="proposed_end_at"
+                        disabled={Boolean(selectedProblemId)}
                         value={wizardForm.proposed_end_at}
                         onChange={handleInputChange}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                        className={`w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none ${
+                          selectedProblemId ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#095c54]'
+                        }`}
                       />
                     </div>
                   </div>
@@ -1163,13 +1182,15 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
       ) : (
         <div className="space-y-6">
           {filteredActivities.map(act => {
-            const isApproved = act.approval_status === 'approved';
-            const currentSubTab = activeSubTab[act.id] || 'registrations';
-            const regList = registrationsMap[act.id] || [];
-            const qList = questionsMap[act.id] || [];
-            const evList = evidenceMap[act.id] || [];
-            const maxCap = capacityLimits[act.id] !== undefined ? capacityLimits[act.id] : (act.max_capacity || 500);
-            const isCapacityFull = regList.length >= maxCap;
+            const actStatus = (act.approval_status as string) || 'draft';
+            const isApproved =
+              actStatus === 'approved' ||
+              actStatus === 'ward_approved' ||
+              actStatus === 'nmc_admin_approved' ||
+              act.publication_status === 'published';
+            const maxCap = capacityLimits[act.id] !== undefined ? capacityLimits[act.id] : (act.max_capacity || act.maximum_participants || 500);
+            const mappedInitialSubTab: 'attendance' | 'questions' | 'evidence' =
+              initialSubTab === 'questions' ? 'questions' : initialSubTab === 'evidence' ? 'evidence' : 'attendance';
 
             return (
               <div
@@ -1200,9 +1221,15 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                           {act.ward_name || `Ward ${act.ward_number}`}
                         </span>
 
-                        {isApproved && isCapacityFull && (
-                          <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
-                            Registration Full ({regList.length}/{maxCap})
+                        {act.evidence_status === 'submitted' && (
+                          <span className="text-[10px] font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                            ⏳ Evidence Submitted · Officer Review Pending
+                          </span>
+                        )}
+
+                        {(act.evidence_status === 'verified_complete' || act.evidence_status === 'ward_verified') && (
+                          <span className="text-[10px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                            ✓ Work Verified Complete
                           </span>
                         )}
                       </div>
@@ -1233,516 +1260,36 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                       </p>
                       <p className="text-[11px] text-slate-500 flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
-                        <span>{act.target_area}</span>
+                        <span>{act.target_area || act.address}</span>
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. IF APPROVED: HORIZONTAL TABS (REGISTRATIONS, CITIZEN Q&A, EVENT EVIDENCE) */}
+                {/* 2. IF APPROVED / PUBLISHED: HORIZONTAL TABS (ATTENDANCE, CITIZEN Q&A, EVIDENCE SUBMISSION) */}
                 {isApproved ? (
-                  <div className="border-t border-[#f1f5f9]">
-                    {/* Horizontal Sub-Navigation Tab Bar */}
-                    <div className="bg-[#f8faf9] px-4 sm:px-6 py-2 border-b border-[#e2e8f0] flex items-center gap-2 overflow-x-auto">
-                      <button
-                        onClick={() => handleSwitchSubTab(act.id, 'registrations')}
-                        className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition whitespace-nowrap ${
-                          currentSubTab === 'registrations'
-                            ? 'bg-[#095c54] text-white shadow-xs'
-                            : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-                        }`}
-                      >
-                        <Users className="w-3.5 h-3.5" />
-                        <span>Registrations & Limit</span>
-                        <span className={`px-1.5 py-0.2 rounded-md text-[10px] ${
-                          currentSubTab === 'registrations' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {regList.length}/{maxCap}
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => handleSwitchSubTab(act.id, 'questions')}
-                        className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition whitespace-nowrap ${
-                          currentSubTab === 'questions'
-                            ? 'bg-[#095c54] text-white shadow-xs'
-                            : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-                        }`}
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Citizen Questions</span>
-                        {qList.filter(q => q.status !== 'answered').length > 0 && (
-                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                        )}
-                        <span className={`px-1.5 py-0.2 rounded-md text-[10px] ${
-                          currentSubTab === 'questions' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {qList.length}
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => handleSwitchSubTab(act.id, 'evidence')}
-                        className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition whitespace-nowrap ${
-                          currentSubTab === 'evidence'
-                            ? 'bg-[#095c54] text-white shadow-xs'
-                            : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-                        }`}
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>Event Gallery & Evidence</span>
-                        <span className={`px-1.5 py-0.2 rounded-md text-[10px] ${
-                          currentSubTab === 'evidence' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {evList.length}
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Sub-Tab 1: Registrations & Capacity Limit */}
-                    {currentSubTab === 'registrations' && (
-                      <div className="p-5 sm:p-6 space-y-4 animate-fadeIn">
-                        {/* Capacity Limit Bar & Controls */}
-                        <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span className="text-xs font-bold text-slate-700">Set Max Volunteer Limit:</span>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min="1"
-                                max="5000"
-                                value={maxCap}
-                                onChange={e =>
-                                  setCapacityLimits(prev => ({ ...prev, [act.id]: Number(e.target.value) }))
-                                }
-                                className="w-24 px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs font-black text-slate-900 outline-none focus:border-[#095c54]"
-                              />
-                              <button
-                                onClick={() => handleUpdateCapacityLimit(act)}
-                                disabled={savingCapacity[act.id]}
-                                className="btn-primary-custom px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-xs"
-                              >
-                                {savingCapacity[act.id] ? 'Saving...' : 'Set Limit'}
-                              </button>
-                            </div>
-                            <span className="text-[11px] text-slate-500">
-                              (e.g. 500 max allow — registrations automatically lock when filled)
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleToggleRegistrationStatus(act)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                                act.registration_status === 'closed' || isCapacityFull
-                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                  : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                              }`}
-                            >
-                              {act.registration_status === 'closed' || isCapacityFull ? 'Open Registration' : 'Close Registration'}
-                            </button>
-
-                            <a
-                              href={api.getRegistrationCsvUrl(act.id)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 flex items-center gap-1.5"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Export CSV</span>
-                            </a>
-                          </div>
-                        </div>
-
-                        {/* Capacity Progress Bar */}
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-700">Volunteer Attendance Capacity</span>
-                            <span className={isCapacityFull ? 'text-rose-600 font-black' : 'text-[#095c54]'}>
-                              {regList.length} of {maxCap} Volunteers Enrolled ({((regList.length / maxCap) * 100).toFixed(0)}%)
-                            </span>
-                          </div>
-                          <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                isCapacityFull ? 'bg-rose-500' : 'bg-[#10b981]'
-                              }`}
-                              style={{ width: `${Math.min(100, (regList.length / maxCap) * 100)}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Registered Citizens List */}
-                        <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                          <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 text-xs font-extrabold text-slate-700 flex justify-between">
-                            <span>Registered Citizen Volunteers ({regList.length})</span>
-                            <span className="text-slate-500">Attendance Verification</span>
-                          </div>
-
-                          {regList.length === 0 ? (
-                            <div className="p-8 text-center text-xs text-slate-500">
-                              No citizens have enrolled in this drive yet.
-                            </div>
-                          ) : (
-                            <div className="divide-y divide-slate-100">
-                              {regList.map(reg => (
-                                <div
-                                  key={reg.id}
-                                  className="p-3.5 sm:px-4 flex items-center justify-between gap-3 text-xs hover:bg-slate-50 transition"
-                                >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-8 h-8 rounded-full bg-[#e6f4f1] text-[#095c54] font-black text-xs flex items-center justify-center shrink-0">
-                                      {(reg.citizen_name || 'Citizen').slice(0, 2).toUpperCase()}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="font-bold text-slate-900 truncate">{reg.citizen_name || 'Citizen'}</p>
-                                      <p className="text-[11px] text-slate-500">
-                                        {reg.citizen_phone || 'Mobile verified'} · Reg #{reg.registration_number || '001'} · {new Date(reg.registered_at).toLocaleDateString()}
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                      onClick={() => handleToggleAttendance(act.id, reg.id, reg.attendance_status)}
-                                      className={`px-3 py-1 rounded-xl font-bold text-xs flex items-center gap-1.5 transition ${
-                                        reg.attendance_status === 'present'
-                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                      }`}
-                                    >
-                                      {reg.attendance_status === 'present' ? (
-                                        <>
-                                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                          <span>Present</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <UserCheck className="w-3.5 h-3.5 text-slate-500" />
-                                          <span>Mark Present</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Sub-Tab 2: Citizen Questions & Chatbot AI Suggestion */}
-                    {currentSubTab === 'questions' && (
-                      <div className="p-5 sm:p-6 space-y-4 animate-fadeIn">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                            Citizen Inquiries for this Drive ({qList.length})
-                          </h3>
-                          <span className="text-[11px] text-slate-500">
-                            Community Head Review & AI Chatbot Response
-                          </span>
-                        </div>
-
-                        {qList.length === 0 ? (
-                          <div className="p-8 text-center text-xs text-slate-500 bg-slate-50 rounded-2xl border border-slate-200">
-                            No questions asked by citizens for this drive yet.
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            {qList.map(q => (
-                              <div
-                                key={q.id}
-                                className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <span className="text-xs font-extrabold text-[#095c54]">
-                                      {q.citizen_name || 'Citizen'}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 ml-2">
-                                      {new Date(q.created_at).toLocaleString()}
-                                    </span>
-                                    <p className="text-xs text-slate-900 font-semibold mt-1">
-                                      "{q.question_text}"
-                                    </p>
-                                  </div>
-
-                                  <span
-                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                                      q.status === 'answered'
-                                        ? 'bg-emerald-100 text-emerald-800'
-                                        : 'bg-amber-100 text-amber-800'
-                                    }`}
-                                  >
-                                    {q.status === 'answered' ? 'Answered' : 'Pending Response'}
-                                  </span>
-                                </div>
-
-                                {q.status === 'answered' ? (
-                                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs space-y-1">
-                                    <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                      <span>Official Community Answer:</span>
-                                    </p>
-                                    <p className="text-slate-800 leading-relaxed">{q.response_text}</p>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-2 pt-1">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[11px] font-bold text-slate-600">Your Response:</label>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAiSuggestAnswer(act, q)}
-                                        disabled={aiGeneratingQuestion[q.id]}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 text-[#095c54] border border-teal-200 text-xs font-bold hover:bg-teal-100 transition disabled:opacity-50"
-                                      >
-                                        <Bot className="w-3.5 h-3.5 text-[#095c54]" />
-                                        <span>
-                                          {aiGeneratingQuestion[q.id] ? 'Generating...' : 'AI Suggest Answer'}
-                                        </span>
-                                      </button>
-                                    </div>
-
-                                    <textarea
-                                      rows={2}
-                                      value={questionAnswers[q.id] || ''}
-                                      onChange={e =>
-                                        setQuestionAnswers(prev => ({ ...prev, [q.id]: e.target.value }))
-                                      }
-                                      placeholder="Type answer or click 'AI Suggest Answer' above..."
-                                      className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 outline-none focus:border-[#095c54]"
-                                    />
-
-                                    <div className="flex justify-end">
-                                      <button
-                                        onClick={() => handleSendAnswer(act.id, q.id)}
-                                        disabled={submittingAnswer[q.id]}
-                                        className="btn-primary-custom px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs"
-                                      >
-                                        <Send className="w-3.5 h-3.5" />
-                                        <span>{submittingAnswer[q.id] ? 'Sending...' : 'Send Answer'}</span>
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Sub-Tab 3: Event Gallery & Evidence (AI Check & Voice Dictation) */}
-                    {currentSubTab === 'evidence' && (
-                      <div className="p-5 sm:p-6 space-y-6 animate-fadeIn">
-                        {/* Evidence Upload Form */}
-                        <div className="p-4 sm:p-5 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-4">
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                              <Camera className="w-4 h-4 text-[#095c54]" />
-                              <span>Upload Event Evidence Photo & Description</span>
-                            </h3>
-                            <span className="text-[10px] font-bold text-slate-500">
-                              Voice Input & AI Validation Active
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Cleanliness Stage *
-                              </label>
-                              <select
-                                value={evidenceStage[act.id] || 'before'}
-                                onChange={e =>
-                                  setEvidenceStage(prev => ({ ...prev, [act.id]: e.target.value as any }))
-                                }
-                                className="w-full p-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:border-[#095c54]"
-                              >
-                                <option value="before">Before Cleanliness Drive</option>
-                                <option value="during">During Volunteer Clean-up</option>
-                                <option value="after">After Cleanliness Achieved</option>
-                              </select>
-                            </div>
-
-                            <div className="sm:col-span-2">
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Capture / Choose Photo *
-                              </label>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                onChange={e => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    handleEvidenceImageSelected(act.id, e.target.files[0]);
-                                  }
-                                }}
-                                className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#095c54] file:text-white hover:file:bg-[#074741] file:cursor-pointer"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Image Preview & AI Validation Status */}
-                          {evidenceImage[act.id] && (
-                            <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200">
-                              <img
-                                src={evidenceImage[act.id]}
-                                alt="Preview"
-                                className="w-16 h-16 object-cover rounded-lg border border-slate-200 shrink-0"
-                              />
-                              <div className="space-y-1 text-xs">
-                                <span className="font-bold text-slate-900 block">Photo Attached</span>
-                                <span className="text-emerald-700 font-bold block">
-                                  {evidenceAiStatus[act.id] || '✓ Clear civic photo attached'}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Description Input with Voice-to-Text & AI Abuse Validation */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[11px] font-bold text-slate-700">
-                                Detailed Evidence Description *
-                              </label>
-
-                              {/* Voice to Text Controls */}
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={speechLang}
-                                  onChange={e => setSpeechLang(e.target.value as any)}
-                                  className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-0.5"
-                                >
-                                  <option value="en-IN">English (EN)</option>
-                                  <option value="gu-IN">ગુજરાતી (GU)</option>
-                                  <option value="hi-IN">हिन्दी (HI)</option>
-                                </select>
-
-                                <button
-                                  type="button"
-                                  onClick={() => toggleVoiceDictation(act.id)}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition ${
-                                    isListening[act.id]
-                                      ? 'bg-rose-500 text-white animate-pulse'
-                                      : 'bg-emerald-50 text-[#095c54] border border-emerald-200 hover:bg-emerald-100'
-                                  }`}
-                                >
-                                  {isListening[act.id] ? (
-                                    <>
-                                      <MicOff className="w-3.5 h-3.5" />
-                                      <span>Listening...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Mic className="w-3.5 h-3.5" />
-                                      <span>Voice Dictation</span>
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-
-                            <textarea
-                              rows={2}
-                              value={evidenceCaption[act.id] || ''}
-                              onChange={e =>
-                                setEvidenceCaption(prev => ({ ...prev, [act.id]: e.target.value }))
-                              }
-                              placeholder="Describe the area cleared, waste segregated, or volunteer actions... (or speak via microphone)"
-                              className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 outline-none focus:border-[#095c54]"
-                            />
-
-                            {/* Real-Time Abuse Validation Message */}
-                            {evidenceCaption[act.id] && (() => {
-                              const abuse = checkTextForAbuse(evidenceCaption[act.id]);
-                              if (!abuse.isSafe) {
-                                return (
-                                  <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
-                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                    <span>Inappropriate words detected ({abuse.detectedWord || abuse.reason}). Please remove abusive terms.</span>
-                                  </p>
-                                );
-                              }
-                              return (
-                                <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                  <span>✓ Description verified by AI moderation</span>
-                                </p>
-                              );
-                            })()}
-                          </div>
-
-                          <div className="flex justify-end pt-1">
-                            <button
-                              onClick={() => handleUploadEvidence(act.id)}
-                              disabled={uploadingEvidence[act.id]}
-                              className="btn-primary-custom px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-xs"
-                            >
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{uploadingEvidence[act.id] ? 'Uploading...' : 'Upload Evidence Photo'}</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Existing Evidence Photos Gallery */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-bold text-slate-800">
-                              Uploaded Evidence Photos ({evList.length})
-                            </h4>
-                            {evList.length > 0 && (
-                              <button
-                                onClick={() => handleSubmitAllEvidence(act.id)}
-                                className="text-xs font-bold text-[#095c54] hover:underline"
-                              >
-                                Submit All to NMC for Completion Approval →
-                              </button>
-                            )}
-                          </div>
-
-                          {evList.length === 0 ? (
-                            <p className="text-xs text-slate-500 italic">No evidence photos uploaded yet for this drive.</p>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                              {evList.map(ev => (
-                                <div
-                                  key={ev.id}
-                                  className="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-xs space-y-2 pb-2.5"
-                                >
-                                  <div className="relative h-36 bg-slate-100">
-                                    <img
-                                      src={ev.image_url}
-                                      alt="Evidence"
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <span
-                                      className={`absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-black uppercase text-white shadow-xs ${
-                                        ev.stage === 'before'
-                                          ? 'bg-amber-600'
-                                          : ev.stage === 'during'
-                                          ? 'bg-blue-600'
-                                          : 'bg-emerald-600'
-                                      }`}
-                                    >
-                                      {ev.stage}
-                                    </span>
-                                  </div>
-                                  <div className="px-3 text-xs space-y-1">
-                                    <p className="text-slate-800 font-medium line-clamp-2">{ev.caption}</p>
-                                    <p className="text-[10px] text-slate-400">
-                                      {new Date(ev.created_at).toLocaleString()}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <DriveOperationsTabs
+                    driveId={act.id}
+                    driveTitle={act.title}
+                    driveStartTime={act.proposed_start_at}
+                    driveMeetingPoint={act.meeting_point || act.landmark || act.address}
+                    driveGears={act.equipment_needed || act.equipment_requirements || []}
+                    maxCapacity={maxCap}
+                    communityId={act.community_id}
+                    evidenceStatus={act.evidence_status}
+                    initialSubTab={propSelectedActivityId === act.id ? mappedInitialSubTab : 'attendance'}
+                    showCapacityControls={true}
+                    registrationStatus={act.registration_status}
+                    onUpdateCapacity={async (newLimit: number) => {
+                      await api.updateCommunityActivity(act.id, { max_capacity: newLimit });
+                      setCapacityLimits(prev => ({ ...prev, [act.id]: newLimit }));
+                      onRefreshActivities();
+                    }}
+                    onToggleRegistration={async () => {
+                      await handleToggleRegistrationStatus(act);
+                    }}
+                    onEvidenceSubmitted={onRefreshActivities}
+                  />
                 ) : (
                   /* 3. IF UNAPPROVED: WHOLE STATUS TRACKING STEPPER */
                   <div className="p-5 sm:p-6 bg-slate-50/70 border-t border-[#f1f5f9] space-y-4">

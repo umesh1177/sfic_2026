@@ -109,6 +109,34 @@ class ApiService {
     );
   }
 
+  async submitCommunityRegistrationRequest(payload: {
+    full_name: string;
+    phone: string;
+    community_name: string;
+    organisation_type?: string;
+    ward_number?: number;
+    locality?: string;
+    address?: string;
+    document_name: string;
+    document_url?: string;
+    document_data?: string;
+    document_type?: string;
+    notes?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(
+      '/auth/signup/community-request',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
+  async getSimulatedSmsMessages(phone?: string) {
+    const q = phone ? `?phone=${encodeURIComponent(phone)}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/auth/sms-messages${q}`);
+  }
+
   async login(mobileNumber: string, password: string, captchaToken: string) {
     return this.request<{ success: boolean; message: string; data: { token: string; profile: Profile } }>(
       '/auth/login',
@@ -364,10 +392,13 @@ class ApiService {
     return this.request<{ success: boolean; data: CleanlinessDrive[] }>('/drives');
   }
 
-  async registerForDrive(driveId: string) {
+  async registerForDrive(driveId: string, communityId?: string, communityName?: string) {
     return this.request<{ success: boolean; message: string; data: any }>(
       `/drives/${driveId}/register`,
-      { method: 'POST' }
+      {
+        method: 'POST',
+        body: JSON.stringify({ community_id: communityId, community_name: communityName })
+      }
     );
   }
 
@@ -596,10 +627,10 @@ class ApiService {
   }
 
   // Registrations
-  async getActivityRegistrations(activityId: string, page = 1, limit = 20, status?: string) {
+  async getActivityRegistrations(activityId: string, page = 1, limit = 50, status?: string) {
     const query = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
     if (status) query.append('status', status);
-    return this.request<{ success: boolean; data: { registrations: ActivityRegistration[]; total: number; page: number; limit: number } }>(
+    return this.request<{ success: boolean; data: ActivityRegistration[] | { registrations: ActivityRegistration[]; total: number; page: number; limit: number } }>(
       `/community/activities/${activityId}/registrations?${query.toString()}`
     );
   }
@@ -1050,6 +1081,31 @@ class ApiService {
     });
   }
 
+  async getWardCommunityRequests(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/community-requests${q}`);
+  }
+
+  async approveWardCommunityRequest(id: string, payload: { password: string; comments?: string }) {
+    return this.request<{ success: boolean; message: string; data: any }>(
+      `/ward/community-requests/${id}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
+  async rejectWardCommunityRequest(id: string, payload: { reason: string }) {
+    return this.request<{ success: boolean; message: string; data: any }>(
+      `/ward/community-requests/${id}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
   async getWardApprovals(wardNumber?: number) {
     const q = wardNumber ? `?ward_number=${wardNumber}` : '';
     return this.request<{ success: boolean; data: WardApprovalItem[] }>(`/ward/approvals${q}`);
@@ -1059,6 +1115,39 @@ class ApiService {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/approvals/${id}/review`, {
       method: 'POST',
       body: JSON.stringify({ action, comments })
+    });
+  }
+
+  async getWardCompletedDrives(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/completed-drives${q}`);
+  }
+
+  async publishDriveCompletion(
+    driveId: string,
+    data: {
+      title?: string;
+      description?: string;
+      achievement_stats?: string;
+      citizen_points?: number;
+      community_points?: number;
+      custom_communities?: string[];
+    }
+  ) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      data: {
+        post: CommunityRecognitionPost;
+        certificates_sent_citizens: number;
+        certificates_sent_communities: number;
+        citizen_points_awarded: number;
+        community_points_awarded: number;
+        participating_communities: string[];
+      };
+    }>(`/ward/drives/${driveId}/publish-completion`, {
+      method: 'POST',
+      body: JSON.stringify(data)
     });
   }
 
@@ -1088,8 +1177,23 @@ class ApiService {
     suggested_equipment?: string[];
     image_url?: string;
     ward_number?: number;
+    start_time?: string;
+    end_time?: string;
+    max_volunteers_per_community?: number;
   }) {
     return this.request<{ success: boolean; message: string; data: CommunityProblem }>('/ward/community-problems', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async planDriveForProblem(id: string, data: {
+    citizen_instructions: string;
+    necessary_gears: string[];
+    meeting_point?: string;
+    emergency_contact?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: CommunityProblem }>(`/community/ward-problems/${id}/plan-drive`, {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -1116,6 +1220,38 @@ class ApiService {
     return this.request<{ success: boolean; message: string }>(`/community/ward-problems/${id}/claim`, {
       method: 'POST',
       body: JSON.stringify({ activity_id: activityId })
+    });
+  }
+
+  async requestPlanCommunityDrive(
+    id: string,
+    data: {
+      proposed_volunteers_count: number;
+      proposed_date: string;
+      equipment_available?: string[];
+      notes?: string;
+    }
+  ) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/community/ward-problems/${id}/request-drive`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getProblemDriveRequests(id: string) {
+    return this.request<{ success: boolean; data: any[] }>(`/ward/community-problems/${id}/requests`);
+  }
+
+  async approveProblemCommunities(
+    id: string,
+    data: {
+      community_ids: string[];
+      comments?: string;
+    }
+  ) {
+    return this.request<{ success: boolean; message: string; data: CommunityProblem }>(`/ward/community-problems/${id}/approve-communities`, {
+      method: 'POST',
+      body: JSON.stringify(data)
     });
   }
 

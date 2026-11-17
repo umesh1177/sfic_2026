@@ -70,8 +70,9 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
     try {
       // 1. Fetch Registrations
       const regRes = await api.getActivityRegistrations(activity.id);
-      if (regRes.success && regRes.data?.registrations) {
-        setRegistrations(regRes.data.registrations);
+      if (regRes.success && regRes.data) {
+        const regList = Array.isArray(regRes.data) ? regRes.data : (regRes.data.registrations || []);
+        setRegistrations(regList);
       }
 
       // 2. Fetch Evidence

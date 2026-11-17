@@ -33,6 +33,7 @@ import { AssignWorkView } from './AssignWorkView.js';
 import { WorkHistoryView } from './WorkHistoryView.js';
 import { WorkerNotifications } from './WorkerNotifications.js';
 import { WorkerProfileView } from './WorkerProfileView.js';
+import { RewardsRecognition } from '../RewardsRecognition.js';
 
 interface WorkerDashboardProps {
   user: Profile;
@@ -112,7 +113,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
 
   const isLeader = assignments.some(a => a.is_temporary_leader);
 
-  // Dynamic 5 Tabs in Main Navigation
+  // Main Navigation Tabs
   const navItems = [
     { id: 'home', label: t.wrk_nav_home, icon: LayoutDashboard },
     {
@@ -122,6 +123,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
       badge: isLeader ? '👑 Leader' : undefined
     },
     { id: 'work_history', label: t.wrk_nav_work_history, icon: FileCheck2 },
+    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Sparkles },
     { id: 'notifications', label: t.wrk_nav_notifications, icon: Bell },
     { id: 'profile_settings', label: t.wrk_nav_profile, icon: User }
   ];
@@ -305,6 +307,10 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               profile={workerProfile}
               lang={lang}
             />
+          )}
+
+          {activeTab === 'posts' && (
+            <RewardsRecognition lang={lang} />
           )}
 
           {activeTab === 'notifications' && (

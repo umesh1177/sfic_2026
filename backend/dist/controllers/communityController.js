@@ -77,9 +77,13 @@ class CommunityController {
                     awarded_at: earned?.awarded_at
                 };
             });
-            const totalPoints = rewardsWithStatus
+            const badgePoints = rewardsWithStatus
                 .filter(r => r.is_earned)
                 .reduce((sum, r) => sum + r.points, 0);
+            const profileBonusPoints = citizenId
+                ? ((store_js_1.store.profiles || []).find(p => p.id === citizenId)?.civic_points || 0)
+                : 0;
+            const totalPoints = badgePoints + profileBonusPoints;
             res.status(200).json({
                 success: true,
                 data: {
@@ -230,11 +234,22 @@ class CommunityController {
                     ? [image_url]
                     : [];
             const primaryImage = effectivePhotos[0] || image_url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80';
+            const isOfficialRole = ['ward_officer', 'nmc_admin', 'super_admin'].includes(req.user.role);
+            const roleLabelMap = {
+                ward_officer: 'Ward Officer · Field Operations',
+                nmc_admin: 'NMC Central Administration',
+                super_admin: 'NMC Super Admin',
+                community_head: 'Community Head · Civic Partner',
+                sanitation_worker: 'NMC Sanitation Field Hero',
+                worker: 'NMC Sanitation Field Hero',
+                citizen: 'Verified Citizen · Navsari'
+            };
             const newPost = await dbRepository_js_1.DbRepository.createRecognitionPost({
                 author_name: req.user.full_name || 'Navsari Municipal Corporation',
-                author_role: req.user.role === 'ward_officer' ? 'Ward Officer · Field Operations' : 'NMC Swachhata Cell & Citizen Community',
-                ward_number: Number(ward_number || 3),
-                ward_name: ward_name || 'Ward 3 - Dudhiya Talao',
+                author_role: roleLabelMap[req.user.role] || 'NMC Swachhata Cell & Citizen Community',
+                is_verified_nmc: isOfficialRole,
+                ward_number: Number(ward_number || req.user.ward_number || 3),
+                ward_name: ward_name || `Ward ${Number(ward_number || req.user.ward_number || 3)} - Navsari`,
                 hero_name,
                 hero_role: hero_role || 'Civic Cleanliness Champion',
                 badge_title: badge_title || 'Community Spotlight',

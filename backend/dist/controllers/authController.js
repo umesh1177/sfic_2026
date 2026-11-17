@@ -90,6 +90,20 @@ class AuthController {
                 created_at: new Date().toISOString()
             };
             store_js_1.store.otpSessions.push(newSession);
+            // Record simulated SMS in store so user's phone Messages inbox receives it
+            if (!store_js_1.store.smsMessages)
+                store_js_1.store.smsMessages = [];
+            store_js_1.store.smsMessages.unshift({
+                id: `sms-${Date.now()}`,
+                phone: normalizedPhone,
+                sender: 'VM-NMCGOV',
+                senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+                body: `${plainOtp} is your official verification OTP for Swachh Setu Citizen Registration on Navsari Municipal Corporation portal. Valid for 5 minutes. Do not share this OTP with anyone for security purposes. - NMC SWACHHATA`,
+                otpCode: plainOtp,
+                type: 'otp',
+                timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                isRead: false
+            });
             // In production an SMS gateway (e.g. CDAC / Twilio / MSG91) sends the SMS.
             // We log to server console and also return in dev mode header/response for smooth judging!
             console.log(`[SMS GATEWAY] Sent OTP ${plainOtp} to ${normalizedPhone}`);
@@ -410,21 +424,28 @@ class AuthController {
                 });
                 return;
             }
-            // 5. Password Verification (plain fallback + bcrypt + standard demo passwords)
+            // 5. Password Verification
             const plainPassAuth = authProfile?.plain_password;
             const plainPassProf = profile?.plain_password;
             let passwordMatches = false;
-            if (inputPass === 'Navsari@2026' ||
-                inputPass === 'Admin@123' ||
-                inputPass === 'Ward8@2026' ||
-                inputPass === 'Worker@123' ||
-                inputPass === 'Head@123' ||
-                (plainPassAuth && plainPassAuth === inputPass) ||
-                (plainPassProf && plainPassProf === inputPass)) {
+            if (plainPassAuth && plainPassAuth === inputPass) {
                 passwordMatches = true;
             }
-            else if (authProfile.password_hash) {
-                passwordMatches = await bcryptjs_1.default.compare(inputPass, authProfile.password_hash).catch(() => false);
+            else if (plainPassProf && plainPassProf === inputPass) {
+                passwordMatches = true;
+            }
+            else if (authProfile.password_hash && await bcryptjs_1.default.compare(inputPass, authProfile.password_hash).catch(() => false)) {
+                passwordMatches = true;
+            }
+            else if (!plainPassAuth && !plainPassProf) {
+                // Fallback for untouched seed accounts only if no custom password is set
+                if (inputPass === 'Navsari@2026' ||
+                    inputPass === 'Admin@123' ||
+                    inputPass === 'Ward8@2026' ||
+                    inputPass === 'Worker@123' ||
+                    inputPass === 'Head@123') {
+                    passwordMatches = true;
+                }
             }
             if (!passwordMatches) {
                 res.status(401).json({
@@ -450,17 +471,26 @@ class AuthController {
     }
     /**
      * POST /api/auth/forgot-password/send-otp
+     * Validates mobile number exists in database/store before sending OTP
      */
     static async forgotPasswordSendOtp(req, res) {
         try {
             const { mobile_number } = req.body;
             const normalizedPhone = normalizeIndianPhone(mobile_number || '');
             if (!normalizedPhone) {
-                res.status(400).json({ success: false, error: 'Please enter a valid 10-digit Indian mobile number' });
+                res.status(400).json({ success: false, error: 'Please enter a valid 10-digit Indian mobile number.' });
                 return;
             }
-            const profile = store_js_1.store.profiles.find(p => p.phone === normalizedPhone);
-            // For security, do not expose if phone doesn't exist, but send simulated response
+            const tenDigits = normalizedPhone.slice(-10);
+            // Verify in database/store whether a user with this mobile number exists
+            const userMatch = await dbRepository_js_1.DbRepository.findUserByPhone(normalizedPhone);
+            if (!userMatch) {
+                res.status(404).json({
+                    success: false,
+                    error: `No registered account found with mobile number +91 ${tenDigits}. Please check the number or register a new account.`
+                });
+                return;
+            }
             const plainOtp = Math.floor(100000 + Math.random() * 900000).toString();
             const otpHash = await bcryptjs_1.default.hash(plainOtp, 8);
             const newSession = {
@@ -475,14 +505,28 @@ class AuthController {
                 created_at: new Date().toISOString()
             };
             store_js_1.store.otpSessions.push(newSession);
-            console.log(`[PASSWORD RESET SMS] OTP for ${normalizedPhone}: ${plainOtp}`);
+            // Dispatch SMS to simulated inbox
+            if (!store_js_1.store.smsMessages)
+                store_js_1.store.smsMessages = [];
+            store_js_1.store.smsMessages.unshift({
+                id: `sms-fp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                phone: normalizedPhone,
+                sender: 'VM-NMCGOV',
+                senderName: 'NMC Security OTP',
+                body: `Your Navsari Municipal Corporation OTP for Password Reset is ${plainOtp}. Valid for 5 minutes. Do not share this OTP with anyone.`,
+                otpCode: plainOtp,
+                type: 'otp',
+                timestamp: new Date().toISOString(),
+                isRead: false
+            });
+            console.log(`[PASSWORD RESET SMS] OTP for ${normalizedPhone} (${userMatch.profile.full_name}): ${plainOtp}`);
             res.status(200).json({
                 success: true,
-                message: 'If the mobile number is registered, a password reset OTP has been dispatched.',
+                message: `Password reset OTP has been sent via SMS to +91 ${tenDigits}.`,
                 data: {
                     session_id: newSession.id,
-                    mobile_masked: `${normalizedPhone.slice(0, 3)} XXXXX-${normalizedPhone.slice(-4)}`,
-                    _dev_otp_code: profile ? plainOtp : undefined
+                    mobile_masked: `+91 ${tenDigits.slice(0, 3)} XXXXX-${tenDigits.slice(-2)}`,
+                    _dev_otp_code: plainOtp
                 }
             });
         }
@@ -497,20 +541,29 @@ class AuthController {
         try {
             const { session_id, otp_code } = req.body;
             const session = store_js_1.store.otpSessions.find(s => s.id === session_id && s.purpose === 'password_reset');
-            if (!session || !otp_code) {
-                res.status(400).json({ success: false, error: 'Invalid or expired reset session' });
+            if (!session) {
+                res.status(400).json({ success: false, error: 'Reset session expired or not found. Please request a new OTP.' });
+                return;
+            }
+            if (new Date() > new Date(session.expires_at)) {
+                res.status(400).json({ success: false, error: 'OTP has expired. Please request a new one.' });
+                return;
+            }
+            if (!otp_code || otp_code.trim().length !== 6) {
+                res.status(400).json({ success: false, error: 'Please enter all 6 digits of the OTP.' });
                 return;
             }
             const isValid = await bcryptjs_1.default.compare(otp_code.trim(), session.otp_hash);
             if (!isValid) {
-                res.status(400).json({ success: false, error: 'Invalid OTP code' });
+                session.attempts_count = (session.attempts_count || 0) + 1;
+                res.status(400).json({ success: false, error: 'Incorrect OTP code. Please enter the valid code sent to your mobile.' });
                 return;
             }
             session.verified_at = new Date().toISOString();
             const resetToken = jsonwebtoken_1.default.sign({ sessionId: session.id, phone: session.mobile_number, purpose: 'reset_verified' }, auth_js_1.JWT_SECRET, { expiresIn: '15m' });
             res.status(200).json({
                 success: true,
-                message: 'OTP verified. You may now enter your new password.',
+                message: 'OTP verified successfully. You may now enter your new password.',
                 data: { reset_token: resetToken }
             });
         }
@@ -525,37 +578,56 @@ class AuthController {
         try {
             const { reset_token, new_password, confirm_password } = req.body;
             if (!reset_token || !new_password) {
-                res.status(400).json({ success: false, error: 'Reset token and new password are required' });
+                res.status(400).json({ success: false, error: 'Reset token and new password are required.' });
                 return;
             }
             if (new_password.length < 8) {
-                res.status(400).json({ success: false, error: 'Password must be at least 8 characters long' });
+                res.status(400).json({ success: false, error: 'Password must be at least 8 characters long.' });
                 return;
             }
             if (new_password !== confirm_password) {
-                res.status(400).json({ success: false, error: 'Passwords do not match' });
+                res.status(400).json({ success: false, error: 'New password and confirmation password do not match.' });
                 return;
             }
-            const decoded = jsonwebtoken_1.default.verify(reset_token, auth_js_1.JWT_SECRET);
-            if (decoded.purpose !== 'reset_verified')
-                throw new Error();
-            const profile = store_js_1.store.profiles.find(p => p.phone === decoded.phone);
-            if (!profile) {
-                res.status(404).json({ success: false, error: 'Citizen profile not found' });
+            let decoded;
+            try {
+                decoded = jsonwebtoken_1.default.verify(reset_token, auth_js_1.JWT_SECRET);
+            }
+            catch {
+                res.status(400).json({ success: false, error: 'Invalid or expired password reset token. Please request a new OTP.' });
                 return;
             }
-            const authProfile = store_js_1.store.authProfiles.find(a => a.user_id === profile.id);
-            if (authProfile) {
-                authProfile.password_hash = await bcryptjs_1.default.hash(new_password, 10);
-                authProfile.updated_at = new Date().toISOString();
+            if (decoded.purpose !== 'reset_verified') {
+                res.status(400).json({ success: false, error: 'Unauthorized password reset token.' });
+                return;
             }
+            const userMatch = await dbRepository_js_1.DbRepository.findUserByPhone(decoded.phone);
+            if (!userMatch) {
+                res.status(404).json({ success: false, error: 'User profile not found in database.' });
+                return;
+            }
+            // Update password across database and store
+            await dbRepository_js_1.DbRepository.updateUserPassword(userMatch.profile.id, new_password);
+            // Dispatch confirmation SMS
+            if (!store_js_1.store.smsMessages)
+                store_js_1.store.smsMessages = [];
+            store_js_1.store.smsMessages.unshift({
+                id: `sms-pw-success-${Date.now()}`,
+                phone: decoded.phone,
+                sender: 'VM-NMCGOV',
+                senderName: 'NMC Security Alert',
+                body: `Your password for Navsari Municipal Citizen Portal has been reset successfully. You can now login with your new credentials.`,
+                type: 'general',
+                timestamp: new Date().toISOString(),
+                isRead: false
+            });
             res.status(200).json({
                 success: true,
-                message: 'Password reset successfully. You can now login with your new password.'
+                message: 'Password reset successfully! You can now login with your new password.'
             });
         }
-        catch {
-            res.status(400).json({ success: false, error: 'Invalid or expired password reset token' });
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message || 'Internal server error' });
         }
     }
     /**
@@ -595,6 +667,143 @@ class AuthController {
             success: true,
             data: { token: newToken, profile: req.user }
         });
+    }
+    /**
+     * POST /api/auth/signup/community-request
+     */
+    static async submitCommunityRegistrationRequest(req, res) {
+        try {
+            const { full_name, phone, community_name, organisation_type = 'Resident Welfare Association', ward_number = 3, locality = 'Dudhiya Talao', address, document_name, document_url, document_data, document_type = 'application/pdf', notes } = req.body;
+            if (!full_name || !full_name.trim()) {
+                res.status(400).json({ success: false, error: 'Full name of community head is required' });
+                return;
+            }
+            if (!phone || !phone.trim()) {
+                res.status(400).json({ success: false, error: 'Contact mobile number is required' });
+                return;
+            }
+            const normalizedPhone = normalizeIndianPhone(phone.trim()) || `+91${phone.replace(/\D/g, '').slice(-10)}`;
+            if (normalizedPhone.replace(/\D/g, '').length !== 12) {
+                res.status(400).json({ success: false, error: 'Please enter a valid 10-digit Indian mobile number' });
+                return;
+            }
+            if (!community_name || !community_name.trim()) {
+                res.status(400).json({ success: false, error: 'Community or Organization name is required' });
+                return;
+            }
+            const docUrl = document_url || document_data;
+            if (!docUrl && !document_name) {
+                res.status(400).json({ success: false, error: 'Verification document (registration certificate / trust deed) is required' });
+                return;
+            }
+            // Check if this mobile number already exists as an approved account
+            const existingUser = (store_js_1.store.profiles || []).find(p => p.phone === normalizedPhone);
+            if (existingUser && existingUser.role === 'community_head') {
+                res.status(400).json({
+                    success: false,
+                    error: 'An active Community Head account already exists for this mobile number. Please log in directly.'
+                });
+                return;
+            }
+            // Check if already submitted a pending request
+            if (!store_js_1.store.communityRegistrationRequests)
+                store_js_1.store.communityRegistrationRequests = [];
+            const pendingExisting = store_js_1.store.communityRegistrationRequests.find(r => r.phone === normalizedPhone && r.status === 'pending');
+            if (pendingExisting) {
+                res.status(400).json({
+                    success: false,
+                    error: `A registration request for this mobile number (${pendingExisting.request_code}) is already under review by the Ward Officer.`
+                });
+                return;
+            }
+            const wardNum = Number(ward_number) || 3;
+            const wardName = wardNum === 8
+                ? 'Ward 8 - Madhumati & Parsi Wad'
+                : (wardNum === 3 ? 'Ward 3 - Dudhiya Talao & Ashapuri' : `Ward ${wardNum} - Navsari Civic Area`);
+            const requestCode = `REQ-COMM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+            const effectiveDocUrl = docUrl || 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=800&q=80';
+            const effectiveDocName = document_name || 'Community_Verification_Certificate.pdf';
+            const newRequest = {
+                id: `req-comm-${Date.now()}`,
+                request_code: requestCode,
+                full_name: full_name.trim(),
+                phone: normalizedPhone,
+                community_name: community_name.trim(),
+                organisation_type: organisation_type || 'Resident Welfare Association',
+                ward_number: wardNum,
+                ward_name: wardName,
+                locality: locality?.trim() || 'Dudhiya Talao',
+                address: address?.trim() || `Ward ${wardNum}, Navsari`,
+                document_name: effectiveDocName,
+                document_url: effectiveDocUrl,
+                document_type: document_type || 'application/pdf',
+                notes: notes?.trim() || undefined,
+                status: 'pending',
+                submitted_at: new Date().toISOString()
+            };
+            store_js_1.store.communityRegistrationRequests.unshift(newRequest);
+            // Create SMS notification on applicant's device
+            if (!store_js_1.store.smsMessages)
+                store_js_1.store.smsMessages = [];
+            store_js_1.store.smsMessages.unshift({
+                id: `sms-${Date.now()}`,
+                phone: normalizedPhone,
+                sender: 'VM-NMCGOV',
+                senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+                body: `Navsari Municipal Corporation: Your Community Head registration request for "${community_name.trim()}" has been submitted to Ward Officer (Ward ${wardNum}) for document verification. Reference ID: ${requestCode}. You will receive your login password via SMS upon approval.`,
+                type: 'submission',
+                timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                isRead: false
+            });
+            // Notify Ward Officer in system notifications
+            if (!store_js_1.store.notifications)
+                store_js_1.store.notifications = [];
+            store_js_1.store.notifications.push({
+                id: `notif-${Date.now()}`,
+                user_id: wardNum === 8 ? 'w0000000-0000-0000-0000-000000000008' : 'w0000000-0000-0000-0000-000000000003',
+                title: 'New Community Registration Pending Approval',
+                message: `${full_name.trim()} submitted community verification document for "${community_name.trim()}" in Ward ${wardNum}. Reference: ${requestCode}`,
+                notification_type: 'system_alert',
+                is_read: false,
+                created_at: new Date().toISOString()
+            });
+            console.log(`[COMMUNITY REGISTRATION REQUEST] Submitted by ${full_name} (${normalizedPhone}) for ${community_name} -> Sent to Ward ${wardNum} Officer`);
+            res.status(201).json({
+                success: true,
+                message: 'Your registration request has been sent to higher authorities for approval.',
+                data: newRequest
+            });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+        }
+    }
+    /**
+     * GET /api/auth/sms-messages
+     */
+    static async getSimulatedSmsMessages(req, res) {
+        try {
+            const phoneQuery = req.query.phone ? String(req.query.phone).trim() : undefined;
+            const cleanPhone = phoneQuery ? phoneQuery.replace(/\D/g, '') : undefined;
+            const allMessages = store_js_1.store.smsMessages || [];
+            if (!cleanPhone || cleanPhone.length < 4) {
+                res.status(200).json({ success: true, data: allMessages.slice(0, 20) });
+                return;
+            }
+            // Filter by matching digits or return messages if matching
+            const filtered = allMessages.filter(m => {
+                const msgDigits = m.phone.replace(/\D/g, '');
+                return msgDigits.endsWith(cleanPhone) || cleanPhone.endsWith(msgDigits.slice(-10));
+            });
+            const result = filtered.length > 0 ? filtered : allMessages.slice(0, 5);
+            res.status(200).json({
+                success: true,
+                data: result
+            });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
     }
 }
 exports.AuthController = AuthController;

@@ -19,7 +19,8 @@ import {
   ShieldCheck,
   TrendingUp,
   User,
-  Users
+  Users,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
@@ -416,6 +417,34 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
                   />
                 </div>
               ) : null}
+
+              {/* Participating Communities Listed Below Completion Post */}
+              {post.participating_communities && post.participating_communities.length > 0 && (
+                <div className="mx-4 sm:mx-5 my-3 p-3.5 rounded-2xl bg-emerald-50/75 border border-emerald-200 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1.5">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-[#095c54] flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Participating Communities</span>
+                    </span>
+                    {(post.points_awarded_citizen || post.points_awarded_community) && (
+                      <span className="text-[10px] font-black text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                        🏅 Certificates &amp; Points Issued (+{post.points_awarded_citizen || 150} Citizen · +{post.points_awarded_community || 300} Community)
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {post.participating_communities.map((commName, cIdx) => (
+                      <span
+                        key={cIdx}
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-white border border-emerald-200 text-xs font-extrabold text-[#0f2925] shadow-2xs"
+                      >
+                        <Building2 className="w-3 h-3 text-[#095c54]" />
+                        <span>{commName}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Engagement Counter */}
               <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-[#64748b] border-b border-[#f1f5f9]">

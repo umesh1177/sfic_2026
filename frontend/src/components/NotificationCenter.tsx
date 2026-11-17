@@ -12,11 +12,13 @@ import {
   Trash2,
   Volume2,
   Sparkles,
-  ArrowLeft
+  ArrowLeft,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api.js';
-import { AppNotification } from '../types/index.js';
+import { AppNotification, DriveCompletionCertificate } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { CompletionCertificateModal } from './CompletionCertificateModal.js';
 
 interface NotificationCenterProps {
   onBack?: () => void;
@@ -34,6 +36,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [filterType, setFilterType] = useState<string>('all');
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [viewingCertificate, setViewingCertificate] = useState<DriveCompletionCertificate | null>(null);
 
   // Extended civic notifications to ensure all categories are richly represented
   const initialCivicNotifications: AppNotification[] = [
@@ -137,10 +140,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const filtered = notifications.filter(n => {
     if (filterType === 'all') return true;
+    if (filterType === 'certificates') return n.notification_type === 'certificate' || Boolean(n.certificate);
     if (filterType === 'complaints') return n.notification_type === 'complaint_status';
     if (filterType === 'drives') return n.notification_type === 'drive_reminder';
     if (filterType === 'alerts') return n.notification_type === 'civic_alert';
-    if (filterType === 'rewards') return n.notification_type === 'reward_earned';
+    if (filterType === 'rewards') return n.notification_type === 'reward_earned' || n.notification_type === 'certificate';
     return true;
   });
 
@@ -148,6 +152,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
+      case 'certificate':
+        return <Award className="w-5 h-5 text-amber-600" />;
       case 'complaint_status':
         return <CheckCircle2 className="w-5 h-5 text-[#095c54]" />;
       case 'civic_alert':
@@ -163,6 +169,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const getNotificationBadge = (type: string) => {
     switch (type) {
+      case 'certificate':
+        return { label: '🏅 Completion Certificate', bg: 'bg-amber-100 text-amber-900 border border-amber-300' };
       case 'complaint_status':
         return { label: 'Complaint Update', bg: 'bg-[#e6f4f1] text-[#095c54]' };
       case 'civic_alert':
@@ -178,6 +186,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const handleActionClick = (n: AppNotification) => {
     markAsRead(n.id);
+    if (n.certificate) {
+      setViewingCertificate(n.certificate);
+      return;
+    }
     if (n.notification_type === 'complaint_status') {
       onNavigateTab('complaints');
     } else if (n.notification_type === 'drive_reminder') {
@@ -219,15 +231,27 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           </p>
         </div>
 
-        {unreadTotal > 0 && (
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
           <button
-            onClick={markAllAsRead}
-            className="btn-outline-custom px-4 py-2 text-xs font-extrabold self-start sm:self-auto shrink-0 flex items-center gap-1.5"
+            type="button"
+            onClick={fetchNotifications}
+            disabled={loading}
+            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+            title="Refresh notifications"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#095c54]" />
-            <span>Mark All as Read</span>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#095c54]' : ''}`} />
           </button>
-        )}
+
+          {unreadTotal > 0 && (
+            <button
+              onClick={markAllAsRead}
+              className="btn-outline-custom px-4 py-2 text-xs font-extrabold flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#095c54]" />
+              <span>Mark All as Read</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Temporary Feedback Banner */}
@@ -242,10 +266,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
         {[
           { id: 'all', label: 'All Notifications', count: notifications.length },
+          { id: 'certificates', label: '🏅 Certificates', count: notifications.filter(n => n.notification_type === 'certificate' || Boolean(n.certificate)).length },
           { id: 'complaints', label: 'Complaints', count: notifications.filter(n => n.notification_type === 'complaint_status').length },
           { id: 'alerts', label: 'Civic Alerts', count: notifications.filter(n => n.notification_type === 'civic_alert').length },
           { id: 'drives', label: 'Drives', count: notifications.filter(n => n.notification_type === 'drive_reminder').length },
-          { id: 'rewards', label: 'Karma Rewards', count: notifications.filter(n => n.notification_type === 'reward_earned').length }
+          { id: 'rewards', label: 'Karma Rewards', count: notifications.filter(n => n.notification_type === 'reward_earned' || n.notification_type === 'certificate').length }
         ].map(chip => (
           <button
             key={chip.id}
@@ -307,10 +332,16 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                 {/* Content */}
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${badge.bg}`}>
                         {badge.label}
                       </span>
+                      {n.points_awarded && n.points_awarded > 0 && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-emerald-600" />
+                          +{n.points_awarded} Points Awarded
+                        </span>
+                      )}
                       {!n.is_read && (
                         <span className="w-2 h-2 rounded-full bg-[#dc2626]"></span>
                       )}
@@ -334,14 +365,29 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                     {n.message}
                   </p>
 
-                  {/* Contextual Action Link */}
-                  <div className="pt-2 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[#095c54] flex items-center gap-1 hover:underline">
-                      {n.notification_type === 'complaint_status' && 'View Complaint Tracking →'}
-                      {n.notification_type === 'drive_reminder' && 'View Cleanliness Drive →'}
-                      {n.notification_type === 'reward_earned' && 'View Badges & Leaderboard →'}
-                      {n.notification_type === 'civic_alert' && 'Municipal Swachhata Advisory'}
-                    </span>
+                  {/* Contextual Action Link / Certificate Button */}
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
+                    {n.certificate ? (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          markAsRead(n.id);
+                          setViewingCertificate(n.certificate!);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-2xs transition"
+                      >
+                        <Award className="w-3.5 h-3.5 text-amber-300" />
+                        <span>View &amp; Download Completion Certificate</span>
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-bold text-[#095c54] flex items-center gap-1 hover:underline">
+                        {n.notification_type === 'complaint_status' && 'View Complaint Tracking →'}
+                        {n.notification_type === 'drive_reminder' && 'View Cleanliness Drive →'}
+                        {n.notification_type === 'reward_earned' && 'View Badges & Leaderboard →'}
+                        {n.notification_type === 'civic_alert' && 'Municipal Swachhata Advisory'}
+                      </span>
+                    )}
 
                     {!n.is_read && (
                       <button
@@ -360,6 +406,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Official Completion Certificate Modal */}
+      {viewingCertificate && (
+        <CompletionCertificateModal
+          certificate={viewingCertificate}
+          onClose={() => setViewingCertificate(null)}
+        />
       )}
     </div>
   );

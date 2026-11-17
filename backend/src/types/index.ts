@@ -23,6 +23,7 @@ export interface Profile {
   address?: string;
   locality?: string;
   ward_number?: number;
+  civic_points?: number;
   is_active: boolean;
   role: UserRole;
   created_at: string;
@@ -34,6 +35,7 @@ export interface CitizenAuthProfile {
   user_id: string;
   mobile_number: string;
   password_hash: string;
+  plain_password?: string;
   mobile_verified: boolean;
   verification_completed_at?: string;
   account_status: 'active' | 'suspended' | 'locked';
@@ -186,6 +188,8 @@ export interface CleanlinessDrive {
   ward_id: string;
   ward_name: string;
   location_name: string;
+  latitude?: number;
+  longitude?: number;
   start_time: string;
   end_time: string;
   registration_deadline: string;
@@ -195,6 +199,25 @@ export interface CleanlinessDrive {
   max_volunteers: number;
   registered_volunteers_count: number;
   is_registered?: boolean;
+  attendance_status?: string;
+  is_joint?: boolean;
+  co_organisers?: string[];
+  drive_type?: 'single' | 'joint';
+  action_plan?: string;
+  suggested_equipment?: string[];
+  max_volunteers_per_community?: number;
+  citizen_instructions?: string;
+  necessary_gears?: string[];
+  meeting_point?: string;
+  emergency_contact?: string;
+  assigned_communities?: AssignedCommunity[];
+  community_volunteer_counts?: Record<string, number>;
+  registered_community_id?: string;
+  registered_community_name?: string;
+  checkin_latitude?: number;
+  checkin_longitude?: number;
+  checkin_distance_meters?: number;
+  checkin_at?: string;
 }
 
 export interface Challenge {
@@ -223,13 +246,31 @@ export interface RewardDefinition {
   awarded_at?: string;
 }
 
+export interface DriveCompletionCertificate {
+  certificate_id: string;
+  recipient_name: string;
+  recipient_type: 'citizen' | 'community';
+  drive_id: string;
+  drive_title: string;
+  ward_number: number;
+  ward_name: string;
+  location_name: string;
+  completed_date: string;
+  communities_involved: string[];
+  points_awarded: number;
+  issued_by: string;
+  issued_at: string;
+}
+
 export interface AppNotification {
   id: string;
   user_id: string;
   title: string;
   message: string;
-  notification_type: 'complaint_status' | 'drive_reminder' | 'reward_earned' | 'system_alert' | 'civic_alert';
+  notification_type: 'complaint_status' | 'drive_reminder' | 'reward_earned' | 'system_alert' | 'civic_alert' | 'certificate';
   reference_id?: string;
+  points_awarded?: number;
+  certificate?: DriveCompletionCertificate;
   is_read: boolean;
   created_at: string;
 }
@@ -282,6 +323,11 @@ export interface CommunityRecognitionPost {
   before_image_url?: string;
   after_image_url?: string;
   after_photos?: string[];
+  participating_communities?: string[];
+  drive_id?: string;
+  volunteers_count?: number;
+  points_awarded_citizen?: number;
+  points_awarded_community?: number;
   likes_count: number;
   comments_count: number;
   is_liked?: boolean;
@@ -408,9 +454,15 @@ export interface ActivityRegistration {
   citizen_name?: string;
   citizen_phone?: string;
   citizen_email?: string;
+  community_id?: string;
+  community_name?: string;
   registration_number: string;
   registration_status: 'registered' | 'waitlisted' | 'cancelled' | 'pending_approval';
-  attendance_status: 'not_marked' | 'present' | 'absent' | 'excused';
+  attendance_status: 'not_marked' | 'pending_verification' | 'present' | 'absent' | 'excused';
+  checkin_latitude?: number;
+  checkin_longitude?: number;
+  checkin_distance_meters?: number;
+  checkin_at?: string;
   registered_at: string;
   cancelled_at?: string;
 }
@@ -489,7 +541,9 @@ export interface ActivityEvidence {
   activity_id: string;
   uploaded_by: string;
   evidence_type: 'before' | 'during' | 'after';
+  stage?: 'before' | 'during' | 'after';
   storage_path: string;
+  image_url?: string;
   caption: string;
   description?: string;
   latitude?: number;
@@ -911,7 +965,7 @@ export interface WardCleanlinessScore {
 
 export interface WardApprovalItem {
   id: string;
-  type: 'activity' | 'evidence' | 'completion_report' | 'evidence_review' | 'attendance_exception';
+  type: 'activity' | 'evidence' | 'completion_report' | 'evidence_review' | 'attendance_exception' | 'community_registration';
   title: string;
   submitted_by_name: string;
   submitted_by_role: string;
@@ -923,33 +977,69 @@ export interface WardApprovalItem {
   comments?: string;
 }
 
-
-export interface CommunityProblem {
+export interface CommunityRegistrationRequest {
   id: string;
+  request_code: string;
+  full_name: string;
+  phone: string;
+  community_name: string;
+  organisation_type: string;
   ward_number: number;
   ward_name: string;
-  title: string;
-  description: string;
-  location_name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  action_plan: string;
-  urgency: 'low' | 'medium' | 'high' | 'critical';
-  estimated_volunteers_needed: number;
-  suggested_equipment: string[];
-  image_url?: string;
-  status: 'open' | 'claimed' | 'in_progress' | 'resolved';
-  claimed_by_community_id?: string;
-  claimed_by_community_name?: string;
-  linked_activity_id?: string;
-  created_by?: string;
-  officer_name?: string;
-  created_at: string;
-  updated_at: string;
+  locality: string;
+  address?: string;
+  document_name: string;
+  document_url: string;
+  document_type: string;
+  notes?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  assigned_password?: string;
+  submitted_at: string;
+  reviewed_at?: string;
+  reviewed_by_officer_id?: string;
+  reviewed_by_officer_name?: string;
+}
+
+export interface SimulatedSms {
+  id: string;
+  phone: string;
+  sender: string;
+  senderName: string;
+  body: string;
+  otpCode?: string;
+  password?: string;
+  type: 'otp' | 'approval' | 'submission' | 'general';
+  timestamp: string;
+  isRead: boolean;
 }
 
 
+export interface CommunityDriveRequest {
+  id: string;
+  problem_id: string;
+  community_id: string;
+  community_name: string;
+  head_name: string;
+  contact_phone: string;
+  proposed_volunteers_count: number;
+  proposed_date: string;
+  equipment_available?: string[];
+  notes?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submitted_at: string;
+  reviewed_at?: string;
+}
+
+export interface AssignedCommunity {
+  id: string;
+  community_id: string;
+  community_name: string;
+  head_name?: string;
+  contact_phone?: string;
+  assigned_at: string;
+}
+
 export interface CommunityProblem {
   id: string;
   ward_number: number;
@@ -965,12 +1055,26 @@ export interface CommunityProblem {
   estimated_volunteers_needed: number;
   suggested_equipment: string[];
   image_url?: string;
-  status: 'open' | 'claimed' | 'in_progress' | 'resolved';
+  status: 'open' | 'requests_received' | 'claimed' | 'in_progress' | 'resolved';
   claimed_by_community_id?: string;
   claimed_by_community_name?: string;
+  drive_requests?: CommunityDriveRequest[];
+  assigned_communities?: AssignedCommunity[];
   linked_activity_id?: string;
   created_by?: string;
   officer_name?: string;
+  start_time?: string;
+  end_time?: string;
+  max_volunteers_per_community?: number;
+  citizen_instructions?: string;
+  necessary_gears?: string[];
+  meeting_point?: string;
+  emergency_contact?: string;
+  evidence_status?: 'not_submitted' | 'draft' | 'submitted' | 'ward_verified' | 'verified_complete' | 'changes_requested' | 'rejected';
+  evidence_submitted_at?: string;
+  evidence_review_comments?: string;
+  completion_posted?: boolean;
+  completion_post_id?: string;
   created_at: string;
   updated_at: string;
 }

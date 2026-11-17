@@ -33,6 +33,8 @@ function softAuthenticate(req, _res, next) {
 exports.apiRouter.post('/auth/signup/send-otp', authController_js_1.AuthController.signupSendOtp);
 exports.apiRouter.post('/auth/signup/verify-otp', authController_js_1.AuthController.signupVerifyOtp);
 exports.apiRouter.post('/auth/signup/complete-profile', authController_js_1.AuthController.signupCompleteProfile);
+exports.apiRouter.post('/auth/signup/community-request', authController_js_1.AuthController.submitCommunityRegistrationRequest);
+exports.apiRouter.get('/auth/sms-messages', authController_js_1.AuthController.getSimulatedSmsMessages);
 exports.apiRouter.post('/auth/login', authController_js_1.AuthController.login);
 exports.apiRouter.post('/auth/logout', authController_js_1.AuthController.logout);
 exports.apiRouter.post('/auth/refresh', auth_js_1.authenticate, authController_js_1.AuthController.refresh);
@@ -140,6 +142,8 @@ exports.apiRouter.get('/community/ai/activity-insights', softAuthenticate, commu
 exports.apiRouter.get('/community/dashboard/summary', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getDashboardSummary);
 exports.apiRouter.get('/community/ward-problems', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getWardProblems);
 exports.apiRouter.post('/community/ward-problems/:id/claim', softAuthenticate, communityHeadController_js_1.CommunityHeadController.claimWardProblem);
+exports.apiRouter.post('/community/ward-problems/:id/request-drive', softAuthenticate, communityHeadController_js_1.CommunityHeadController.requestPlanDrive);
+exports.apiRouter.post('/community/ward-problems/:id/plan-drive', softAuthenticate, communityHeadController_js_1.CommunityHeadController.planDriveForProblem);
 // ============================================================================
 // WORKER DASHBOARD ROUTES (Navsari Municipal Corporation)
 // ============================================================================
@@ -190,10 +194,17 @@ exports.apiRouter.get('/ward/communities', softAuthenticate, wardOfficerControll
 exports.apiRouter.post('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunity);
 exports.apiRouter.put('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateCommunity);
 exports.apiRouter.delete('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunity);
+exports.apiRouter.get('/ward/community-requests', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityRequests);
+exports.apiRouter.post('/ward/community-requests/:id/approve', softAuthenticate, wardOfficerController_js_1.WardOfficerController.approveCommunityRequest);
+exports.apiRouter.post('/ward/community-requests/:id/reject', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectCommunityRequest);
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
+exports.apiRouter.get('/ward/completed-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCompletedDrives);
+exports.apiRouter.post('/ward/drives/:id/publish-completion', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishDriveCompletion);
 exports.apiRouter.get('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityProblems);
 exports.apiRouter.post('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunityProblem);
+exports.apiRouter.get('/ward/community-problems/:id/requests', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getProblemDriveRequests);
+exports.apiRouter.post('/ward/community-problems/:id/approve-communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.approveProblemCommunities);
 exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenCommunityProblem);
 exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);

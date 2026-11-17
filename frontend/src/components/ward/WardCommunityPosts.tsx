@@ -18,11 +18,13 @@ import {
   Bell,
   Eye,
   Megaphone,
-  Camera
+  Camera,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
 import { CommunityRecognitionPost, RecognitionComment } from '../../types/index.js';
+import { PostDriveCompletionModal, CompletedDriveForPost } from './PostDriveCompletionModal.js';
 
 export const WardCommunityPosts: React.FC = () => {
   const [posts, setPosts] = useState<CommunityRecognitionPost[]>([]);
@@ -31,6 +33,8 @@ export const WardCommunityPosts: React.FC = () => {
   const [newCommentText, setNewCommentText] = useState<Record<string, string>>({});
   const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [completedDrives, setCompletedDrives] = useState<CompletedDriveForPost[]>([]);
+  const [postCompletionModalDrive, setPostCompletionModalDrive] = useState<CompletedDriveForPost | null>(null);
 
   // New Official Post Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
@@ -74,8 +78,12 @@ export const WardCommunityPosts: React.FC = () => {
   const fetchPosts = async () => {
     setLoading(true);
     try {
-      const res = await api.getRecognitionPosts();
+      const [res, completedRes] = await Promise.all([
+        api.getRecognitionPosts(),
+        api.getWardCompletedDrives().catch(() => ({ success: false, data: [] }))
+      ]);
       setPosts(res.data || []);
+      setCompletedDrives((completedRes.data || []).filter((d: any) => !d.completion_posted));
     } catch (err) {
       console.error('Failed to load posts:', err);
     } finally {
@@ -214,6 +222,53 @@ export const WardCommunityPosts: React.FC = () => {
           <span>Add Post</span>
         </button>
       </div>
+
+      {/* Verified Completed Drives Ready to Post */}
+      {completedDrives.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Award className="w-5 h-5 text-[#095c54]" />
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-[#0f2925]">
+                  Verified Completed Drives Ready to Post ({completedDrives.length})
+                </h3>
+                <p className="text-[11px] text-slate-600 font-medium">
+                  Publish official completion updates listing participating communities and send completion certificates + points.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {completedDrives.map(drv => (
+              <div
+                key={drv.id}
+                className="p-3 rounded-2xl bg-white border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-900 truncate">{drv.title}</p>
+                  <p className="text-[11px] text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span>{drv.ward_name}</span>
+                    <span>·</span>
+                    <span>Communities: {(drv.participating_communities || []).join(', ')}</span>
+                    <span>·</span>
+                    <span>{drv.volunteers_count || drv.registered_count || 0} volunteer(s)</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPostCompletionModalDrive(drv)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-xs transition shrink-0"
+                >
+                  <Award className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Post Completion &amp; Send Certificates</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Post Composer Card (LinkedIn-style quick draft prompt) */}
       <div className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs flex items-center gap-3">
@@ -365,6 +420,34 @@ export const WardCommunityPosts: React.FC = () => {
                     />
                   </div>
                 ) : null}
+
+                {/* Participating Communities Listed Below Completion Post */}
+                {post.participating_communities && post.participating_communities.length > 0 && (
+                  <div className="mx-4 sm:mx-5 my-3 p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-[#095c54] flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Participating Communities</span>
+                      </span>
+                      {(post.points_awarded_citizen || post.points_awarded_community) && (
+                        <span className="text-[10px] font-black text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                          🏅 Certificates &amp; Points Issued (+{post.points_awarded_citizen || 150} Citizen · +{post.points_awarded_community || 300} Community)
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {post.participating_communities.map((commName, cIdx) => (
+                        <span
+                          key={cIdx}
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-white border border-emerald-200 text-xs font-extrabold text-[#0f2925] shadow-2xs"
+                        >
+                          <Building2 className="w-3 h-3 text-[#095c54]" />
+                          <span>{commName}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Engagement Bar (Likes & Comments count) */}
                 <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-slate-500 border-b border-slate-100">
@@ -612,6 +695,19 @@ export const WardCommunityPosts: React.FC = () => {
             </div>
           </form>
         </div>
+      )}
+
+      {/* Post Drive Completion & Issue Certificates Modal */}
+      {postCompletionModalDrive && (
+        <PostDriveCompletionModal
+          drive={postCompletionModalDrive}
+          onClose={() => setPostCompletionModalDrive(null)}
+          onPublished={msg => {
+            setPostCompletionModalDrive(null);
+            showToast(msg);
+            fetchPosts();
+          }}
+        />
       )}
     </div>
   );

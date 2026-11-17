@@ -49,13 +49,23 @@ class DrivesController {
         try {
             const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
             const { id } = req.params;
-            await dbRepository_js_1.DbRepository.registerForDrive(id, citizenId);
+            const { community_id, community_name } = req.body || {};
+            const regResult = await dbRepository_js_1.DbRepository.registerForDrive(id, citizenId, community_id, community_name);
+            if (!regResult.success) {
+                res.status(400).json({
+                    success: false,
+                    error: regResult.message || 'Volunteer quota reached for this community.'
+                });
+                return;
+            }
             res.status(200).json({
                 success: true,
-                message: 'Successfully registered for this cleanliness drive and recorded in database!',
+                message: regResult.message || 'Successfully registered for this cleanliness drive and recorded in database!',
                 data: {
                     drive_id: id,
-                    is_registered: true
+                    is_registered: true,
+                    community_id,
+                    community_name
                 }
             });
         }
@@ -86,17 +96,27 @@ class DrivesController {
     }
     /**
      * POST /api/drives/:id/attendance
+     * Citizen geo-tagged check-in ("dummy attendance") between start_time and end_time.
+     * Sends pending verification to the respective Community Head; does NOT mark present until approved.
      */
     static async markAttendance(req, res) {
         try {
             const { id } = req.params;
             const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
-            const { latitude, longitude } = req.body;
-            const result = await dbRepository_js_1.DbRepository.markDriveAttendance(id, citizenId, latitude, longitude);
+            const { latitude, longitude } = req.body || {};
+            const result = await dbRepository_js_1.DbRepository.markDriveAttendance(id, citizenId, latitude !== undefined ? Number(latitude) : undefined, longitude !== undefined ? Number(longitude) : undefined);
+            if (!result.success) {
+                res.status(400).json({
+                    success: false,
+                    error: result.error || 'Could not record attendance check-in.'
+                });
+                return;
+            }
             res.status(200).json({
                 success: true,
-                message: '✓ Attendance verified and marked present! 150 Civic Karma points awarded.',
-                data: result
+                message: result.message ||
+                    'Geo-tagged check-in submitted! Awaiting final attendance confirmation from your Community Head.',
+                data: result.data
             });
         }
         catch (err) {

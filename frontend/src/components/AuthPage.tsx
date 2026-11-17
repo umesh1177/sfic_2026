@@ -20,7 +20,14 @@ import {
   Users,
   MessageSquare,
   Copy,
-  X
+  X,
+  Upload,
+  FileCheck,
+  FileText,
+  CheckCircle,
+  ExternalLink,
+  File,
+  Clock
 } from 'lucide-react';
 import { SwachhSetuLogo } from './SwachhSetuLogo.js';
 import { api } from '../services/api.js';
@@ -59,13 +66,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [verificationToken, setVerificationToken] = useState('');
   const [devOtpCode, setDevOtpCode] = useState<string | null>(null);
 
+  // Registration Role Selection
+  const [registrationRole, setRegistrationRole] = useState<'citizen' | 'community_head'>('citizen');
+
+  // Community Head Registration fields
+  const [communityName, setCommunityName] = useState('');
+  const [organisationType, setOrganisationType] = useState('Resident Welfare Association');
+  const [communityWard, setCommunityWard] = useState<number>(3);
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentName, setDocumentName] = useState('');
+  const [documentUrl, setDocumentUrl] = useState('');
+  const [documentType, setDocumentType] = useState('application/pdf');
+  const [communitySubmitted, setCommunitySubmitted] = useState(false);
+  const [submittedRequest, setSubmittedRequest] = useState<any>(null);
+  const [showDocPreview, setShowDocPreview] = useState(false);
+
   // SMS Messages State (Citizen receives OTP in Messages section)
   interface SmsMessage {
     id: string;
+    phone?: string;
     sender: string;
     senderName: string;
     body: string;
-    otpCode: string;
+    otpCode?: string;
+    password?: string;
+    type?: string;
     timestamp: string;
     isRead: boolean;
   }
@@ -280,11 +305,120 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // Poll / fetch SMS messages
+  const fetchSmsMessages = async () => {
+    try {
+      const res = await api.getSimulatedSmsMessages(phone);
+      if (res.data && res.data.length > 0) {
+        setMessages(res.data);
+      }
+    } catch {
+      // silent fallback
+    }
+  };
+
+  useEffect(() => {
+    fetchSmsMessages();
+    const interval = setInterval(fetchSmsMessages, 4000);
+    return () => clearInterval(interval);
+  }, [phone, isMessagesOpen]);
+
+  // Handle Document Upload for Community Head Verification
+  const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDocumentFile(file);
+    setDocumentName(file.name);
+    setDocumentType(file.type || 'application/pdf');
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDocumentUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUseSampleDocument = () => {
+    setDocumentName('Gujarat_Societies_Reg_Cert_2026.pdf');
+    setDocumentType('application/pdf');
+    setDocumentUrl('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=800&q=80');
+    if (!communityName) {
+      setCommunityName('Ashapuri Heights Resident Welfare Association');
+    }
+    setSuccessMessage('Sample verification document loaded for demonstration!');
+    setTimeout(() => setSuccessMessage(''), 3000);
+  };
+
+  // Submit Community Head Registration for Ward Officer Approval
+  const handleSubmitCommunityRegistration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (!fullName.trim()) {
+      setErrorMessage('Please enter your full name as Community Head');
+      return;
+    }
+    if (!phone || phone.length < 10) {
+      setErrorMessage('Please enter a valid 10-digit Indian mobile number');
+      return;
+    }
+    if (!communityName.trim()) {
+      setErrorMessage('Please enter your community / society / organisation name');
+      return;
+    }
+    if (!documentName && !documentUrl) {
+      setErrorMessage('Please upload a valid document (Registration Certificate / Society Trust Deed / Letterhead) to verify your community');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.submitCommunityRegistrationRequest({
+        full_name: fullName.trim(),
+        phone: phone.trim(),
+        community_name: communityName.trim(),
+        organisation_type: organisationType,
+        ward_number: communityWard,
+        locality: locality,
+        document_name: documentName,
+        document_url: documentUrl,
+        document_type: documentType,
+        notes: `Submitted by ${fullName} for Ward ${communityWard}`
+      });
+
+      setSubmittedRequest(res.data);
+      setCommunitySubmitted(true);
+      setSuccessMessage('Your registration request has been sent to higher authorities for approval.');
+
+      const confirmationSms: SmsMessage = {
+        id: `sms-${Date.now()}`,
+        phone: phone,
+        sender: 'VM-NMCGOV',
+        senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+        body: `Navsari Municipal Corporation: Your Community Head registration request for "${communityName.trim()}" has been submitted to Ward Officer (Ward ${communityWard}) for document verification. Reference: ${res.data.request_code}. You will receive your login password via SMS upon approval.`,
+        otpCode: '',
+        type: 'submission',
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        isRead: false
+      };
+      setMessages(prev => [confirmationSms, ...prev]);
+      setShowSmsToast(true);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to submit community registration request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 2. Submit Signup Step 1: Send OTP
   const handleSendSignupOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
+    if (!fullName.trim()) {
+      setErrorMessage('Please enter your full name');
+      return;
+    }
     if (!phone || phone.length < 10) {
       setErrorMessage('Please enter a valid 10-digit Indian mobile number');
       return;
@@ -304,6 +438,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
       const newSms: SmsMessage = {
         id: `sms-${Date.now()}`,
+        phone: phone,
         sender: 'VM-NMCGOV',
         senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
         body: `${receivedOtp} is your official verification OTP for Swachh Setu Citizen Registration on Navsari Municipal Corporation portal. Valid for 5 minutes. Do not share this OTP with anyone for security purposes. - NMC SWACHHATA`,
@@ -378,6 +513,96 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       onSuccess(res.data.profile, true);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to complete profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- FORGOT / RESET PASSWORD HANDLERS ---
+  const handleForgotSendOtp = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (phone.length !== 10) {
+      setErrorMessage('Please enter a valid 10-digit Indian mobile number');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.forgotPasswordSendOtp(phone);
+      if (res.success && res.data) {
+        setSessionId(res.data.session_id);
+        if (res.data._dev_otp_code) {
+          setDevOtpCode(res.data._dev_otp_code);
+        }
+        setOtpDigits(['', '', '', '', '', '']);
+        setCountdown(60);
+        setForgotStep(2);
+        setSuccessMessage(`Security OTP dispatched via SMS to +91 ${phone}.`);
+        await fetchSmsMessages();
+      } else {
+        setErrorMessage(res.message || 'Mobile number verification failed');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Mobile number not found in database');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotVerifyOtp = async () => {
+    setErrorMessage('');
+    const fullOtp = otpDigits.join('');
+    if (fullOtp.length !== 6) {
+      setErrorMessage('Please enter all 6 digits of the OTP');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.forgotPasswordVerifyOtp(sessionId, fullOtp);
+      if (res.success && res.data) {
+        setVerificationToken(res.data.reset_token);
+        setPassword('');
+        setConfirmPassword('');
+        setForgotStep(3);
+        setSuccessMessage('OTP verified! Please create and confirm your new password.');
+      } else {
+        setErrorMessage(res.message || 'Invalid OTP code');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Invalid or expired OTP code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    if (password.length < 8) {
+      setErrorMessage('New password must be at least 8 characters long');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match. Please re-enter the newly set password to confirm.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.forgotPasswordReset(verificationToken, password, confirmPassword);
+      if (res.success) {
+        setSuccessMessage('Password reset successfully! You can now log in with your new password.');
+        setMode('login');
+        setForgotStep(1);
+        setConfirmPassword('');
+        await fetchSmsMessages();
+      } else {
+        setErrorMessage(res.message || 'Failed to reset password');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to reset password. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -736,83 +961,477 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* VIEW B: CITIZEN SIGN UP                                   */}
+          {/* VIEW B: SIGN UP (CITIZEN OR COMMUNITY HEAD)               */}
           {/* ======================================================== */}
           {mode === 'signup' && (
             <div>
-              {/* Step 1: Mobile & Consent */}
-              {signupStep === 1 && (
-                <form onSubmit={handleSendSignupOtp} className="space-y-4">
-                  <div className="text-center mb-4">
+              {/* SUBMISSION CONFIRMATION FOR COMMUNITY HEAD */}
+              {communitySubmitted ? (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-[#095c54] flex items-center justify-center mx-auto mb-2 border border-emerald-200 shadow-sm">
+                      <ShieldCheck className="w-8 h-8 text-[#095c54]" />
+                    </div>
                     <h2 className="text-xl font-extrabold text-[#095c54]">
-                      Citizen Registration
+                      Registration Request Sent
                     </h2>
-                    <p className="text-xs text-[#64748b] mt-0.5">
-                      Enter your mobile number to receive a verification OTP
+                    <p className="text-xs text-[#64748b] mt-0.5 font-medium">
+                      Navsari Municipal Corporation · Ward Approval Queue
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#0f2925] mb-1.5">
-                      Mobile Number
-                    </label>
-                    <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
-                      <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
-                        🇮🇳 +91
-                      </span>
-                      <input
-                        type="tel"
-                        maxLength={10}
-                        placeholder="98765 43210"
-                        value={phone}
-                        onChange={e => {
-                      let val = e.target.value.replace(/\D/g, '');
-                      if (val.length > 10 && val.startsWith('91')) val = val.slice(2);
-                      if (val.length > 10 && val.startsWith('0')) val = val.slice(1);
-                      setPhone(val.slice(0, 10));
-                    }}
-                        className="flex-1 px-3 py-2.5 text-sm font-semibold text-[#0f2925] outline-none"
-                        required
-                      />
+                  {/* Prominent Success Highlight requested by user */}
+                  <div className="p-4 rounded-2xl bg-[#ecfdf5] border-2 border-[#10b981] shadow-xs">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-[#047857] shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-black text-[#047857]">
+                          Your registration request has been sent to higher authorities for approval.
+                        </h4>
+                        <p className="text-xs text-[#065f46] mt-1 leading-relaxed">
+                          Your community verification documents are currently under official review by the <strong>Ward {communityWard} Officer</strong>.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <label className="flex items-start gap-2.5 text-xs text-[#64748b] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={consentTerms}
-                      onChange={e => setConsentTerms(e.target.checked)}
-                      className="mt-0.5 rounded text-[#095c54] focus:ring-0"
-                    />
-                    <span>
-                      I agree to the Navsari Municipal Corporation terms of civic service and privacy guidelines.
-                    </span>
-                  </label>
+                  {/* Request Receipt Card */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                      <span className="text-slate-500 font-bold">Reference Number:</span>
+                      <span className="font-mono font-black text-[#095c54] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {submittedRequest?.request_code || 'REQ-COMM-2026-PENDING'}
+                      </span>
+                    </div>
 
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full btn-primary-custom py-3 text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
-                  >
-                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Send 6-Digit OTP'}
-                  </button>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-bold">Applicant Head:</span>
+                      <span className="font-black text-slate-800">{fullName}</span>
+                    </div>
 
-                  <div className="text-center pt-2">
-                    <p className="text-xs text-[#64748b]">
-                      Already registered?{' '}
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-bold">Mobile Device:</span>
+                      <span className="font-bold text-slate-800">+91 {phone}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-bold">Community / Society:</span>
+                      <span className="font-extrabold text-[#095c54]">{communityName}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-bold">Target Ward:</span>
+                      <span className="font-bold text-slate-800">Ward {communityWard} (Navsari)</span>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                      <span className="text-slate-500 font-bold">Verification Document:</span>
+                      <span className="font-bold text-emerald-700 flex items-center gap-1">
+                        <FileCheck className="w-3.5 h-3.5" />
+                        <span className="truncate max-w-[150px]">{documentName}</span>
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-bold">Review Status:</span>
+                      <span className="px-2 py-0.5 rounded-full font-black text-[10px] bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-700 animate-spin" />
+                        Pending Ward Officer Approval
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Informative Guidance */}
+                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-900 leading-relaxed">
+                    💡 <strong>What happens next?</strong> After the Ward Officer verifies your uploaded document and approves your community, an official SMS containing your <strong>assigned login password</strong> will be sent to your device (+91 {phone}). You can view this message anytime in the <strong>Messages</strong> inbox above.
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsMessagesOpen(true)}
+                      className="w-full py-2.5 px-3 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition flex items-center justify-center gap-2 shadow-sm"
+                    >
+                      <MessageSquare className="w-4 h-4 text-emerald-300" />
+                      <span>Check SMS Messages Inbox ({messages.length})</span>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setMode('login');
                           setErrorMessage('');
                         }}
-                        className="font-extrabold text-[#095c54] hover:underline"
+                        className="py-2.5 px-3 rounded-2xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-extrabold transition text-center"
                       >
-                        Sign In
+                        Go to Login
                       </button>
-                    </p>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCommunitySubmitted(false);
+                          setSubmittedRequest(null);
+                          setDocumentName('');
+                          setDocumentUrl('');
+                          setCommunityName('');
+                        }}
+                        className="py-2.5 px-3 rounded-2xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-extrabold transition text-center"
+                      >
+                        New Registration
+                      </button>
+                    </div>
                   </div>
-                </form>
+                </div>
+              ) : (
+                /* Step 1: Initial Registration Form */
+                signupStep === 1 && (
+                  <form
+                    onSubmit={registrationRole === 'citizen' ? handleSendSignupOtp : handleSubmitCommunityRegistration}
+                    className="space-y-3.5"
+                  >
+                    <div className="text-center mb-3">
+                      <h2 className="text-xl font-extrabold text-[#095c54]">
+                        Create an Account
+                      </h2>
+                      <p className="text-xs text-[#64748b] mt-0.5">
+                        Register as an individual Citizen or as an authorized Community Head
+                      </p>
+                    </div>
+
+                    {/* Field 1: Full Name */}
+                    <div>
+                      <label className="block text-xs font-bold text-[#0f2925] mb-1">
+                        Full Name *
+                      </label>
+                      <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
+                        <span className="px-3 py-2 text-xs font-bold text-slate-400 bg-[#f8faf9] border-r border-[#e2e8f0]">
+                          <User className="w-4 h-4 text-slate-400" />
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="e.g. Ramesh Patel / Jitendra Shah"
+                          value={fullName}
+                          onChange={e => setFullName(e.target.value)}
+                          className="flex-1 px-3 py-2 text-sm font-semibold text-[#0f2925] outline-none"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Field 2: Mobile Number */}
+                    <div>
+                      <label className="block text-xs font-bold text-[#0f2925] mb-1">
+                        Mobile Number *
+                      </label>
+                      <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
+                        <span className="px-3 py-2 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
+                          🇮🇳 +91
+                        </span>
+                        <input
+                          type="tel"
+                          maxLength={10}
+                          placeholder="98765 43210"
+                          value={phone}
+                          onChange={e => {
+                            let val = e.target.value.replace(/\D/g, '');
+                            if (val.length > 10 && val.startsWith('91')) val = val.slice(2);
+                            if (val.length > 10 && val.startsWith('0')) val = val.slice(1);
+                            setPhone(val.slice(0, 10));
+                          }}
+                          className="flex-1 px-3 py-2 text-sm font-semibold text-[#0f2925] outline-none"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Field 3: Register As Options (Citizen vs Community Head) */}
+                    <div>
+                      <label className="block text-xs font-bold text-[#0f2925] mb-1.5 flex items-center justify-between">
+                        <span>Register As: *</span>
+                        <span className="text-[10px] text-[#095c54] font-extrabold">Choose Your Role</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {/* Option A: Citizen */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRegistrationRole('citizen');
+                            setErrorMessage('');
+                          }}
+                          className={`p-3 rounded-2xl border text-left transition flex flex-col justify-between ${
+                            registrationRole === 'citizen'
+                              ? 'border-[#095c54] bg-[#e6f4f1]/50 ring-2 ring-[#095c54]/20 shadow-xs'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="p-1.5 rounded-xl bg-emerald-100 text-[#095c54]">
+                              <User className="w-4 h-4" />
+                            </span>
+                            {registrationRole === 'citizen' && (
+                              <CheckCircle2 className="w-4 h-4 text-[#095c54]" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-black text-slate-900">Citizen</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                              Instant OTP registration for individuals
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* Option B: Community Head */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRegistrationRole('community_head');
+                            setErrorMessage('');
+                          }}
+                          className={`p-3 rounded-2xl border text-left transition flex flex-col justify-between ${
+                            registrationRole === 'community_head'
+                              ? 'border-[#095c54] bg-[#e6f4f1]/50 ring-2 ring-[#095c54]/20 shadow-xs'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="p-1.5 rounded-xl bg-teal-100 text-[#095c54]">
+                              <Building className="w-4 h-4" />
+                            </span>
+                            {registrationRole === 'community_head' && (
+                              <CheckCircle2 className="w-4 h-4 text-[#095c54]" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-black text-slate-900">Community Head</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                              Society / RWA / NGO (Requires verification)
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ======================================================== */}
+                    {/* CONDITIONAL EXTRA FIELDS FOR COMMUNITY HEAD              */}
+                    {/* ======================================================== */}
+                    {registrationRole === 'community_head' && (
+                      <div className="space-y-3 p-3.5 bg-gradient-to-br from-[#f8faf9] to-[#f0f6f4] rounded-2xl border border-[#b8e0d7] animate-in fade-in duration-200">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-[#095c54] border-b border-[#b8e0d7] pb-2">
+                          <ShieldCheck className="w-4 h-4 text-[#095c54]" />
+                          <span>Community Verification Details</span>
+                        </div>
+
+                        {/* Community / Society / NGO Name */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-800 mb-1">
+                            Community / Society / NGO Name *
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Navsari Green Warriors RWA / Ashapuri Society"
+                            value={communityName}
+                            onChange={e => setCommunityName(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold outline-none focus:border-[#095c54] bg-white"
+                            required
+                          />
+                        </div>
+
+                        {/* Organisation Type & Target Ward */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-800 mb-1">
+                              Entity Type
+                            </label>
+                            <select
+                              value={organisationType}
+                              onChange={e => setOrganisationType(e.target.value)}
+                              className="w-full px-2.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold outline-none focus:border-[#095c54] bg-white"
+                            >
+                              <option value="Resident Welfare Association">RWA</option>
+                              <option value="Environmental NGO">Environmental NGO</option>
+                              <option value="Youth Club / Mandal">Youth Mandal</option>
+                              <option value="Housing Society">Housing Society</option>
+                              <option value="Market Traders Association">Traders Association</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-800 mb-1">
+                              Ward Jurisdiction *
+                            </label>
+                            <select
+                              value={communityWard}
+                              onChange={e => setCommunityWard(Number(e.target.value))}
+                              className="w-full px-2.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold outline-none focus:border-[#095c54] bg-white"
+                            >
+                              <option value={3}>Ward 3 - Dudhiya Talao</option>
+                              <option value={8}>Ward 8 - Madhumati</option>
+                              <option value={1}>Ward 1 - Tower Road</option>
+                              <option value={2}>Ward 2 - Junathana</option>
+                              <option value={4}>Ward 4 - Station Road</option>
+                              <option value={5}>Ward 5 - Kabilpore</option>
+                              <option value={6}>Ward 6 - Vejalpore</option>
+                              <option value={7}>Ward 7 - Chhapra Road</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Verification Document Upload Field (KEY USER REQUIREMENT) */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-slate-800">
+                              Upload Verification Document *
+                            </label>
+                            <button
+                              type="button"
+                              onClick={handleUseSampleDocument}
+                              className="text-[10px] font-extrabold text-[#095c54] hover:underline flex items-center gap-0.5"
+                            >
+                              <Sparkles className="w-3 h-3 text-[#095c54]" />
+                              <span>Load Sample Certificate</span>
+                            </button>
+                          </div>
+
+                          {/* Upload Box */}
+                          {!documentName ? (
+                            <label className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-[#095c54]/30 hover:border-[#095c54] rounded-2xl cursor-pointer bg-white transition group">
+                              <Upload className="w-6 h-6 text-[#095c54] group-hover:scale-110 transition" />
+                              <span className="text-xs font-bold text-slate-700 mt-1">
+                                Click or drag to upload certificate
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                Society Reg Certificate, Trust Deed, or Official Letterhead (PDF/PNG/JPG)
+                              </span>
+                              <input
+                                type="file"
+                                accept=".pdf,image/png,image/jpeg,image/jpg"
+                                onChange={handleDocumentUpload}
+                                className="hidden"
+                              />
+                            </label>
+                          ) : (
+                            <div className="p-3 bg-white rounded-xl border border-emerald-300 flex items-center justify-between gap-2 shadow-2xs">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-[#095c54] flex items-center justify-center shrink-0">
+                                  <FileCheck className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-black text-slate-800 truncate">
+                                    {documentName}
+                                  </p>
+                                  <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                                    <Check className="w-3 h-3" /> Ready for Ward Officer Review
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                {documentUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowDocPreview(!showDocPreview)}
+                                    className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-[10px] font-bold text-slate-700"
+                                  >
+                                    {showDocPreview ? 'Hide' : 'Preview'}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDocumentFile(null);
+                                    setDocumentName('');
+                                    setDocumentUrl('');
+                                  }}
+                                  className="px-2 py-1 rounded-lg border border-red-200 hover:bg-red-50 text-[10px] font-bold text-red-600"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Inline Document Preview */}
+                          {showDocPreview && documentUrl && (
+                            <div className="mt-2 p-2 bg-slate-900 rounded-xl border border-slate-700">
+                              <div className="flex items-center justify-between text-white text-[10px] px-1 pb-1">
+                                <span>Document Preview: {documentName}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowDocPreview(false)}
+                                  className="text-slate-400 hover:text-white"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div className="rounded-lg overflow-hidden max-h-40 flex items-center justify-center bg-black/40">
+                                <img
+                                  src={documentUrl}
+                                  alt="Certificate Preview"
+                                  className="max-h-40 w-auto object-contain"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Notice for Community Head routing to Ward Officer */}
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2 text-[11px] text-amber-900">
+                          <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                          <div className="leading-tight">
+                            <span className="font-extrabold">Ward Officer Verification:</span> Registration requests are routed to the <strong>Ward {communityWard} Officer</strong> for verification. Once approved, your login password will be dispatched to your phone.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Terms Agreement Checkbox */}
+                    <label className="flex items-start gap-2.5 text-xs text-[#64748b] cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={consentTerms}
+                        onChange={e => setConsentTerms(e.target.checked)}
+                        className="mt-0.5 rounded text-[#095c54] focus:ring-0"
+                      />
+                      <span>
+                        I agree to Navsari Municipal Corporation terms of civic service & verification policies.
+                      </span>
+                    </label>
+
+                    {/* Submit Button (Dynamic based on selected role) */}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full btn-primary-custom py-3 text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
+                    >
+                      {loading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : registrationRole === 'citizen' ? (
+                        'Continue & Send 6-Digit OTP'
+                      ) : (
+                        'Register as Community Head (Send for Approval)'
+                      )}
+                    </button>
+
+                    <div className="text-center pt-2">
+                      <p className="text-xs text-[#64748b]">
+                        Already registered?{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMode('login');
+                            setErrorMessage('');
+                          }}
+                          className="font-extrabold text-[#095c54] hover:underline"
+                        >
+                          Sign In
+                        </button>
+                      </p>
+                    </div>
+                  </form>
+                )
               )}
 
               {/* Step 2: OTP Verification */}
@@ -987,76 +1606,277 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* VIEW C: FORGOT PASSWORD                                  */}
+          {/* VIEW C: FORGOT & RESET PASSWORD (3-STEP VERIFICATION)   */}
           {/* ======================================================== */}
           {mode === 'forgot' && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h2 className="text-xl font-extrabold text-[#095c54]">
-                  Reset Password
-                </h2>
-                <p className="text-xs text-[#64748b] mt-0.5">
-                  We'll verify your registered mobile number via OTP
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#0f2925] mb-1.5">
-                  Registered Mobile Number
-                </label>
-                <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
-                  <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
-                    🇮🇳 +91
-                  </span>
-                  <input
-                    type="tel"
-                    maxLength={16}
-                    placeholder="98765 43210"
-                    value={phone}
-                    onChange={e => {
-                      let val = e.target.value.replace(/\D/g, '');
-                      if (val.startsWith('91') && val.length > 10) val = val.slice(2);
-                      else if (val.startsWith('0') && val.length > 10) val = val.slice(1);
-                      setPhone(val.slice(0, 10));
-                    }}
-                    className="flex-1 px-3 py-2.5 text-sm font-semibold text-[#0f2925] outline-none"
-                    required
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={async () => {
-                  setLoading(true);
-                  try {
-                    await api.forgotPasswordSendOtp(phone);
-                    setSuccessMessage('Password reset OTP sent to your registered number');
-                    setMode('login');
-                  } catch (err: any) {
-                    setErrorMessage(err.message || 'Mobile number not found');
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                disabled={loading || phone.length < 10}
-                className="w-full btn-primary-custom py-3 text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
-              >
-                Send Reset Code
-              </button>
-
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('login');
-                    setErrorMessage('');
+              {/* Step 1: Enter Registered Mobile Number */}
+              {forgotStep === 1 && (
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    handleForgotSendOtp();
                   }}
-                  className="text-xs font-bold text-[#095c54] hover:underline"
+                  className="space-y-4"
                 >
-                  ← Back to Login
-                </button>
-              </div>
+                  <div className="text-center mb-4">
+                    <h2 className="text-xl font-extrabold text-[#095c54]">
+                      Reset Password
+                    </h2>
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Enter your registered Indian mobile number to verify your account
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#0f2925] mb-1.5">
+                      Registered Mobile Number
+                    </label>
+                    <div className="flex items-center rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] bg-white overflow-hidden transition">
+                      <span className="px-3 py-2.5 text-xs font-extrabold text-[#095c54] bg-[#f8faf9] border-r border-[#e2e8f0]">
+                        🇮🇳 +91
+                      </span>
+                      <input
+                        type="tel"
+                        maxLength={16}
+                        placeholder="98765 43210"
+                        value={phone}
+                        onChange={e => {
+                          let val = e.target.value.replace(/\D/g, '');
+                          if (val.startsWith('91') && val.length > 10) val = val.slice(2);
+                          else if (val.startsWith('0') && val.length > 10) val = val.slice(1);
+                          setPhone(val.slice(0, 10));
+                        }}
+                        className="flex-1 px-3 py-2.5 text-sm font-semibold text-[#0f2925] outline-none"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || phone.length < 10}
+                    className="w-full btn-primary-custom py-3 text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
+                  >
+                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify Number & Send OTP'}
+                  </button>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('login');
+                        setErrorMessage('');
+                        setSuccessMessage('');
+                      }}
+                      className="text-xs font-bold text-[#095c54] hover:underline"
+                    >
+                      ← Back to Login
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Step 2: Enter & Verify 6-digit OTP */}
+              {forgotStep === 2 && (
+                <div className="space-y-4">
+                  <div className="text-center mb-4">
+                    <h2 className="text-xl font-extrabold text-[#095c54]">
+                      Enter Verification OTP
+                    </h2>
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Enter the 6-digit security code sent via SMS to +91 {phone.slice(0, 2)}******{phone.slice(-2)}
+                    </p>
+                  </div>
+
+                  {/* Dev Auto-Fill Banner */}
+                  {devOtpCode && (
+                    <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        Dev OTP: <strong>{devOtpCode}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const digits = devOtpCode.split('').slice(0, 6);
+                          setOtpDigits(digits);
+                        }}
+                        className="text-[11px] font-black px-2 py-0.5 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-950 transition"
+                      >
+                        Auto-Fill
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Messages Section Notification Banner */}
+                  <div className="p-3 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4] flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <MessageSquare className="w-4 h-4 text-emerald-300" />
+                      </div>
+                      <div className="min-w-0 leading-tight">
+                        <p className="font-black text-[#0f2925] truncate">OTP Sent to Messages</p>
+                        <p className="text-[11px] text-[#0d9488] font-bold truncate">Check simulated SMS inbox</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsMessagesOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition shrink-0 shadow-xs flex items-center gap-1 active:scale-95"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Open Messages</span>
+                      {messages.length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping ml-0.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 6-Digit OTP Inputs */}
+                  <div className="flex justify-center gap-2 sm:gap-2.5 my-3">
+                    {otpDigits.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={el => {
+                          otpInputRefs.current[index] = el;
+                        }}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={e => handleOtpChange(index, e.target.value)}
+                        onKeyDown={e => handleOtpKeyDown(index, e)}
+                        className="w-10 sm:w-11 h-12 text-center text-lg font-black rounded-xl border border-[#e2e8f0] focus:border-[#095c54] focus:ring-2 focus:ring-[#095c54]/10 outline-none transition bg-white"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#64748b]">
+                    <span>
+                      {countdown > 0 ? `Resend in ${countdown}s` : 'Did not receive code?'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={countdown > 0 || loading}
+                      onClick={handleForgotSendOtp}
+                      className="font-extrabold text-[#095c54] disabled:opacity-50 hover:underline"
+                    >
+                      Resend OTP
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleForgotVerifyOtp}
+                    disabled={loading || otpDigits.join('').length !== 6}
+                    className="w-full btn-primary-custom py-3 text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
+                  >
+                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify OTP & Continue'}
+                  </button>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotStep(1);
+                        setErrorMessage('');
+                      }}
+                      className="text-xs text-[#64748b] hover:text-[#095c54]"
+                    >
+                      ← Change Mobile Number
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Set New Password & Confirm Password */}
+              {forgotStep === 3 && (
+                <form onSubmit={handleForgotResetPassword} className="space-y-4">
+                  <div className="text-center mb-3">
+                    <h2 className="text-xl font-extrabold text-[#095c54]">
+                      Set New Password
+                    </h2>
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Create and confirm your newly set account password
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#0f2925] mb-1.5">
+                      New Password (Min. 8 characters) *
+                    </label>
+                    <div className="relative rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] focus-within:ring-2 focus-within:ring-[#095c54]/10 bg-white overflow-hidden transition">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Enter at least 8 characters"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-sm font-semibold text-[#0f2925] outline-none pr-10"
+                        required
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#0f2925] mb-1.5">
+                      Confirm New Password *
+                    </label>
+                    <div className="relative rounded-2xl border border-[#e2e8f0] focus-within:border-[#095c54] focus-within:ring-2 focus-within:ring-[#095c54]/10 bg-white overflow-hidden transition">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Re-enter your new password"
+                        value={confirmPassword}
+                        onChange={e => setConfirmPassword(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-sm font-semibold text-[#0f2925] outline-none pr-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password requirements indicators */}
+                  <div className="space-y-1 text-xs">
+                    <div className={`flex items-center gap-1.5 ${password.length >= 8 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>At least 8 characters</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${password && confirmPassword && password === confirmPassword ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Passwords match</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || password.length < 8 || password !== confirmPassword}
+                    className="w-full btn-primary-custom py-3 text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
+                  >
+                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Save New Password & Continue to Login'}
+                  </button>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('login');
+                        setErrorMessage('');
+                      }}
+                      className="text-xs font-bold text-[#64748b] hover:text-[#095c54]"
+                    >
+                      Cancel & Back to Login
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
         </div>
@@ -1174,45 +1994,91 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       {msg.body}
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-500">OTP Code:</span>
-                        <span className="font-mono text-sm font-black text-[#095c54] bg-[#e6f4f1] border border-[#a7f3d0] px-2 py-0.5 rounded-md tracking-wider">
-                          {msg.otpCode}
-                        </span>
-                      </div>
+                    {msg.password ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-emerald-900">Login Password:</span>
+                          <span className="font-mono text-xs font-black text-[#095c54] bg-white border border-[#a7f3d0] px-2 py-0.5 rounded-md tracking-wider">
+                            {msg.password}
+                          </span>
+                        </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(msg.otpCode);
-                            setCopiedId(msg.id);
-                            setTimeout(() => setCopiedId(null), 2000);
-                          }}
-                          className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1"
-                        >
-                          {copiedId === msg.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5 text-slate-500" />
-                          )}
-                          <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(msg.password!);
+                              setCopiedId(msg.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1"
+                          >
+                            {copiedId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            )}
+                            <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const arr = msg.otpCode.split('');
-                            setOtpDigits(arr);
-                            setIsMessagesOpen(false);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition flex items-center gap-1 shadow-xs active:scale-95"
-                        >
-                          <span>Auto-Fill</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMode('login');
+                              if (msg.phone) {
+                                setPhone(msg.phone.replace(/\D/g, '').slice(-10));
+                              }
+                              setPassword(msg.password!);
+                              setIsMessagesOpen(false);
+                              setSuccessMessage('Credentials auto-filled! Please solve security math challenge to sign in.');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition flex items-center gap-1 shadow-xs active:scale-95"
+                          >
+                            <span>Sign In With Credentials →</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : msg.otpCode ? (
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-slate-500">OTP Code:</span>
+                          <span className="font-mono text-sm font-black text-[#095c54] bg-[#e6f4f1] border border-[#a7f3d0] px-2 py-0.5 rounded-md tracking-wider">
+                            {msg.otpCode}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(msg.otpCode || '');
+                              setCopiedId(msg.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1"
+                          >
+                            {copiedId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            )}
+                            <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const arr = (msg.otpCode || '').split('');
+                              setOtpDigits(arr);
+                              setIsMessagesOpen(false);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition flex items-center gap-1 shadow-xs active:scale-95"
+                          >
+                            <span>Auto-Fill</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))
               )}

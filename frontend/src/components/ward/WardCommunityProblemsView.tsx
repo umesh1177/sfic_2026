@@ -17,12 +17,19 @@ import {
   RefreshCw,
   Sparkles,
   ArrowLeft,
-  Upload
+  Upload,
+  CheckSquare,
+  Square,
+  X,
+  Check,
+  Clock,
+  Award
 } from 'lucide-react';
-import { CommunityProblem } from '../../types/index.js';
+import { CommunityProblem, CommunityDriveRequest } from '../../types/index.js';
 import { api } from '../../services/api.js';
 import { MiniMapLocationPicker } from '../MiniMapLocationPicker.js';
 import { Language } from '../../i18n/translations.js';
+import { PostDriveCompletionModal, CompletedDriveForPost } from './PostDriveCompletionModal.js';
 
 interface WardCommunityProblemsViewProps {
   wardNumber: number;
@@ -52,6 +59,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [postCompletionDrive, setPostCompletionDrive] = useState<CompletedDriveForPost | null>(null);
 
   // Form State
   const [title, setTitle] = useState<string>('');
@@ -71,6 +79,24 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
   const [imageUrl, setImageUrl] = useState<string>(
     'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80'
   );
+
+  // Review & Multi-Community Approval Modal State
+  const [reviewProblem, setReviewProblem] = useState<CommunityProblem | null>(null);
+  const [selectedCommunityIds, setSelectedCommunityIds] = useState<string[]>([]);
+  const [officerComments, setOfficerComments] = useState<string>('');
+  const [approving, setApproving] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  // Drive Schedule State (Officer controls Starting and Ending Times)
+  const getDefaultDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().split('T')[0];
+  };
+  const [driveDate, setDriveDate] = useState<string>(getDefaultDate());
+  const [startTime, setStartTime] = useState<string>('08:00');
+  const [endTime, setEndTime] = useState<string>('11:30');
+  const [maxVolunteersPerCommunity, setMaxVolunteersPerCommunity] = useState<number>(25);
 
   const fetchProblems = async () => {
     setLoading(true);
@@ -116,6 +142,19 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
       return;
     }
 
+    if (!driveDate || !startTime || !endTime) {
+      setErrorMsg('Please specify the planned drive date, starting time, and ending time.');
+      return;
+    }
+
+    if (startTime >= endTime) {
+      setErrorMsg('Ending time must be later than starting time.');
+      return;
+    }
+
+    const startDateTime = new Date(`${driveDate}T${startTime}:00`);
+    const endDateTime = new Date(`${driveDate}T${endTime}:00`);
+
     setSubmitting(true);
     setErrorMsg(null);
     try {
@@ -131,17 +170,24 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
         urgency,
         estimated_volunteers_needed: volunteersNeeded,
         suggested_equipment: selectedEquipment,
-        image_url: imageUrl.trim()
+        image_url: imageUrl.trim(),
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
+        max_volunteers_per_community: maxVolunteersPerCommunity
       });
 
       if (res.success) {
-        setSuccessMsg('Civic problem posted successfully! Community Heads will now see it in their dashboard.');
+        setSuccessMsg('Civic problem posted successfully! Community Heads will now see it in their dashboard with the designated drive schedule.');
         setIsCreateOpen(false);
         // Reset form
         setTitle('');
         setDescription('');
         setActionPlan('');
         setLocationName('');
+        setDriveDate(getDefaultDate());
+        setStartTime('08:00');
+        setEndTime('11:30');
+        setMaxVolunteersPerCommunity(25);
         fetchProblems();
         setTimeout(() => setSuccessMsg(null), 6000);
       }
@@ -172,6 +218,62 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Could not remove problem.');
+    }
+  };
+
+  const openReviewModal = (prob: CommunityProblem) => {
+    setReviewProblem(prob);
+    setOfficerComments('');
+    setModalError(null);
+
+    const approved = prob.drive_requests?.filter(r => r.status === 'approved').map(r => r.community_id) || [];
+    if (approved.length > 0) {
+      setSelectedCommunityIds(approved);
+    } else {
+      const allPending = prob.drive_requests?.map(r => r.community_id) || [];
+      setSelectedCommunityIds(allPending);
+    }
+  };
+
+  const closeReviewModal = () => {
+    setReviewProblem(null);
+    setModalError(null);
+    setSelectedCommunityIds([]);
+  };
+
+  const toggleCommunitySelection = (commId: string) => {
+    setSelectedCommunityIds(prev =>
+      prev.includes(commId) ? prev.filter(id => id !== commId) : [...prev, commId]
+    );
+  };
+
+  const handleApproveSelected = async () => {
+    if (!reviewProblem) return;
+    if (selectedCommunityIds.length === 0) {
+      setModalError('Please select at least one community organization to approve for this drive.');
+      return;
+    }
+
+    setApproving(true);
+    setModalError(null);
+
+    try {
+      const res = await api.approveProblemCommunities(reviewProblem.id, {
+        community_ids: selectedCommunityIds,
+        comments: officerComments.trim()
+      });
+
+      if (res.success) {
+        setSuccessMsg(res.message || `Successfully approved ${selectedCommunityIds.length} community organization(s) for the drive!`);
+        closeReviewModal();
+        await fetchProblems();
+      } else {
+        setModalError(res.message || 'Failed to approve selected communities.');
+      }
+    } catch (err: any) {
+      setModalError(err.message || 'Failed to approve selected communities.');
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -311,7 +413,57 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
 
               {/* Right Column: Parameters & Evidence */}
               <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Official Drive Schedule (Officer controls Starting and Ending Time) */}
+                <div className="p-4 rounded-2xl bg-teal-50/70 border border-teal-200 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase text-teal-900 tracking-wider">
+                    <Clock className="w-4 h-4 text-teal-700" />
+                    <span>Drive Schedule (Starting & Ending Times) *</span>
+                  </div>
+                  <p className="text-[11px] text-teal-800 font-medium">
+                    As Ward Officer, you designate the starting and ending times. Community organizers and citizen volunteers will adhere to this designated schedule.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Drive Date *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={driveDate}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={e => setDriveDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:border-[#095c54]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Starting Time *
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={startTime}
+                        onChange={e => setStartTime(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:border-[#095c54]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Ending Time *
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={endTime}
+                        onChange={e => setEndTime(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:border-[#095c54]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
                       Urgency Level
@@ -329,16 +481,31 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                   </div>
                   <div>
                     <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
-                      Estimated Volunteers Needed
+                      Total Volunteers
                     </label>
                     <input
                       type="number"
                       min={5}
-                      max={150}
+                      max={500}
                       value={volunteersNeeded}
                       onChange={e => setVolunteersNeeded(parseInt(e.target.value, 10) || 15)}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-700 tracking-wider mb-1.5">
+                      Max Vols / Community *
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={maxVolunteersPerCommunity}
+                      onChange={e => setMaxVolunteersPerCommunity(parseInt(e.target.value, 10) || 25)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:border-[#095c54]"
+                      placeholder="e.g. 25"
+                    />
+                    <span className="text-[10px] text-slate-500 font-medium">Cap per community team</span>
                   </div>
                 </div>
 
@@ -497,6 +664,11 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {problems.map(prob => {
             const isUrgentHigh = prob.urgency === 'high' || prob.urgency === 'critical';
+            const requests = prob.drive_requests || [];
+            const pendingRequests = requests.filter(r => r.status === 'pending');
+            const isJoint = (prob.assigned_communities?.length || 0) > 1;
+            const isApproved = prob.status === 'claimed' || prob.status === 'in_progress' || prob.status === 'resolved';
+
             return (
               <div
                 key={prob.id}
@@ -532,17 +704,21 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                     </div>
 
                     <div className="absolute top-3 right-3">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm ${
-                          prob.status === 'claimed'
-                            ? 'bg-blue-600 text-white'
-                            : prob.status === 'resolved'
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-emerald-500 text-white'
-                        }`}
-                      >
-                        {prob.status === 'claimed' ? 'Drive Planned' : prob.status}
-                      </span>
+                      {isApproved ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm bg-emerald-600 text-white flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {isJoint ? 'Joint Drive Approved' : 'Drive Approved'}
+                        </span>
+                      ) : requests.length > 0 ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm bg-indigo-600 text-white flex items-center gap-1 animate-pulse">
+                          <Users className="w-3.5 h-3.5" />
+                          {requests.length} {requests.length === 1 ? 'Proposal' : 'Proposals'} Received ({pendingRequests.length} Pending Approval)
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm bg-slate-700 text-white">
+                          Open for Proposals
+                        </span>
+                      )}
                     </div>
 
                     <div className="absolute bottom-3 left-3 right-3 text-white">
@@ -579,18 +755,65 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                       </p>
                     </div>
 
+                    {/* Official Drive Schedule */}
+                    {prob.start_time && (
+                      <div className="flex items-center gap-1.5 text-xs text-teal-800 font-bold bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-100">
+                        <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                        <span>Schedule: <strong>{new Date(prob.start_time).toLocaleDateString([], { dateStyle: 'medium' })} · {new Date(prob.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to {new Date(prob.end_time || prob.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                      </div>
+                    )}
+
+                    {/* Approved Community Organizers */}
+                    {prob.assigned_communities && prob.assigned_communities.length > 0 && (
+                      <div className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900 mb-1.5">
+                          <Users className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span>{isJoint ? '🤝 Approved Joint Community Organizers:' : '✓ Approved Community Organizer:'}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {prob.assigned_communities.map((ac, idx) => (
+                            <span key={idx} className="px-2.5 py-1 rounded-xl bg-white border border-indigo-200 text-indigo-950 font-bold text-xs shadow-2xs flex items-center gap-1">
+                              <Building className="w-3 h-3 text-indigo-500" />
+                              {ac.community_name} {ac.head_name ? `(${ac.head_name})` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Volunteers & Equipment */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-600 font-bold">
-                        <Users className="w-4 h-4 text-[#095c54]" />
-                        <span>Volunteers Needed: <strong>{prob.estimated_volunteers_needed}</strong></span>
+                      <div className="flex items-center gap-2 text-slate-600 font-bold">
+                        <span className="flex items-center gap-1">
+                          <Users className="w-4 h-4 text-[#095c54]" />
+                          Total Vols: <strong>{prob.estimated_volunteers_needed}</strong>
+                        </span>
+                        <span className="text-slate-300">|</span>
+                        <span className="text-teal-700 font-bold">
+                          Max / Comm: <strong>{prob.max_volunteers_per_community || 25}</strong>
+                        </span>
                       </div>
 
-                      {prob.claimed_by_community_name && (
-                        <div className="flex items-center gap-1 text-blue-700 font-bold">
-                          <Building className="w-3.5 h-3.5" />
-                          <span>Claimed by: {prob.claimed_by_community_name}</span>
+                      {!isApproved && requests.length > 0 ? (
+                        <div className="flex items-center gap-1 text-indigo-700 font-bold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                          <span>📬 {requests.length} {requests.length === 1 ? 'Proposal' : 'Proposals'} Received · Awaiting Approval</span>
                         </div>
+                      ) : prob.evidence_status === 'submitted' ? (
+                        <div className="flex items-center gap-1 text-indigo-800 font-bold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                          <span>📸 Completion Evidence Submitted · Pending Review in Approvals Tab</span>
+                        </div>
+                      ) : prob.status === 'resolved' || prob.evidence_status === 'verified_complete' ? (
+                        <div className="flex items-center gap-1 text-emerald-800 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Work Verified &amp; Resolved</span>
+                        </div>
+                      ) : isApproved ? (
+                        <div className="flex items-center gap-1 text-emerald-700 font-bold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Approved & Active</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 font-semibold">Open for proposals</span>
                       )}
                     </div>
 
@@ -610,13 +833,73 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                 </div>
 
                 {/* Footer Controls */}
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] text-slate-500 font-semibold">
                     Posted by: {prob.officer_name || officerName}
                   </span>
 
                   <div className="flex items-center gap-2">
-                    {prob.status && prob.status !== 'open' && (
+                    {/* Review & Approve Proposals Button - REMOVED only after the officer approves the drive */}
+                    {!isApproved ? (
+                      <button
+                        type="button"
+                        onClick={() => openReviewModal(prob)}
+                        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs shadow-xs transition active:scale-95 ${
+                          requests.length > 0
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md ring-2 ring-indigo-300 font-black'
+                            : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <Users className="w-4 h-4" />
+                        <span>
+                          {requests.length > 0
+                            ? `Review & Approve Proposals (${requests.length})`
+                            : 'Review Proposals (0)'}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Drive Approved ({prob.claimed_by_community_name || 'Community Assigned'})</span>
+                      </div>
+                    )}
+
+                    {isApproved && (prob.status === 'resolved' || prob.evidence_status === 'verified_complete' || prob.evidence_status === 'ward_verified') && (
+                      prob.completion_posted ? (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 border border-amber-300 text-xs font-black">
+                          <Award className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Completion Posted &amp; Certificates Sent</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const comms =
+                              prob.assigned_communities && prob.assigned_communities.length > 0
+                                ? prob.assigned_communities.map(ac => ac.community_name)
+                                : prob.claimed_by_community_name
+                                ? prob.claimed_by_community_name.replace(/\s*\(Joint Drive\)\s*/i, '').split('&').map(s => s.trim()).filter(Boolean)
+                                : ['Community Volunteers'];
+                            setPostCompletionDrive({
+                              id: prob.id,
+                              title: prob.title,
+                              ward_number: prob.ward_number,
+                              ward_name: prob.ward_name || `Ward ${prob.ward_number}`,
+                              location_name: prob.location_name || prob.address || 'Navsari',
+                              participating_communities: comms,
+                              volunteers_count: prob.estimated_volunteers_needed || 0,
+                              completion_posted: prob.completion_posted
+                            });
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-black text-xs shadow-sm transition active:scale-95"
+                        >
+                          <Award className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Post Completion &amp; Send Certificates</span>
+                        </button>
+                      )
+                    )}
+
+                    {isApproved && (
                       <button
                         type="button"
                         onClick={() => handleReopen(prob.id)}
@@ -624,7 +907,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
                         title="Reopen problem so other communities can plan a drive"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Reopen Problem</span>
+                        <span>Reopen</span>
                       </button>
                     )}
                     <button
@@ -640,6 +923,251 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
             );
           })}
         </div>
+      )}
+
+      {/* 4. MULTI-COMMUNITY REVIEW & APPROVAL MODAL */}
+      {reviewProblem && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200 mb-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                  Ward Officer Approval Desk · Ward {reviewProblem.ward_number}
+                </div>
+                <h2 className="text-xl font-black text-slate-900">
+                  {reviewProblem.title}
+                </h2>
+                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                  {reviewProblem.location_name} · Target Volunteers: <strong>{reviewProblem.estimated_volunteers_needed}</strong>
+                </p>
+                {reviewProblem.start_time && (
+                  <p className="text-xs text-teal-800 font-bold mt-1 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-teal-600" />
+                    Designated Schedule: <strong>{new Date(reviewProblem.start_time).toLocaleDateString([], { dateStyle: 'medium' })} · {new Date(reviewProblem.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to {new Date(reviewProblem.end_time || reviewProblem.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={closeReviewModal}
+                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Instruction Banner */}
+            <div className="p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 text-xs text-indigo-950 leading-relaxed space-y-1">
+              <strong className="block text-sm font-black text-indigo-900">
+                Multi-Community Drive Selection:
+              </strong>
+              <p>
+                Select one or more community organizations below to approve for this cleanliness drive.
+                If you select multiple communities, they will be registered together as a <strong>Joint Collaborative Cleanliness Drive</strong>.
+                Each approved community head will receive an instant official notification and SMS confirmation.
+              </p>
+            </div>
+
+            {modalError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
+            {/* Proposals List */}
+            {(!reviewProblem.drive_requests || reviewProblem.drive_requests.length === 0) ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                <div className="w-12 h-12 rounded-xl bg-slate-200 text-slate-500 flex items-center justify-center mx-auto">
+                  <Users className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-black text-slate-800">No Proposals Received Yet</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Community organizations in Ward {reviewProblem.ward_number} and across Navsari will see this listing and submit drive proposals.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-600 font-bold px-1">
+                  <span>Community Proposals ({reviewProblem.drive_requests.length}):</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allIds = reviewProblem.drive_requests?.map(r => r.community_id) || [];
+                        setSelectedCommunityIds(allIds);
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 underline"
+                    >
+                      Select All
+                    </button>
+                    <span>·</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCommunityIds([])}
+                      className="text-xs text-slate-500 hover:text-slate-700 underline"
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {reviewProblem.drive_requests.map(req => {
+                    const isSelected = selectedCommunityIds.includes(req.community_id);
+                    return (
+                      <div
+                        key={req.id}
+                        onClick={() => toggleCommunitySelection(req.community_id)}
+                        className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-start gap-3.5 ${
+                          isSelected
+                            ? 'bg-emerald-50/70 border-emerald-500 shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="pt-0.5 shrink-0 text-emerald-600">
+                          {isSelected ? (
+                            <CheckSquare className="w-5 h-5 text-emerald-600" />
+                          ) : (
+                            <Square className="w-5 h-5 text-slate-400" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                <Building className="w-4 h-4 text-emerald-700" />
+                                {req.community_name}
+                              </h4>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Head: <strong>{req.head_name}</strong> · Phone: <strong>{req.contact_phone}</strong>
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                req.status === 'approved'
+                                  ? 'bg-emerald-600 text-white'
+                                  : req.status === 'rejected'
+                                  ? 'bg-slate-500 text-white'
+                                  : 'bg-amber-500 text-white'
+                              }`}>
+                                {req.status}
+                              </span>
+
+                              <span className="px-3 py-1 rounded-xl bg-emerald-100 text-emerald-950 font-black text-xs flex items-center gap-1">
+                                <Users className="w-3.5 h-3.5 text-emerald-700" />
+                                {req.proposed_volunteers_count} Volunteers
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Proposed Date & Notes */}
+                          <div className="text-xs text-slate-700 space-y-1 bg-white/70 p-2.5 rounded-xl border border-slate-100">
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Proposed Date: <strong>{req.proposed_date ? new Date(req.proposed_date).toLocaleString() : 'Not specified'}</strong></span>
+                            </div>
+                            {req.notes && (
+                              <p className="text-xs text-slate-800 font-medium italic">
+                                "{req.notes}"
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Equipment Available */}
+                          {req.equipment_available && req.equipment_available.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {req.equipment_available.map((eq, i) => (
+                                <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold">
+                                  {eq}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Officer Comments / Instructions */}
+            {reviewProblem.drive_requests && reviewProblem.drive_requests.length > 0 && (
+              <div className="space-y-4 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Officer Instructions / Remarks (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={officerComments}
+                    onChange={e => setOfficerComments(e.target.value)}
+                    placeholder="e.g. Approved as joint drive. Ward will provide 2 tractors and municipal waste bins at 8 AM."
+                    className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Selection Summary & Action Button */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                  <div className="text-xs text-slate-700">
+                    <span className="font-bold text-slate-900 block sm:inline">
+                      {selectedCommunityIds.length} {selectedCommunityIds.length === 1 ? 'Community' : 'Communities'} Selected
+                    </span>
+                    {selectedCommunityIds.length > 1 && (
+                      <span className="text-emerald-700 font-bold ml-1">
+                        · Joint Drive Collaboration
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={closeReviewModal}
+                      className="px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApproveSelected}
+                      disabled={approving || selectedCommunityIds.length === 0}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#095c54] text-white font-bold text-xs sm:text-sm hover:bg-[#074741] transition disabled:opacity-50 shadow-sm"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>
+                        {approving
+                          ? 'Approving...'
+                          : selectedCommunityIds.length > 1
+                          ? `Approve ${selectedCommunityIds.length} Communities (Joint Drive)`
+                          : `Approve Selected Community`}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. POST DRIVE COMPLETION & ISSUE CERTIFICATES MODAL */}
+      {postCompletionDrive && (
+        <PostDriveCompletionModal
+          drive={postCompletionDrive}
+          onClose={() => setPostCompletionDrive(null)}
+          onPublished={msg => {
+            setPostCompletionDrive(null);
+            setSuccessMsg(msg);
+            fetchProblems();
+            setTimeout(() => setSuccessMsg(null), 7000);
+          }}
+        />
       )}
     </div>
   );

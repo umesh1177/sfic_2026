@@ -15,7 +15,12 @@ import {
   WorkAssignment,
   CommunityProblem,
   WardOfficerRecord,
-  AdminBoundarySettings
+  AdminBoundarySettings,
+  CommunityRegistrationRequest,
+  SimulatedSms,
+  ActivityRegistration,
+  ActivityQuestion,
+  ActivityEvidence
 } from '../types/index.js';
 import { NAVSARI_WARDS, DEFAULT_NAVSARI_CITY_BOUNDARY } from '../utils/postgis.js';
 
@@ -28,7 +33,27 @@ export interface DataStore {
   categories: ComplaintCategory[];
   complaints: Complaint[];
   drives: CleanlinessDrive[];
-  driveRegistrations: { drive_id: string; citizen_id: string; registered_at: string }[];
+  driveRegistrations: {
+    id?: string;
+    drive_id: string;
+    citizen_id: string;
+    citizen_name?: string;
+    citizen_phone?: string;
+    citizen_email?: string;
+    registration_number?: string;
+    registration_status?: 'registered' | 'waitlisted' | 'cancelled' | 'pending_approval';
+    attendance_status?: 'not_marked' | 'pending_verification' | 'present' | 'absent' | 'excused';
+    checkin_latitude?: number;
+    checkin_longitude?: number;
+    checkin_distance_meters?: number;
+    checkin_at?: string;
+    registered_at: string;
+    community_id?: string;
+    community_name?: string;
+  }[];
+  activityRegistrations?: ActivityRegistration[];
+  activityQuestions?: ActivityQuestion[];
+  activityEvidence?: ActivityEvidence[];
   challenges: Challenge[];
   challengeParticipants: { challenge_id: string; citizen_id: string; progress: number }[];
   rewards: RewardDefinition[];
@@ -44,6 +69,8 @@ export interface DataStore {
   communityProblems: CommunityProblem[];
   wardOfficers: WardOfficerRecord[];
   adminBoundarySettings: AdminBoundarySettings;
+  communityRegistrationRequests: CommunityRegistrationRequest[];
+  smsMessages: SimulatedSms[];
 }
 
 // Initial seed categories
@@ -319,9 +346,42 @@ export const initialCommunityProblems: CommunityProblem[] = [
     estimated_volunteers_needed: 25,
     suggested_equipment: ['Heavy-duty Rubber Gumboots', 'Biohazard Trash Bags', 'Litter Grabber Sticks', 'Protective Cotton Gloves', 'First-Aid Kit'],
     image_url: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
-    status: 'open',
+    start_time: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T07:30:00Z',
+    end_time: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T11:30:00Z',
+    status: 'requests_received',
     created_by: 'd0000000-0000-0000-0000-000000000003',
     officer_name: 'Rajesh Patel (Ward 3 Officer)',
+    drive_requests: [
+      {
+        id: 'dreq-01',
+        problem_id: 'prob-01',
+        community_id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        head_name: 'Rajesh Varma',
+        contact_phone: '+919825100099',
+        proposed_volunteers_count: 18,
+        proposed_date: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T07:30:00Z',
+        equipment_available: ['Heavy-duty Rubber Gumboots', 'Litter Grabber Sticks', 'Protective Cotton Gloves'],
+        notes: 'Our core RWA team of 18 members can tackle the southern sluice basin and organize waste sorting tables on the paved walkway.',
+        status: 'pending',
+        submitted_at: new Date(Date.now() - 3600000 * 6).toISOString()
+      },
+      {
+        id: 'dreq-02',
+        problem_id: 'prob-01',
+        community_id: 'b0000000-0000-0000-0000-000000000002',
+        community_name: 'Dudhiya Talao Paryavaran Mitra Mandal',
+        head_name: 'Sanjay Desai',
+        contact_phone: '+919825100102',
+        proposed_volunteers_count: 15,
+        proposed_date: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T07:30:00Z',
+        equipment_available: ['Biohazard Trash Bags', 'First-Aid Kit', 'Wheelbarrows / Push Carts'],
+        notes: 'We have 15 college volunteers with rubber waders to clear deep choke points in the overflow canal and haul debris to municipal collection points.',
+        status: 'pending',
+        submitted_at: new Date(Date.now() - 3600000 * 3).toISOString()
+      }
+    ],
+    assigned_communities: [],
     created_at: new Date(Date.now() - 86400000).toISOString(),
     updated_at: new Date(Date.now() - 86400000).toISOString()
   },
@@ -340,9 +400,38 @@ export const initialCommunityProblems: CommunityProblem[] = [
     estimated_volunteers_needed: 20,
     suggested_equipment: ['Garden Rakes', 'Compost Collection Sacks', 'Hand Pruners', 'Brooms', 'Reflective Jackets'],
     image_url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+    start_time: new Date(Date.now() + 86400000 * 4).toISOString().split('T')[0] + 'T08:00:00Z',
+    end_time: new Date(Date.now() + 86400000 * 4).toISOString().split('T')[0] + 'T12:00:00Z',
     status: 'claimed',
     claimed_by_community_id: 'b0000000-0000-0000-0000-000000000001',
     claimed_by_community_name: 'Navsari Green Warriors RWA',
+    assigned_communities: [
+      {
+        id: 'ac-01',
+        community_id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        head_name: 'Rajesh Varma',
+        contact_phone: '+919825100099',
+        assigned_at: '2026-10-30T10:00:00Z'
+      }
+    ],
+    drive_requests: [
+      {
+        id: 'dreq-00',
+        problem_id: 'prob-02',
+        community_id: 'b0000000-0000-0000-0000-000000000001',
+        community_name: 'Navsari Green Warriors RWA',
+        head_name: 'Rajesh Varma',
+        contact_phone: '+919825100099',
+        proposed_volunteers_count: 20,
+        proposed_date: '2026-11-01T08:00:00Z',
+        equipment_available: ['Garden Rakes', 'Hand Pruners', 'Brooms'],
+        notes: 'Annual heritage library beautification drive.',
+        status: 'approved',
+        submitted_at: '2026-10-29T10:00:00Z',
+        reviewed_at: '2026-10-30T10:00:00Z'
+      }
+    ],
     linked_activity_id: 'act-02',
     created_by: 'd0000000-0000-0000-0000-000000000003',
     officer_name: 'Rajesh Patel (Ward 3 Officer)',
@@ -364,7 +453,11 @@ export const initialCommunityProblems: CommunityProblem[] = [
     estimated_volunteers_needed: 15,
     suggested_equipment: ['Heavy-duty Brooms', 'Wheelbarrows', 'Cotton Face Masks', 'Recycling Bags'],
     image_url: 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+    start_time: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0] + 'T07:00:00Z',
+    end_time: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0] + 'T10:30:00Z',
     status: 'open',
+    drive_requests: [],
+    assigned_communities: [],
     created_by: 'd0000000-0000-0000-0000-000000000003',
     officer_name: 'Rajesh Patel (Ward 3 Officer)',
     created_at: new Date(Date.now() - 259200000).toISOString(),
@@ -385,7 +478,11 @@ export const initialCommunityProblems: CommunityProblem[] = [
     estimated_volunteers_needed: 30,
     suggested_equipment: ['Color-coded Bins', 'Sanitizing Spray', 'Brooms', 'Gardening Trowels'],
     image_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
+    start_time: new Date(Date.now() + 86400000 * 6).toISOString().split('T')[0] + 'T08:30:00Z',
+    end_time: new Date(Date.now() + 86400000 * 6).toISOString().split('T')[0] + 'T12:00:00Z',
     status: 'open',
+    drive_requests: [],
+    assigned_communities: [],
     created_by: 'd0000000-0000-0000-0000-000000000008',
     officer_name: 'Sunita Desai (Ward 8 Officer)',
     created_at: new Date(Date.now() - 345600000).toISOString(),
@@ -406,6 +503,8 @@ export const initialCommunityProblems: CommunityProblem[] = [
     estimated_volunteers_needed: 35,
     suggested_equipment: ['Floating Net Boom', 'Long Hook Poles', 'Safety Harnesses', 'Heavy Gloves'],
     image_url: 'https://images.unsplash.com/photo-1621451537084-482c73073a0f?auto=format&fit=crop&w=800&q=80',
+    start_time: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0] + 'T07:00:00Z',
+    end_time: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0] + 'T11:00:00Z',
     status: 'claimed',
     claimed_by_community_id: 'b0000000-0000-0000-0000-000000000002',
     claimed_by_community_name: 'Rotary Club of Navsari Heritage',
@@ -1814,6 +1913,51 @@ export const initialWardOfficers: WardOfficerRecord[] = [
   }
 ];
 
+const initialCommunityRegistrationRequests: CommunityRegistrationRequest[] = [
+  {
+    id: 'req-comm-001',
+    request_code: 'REQ-COMM-2026-9041',
+    full_name: 'Mahesh Shah',
+    phone: '+919825100105',
+    community_name: 'Ashapuri Green Volunteers Society',
+    organisation_type: 'Resident Welfare Association',
+    ward_number: 3,
+    ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
+    locality: 'Ashapuri Residency, Dudhiya Talao',
+    address: 'Plot 14, Ashapuri Residency, Dudhiya Talao Road, Navsari',
+    document_name: 'Gujarat_Societies_Reg_Cert_Ashapuri_RWA.pdf',
+    document_url: 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=800&q=80',
+    document_type: 'application/pdf',
+    notes: 'Registered under Gujarat Societies Registration Act 1860, Reg No: GUJ/NAV/2024/7712. Applying as community head for Swachh Setu activities.',
+    status: 'pending',
+    submitted_at: '2026-11-16T10:30:00Z'
+  }
+];
+
+const initialSmsMessages: SimulatedSms[] = [
+  {
+    id: 'sms-welcome-01',
+    phone: '+919876543210',
+    sender: 'VM-NMCGOV',
+    senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+    body: '582914 is your official verification OTP for Swachh Setu Citizen Registration on Navsari Municipal Corporation portal. Valid for 5 minutes. Do not share this OTP with anyone. - NMC SWACHHATA',
+    otpCode: '582914',
+    type: 'otp',
+    timestamp: '11:15 AM',
+    isRead: false
+  },
+  {
+    id: 'sms-comm-req-01',
+    phone: '+919825100105',
+    sender: 'VM-NMCGOV',
+    senderName: 'Govt. of Gujarat · Navsari Municipal Corporation',
+    body: 'Navsari Municipal Corporation: Your Community Head registration request for "Ashapuri Green Volunteers Society" has been submitted to Ward Officer (Ward 3) for document verification. Reference: REQ-COMM-2026-9041.',
+    type: 'submission',
+    timestamp: '10:31 AM',
+    isRead: false
+  }
+];
+
 export const store: DataStore = {
   wardOfficers: initialWardOfficers,
   adminBoundarySettings: {
@@ -1931,8 +2075,19 @@ export const store: DataStore = {
   complaints: initialComplaints,
   drives: initialDrives,
   driveRegistrations: [
-    { drive_id: 'drive-01', citizen_id: defaultCitizenId, registered_at: '2026-10-28T14:10:00Z' }
+    {
+      id: 'reg-seed-01',
+      drive_id: 'drive-01',
+      citizen_id: defaultCitizenId,
+      registration_number: 'REG-NAV-1001',
+      registration_status: 'registered',
+      attendance_status: 'not_marked',
+      registered_at: '2026-10-28T14:10:00Z'
+    }
   ],
+  activityRegistrations: [],
+  activityQuestions: [],
+  activityEvidence: [],
   challenges: initialChallenges,
   challengeParticipants: [
     { challenge_id: 'ch-01', citizen_id: defaultCitizenId, progress: 3 }
@@ -1951,5 +2106,7 @@ export const store: DataStore = {
   communities: initialCommunities,
   communityActivities: initialCommunityActivities,
   recognitionPosts: initialRecognitionPosts,
-  communityProblems: initialCommunityProblems
+  communityProblems: initialCommunityProblems,
+  communityRegistrationRequests: initialCommunityRegistrationRequests,
+  smsMessages: initialSmsMessages
 };
