@@ -95,10 +95,14 @@ apiRouter.post('/community/recognition-posts', authenticate, CommunityController
 apiRouter.post('/community/recognition-posts/:id/like', authenticate, CommunityController.togglePostLike);
 apiRouter.post('/community/recognition-posts/:id/comments', authenticate, CommunityController.addPostComment);
 
-// 8. Notifications
+// 8. Notifications & PWA Web Push
 apiRouter.get('/notifications', authenticate, NotificationsController.getNotifications);
 apiRouter.patch('/notifications/:id/read', authenticate, NotificationsController.markAsRead);
 apiRouter.patch('/notifications/read-all', authenticate, NotificationsController.markAllAsRead);
+apiRouter.get('/push/vapid-public-key', NotificationsController.getVapidPublicKey);
+apiRouter.post('/push/subscribe', authenticate, NotificationsController.subscribePush);
+apiRouter.post('/push/unsubscribe', authenticate, NotificationsController.unsubscribePush);
+apiRouter.post('/push/test', authenticate, NotificationsController.sendTestPush);
 
 // 9. Citizen Support
 apiRouter.post('/support/tickets', authenticate, SupportController.createTicket);

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { pool, isDbConnected } from './db.js';
 import { store } from './store.js';
+import { PushService } from '../services/pushService.js';
 import {
   Complaint, CleanlinessDrive, AppNotification, Profile, ComplaintCategory,
   CommunityRecognitionPost, RecognitionComment, CitizenAuthProfile,
@@ -799,6 +800,15 @@ export class DbRepository {
         console.error('[DB REPO ERROR - createNotification]:', err.message);
       }
     }
+
+    // Fire real Web Push notification to all subscribed PWA mobile/desktop devices of this user
+    PushService.sendToUser(userId, {
+      title,
+      body: message,
+      type,
+      referenceId,
+      tag: `swachhsetu-${type}-${referenceId || Date.now()}`
+    }).catch(() => {});
   }
 
   public static async submitFeedback(complaintId: string, citizenId: string, rating: number, feedbackText: string, satisfactory: boolean) {

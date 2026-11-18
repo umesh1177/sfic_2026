@@ -18,9 +18,12 @@ import { WardOfficerDashboard } from './components/ward/WardOfficerDashboard.js'
 import { NMCAdminDashboard } from './components/admin/NMCAdminDashboard.js';
 import { LocationMonitor } from './components/common/LocationMonitor.js';
 import { OfflineSyncBanner } from './components/common/OfflineSyncBanner.js';
+import { PwaNotificationManager } from './components/common/PwaNotificationManager.js';
 import { api } from './services/api.js';
 import { Profile, AppNotification, ComplaintCategory, Complaint } from './types/index.js';
 import { Language, translations } from './i18n/translations.js';
+import { startDomTranslationSync } from './i18n/domTranslator.js';
+import { registerSwachhServiceWorker } from './services/pwaNotifications.js';
 import { Phone, Mail, MapPin, Sparkles, Shield, Heart } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -86,7 +89,14 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadInitialData();
+    registerSwachhServiceWorker();
   }, []);
+
+  // Synchronize full-app UI chrome translation (EN / ગુજરાતી / हिन्दी) while preserving user-submitted content
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    return startDomTranslationSync(lang);
+  }, [lang, viewMode, currentTab, user?.id, isInitializing]);
 
   const handleAuthSuccess = (profile: Profile) => {
     setUser(profile);
@@ -170,66 +180,81 @@ export const App: React.FC = () => {
   // 3. Community Head Dashboard View
   if (viewMode === 'community_head') {
     return (
-      <CommunityHeadDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-        onSwitchToCitizenView={() => {
-          setViewMode('citizen');
-          setCurrentTab('home');
-        }}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <CommunityHeadDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+          onSwitchToCitizenView={() => {
+            setViewMode('citizen');
+            setCurrentTab('home');
+          }}
+        />
+      </>
     );
   }
 
   // 4. Municipal Worker Dashboard View
   if (viewMode === 'worker') {
     return (
-      <WorkerDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-        onSwitchToCitizenView={() => {
-          setViewMode('citizen');
-          setCurrentTab('home');
-        }}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <WorkerDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+          onSwitchToCitizenView={() => {
+            setViewMode('citizen');
+            setCurrentTab('home');
+          }}
+        />
+      </>
     );
   }
 
-  // 5. Ward Officer Dashboard View (Ward 3)
+  // 5. Ward Officer Dashboard View
   if (viewMode === 'ward_officer') {
     return (
-      <WardOfficerDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-        onSwitchToCitizenView={() => {
-          setViewMode('citizen');
-          setCurrentTab('home');
-        }}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <WardOfficerDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+          onSwitchToCitizenView={() => {
+            setViewMode('citizen');
+            setCurrentTab('home');
+          }}
+        />
+      </>
     );
   }
 
   // 6. NMC Central Admin Dashboard View
   if (viewMode === 'nmc_admin') {
     return (
-      <NMCAdminDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <NMCAdminDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+        />
+      </>
     );
   }
 
   // 4. Authenticated Citizen Application
   return (
     <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
+      {/* Native Mobile PWA Push Notifications */}
+      <PwaNotificationManager userId={user?.id} onNewNotifications={setNotifications} />
+
       {/* Offline Connectivity Banner */}
       <PwaOfflineBanner />
 

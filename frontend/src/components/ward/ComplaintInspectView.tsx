@@ -572,7 +572,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Citizen Description</span>
-                    <p className="text-xs text-slate-800 font-medium leading-relaxed">
+                    <p data-no-translate="true" className="text-xs text-slate-800 font-medium leading-relaxed">
                       {citizen_report?.description || overview.description || 'No detailed description provided.'}
                     </p>
                   </div>
@@ -1099,7 +1099,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
                     <div className="space-y-1 text-xs">
                       <span className="font-bold text-slate-700 block">Description / Observation Notes:</span>
-                      <p className="text-slate-700 font-medium text-[11px] leading-relaxed bg-white/80 p-3 rounded-xl border border-amber-200/60">
+                      <p data-no-translate="true" className="text-slate-700 font-medium text-[11px] leading-relaxed bg-white/80 p-3 rounded-xl border border-amber-200/60">
                         {beforeEv?.description || citizen_report?.original_description || overview.description || 'Civic waste accumulation recorded.'}
                       </p>
                     </div>
@@ -1171,7 +1171,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-slate-700 font-medium text-[11px] leading-relaxed bg-white/90 p-3 rounded-xl border border-emerald-200/70">
+                      <p data-no-translate="true" className="text-slate-700 font-medium text-[11px] leading-relaxed bg-white/90 p-3 rounded-xl border border-emerald-200/70">
                         {afterEv?.description
                           ? afterEv.description
                           : afterImgSrc

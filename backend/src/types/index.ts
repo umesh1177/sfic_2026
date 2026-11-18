@@ -46,6 +46,8 @@ export interface OtpSession {
   mobile_number: string;
   otp_hash: string;
   purpose: 'signup' | 'password_reset' | 'phone_change';
+  delivery_mode?: 'local_hash' | 'twilio_verify';
+  verify_service_sid?: string;
   expires_at: string;
   attempts_count: number;
   max_attempts: number;

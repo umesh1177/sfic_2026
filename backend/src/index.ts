@@ -6,6 +6,7 @@ import { apiRouter } from './routes/api.js';
 import { checkDatabaseConnection } from './data/db.js';
 import { ensureDatabaseInitialized } from './data/bootstrapDb.js';
 import { DbRepository } from './data/dbRepository.js';
+import { PushService } from './services/pushService.js';
 
 import path from 'path';
 import fs from 'fs';
@@ -109,6 +110,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   await checkDatabaseConnection();
   await ensureDatabaseInitialized();
   await DbRepository.initializeWorkerAndTeamTables();
+  await PushService.initialize();
 });
 
 export { app };

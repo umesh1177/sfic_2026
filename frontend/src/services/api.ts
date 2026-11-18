@@ -1578,6 +1578,31 @@ class ApiService {
       overdue_complaints: any[];
     }> }>('/admin/flagged-officers');
   }
+
+  // --- PWA WEB PUSH NOTIFICATIONS ---
+  async getVapidPublicKey() {
+    return this.request<{ success: boolean; data: { publicKey: string } }>('/push/vapid-public-key');
+  }
+
+  async subscribePush(subscription: PushSubscriptionJSON) {
+    return this.request<{ success: boolean; message: string }>('/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ subscription })
+    });
+  }
+
+  async unsubscribePush(endpoint: string) {
+    return this.request<{ success: boolean; message: string }>('/push/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint })
+    });
+  }
+
+  async sendTestPush() {
+    return this.request<{ success: boolean; message: string }>('/push/test', {
+      method: 'POST'
+    });
+  }
 }
 
 export const api = new ApiService();
