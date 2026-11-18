@@ -40,6 +40,14 @@ class ModerateRequest(BaseModel):
     text: str
     image_base64: Optional[str] = None
 
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "service": "My Clean Navsari AI Engine",
+        "health": "/health"
+    }
+
 @app.get("/health")
 def health():
     return {

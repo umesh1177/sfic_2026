@@ -35,7 +35,17 @@ import {
   WardApprovalItem
 } from '../types/index.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+function resolveApiBaseUrl(): string {
+  const raw = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (!raw) return 'http://localhost:5000/api';
+  if (raw.startsWith('/')) {
+    return raw.endsWith('/api') ? raw : `${raw}/api`;
+  }
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withProtocol.endsWith('/api') ? withProtocol : `${withProtocol}/api`;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 class ApiService {
   private getHeaders(): HeadersInit {

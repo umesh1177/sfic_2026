@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { apiRouter } from './routes/api.js';
 import { checkDatabaseConnection } from './data/db.js';
+import { ensureDatabaseInitialized } from './data/bootstrapDb.js';
 import { DbRepository } from './data/dbRepository.js';
 
 import path from 'path';
@@ -23,7 +24,10 @@ for (const p of envPaths) {
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
+
+// Trust Render / reverse proxy X-Forwarded-For headers (required for express-rate-limit in production)
+app.set('trust proxy', 1);
 
 // Enable CORS for frontend Vite dev server (e.g. localhost:5173 / localhost:3000)
 app.use(cors({
@@ -55,6 +59,16 @@ const apiLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
 
+// Root route for platform probes & quick verification
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    status: 'online',
+    service: 'Swachh Setu - Municipal Citizen Backend',
+    health: '/api/health',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
   res.status(200).json({
@@ -85,14 +99,15 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   });
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`================================================================`);
   console.log(`  SWACHH SETU CITIZEN BACKEND (SIH PS000089)`);
   console.log(`  Navsari Municipal Corporation, Gujarat`);
-  console.log(`  Server listening on: http://localhost:${PORT}`);
-  console.log(`  Health Check: http://localhost:${PORT}/api/health`);
+  console.log(`  Server listening on: http://0.0.0.0:${PORT}`);
+  console.log(`  Health Check: http://0.0.0.0:${PORT}/api/health`);
   console.log(`================================================================`);
   await checkDatabaseConnection();
+  await ensureDatabaseInitialized();
   await DbRepository.initializeWorkerAndTeamTables();
 });
 

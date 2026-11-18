@@ -47,7 +47,16 @@ export interface PhotoQualityResult {
 }
 
 export class AIService {
-  private static ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8008';
+  private static normalizeMlUrl(raw?: string): string {
+    const trimmed = (raw || '').trim().replace(/\/+$/, '');
+    if (!trimmed) return 'http://127.0.0.1:8008';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    // Render Blueprint `fromService` may supply `service.onrender.com` or `host:port`
+    if (trimmed.includes('onrender.com')) return `https://${trimmed}`;
+    return `http://${trimmed}`;
+  }
+
+  private static ML_SERVICE_URL = AIService.normalizeMlUrl(process.env.ML_SERVICE_URL);
   private static TRAINING_STORE_PATH = path.resolve(process.cwd(), 'data', 'ai_training_samples.json');
   private static learnedSamples: Array<{
     category_id?: string;

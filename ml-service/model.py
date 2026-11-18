@@ -144,6 +144,10 @@ class WasteClassifierInference:
             json.dump(self.online_samples[-500:], f)
 
     def _init_vision_backbone(self):
+        if os.getenv("DISABLE_TORCH", "").strip().lower() in ("1", "true", "yes"):
+            print("[MODEL INIT] DISABLE_TORCH enabled — running lightweight Pillow + NumPy + Online k-NN engine.")
+            self.has_weights = False
+            return
         try:
             import torch
             import torchvision.models as models

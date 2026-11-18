@@ -9,7 +9,18 @@ const path_1 = __importDefault(require("path"));
 const moderation_js_1 = require("../utils/moderation.js");
 const db_js_1 = require("../data/db.js");
 class AIService {
-    static ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8008';
+    static normalizeMlUrl(raw) {
+        const trimmed = (raw || '').trim().replace(/\/+$/, '');
+        if (!trimmed)
+            return 'http://127.0.0.1:8008';
+        if (/^https?:\/\//i.test(trimmed))
+            return trimmed;
+        // Render Blueprint `fromService` may supply `service.onrender.com` or `host:port`
+        if (trimmed.includes('onrender.com'))
+            return `https://${trimmed}`;
+        return `http://${trimmed}`;
+    }
+    static ML_SERVICE_URL = AIService.normalizeMlUrl(process.env.ML_SERVICE_URL);
     static TRAINING_STORE_PATH = path_1.default.resolve(process.cwd(), 'data', 'ai_training_samples.json');
     static learnedSamples = [];
     static learnedLoaded = false;

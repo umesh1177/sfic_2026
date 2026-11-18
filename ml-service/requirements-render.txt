@@ -1,0 +1,9 @@
+# Lightweight Render Free-Tier requirements (fits comfortably in 512MB RAM & fast cold boot)
+# Uses Pillow + NumPy visual feature extraction + Online k-NN incremental trainer + relevance gate
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+pillow>=10.2.0
+python-multipart==0.0.20
+requests==2.32.3
+numpy>=1.26.0
