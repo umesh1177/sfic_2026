@@ -41,8 +41,18 @@ function resolveApiBaseUrl(): string {
   if (raw.startsWith('/')) {
     return raw.endsWith('/api') ? raw : `${raw}/api`;
   }
-  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  return withProtocol.endsWith('/api') ? withProtocol : `${withProtocol}/api`;
+  let normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(normalized);
+    // Render Blueprint `fromService` (property: host) injects the bare service slug (e.g. "swachh-setu-backend")
+    if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost') {
+      parsed.hostname = `${parsed.hostname}.onrender.com`;
+      normalized = parsed.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    // Keep normalized string if URL parsing fails
+  }
+  return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
 }
 
 const API_BASE_URL = resolveApiBaseUrl();

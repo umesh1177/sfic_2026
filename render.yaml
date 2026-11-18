@@ -34,7 +34,7 @@ services:
         fromService:
           type: web
           name: swachh-setu-ml
-          property: host
+          property: hostport
 
   # 2. FastAPI AI/ML Microservice (Lightweight Pillow + NumPy + Online k-NN for Render 512MB Free Tier)
   - type: web
