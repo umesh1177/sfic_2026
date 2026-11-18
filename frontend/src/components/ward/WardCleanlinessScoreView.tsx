@@ -117,7 +117,7 @@ export const WardCleanlinessScoreView: React.FC = () => {
       </div>
 
       {/* 4 Component Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Component 1: Physical Cleanliness */}
         <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-2">
           <div className="flex items-center justify-between text-xs">

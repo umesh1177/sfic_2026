@@ -295,36 +295,73 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
       )}
 
       {/* 2. Sub-Tabs Toggle: Field Workers vs Ward Officers */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveSubTab('workers')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+          className={`px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black transition flex items-center justify-center gap-1.5 min-w-0 ${
             activeSubTab === 'workers'
               ? 'bg-[#095c54] text-white shadow-2xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Users className="w-3.5 h-3.5" />
-          <span>Sanitation Field Workers ({workers.length})</span>
+          <Users className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate sm:hidden">Workers ({workers.length})</span>
+          <span className="hidden sm:inline">Sanitation Field Workers ({workers.length})</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('officers')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+          className={`px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black transition flex items-center justify-center gap-1.5 min-w-0 ${
             activeSubTab === 'officers'
               ? 'bg-[#095c54] text-white shadow-2xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <UserCheck className="w-3.5 h-3.5" />
-          <span>Ward Officers ({officers.length})</span>
+          <UserCheck className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Ward Officers ({officers.length})</span>
         </button>
       </div>
 
-      {/* 3A. Workers Table View */}
+      {/* 3A. Workers List View (Mobile Cards + Desktop Table) */}
       {activeSubTab === 'workers' && (
         <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="md:hidden divide-y divide-slate-100">
+            {loading && workers.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 text-xs font-bold">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#095c54]" />
+                Loading sanitation personnel...
+              </div>
+            ) : paginatedWorkers.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs font-bold">
+                No sanitation workers found matching your query.
+              </div>
+            ) : (
+              paginatedWorkers.map(w => (
+                <div key={w.id} className="p-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-black text-xs text-[#0f2925] truncate">{w.full_name}</span>
+                      <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{w.worker_code}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-semibold truncate">{w.designation}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                      <span className="text-[#095c54]">{w.phone}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-teal-50 text-[#095c54] border border-teal-200">Ward {w.ward_number}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteWorker(w.id, w.full_name)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 transition shrink-0"
+                    title="Deactivate Worker"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">
@@ -455,10 +492,33 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
         </div>
       )}
 
-      {/* 3B. Officers Table View */}
+      {/* 3B. Officers List View (Mobile Cards + Desktop Table) */}
       {activeSubTab === 'officers' && (
         <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="md:hidden divide-y divide-slate-100">
+            {paginatedOfficers.map(o => (
+              <div key={o.id} className="p-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-black text-xs text-[#0f2925] truncate">{o.full_name}</div>
+                    <div className="text-[10px] text-slate-500 font-semibold truncate">{o.designation} · {o.phone}</div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] shrink-0 ${o.is_active !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {o.is_active !== false ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {o.assigned_wards?.map((wNum: number) => (
+                    <span key={wNum} className="px-1.5 py-0.5 rounded bg-teal-50 text-[#095c54] font-black text-[10px] border border-teal-200">
+                      Ward {wNum}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">

@@ -87,26 +87,26 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
             <React.Fragment key={step.key}>
               <div className="flex flex-col items-center flex-1 text-center min-w-0">
                 <div
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-xs transition duration-200 shrink-0 ${
+                  className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-[10px] sm:text-xs transition duration-200 shrink-0 ${
                     state === 'completed'
                       ? 'bg-[#095c54] text-white shadow-2xs'
                       : state === 'current'
-                      ? 'bg-amber-500 text-white shadow-sm ring-4 ring-amber-100'
+                      ? 'bg-amber-500 text-white shadow-sm ring-2 sm:ring-4 ring-amber-100'
                       : 'bg-slate-100 text-slate-400 border border-slate-200'
                   }`}
                 >
                   {state === 'completed' ? (
-                    <Check className="w-4 h-4 text-white" />
+                    <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   ) : state === 'current' ? (
-                    <Clock className="w-4 h-4 text-white" />
+                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   ) : (
                     <span>{idx + 1}</span>
                   )}
                 </div>
 
-                <div className="mt-1.5 leading-tight min-w-0 w-full">
+                <div className="mt-1 sm:mt-1.5 leading-tight min-w-0 w-full">
                   <span
-                    className={`block font-bold text-[10px] sm:text-[11px] truncate ${
+                    className={`block font-bold text-[9px] sm:text-[11px] truncate ${
                       state === 'completed'
                         ? 'text-[#095c54]'
                         : state === 'current'

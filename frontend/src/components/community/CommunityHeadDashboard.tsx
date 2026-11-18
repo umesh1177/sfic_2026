@@ -186,7 +186,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
+    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
       {/* DESKTOP SIDEBAR (Visible on lg: screens) */}
       <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-[#e2e8f0] h-screen sticky top-0 z-30 select-none">
         {/* Brand Header */}
@@ -450,8 +450,8 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
         <LocationMonitor roleLabel="Community Head" />
         <OfflineSyncBanner onSynced={loadData} />
 
-        {/* TAB CONTENT CONTAINER (Padded pb-24 for mobile bottom bar) */}
-        <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 lg:pb-8">
+        {/* TAB CONTENT CONTAINER (Compact mobile padding + bottom safe area) */}
+        <main className="flex-1 w-full max-w-6xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-6 pb-[max(5.5rem,calc(4.75rem+env(safe-area-inset-bottom,0px)))] lg:pb-8">
           {/* Tab 1: Overview */}
           {activeTab === 'overview' && (
             <CommunityOverview
@@ -571,17 +571,17 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
         </main>
 
         {/* Mobile Bottom Navigation (Visible on mobile/tablet <lg) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] py-1.5 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-          <div className="flex items-center justify-around max-w-md mx-auto">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] pt-1.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] px-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="grid grid-cols-5 gap-0.5 max-w-lg mx-auto">
             {/* 1. Overview */}
             <button
               onClick={() => setActiveTab('overview')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'overview' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'overview' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <LayoutDashboard className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'overview' ? 'font-black' : 'font-semibold'}`}>
+              <LayoutDashboard className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'overview' ? 'font-black' : 'font-semibold'}`}>
                 {t.ch_nav_overview}
               </span>
             </button>
@@ -589,12 +589,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 2. Activities */}
             <button
               onClick={() => setActiveTab('activities')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
-                activeTab === 'activities' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition relative min-w-0 ${
+                activeTab === 'activities' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Calendar className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'activities' ? 'font-black' : 'font-semibold'}`}>
+              <Calendar className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'activities' ? 'font-black' : 'font-semibold'}`}>
                 {t.ch_nav_activities}
               </span>
             </button>
@@ -602,12 +602,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 3. Ward Problems */}
             <button
               onClick={() => setActiveTab('ward_problems')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'ward_problems' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'ward_problems' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <HeartHandshake className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
+              <HeartHandshake className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
                 Problems
               </span>
             </button>
@@ -615,12 +615,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 4. Posts */}
             <button
               onClick={() => setActiveTab('posts')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'posts' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'posts' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Award className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'posts' ? 'font-black' : 'font-semibold'}`}>
+              <Award className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'posts' ? 'font-black' : 'font-semibold'}`}>
                 Posts
               </span>
             </button>
@@ -628,12 +628,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 5. More (Drawer Trigger) */}
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                !['overview', 'activities', 'ward_problems', 'posts'].includes(activeTab) ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                !['overview', 'activities', 'ward_problems', 'posts'].includes(activeTab) ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Menu className="w-5 h-5" />
-              <span className="text-[10px] mt-0.5 font-semibold">
+              <Menu className="w-5 h-5 shrink-0" />
+              <span className="text-[10px] mt-0.5 truncate max-w-full font-semibold">
                 {t.nav_more}
               </span>
             </button>

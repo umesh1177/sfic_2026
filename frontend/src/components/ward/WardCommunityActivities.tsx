@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 import { DriveInspectView } from './DriveInspectView.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 interface WardCommunityActivitiesProps {
   wardNumber?: number;
@@ -33,6 +34,8 @@ interface WardCommunityActivitiesProps {
 
 export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = ({ wardNumber }) => {
   const [activeSubTab, setActiveSubTab] = useState<'active' | 'completed' | 'organizations'>('active');
+  const [orgPage, setOrgPage] = useState<number>(1);
+  const orgPageSize = 6;
   const [drives, setDrives] = useState<any[]>([]);
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [orgSearch, setOrgSearch] = useState<string>('');
@@ -275,31 +278,31 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
       )}
 
       {/* 3 PRIMARY SUB-TABS: ACTIVE DRIVES, COMPLETE DRIVE HISTORY, REGISTERED ORGANIZATIONS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200/80">
+      <div className="mobile-tab-strip sm:grid sm:grid-cols-3 gap-1.5 sm:gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200/80">
         <button
           type="button"
           onClick={() => setActiveSubTab('active')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 ${
             activeSubTab === 'active'
               ? 'bg-[#095c54] text-white shadow-sm'
               : 'text-slate-600 hover:bg-white/70 hover:text-[#0f2925]'
           }`}
         >
-          <Calendar className="w-4 h-4" />
-          <span>1. Active Drives ({activeDrives.length})</span>
+          <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>1. Active ({activeDrives.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveSubTab('completed')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 ${
             activeSubTab === 'completed'
               ? 'bg-[#095c54] text-white shadow-sm'
               : 'text-slate-600 hover:bg-white/70 hover:text-[#0f2925]'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4" />
-          <span>2. Complete Drive History ({completedDrives.length})</span>
+          <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>2. History ({completedDrives.length})</span>
         </button>
 
         <button
@@ -308,14 +311,14 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
             setActiveSubTab('organizations');
             fetchOrganizations();
           }}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 ${
             activeSubTab === 'organizations'
               ? 'bg-[#095c54] text-white shadow-sm'
               : 'text-slate-600 hover:bg-white/70 hover:text-[#0f2925]'
           }`}
         >
-          <Building className="w-4 h-4" />
-          <span>3. Registered Organizations ({organizations.length})</span>
+          <Building className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>3. Organizations ({organizations.length})</span>
         </button>
       </div>
 
@@ -369,9 +372,64 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                 </div>
               );
             }
+            const paginatedOrgs = filteredOrgs.slice(
+              (orgPage - 1) * orgPageSize,
+              orgPage * orgPageSize
+            );
             return (
               <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Mobile Card View (< md) */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {paginatedOrgs.map(org => (
+                    <div key={org.id} className="p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-black text-xs text-[#0f2925] truncate">{org.community_name}</p>
+                          <p className="text-[10px] text-slate-500 font-semibold truncate">
+                            {org.head_name || 'Community Head'} · {org.phone || 'N/A'}
+                          </p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] shrink-0">
+                          Ward {org.ward_number || wardNumber || 3}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-1.5 flex-wrap pt-1">
+                        <span className="px-2 py-0.5 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-[10px] font-bold">
+                          {org.organisation_type || 'Community Org'}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingOrg(org)}
+                            className="px-2 py-1 rounded-lg bg-[#f0f7f5] text-[#095c54] border border-[#cde6df] text-[10px] font-extrabold inline-flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>View</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEditOrg(org)}
+                            className="px-2 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-extrabold inline-flex items-center gap-1"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOrg(org)}
+                            disabled={deletingOrgId === org.id}
+                            className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold inline-flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table View (>= md) */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-[#f7f9f8] border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -384,7 +442,7 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
-                      {filteredOrgs.map(org => (
+                      {paginatedOrgs.map(org => (
                         <tr key={org.id} className="hover:bg-slate-50/80 transition">
                           <td className="py-3.5 px-4">
                             <p className="font-black text-[#0f2925]">{org.community_name}</p>
@@ -467,6 +525,13 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                     </tbody>
                   </table>
                 </div>
+                <TablePagination
+                  currentPage={orgPage}
+                  totalItems={filteredOrgs.length}
+                  pageSize={orgPageSize}
+                  onPageChange={setOrgPage}
+                  itemLabel="organizations"
+                />
               </div>
             );
           })()}

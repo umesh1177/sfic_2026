@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { WorkAssignment, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 interface WorkHistoryViewProps {
   assignments: WorkAssignment[];
@@ -28,6 +29,8 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
 }) => {
   const [search, setSearch] = useState<string>('');
   const [selectedTask, setSelectedTask] = useState<any | null>(null);
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const historyPageSize = 6;
 
   // Past/Historical assignments (completed or closed tasks only)
   const historyList = assignments.filter(
@@ -56,7 +59,10 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => {
+              setSearch(e.target.value);
+              setHistoryPage(1);
+            }}
             placeholder="Search past assignments..."
             className="w-full pl-9 pr-4 py-2.5 sm:py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:border-[#095c54] outline-hidden shadow-2xs font-medium"
           />
@@ -78,7 +84,9 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
         <>
           {/* Mobile Card Layout (< md) */}
           <div className="md:hidden space-y-3">
-            {filteredHistory.map(item => (
+            {filteredHistory
+              .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+              .map(item => (
               <div
                 key={item.id}
                 className="bg-white rounded-2xl border border-[#e2e8f0] p-4 shadow-xs space-y-3"
@@ -160,7 +168,9 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredHistory.map(item => (
+                {filteredHistory
+              .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+              .map(item => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition">
                     <td className="py-3.5 px-4">
                       <span className="font-mono text-xs font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-md">
@@ -227,6 +237,15 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
             </table>
           </div>
         </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-xs">
+            <TablePagination
+              currentPage={historyPage}
+              totalItems={filteredHistory.length}
+              pageSize={historyPageSize}
+              onPageChange={setHistoryPage}
+              itemLabel="tasks"
+            />
+          </div>
         </>
       )}
 

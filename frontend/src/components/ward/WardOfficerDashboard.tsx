@@ -177,7 +177,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased">
+    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased overflow-x-clip">
       {/* 1. Desktop Left Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-[#e2e8f0] h-screen sticky top-0 z-30 select-none">
         {/* Logo and Ward Branding */}
@@ -279,7 +279,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
                 <select
                   value={userWardNum}
                   onChange={e => setSelectedWardNum(Number(e.target.value))}
-                  className="ml-2 px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200 text-[11px] font-black text-[#095c54] outline-none cursor-pointer"
+                  className="ml-1 sm:ml-2 px-2 sm:px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200 text-[10px] sm:text-[11px] font-black text-[#095c54] outline-none cursor-pointer max-w-[115px] sm:max-w-[200px] truncate"
                   title="Switch between your assigned wards"
                 >
                   {assignedWards.map(w => (
@@ -332,8 +332,8 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           </div>
         </header>
 
-        {/* 3. Main Dynamic Content Body (Padded pb-24 for mobile bottom bar) */}
-        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24 lg:pb-8">
+        {/* 3. Main Dynamic Content Body (Padded for mobile bottom bar) */}
+        <main className="flex-1 px-2.5 py-3 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-[max(5.5rem,calc(4.75rem+env(safe-area-inset-bottom,0px)))] lg:pb-8">
           {activeTab === 'overview' && (
             <WardOverview
               wardNumber={userWardNum}
@@ -378,7 +378,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
         </main>
 
         {/* 4. Dedicated Mobile Bottom Navigation (Visible on < lg, respects granted tabs) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] py-1.5 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] pt-1.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] px-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-around max-w-lg mx-auto">
             {navItems.slice(0, 4).map(item => {
               const Icon = item.icon;

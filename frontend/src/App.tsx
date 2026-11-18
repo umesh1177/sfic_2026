@@ -229,7 +229,7 @@ export const App: React.FC = () => {
 
   // 4. Authenticated Citizen Application
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
+    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
       {/* Offline Connectivity Banner */}
       <PwaOfflineBanner />
 
@@ -288,8 +288,8 @@ export const App: React.FC = () => {
         <LocationMonitor roleLabel="Citizen" />
         <OfflineSyncBanner onSynced={loadInitialData} />
 
-        {/* Content Container (Mobile-first padding with safe-area support) */}
-        <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-8 pb-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))] lg:pb-12">
+        {/* Content Container (Mobile-first compact padding with safe-area support) */}
+        <main className="flex-1 w-full max-w-6xl mx-auto px-2.5 sm:px-6 lg:px-8 py-2.5 sm:py-6 pb-[max(5.5rem,calc(4.75rem+env(safe-area-inset-bottom,0px)))] lg:pb-10">
           {/* Direct Full-Page View: Report an Issue (NO modal) */}
           {currentTab === 'report' && (
             <ReportIssuePage

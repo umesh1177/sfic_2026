@@ -297,9 +297,78 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
         </div>
       )}
 
-      {/* 2. Officers Table with Pagination */}
+      {/* 2. Officers List: Compact Mobile Cards + Desktop Table */}
       <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile Card View (< md) — Zero Horizontal Scroll */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading && officers.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-xs font-bold">
+              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#095c54]" />
+              Loading ward officers...
+            </div>
+          ) : paginatedOfficers.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-xs font-bold">
+              No ward officers found matching your query.
+            </div>
+          ) : (
+            paginatedOfficers.map(officer => {
+              const tabs: string[] =
+                Array.isArray(officer.allowed_tabs) && officer.allowed_tabs.length > 0
+                  ? officer.allowed_tabs
+                  : ALL_TAB_IDS;
+              const isFull = tabs.length >= ALL_TAB_IDS.length;
+              return (
+                <div key={officer.id} className="p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0">
+                        {officer.full_name?.slice(0, 2).toUpperCase() || 'WO'}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-black text-[#0f2925] text-xs truncate">{officer.full_name}</div>
+                        <div className="text-[10px] text-[#095c54] font-bold truncate">{officer.phone} · {officer.designation}</div>
+                      </div>
+                    </div>
+                    {officer.flagged ? (
+                      <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-black text-[10px] border border-red-300 shrink-0">
+                        Flagged ({officer.flagged_count || 1})
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-black text-[10px] border border-emerald-200 shrink-0">
+                        Compliant
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1">
+                    {officer.assigned_wards?.map((wNum: number) => (
+                      <span key={wNum} className="px-1.5 py-0.5 rounded bg-teal-50 text-[#095c54] font-black text-[10px] border border-teal-200">
+                        Ward {wNum}
+                      </span>
+                    ))}
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold border ${isFull ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
+                      {isFull ? 'Full Access' : `${tabs.length}/${ALL_TAB_IDS.length} Tabs`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] font-black text-emerald-700">Score: {officer.cleanliness_score || 90.0}%</span>
+                    <button
+                      onClick={() => handleOpenEdit(officer)}
+                      className="px-3 py-1.5 bg-[#095c54] text-white rounded-xl font-bold text-[11px] flex items-center gap-1"
+                    >
+                      <Edit className="w-3 h-3" />
+                      <span>Update / Allocate</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table View (>= md) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/80 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">

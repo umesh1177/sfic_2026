@@ -31,6 +31,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../../services/api.js';
 import { Language } from '../../i18n/translations.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 // Default Navsari outer boundary coordinates [lng, lat]
 const DEFAULT_NAVSARI_BOUNDARY: [number, number][] = [
@@ -259,6 +260,8 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
 
   // Previous Boundaries History & Map Preview Modal
   const [boundaryHistory, setBoundaryHistory] = useState<BoundaryHistoryEntry[]>([]);
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const historyPageSize = 5;
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [previewHistoryEntry, setPreviewHistoryEntry] = useState<BoundaryHistoryEntry | null>(null);
@@ -299,8 +302,10 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
       const res = await api.getBoundaryHistory(targetMode, targetMode === 'ward' ? wardNum : undefined);
       if (res.success && Array.isArray(res.data)) {
         setBoundaryHistory(res.data);
+        setHistoryPage(1);
       } else {
         setBoundaryHistory([]);
+        setHistoryPage(1);
       }
     } catch {
       setBoundaryHistory([]);
@@ -572,22 +577,23 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
           </h2>
         </div>
 
-        {/* Toggle Mode */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-2xl gap-1 shrink-0">
+        {/* Toggle Mode (2-col mobile safe, zero horizontal overflow) */}
+        <div className="grid grid-cols-2 sm:flex sm:items-center bg-slate-100 p-1 rounded-2xl gap-1 w-full md:w-auto shrink-0">
           <button
             onClick={() => {
               setMode('city');
               setIsDrawing(false);
               setInspectedPoint(null);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+            className={`px-2.5 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black transition flex items-center justify-center gap-1.5 min-w-0 ${
               mode === 'city'
                 ? 'bg-[#095c54] text-white shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Compass className="w-3.5 h-3.5" />
-            <span>Navsari City Boundary</span>
+            <Compass className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate sm:hidden">City Boundary</span>
+            <span className="hidden sm:inline">Navsari City Boundary</span>
           </button>
 
           <button
@@ -596,14 +602,15 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
               setIsDrawing(false);
               setInspectedPoint(null);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+            className={`px-2.5 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-black transition flex items-center justify-center gap-1.5 min-w-0 ${
               mode === 'ward'
                 ? 'bg-[#095c54] text-white shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Ward Area Boundaries</span>
+            <Building2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate sm:hidden">Ward Bounds</span>
+            <span className="hidden sm:inline">Ward Area Boundaries</span>
           </button>
         </div>
       </div>
@@ -825,8 +832,8 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
             )}
           </div>
 
-          {/* Interactive Map Canvas */}
-          <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden h-[560px] relative">
+          {/* Interactive Map Canvas (Mobile-safe height) */}
+          <div className="bg-white rounded-2xl sm:rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden h-[320px] sm:h-[460px] lg:h-[560px] relative">
             <MapContainer
               center={mapCenter}
               zoom={mapZoom}
@@ -1003,7 +1010,78 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
           </button>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Card View (< md) — Zero Horizontal Scroll */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loadingHistory ? (
+            <div className="py-8 text-center text-slate-400 text-xs font-bold">
+              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#095c54]" />
+              Loading previous saved boundaries...
+            </div>
+          ) : boundaryHistory.length === 0 ? (
+            <div className="py-8 px-4 text-center text-slate-500 text-xs font-semibold">
+              No previous boundary revisions recorded yet for{' '}
+              {mode === 'city' ? 'Navsari City' : `Ward ${selectedWardNumber}`}.
+            </div>
+          ) : (
+            boundaryHistory
+              .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+              .map((entry, pageIdx) => {
+                const idx = (historyPage - 1) * historyPageSize + pageIdx;
+              const [cLat, cLng] = getPolygonCenter(entry.coordinates);
+              const isLatest = idx === 0;
+              return (
+                <div key={entry.id} className="p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-black text-slate-500">#{boundaryHistory.length - idx}</span>
+                        <span className="font-black text-xs text-[#0f2925] truncate">
+                          {entry.boundary_type === 'city' ? 'Navsari City' : `Ward ${entry.ward_number}`}
+                        </span>
+                        {isLatest && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-semibold line-clamp-1 mt-0.5">
+                        {entry.location_summary || getNearestNavsariArea(cLat, cLng)}
+                      </p>
+                      <p className="text-[10px] font-mono text-[#095c54] font-bold">
+                        {cLat.toFixed(4)}°N, {cLng.toFixed(4)}°E · {new Date(entry.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </p>
+                    </div>
+                    <MiniBoundarySvgPreview coordinates={entry.coordinates} />
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewHistoryEntry(entry)}
+                      className="px-2.5 py-1.5 rounded-xl bg-teal-50 text-[#095c54] border border-teal-200 text-[11px] font-extrabold inline-flex items-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Preview</span>
+                    </button>
+                    {!isLatest && (
+                      <button
+                        type="button"
+                        disabled={restoringId === entry.id}
+                        onClick={() => handleRestoreFromHistory(entry)}
+                        className="px-3 py-1.5 rounded-xl bg-[#095c54] text-white text-[11px] font-extrabold inline-flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Set Location</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table View (>= md) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -1032,7 +1110,10 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
                   </td>
                 </tr>
               ) : (
-                boundaryHistory.map((entry, idx) => {
+                boundaryHistory
+              .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+              .map((entry, pageIdx) => {
+                const idx = (historyPage - 1) * historyPageSize + pageIdx;
                   const [cLat, cLng] = getPolygonCenter(entry.coordinates);
                   const vertexCount =
                     entry.coordinates.length > 1 &&
@@ -1139,6 +1220,14 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
             </tbody>
           </table>
         </div>
+
+        <TablePagination
+          currentPage={historyPage}
+          totalItems={boundaryHistory.length}
+          pageSize={historyPageSize}
+          onPageChange={setHistoryPage}
+          itemLabel="saved locations"
+        />
       </div>
 
       {/* 4. INTERACTIVE MAP PREVIEW MODAL FOR PREVIOUS BOUNDARY */}

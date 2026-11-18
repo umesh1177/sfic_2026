@@ -363,7 +363,7 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
       <div
         ref={certRef}
         className={`relative bg-white rounded-2xl border-4 border-double border-[#095c54] shadow-md overflow-hidden ${
-          compact ? 'p-5' : 'p-6 sm:p-8'
+          compact ? 'p-3.5 sm:p-5' : 'p-4 sm:p-8'
         }`}
       >
         {/* Subtle Gold & Teal Decorative Corner Accents */}
@@ -464,11 +464,11 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
               </p>
             </div>
 
-            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200">
+            <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200 max-w-full">
               <div className="p-1.5 bg-white rounded-lg border border-slate-200 shrink-0">
-                <QrCodeSvg value={verifyUrl} size={compact ? 76 : 92} />
+                <QrCodeSvg value={verifyUrl} size={compact ? 72 : 84} />
               </div>
-              <div className="text-left space-y-1 max-w-[170px]">
+              <div className="text-left space-y-1 min-w-0 max-w-[165px]">
                 <span className="text-[10px] font-black uppercase tracking-wider text-[#095c54] block">
                   QR Certificate Verification
                 </span>

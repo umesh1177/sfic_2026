@@ -1,14 +1,29 @@
 {
-  "short_name": "Clean Navsari",
-  "name": "My Clean Navsari - NMC Citizen Dashboard",
+  "short_name": "Swachh Setu",
+  "name": "Swachh Setu · Navsari Municipal Cleanliness Portal",
+  "description": "Connecting Citizens, Community Organizations, Field Workers & Navsari Municipal Corporation for a Cleaner Navsari.",
   "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
     {
       "src": "/favicon.svg",
       "type": "image/svg+xml",
-      "sizes": "192x192 512x512"
+      "sizes": "any",
+      "purpose": "any"
     }
   ],
   "start_url": "/",
+  "scope": "/",
   "background_color": "#f8faf9",
   "theme_color": "#095c54",
   "display": "standalone",

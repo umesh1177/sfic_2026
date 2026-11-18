@@ -758,7 +758,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </div>
 
             {/* Clean Structured Metadata Strip */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5 pt-1">
               <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200/70">
                 <Calendar className="w-4 h-4 text-[#095c54] shrink-0" />
                 <div className="min-w-0">

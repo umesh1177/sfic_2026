@@ -144,8 +144,8 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
 
       {/* Filter Bar */}
       <div className="p-3.5 sm:p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 text-xs w-full sm:w-auto">
-          <div className="flex-1 sm:flex-initial min-w-[140px]">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 text-xs w-full sm:w-auto">
+          <div className="min-w-0 sm:min-w-[150px]">
             <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">{t.hotspots_category}</span>
             <select
               value={categoryFilter}
@@ -160,7 +160,7 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
             </select>
           </div>
 
-          <div className="flex-1 sm:flex-initial min-w-[140px]">
+          <div className="min-w-0 sm:min-w-[150px]">
             <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">{t.hotspots_frequency}</span>
             <select
               value={frequencyFilter}

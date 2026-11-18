@@ -1617,7 +1617,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
             ))}
           </div>
 
-          <div className="relative min-w-[220px]">
+          <div className="relative w-full sm:w-auto sm:min-w-[220px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"

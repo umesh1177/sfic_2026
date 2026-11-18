@@ -27,6 +27,7 @@ import {
 import { api } from '../../services/api.js';
 import { ComplaintCategory } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 // Icon mapping helper
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
@@ -67,6 +68,8 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewLayout, setViewLayout] = useState<'grid' | 'table'>('grid');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 6;
 
   // Modals
   const [addModalOpen, setAddModalOpen] = useState<boolean>(false);
@@ -240,47 +243,52 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
           </h2>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full md:w-auto">
-          {/* View toggle */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl gap-1 shrink-0">
-            <button
-              onClick={() => setViewLayout('grid')}
-              className={`p-1.5 rounded-lg transition ${
-                viewLayout === 'grid' ? 'bg-white shadow-2xs text-[#095c54]' : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Grid Card View (Matches Submission Interface)"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewLayout('table')}
-              className={`p-1.5 rounded-lg transition ${
-                viewLayout === 'table' ? 'bg-white shadow-2xs text-[#095c54]' : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Table View"
-            >
-              <Table className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="relative flex-1 md:w-56">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto">
+          <div className="relative w-full sm:flex-1 md:w-56 order-1 sm:order-2">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search category..."
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#095c54]"
             />
           </div>
 
-          <button
-            onClick={() => setAddModalOpen(true)}
-            className="px-4 py-2 bg-[#095c54] hover:bg-[#074741] text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Category</span>
-          </button>
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto order-2 sm:order-1">
+            {/* View toggle */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl gap-1 shrink-0">
+              <button
+                onClick={() => setViewLayout('grid')}
+                className={`p-1.5 rounded-lg transition ${
+                  viewLayout === 'grid' ? 'bg-white shadow-2xs text-[#095c54]' : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Grid Card View (Matches Submission Interface)"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewLayout('table')}
+                className={`p-1.5 rounded-lg transition ${
+                  viewLayout === 'table' ? 'bg-white shadow-2xs text-[#095c54]' : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Table View"
+              >
+                <Table className="w-4 h-4" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setAddModalOpen(true)}
+              className="px-3.5 py-2 bg-[#095c54] hover:bg-[#074741] text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Category</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -300,8 +308,11 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
 
       {/* 2A. Card Grid View (Matches User Screenshot Style) */}
       {viewLayout === 'grid' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredCategories.map(cat => (
+        <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          {filteredCategories
+            .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+            .map(cat => (
             <div
               key={cat.id}
               className={`p-4 bg-white rounded-3xl border transition shadow-xs flex flex-col justify-between relative group ${
@@ -346,16 +357,16 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
               </div>
 
               {/* SLA Badges Section as requested */}
-              <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 text-amber-800 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[11px] font-bold">
-                    <Clock className="w-3 h-3 text-amber-600" />
-                    <span>Max Approval: <strong className="font-black">{cat.max_approval_days || 2} Days</strong></span>
+              <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-1.5 text-xs">
+                  <div className="flex items-center gap-1 text-amber-800 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] sm:text-[11px] font-bold">
+                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Approval: <strong className="font-black">{cat.max_approval_days || 2}d</strong></span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2 py-1 rounded-xl border border-emerald-200 text-[11px] font-bold">
-                    <CalendarCheck className="w-3 h-3 text-emerald-600" />
-                    <span>Max Work: <strong className="font-black">{cat.max_work_days || 5} Days</strong></span>
+                  <div className="flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-1 rounded-xl border border-emerald-200 text-[10px] sm:text-[11px] font-bold">
+                    <CalendarCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                    <span>Work: <strong className="font-black">{cat.max_work_days || 5}d</strong></span>
                   </div>
                 </div>
 
@@ -366,6 +377,16 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
               </div>
             </div>
           ))}
+        </div>
+        <div className="bg-white rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-xs">
+          <TablePagination
+            currentPage={currentPage}
+            totalItems={filteredCategories.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            itemLabel="categories"
+          />
+        </div>
         </div>
       )}
 
@@ -386,7 +407,9 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredCategories.map(cat => (
+                {filteredCategories
+                  .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                  .map(cat => (
                   <tr key={cat.id} className="hover:bg-slate-50/80 transition">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2.5">
@@ -442,6 +465,13 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={currentPage}
+            totalItems={filteredCategories.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            itemLabel="categories"
+          />
         </div>
       )}
 

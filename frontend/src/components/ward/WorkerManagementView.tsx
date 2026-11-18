@@ -267,9 +267,81 @@ export const WorkerManagementView: React.FC = () => {
         </div>
       </div>
 
-      {/* WORKERS DIRECTORY TABLE (Mandated Table Format with Pagination) */}
+      {/* WORKERS DIRECTORY (Mobile Cards + Desktop Table) */}
       <div className="rounded-3xl bg-white border border-[#e2e8f0] shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="py-10 text-center text-slate-500 text-xs">
+              <RefreshCw className="w-5 h-5 text-[#095c54] animate-spin mx-auto mb-2" />
+              Loading worker records...
+            </div>
+          ) : paginatedWorkers.length === 0 ? (
+            <div className="py-10 text-center text-slate-500 text-xs">
+              No workers match your filter criteria.
+            </div>
+          ) : (
+            paginatedWorkers.map(worker => (
+              <div key={worker.id} className="p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <img
+                      src={worker.avatar_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80'}
+                      alt={worker.full_name}
+                      className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-[#0f2925] text-xs truncate">{worker.full_name}</p>
+                      <p className="text-[10px] font-bold text-[#095c54] truncate">{worker.designation} · {worker.worker_code}</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase border shrink-0 ${
+                      worker.availability_status === 'on_duty'
+                        ? 'bg-blue-50 text-blue-800 border-blue-200'
+                        : worker.availability_status === 'available'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {worker.availability_status?.replace('_', ' ')}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <div className="text-[10px] text-slate-600 font-semibold truncate">
+                    {worker.attendance_today || 'Present (Standby)'}
+                    {worker.active_task_code ? ` · ${worker.active_task_code}` : ''}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={`tel:${worker.phone}`}
+                      className="p-1.5 rounded-lg bg-slate-100 text-slate-700"
+                      title={`Call ${worker.phone}`}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      onClick={() => handleOpenEditModal(worker)}
+                      className="p-1.5 rounded-lg bg-emerald-50 text-[#095c54] border border-emerald-200"
+                      title="Edit Worker Profile"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteWorker(worker.id, worker.full_name)}
+                      className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-200"
+                      title="Remove Worker"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-[#e2e8f0] text-slate-500 font-black uppercase text-[10px] tracking-wider">

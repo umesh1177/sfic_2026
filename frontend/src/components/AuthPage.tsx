@@ -488,7 +488,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f0f6f4] via-[#f8faf9] to-[#e6f4f1] flex flex-col justify-between p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#f0f6f4] via-[#f8faf9] to-[#e6f4f1] flex flex-col justify-between p-2.5 sm:p-6 lg:p-8 overflow-x-clip">
       {/* Top Bar with Language Selector */}
       <div className="max-w-md w-full mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -712,110 +712,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 )}
               </button>
 
-              {/* Quick Demo Logins: Clean, Modern, Citizen Style */}
+              {/* Quick Login: Super Admin Only */}
               <div className="pt-2 space-y-2">
-                <button
-                  type="button"
-                  onClick={handleQuickDemoLogin}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
-                >
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#095c54]" />
-                    <span>Citizen Demo (Umesh Pal)</span>
-                  </div>
-                  <span className="text-[10px] bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] px-2 py-0.5 rounded-full font-bold">
-                    9876543210
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleQuickDemoCommunityHeadLogin}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
-                >
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-[#095c54]" />
-                    <span>Community Head Demo (Rajesh Varma)</span>
-                  </div>
-                  <span className="text-[10px] bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] px-2 py-0.5 rounded-full font-bold">
-                    9825100099
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleQuickDemoWorkerLogin}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
-                >
-                  <div className="flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-[#095c54]" />
-                    <span>Field Worker / Team Leader (Kanti Solanki)</span>
-                  </div>
-                  <span className="text-[10px] bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] px-2 py-0.5 rounded-full font-bold">
-                    9825120001
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleQuickDemoWorker2Login}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-[#e6f4f1] border border-[#b8e0d7] text-xs font-black text-[#095c54] transition flex items-center justify-between shadow-xs group touch-press"
-                >
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-[#095c54]" />
-                    <span>Sanitation Worker Demo (Suresh Vaghela)</span>
-                  </div>
-                  <span className="text-[10px] bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] px-2 py-0.5 rounded-full font-bold">
-                    9825120002
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleQuickDemoWardOfficerLogin}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#6ee7b7] text-xs font-black text-[#065f46] transition flex items-center justify-between shadow-xs group touch-press"
-                >
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-[#065f46]" />
-                    <span>Ward 3 Officer Demo (Ramesh Patel · Ward 3)</span>
-                  </div>
-                  <span className="text-[10px] bg-white border border-[#a7f3d0] text-[#065f46] px-2 py-0.5 rounded-full font-bold">
-                    9825130003
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleQuickDemoWard8OfficerLogin}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-[#f0fdf4] hover:bg-[#dcfce7] border border-[#86efac] text-xs font-black text-[#166534] transition flex items-center justify-between shadow-xs group"
-                >
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-[#166534]" />
-                    <span>Ward 8 Officer Demo (Cyrus Contractor · Ward 8)</span>
-                  </div>
-                  <span className="text-[10px] bg-white border border-[#86efac] text-[#166534] px-2 py-0.5 rounded-full font-bold">
-                    9825130008
-                  </span>
-                </button>
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <div className="h-px flex-1 bg-slate-200" />
+                  <span>Quick Access</span>
+                  <div className="h-px flex-1 bg-slate-200" />
+                </div>
 
                 <button
                   type="button"
                   onClick={handleQuickDemoAdminLogin}
                   disabled={loading}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#095c54] to-[#043e39] text-white hover:opacity-95 text-xs font-black transition flex items-center justify-between shadow-xs group"
+                  className="w-full py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-[#095c54] to-[#043e39] text-white hover:opacity-95 text-xs font-black transition flex items-center justify-between shadow-sm touch-press"
                 >
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-300" />
-                    <span>NMC Admin Demo (Navsari Municipal Executive)</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ShieldCheck className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <span className="truncate">Super Admin Quick Login</span>
                   </div>
-                  <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
-                    9825199999
+                  <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full font-bold shrink-0">
+                    NMC HQ
                   </span>
                 </button>
               </div>

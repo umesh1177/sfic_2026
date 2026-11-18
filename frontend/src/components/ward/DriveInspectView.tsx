@@ -29,6 +29,7 @@ import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
 import { ActivityRegistration } from '../../types/index.js';
 import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -56,6 +57,9 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
   const [registrations, setRegistrations] = useState<ActivityRegistration[]>([]);
   const [evidenceList, setEvidenceList] = useState<any[]>([]);
   const [certificates, setCertificates] = useState<DriveCertificateData[]>([]);
+  const [regPage, setRegPage] = useState<number>(1);
+  const [certPage, setCertPage] = useState<number>(1);
+  const tablePageSize = 6;
   const [selectedCertId, setSelectedCertId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState<boolean>(true);
 
@@ -268,44 +272,44 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
       )}
 
       {/* 3 DEDICATED SUB-TABS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
+      <div className="mobile-tab-strip sm:grid sm:grid-cols-3 gap-1.5 sm:gap-2 p-1.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
         <button
           type="button"
           onClick={() => setActiveTab('details')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition ${
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center justify-center gap-1.5 sm:gap-2 transition whitespace-nowrap shrink-0 ${
             activeTab === 'details'
               ? 'bg-[#095c54] text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Building className="w-4 h-4" />
-          <span>1. Drive Details &amp; Attendance</span>
+          <Building className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>1. Details &amp; Attendance</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('evidence')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition ${
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center justify-center gap-1.5 sm:gap-2 transition whitespace-nowrap shrink-0 ${
             activeTab === 'evidence'
               ? 'bg-[#095c54] text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Camera className="w-4 h-4" />
-          <span>2. Evidence Submitted ({evidenceList.length})</span>
+          <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>2. Evidence ({evidenceList.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('certificates')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition ${
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center justify-center gap-1.5 sm:gap-2 transition whitespace-nowrap shrink-0 ${
             activeTab === 'certificates'
               ? 'bg-[#095c54] text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Award className="w-4 h-4" />
-          <span>3. Issue Certificate ({certificates.length})</span>
+          <Award className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>3. Certificates ({certificates.length})</span>
         </button>
       </div>
 
@@ -450,8 +454,44 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 No citizen volunteers have registered for this drive yet.
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+              <>
+                {/* Mobile Volunteer Cards (< md) */}
+                <div className="md:hidden divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  {registrations
+                    .slice((regPage - 1) * tablePageSize, regPage * tablePageSize)
+                    .map(reg => (
+                    <div key={reg.id} className="p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-[#0f2925] truncate">{reg.citizen_name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{reg.citizen_phone || '—'} · {reg.registration_status}</p>
+                      </div>
+                      <div className="inline-flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAttendance(reg.id, 'present')}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                            reg.attendance_status === 'present' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          Present
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAttendance(reg.id, 'absent')}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                            reg.attendance_status === 'absent' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700'
+                          }`}
+                        >
+                          Absent
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table (>= md) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
                       <th className="py-2.5 px-3">Citizen Volunteer</th>
@@ -462,7 +502,9 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {registrations.map(reg => (
+                    {registrations
+                    .slice((regPage - 1) * tablePageSize, regPage * tablePageSize)
+                    .map(reg => (
                       <tr key={reg.id} className="hover:bg-slate-50/70">
                         <td className="py-3 px-3 font-bold text-[#0f2925]">{reg.citizen_name}</td>
                         <td className="py-3 px-3 text-slate-600">{reg.citizen_phone || '—'}</td>
@@ -512,7 +554,17 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white mt-2">
+                  <TablePagination
+                    currentPage={regPage}
+                    totalItems={registrations.length}
+                    pageSize={tablePageSize}
+                    onPageChange={setRegPage}
+                    itemLabel="volunteers"
+                  />
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -739,7 +791,40 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
             {certificates.length > 0 ? (
               <div className="space-y-4">
                 <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
-                  <div className="overflow-x-auto">
+                  {/* Mobile Issued Certificates Cards (< md) */}
+                  <div className="md:hidden divide-y divide-slate-100">
+                    {certificates
+                      .slice((certPage - 1) * tablePageSize, certPage * tablePageSize)
+                      .map((cert, pageIdx) => {
+                        const idx = (certPage - 1) * tablePageSize + pageIdx;
+                        return (
+                      <div key={cert.id || cert.certificate_code} className="p-3 flex items-center justify-between gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="font-extrabold text-xs text-[#0f2925] truncate">{idx + 1}. {cert.recipient_name}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-[10px] font-black text-[#095c54] bg-[#f0f7f5] px-1.5 py-0.5 rounded">
+                              {cert.certificate_code}
+                            </span>
+                            <span className="text-[9px] font-black uppercase text-slate-500">
+                              {cert.recipient_role === 'community_head' ? 'Head' : 'Citizen'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCertId(cert.id)}
+                          className="px-2.5 py-1.5 rounded-xl bg-[#095c54] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0"
+                        >
+                          <Award className="w-3.5 h-3.5 text-amber-300" />
+                          <span>View</span>
+                        </button>
+                      </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Desktop Table (>= md) */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-[#f7f9f8] border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -752,7 +837,11 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs">
-                        {certificates.map((cert, idx) => (
+                        {certificates
+                      .slice((certPage - 1) * tablePageSize, certPage * tablePageSize)
+                      .map((cert, pageIdx) => {
+                        const idx = (certPage - 1) * tablePageSize + pageIdx;
+                        return (
                           <tr key={cert.id || cert.certificate_code} className="hover:bg-slate-50/80 transition">
                             <td className="py-3 px-4 font-bold text-slate-400">{idx + 1}</td>
                             <td className="py-3 px-4">
@@ -797,10 +886,18 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                               </button>
                             </td>
                           </tr>
-                        ))}
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
+                  <TablePagination
+                    currentPage={certPage}
+                    totalItems={certificates.length}
+                    pageSize={tablePageSize}
+                    onPageChange={setCertPage}
+                    itemLabel="certificates"
+                  />
                 </div>
 
                 {/* Certificate Preview & Print Modal */}

@@ -74,7 +74,7 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-[#0f2925] flex flex-col lg:flex-row antialiased">
+    <div className="min-h-screen bg-[#f8fafc] text-[#0f2925] flex flex-col lg:flex-row antialiased overflow-x-clip">
       {/* 1. Left Sidebar Navigation (Desktop) */}
       <aside className="hidden lg:flex w-72 flex-col bg-white border-r border-[#e2e8f0] sticky top-0 h-screen z-30 shrink-0">
         {/* Brand / Logo Header */}
@@ -156,7 +156,7 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
             className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div className="fixed inset-y-0 left-0 w-80 bg-white shadow-2xl flex flex-col z-10 animate-in slide-in-from-left duration-200">
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white shadow-2xl flex flex-col z-10 animate-in slide-in-from-left duration-200">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-2xl bg-[#095c54] text-white flex items-center justify-center">
@@ -220,8 +220,8 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
       {/* 3. Main Dashboard Body */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-[#e2e8f0] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="h-14 sm:h-16 bg-white/95 backdrop-blur-md border-b border-[#e2e8f0] px-3 sm:px-6 flex items-center justify-between gap-2 sticky top-0 z-20 shadow-2xs">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 shrink-0"
@@ -233,7 +233,10 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <div className="leading-tight truncate">
-                <span className="text-xs sm:text-sm font-black text-[#0f2925] tracking-tight">
+                <span className="text-xs sm:text-sm font-black text-[#0f2925] tracking-tight sm:hidden">
+                  NMC Admin Portal
+                </span>
+                <span className="text-xs sm:text-sm font-black text-[#0f2925] tracking-tight hidden sm:inline">
                   Navsari Municipal Corporation Central Portal
                 </span>
                 <span className="text-[11px] text-slate-400 font-bold hidden md:inline ml-2">
@@ -271,7 +274,7 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
         </header>
 
         {/* Sub-view Content Area */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+        <main className="flex-1 px-2.5 py-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-[max(5.5rem,calc(4.75rem+env(safe-area-inset-bottom,0px)))] lg:pb-8">
           {activeTab === 'overview' && (
             <AdminOverview lang={lang} onNavigateTab={handleTabClick} />
           )}
@@ -296,6 +299,49 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
             <CategoryManagement lang={lang} />
           )}
         </main>
+
+        {/* Mobile Bottom Navigation (< lg) — Consistent across all 5 roles */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] pt-1.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] px-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="grid grid-cols-5 gap-0.5 max-w-lg mx-auto">
+            {[
+              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+              { id: 'wards', label: 'Wards', icon: Building2 },
+              { id: 'ward_officers', label: 'Officers', icon: UserCheck },
+              { id: 'boundaries', label: 'Bounds', icon: Compass }
+            ].map(item => {
+              const Icon = item.icon;
+              const isAct = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleTabClick(item.id)}
+                  className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                    isAct ? 'bg-[#e6f4f1] text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className={`text-[10px] mt-0.5 truncate max-w-full ${isAct ? 'font-black' : 'font-semibold'}`}>
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                ['staff', 'categories'].includes(activeTab)
+                  ? 'bg-[#e6f4f1] text-[#095c54]'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Menu className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${['staff', 'categories'].includes(activeTab) ? 'font-black' : 'font-semibold'}`}>
+                More
+              </span>
+            </button>
+          </div>
+        </nav>
       </div>
     </div>
   );

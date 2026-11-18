@@ -251,7 +251,7 @@ export const WardAIAnalytics: React.FC<WardAIAnalyticsProps> = ({ wardNumber }) 
       )}
 
       {/* 2. Top Metric KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
         <div className="p-4 rounded-2xl bg-white border border-[#e2e8f0] shadow-2xs space-y-1.5 hover:border-emerald-200 transition">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Seasonal Risk Alerts</span>

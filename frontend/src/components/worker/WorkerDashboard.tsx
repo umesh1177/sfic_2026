@@ -139,7 +139,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
   ];
 
   return (
-    <div className="min-h-screen bg-[#f7f9f8] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-hidden">
+    <div className="min-h-screen bg-[#f7f9f8] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
       {/* 1. DESKTOP SIDEBAR */}
       <aside className="hidden lg:flex flex-col w-68 bg-white border-r border-slate-200/80 h-screen sticky top-0 z-30 select-none">
         {/* Brand Header */}
