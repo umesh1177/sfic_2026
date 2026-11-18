@@ -372,12 +372,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
 
     setLoading(true);
+    setDevOtpCode(null);
+    setOtpDigits(['', '', '', '', '', '']);
     try {
       const res = await api.signupSendOtp(phone, consentTerms);
       setSessionId(res.data.session_id);
       setCountdown(res.data.expires_in_seconds || 120);
       setSignupStep(2);
-      setSuccessMessage(`6-digit OTP sent via SMS to ${res.data.mobile_masked || `+91 ${phone}`}`);
+      if (res.data._dev_otp_code) {
+        setDevOtpCode(String(res.data._dev_otp_code));
+        setSuccessMessage(`6-digit OTP generated for ${res.data.mobile_masked || `+91 ${phone}`}`);
+      } else {
+        setDevOtpCode(null);
+        setSuccessMessage(`6-digit OTP sent via SMS to ${res.data.mobile_masked || `+91 ${phone}`}`);
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to send OTP. Please try again.');
     } finally {
@@ -1113,18 +1121,80 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     </p>
                   </div>
 
-                  {/* Real Mobile SMS Delivery Notice */}
-                  <div className="p-3 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4] flex items-center gap-2.5 text-xs">
-                    <div className="w-8 h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                      <Phone className="w-4 h-4 text-emerald-300" />
+                  {/* OTP Delivery Notice: On-screen OTP for non-verified numbers, real SMS for verified numbers */}
+                  {devOtpCode ? (
+                    <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                            <MessageSquare className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 leading-tight">
+                            <p className="text-xs font-black text-amber-950">Your Verification OTP</p>
+                            <p className="text-[11px] text-amber-800 font-semibold">
+                              Enter this 6-digit code below to continue
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const digits = devOtpCode.slice(0, 6).split('');
+                            setOtpDigits([
+                              digits[0] || '',
+                              digits[1] || '',
+                              digits[2] || '',
+                              digits[3] || '',
+                              digits[4] || '',
+                              digits[5] || ''
+                            ]);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-extrabold shrink-0 transition"
+                        >
+                          Auto-Fill
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-white border border-amber-200">
+                        <span
+                          data-no-translate="true"
+                          className="text-xl font-black tracking-[0.3em] text-[#095c54]"
+                        >
+                          {devOtpCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(devOtpCode);
+                            setCopiedId('signup-otp');
+                            setTimeout(() => setCopiedId(null), 1500);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#095c54] hover:underline"
+                        >
+                          {copiedId === 'signup-otp' ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" /> Copy
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <div className="min-w-0 leading-tight">
-                      <p className="font-black text-[#0f2925]">SMS Sent to Your Mobile</p>
-                      <p className="text-[11px] text-[#0d9488] font-bold">
-                        Check your phone&apos;s SMS inbox for the 6-digit OTP
-                      </p>
+                  ) : (
+                    <div className="p-3 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4] flex items-center gap-2.5 text-xs">
+                      <div className="w-8 h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Phone className="w-4 h-4 text-emerald-300" />
+                      </div>
+                      <div className="min-w-0 leading-tight">
+                        <p className="font-black text-[#0f2925]">SMS Sent to Your Mobile</p>
+                        <p className="text-[11px] text-[#0d9488] font-bold">
+                          Check your phone&apos;s SMS inbox for the 6-digit OTP
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* 6-Digit OTP Inputs (with native mobile SMS autofill) */}
                   <div className="flex justify-center gap-2 sm:gap-2.5 my-3">
@@ -1172,7 +1242,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <div className="text-center">
                     <button
                       type="button"
-                      onClick={() => setSignupStep(1)}
+                      onClick={() => {
+                        setSignupStep(1);
+                        setDevOtpCode(null);
+                        setOtpDigits(['', '', '', '', '', '']);
+                      }}
                       className="text-xs text-[#64748b] hover:text-[#095c54]"
                     >
                       Change Mobile Number
@@ -1339,9 +1413,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 type="button"
                 onClick={async () => {
                   setLoading(true);
+                  setErrorMessage('');
                   try {
-                    await api.forgotPasswordSendOtp(phone);
-                    setSuccessMessage('Password reset OTP sent to your registered number');
+                    const res = await api.forgotPasswordSendOtp(phone);
+                    if (res?.data?._dev_otp_code) {
+                      setSuccessMessage(`Your password reset OTP is ${res.data._dev_otp_code}`);
+                    } else {
+                      setSuccessMessage('Password reset OTP sent via SMS to your registered number');
+                    }
                     setMode('login');
                   } catch (err: any) {
                     setErrorMessage(err.message || 'Mobile number not found');

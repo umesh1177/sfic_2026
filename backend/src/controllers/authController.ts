@@ -84,7 +84,8 @@ export class AuthController {
 
       // Dispatch real SMS to the entered mobile number via configured SMS gateway
       const smsResult = await SmsService.sendOtp(normalizedPhone, plainOtp, 'signup');
-      if (!smsResult.delivered) {
+      const isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
+      if (!smsResult.delivered && !isOnScreenFallback) {
         res.status(smsResult.requiresConfiguration ? 503 : 502).json({
           success: false,
           error: smsResult.error || 'Unable to deliver SMS OTP to your mobile number. Please try again later.',
@@ -99,8 +100,8 @@ export class AuthController {
         mobile_number: normalizedPhone,
         otp_hash: otpHash,
         purpose: 'signup',
-        delivery_mode: smsResult.verifyMode ? 'twilio_verify' : 'local_hash',
-        verify_service_sid: smsResult.verifyServiceSid,
+        delivery_mode: !isOnScreenFallback && smsResult.verifyMode ? 'twilio_verify' : 'local_hash',
+        verify_service_sid: !isOnScreenFallback ? smsResult.verifyServiceSid : undefined,
         expires_at: expiresAt,
         attempts_count: 0,
         max_attempts: 5,
@@ -112,13 +113,17 @@ export class AuthController {
 
       res.status(200).json({
         success: true,
-        message: 'A 6-digit OTP has been sent via SMS to your mobile number.',
+        message: isOnScreenFallback
+          ? 'Your 6-digit verification OTP has been generated below.'
+          : 'A 6-digit OTP has been sent via SMS to your mobile number.',
         data: {
           session_id: newSession.id,
           mobile_masked: `${normalizedPhone.slice(0, 3)} XXXXX-${normalizedPhone.slice(-4)}`,
           expires_in_seconds: 300,
-          sms_delivered: true,
-          sms_provider: smsResult.provider
+          sms_delivered: !isOnScreenFallback,
+          sms_fallback: isOnScreenFallback,
+          sms_provider: smsResult.provider,
+          ...(isOnScreenFallback ? { _dev_otp_code: plainOtp } : {})
         }
       });
     } catch (err: any) {
@@ -642,10 +647,12 @@ export class AuthController {
 
       let deliveryMode: 'local_hash' | 'twilio_verify' = 'local_hash';
       let verifyServiceSid: string | undefined;
+      let isOnScreenFallback = false;
 
       if (profile) {
         const smsResult = await SmsService.sendOtp(normalizedPhone, plainOtp, 'password_reset');
-        if (!smsResult.delivered) {
+        isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
+        if (!smsResult.delivered && !isOnScreenFallback) {
           res.status(smsResult.requiresConfiguration ? 503 : 502).json({
             success: false,
             error: smsResult.error || 'Unable to deliver password reset SMS OTP.',
@@ -654,7 +661,7 @@ export class AuthController {
           });
           return;
         }
-        if (smsResult.verifyMode) {
+        if (!isOnScreenFallback && smsResult.verifyMode) {
           deliveryMode = 'twilio_verify';
           verifyServiceSid = smsResult.verifyServiceSid;
         }
@@ -678,11 +685,15 @@ export class AuthController {
 
       res.status(200).json({
         success: true,
-        message: 'If this mobile number is registered, a 6-digit password reset OTP has been sent via SMS.',
+        message: isOnScreenFallback
+          ? 'Your 6-digit password reset OTP has been generated below.'
+          : 'If this mobile number is registered, a 6-digit password reset OTP has been sent via SMS.',
         data: {
           session_id: newSession.id,
           mobile_masked: `${normalizedPhone.slice(0, 3)} XXXXX-${normalizedPhone.slice(-4)}`,
-          sms_delivered: Boolean(profile)
+          sms_delivered: Boolean(profile) && !isOnScreenFallback,
+          sms_fallback: isOnScreenFallback,
+          ...(isOnScreenFallback ? { _dev_otp_code: plainOtp } : {})
         }
       });
     } catch (err: any) {

@@ -19,6 +19,7 @@ export interface SmsDeliveryResult {
   messageId?: string;
   error?: string;
   requiresConfiguration?: boolean;
+  fallbackToOnScreen?: boolean;
   verifyMode?: boolean;
   verifyServiceSid?: string;
 }
@@ -119,11 +120,32 @@ export class SmsService {
           };
       }
     } catch (err: any) {
-      console.error(`[SMS SERVICE ERROR - ${provider}]:`, err?.message || err);
+      const errMsg = String(err?.message || `Failed to dispatch SMS via ${provider}`);
+      console.error(`[SMS SERVICE ERROR - ${provider}]:`, errMsg);
+
+      // On Twilio Free Trial accounts, unverified recipient numbers are blocked by Twilio's
+      // verified-tester policy. Signal the controller to seamlessly fall back to on-screen OTP
+      // for those unverified numbers while keeping real SMS active for verified numbers.
+      const isTrialUnverifiedRecipient =
+        provider === 'twilio' &&
+        /verified tester|unverified|trial.*(recipient|account)|21608/i.test(errMsg);
+
+      if (isTrialUnverifiedRecipient) {
+        console.warn(
+          `[SMS SERVICE] Unverified recipient on Twilio Trial (${e164}). Falling back to on-screen OTP display.`
+        );
+        return {
+          delivered: false,
+          fallbackToOnScreen: true,
+          provider: 'twilio_trial_fallback',
+          error: errMsg
+        };
+      }
+
       return {
         delivered: false,
         provider,
-        error: err?.message || `Failed to dispatch SMS via ${provider}`
+        error: errMsg
       };
     }
   }
