@@ -182,11 +182,8 @@ export const CitizenQuestions: React.FC<CitizenQuestionsProps> = ({ activities }
       {/* Header */}
       <div>
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-          Citizen Questions & AI Support Assistant
+          Citizen Questions &amp; AI Support Assistant
         </h1>
-        <p className="text-xs text-slate-500 font-medium">
-          All citizen inquiries regarding cleanliness drives route directly here. AI prepares verified answers for Community Head review.
-        </p>
       </div>
 
       {successBanner && (

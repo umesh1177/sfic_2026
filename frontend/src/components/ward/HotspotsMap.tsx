@@ -130,9 +130,6 @@ export const HotspotsMap: React.FC<HotspotsMapProps> = ({ ward = 3, lang = 'en' 
             <Flame className="w-5 h-5 text-orange-600 shrink-0" />
             <span>{t.hotspots_title}</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {t.hotspots_subtitle} · Ward {ward} Only · {hotspots.length} {lang === 'gu' ? 'ક્લસ્ટર્સ' : lang === 'hi' ? 'क्लस्टर्स' : 'Active Clusters'}
-          </p>
         </div>
 
         <button

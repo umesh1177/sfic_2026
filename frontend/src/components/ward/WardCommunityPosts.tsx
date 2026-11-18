@@ -199,11 +199,8 @@ export const WardCommunityPosts: React.FC = () => {
         <div>
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight flex items-center gap-2">
             <Megaphone className="w-5 h-5 text-[#095c54]" />
-            <span>Community & Citizen Posts</span>
+            <span>Community &amp; Citizen Posts</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            LinkedIn-Style Public Feed · Official Ward 3 Announcements & Civic Highlights
-          </p>
         </div>
 
         <button

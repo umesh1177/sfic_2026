@@ -38,7 +38,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
     setMoreSheetOpen(false);
   };
 
-  const isMoreTabActive = ['drives', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
+  const isMoreTabActive = ['rewards', 'support', 'profile', 'notifications'].includes(currentTab);
 
   return (
     <>
@@ -100,19 +100,19 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
             </span>
           </button>
 
-          {/* 4. Map */}
+          {/* 4. Cleanliness Drives */}
           <button
-            onClick={() => handleSelectTab('map')}
+            onClick={() => handleSelectTab('drives')}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition-all touch-press ${
-              currentTab === 'map'
+              currentTab === 'drives'
                 ? 'bg-[#e6f4f1] text-[#095c54] font-extrabold shadow-xs'
                 : 'text-[#64748b] hover:text-[#095c54]'
             }`}
-            aria-label={t.nav_map}
+            aria-label={t.nav_drives}
           >
-            <MapPin className={`w-5 h-5 transition-transform ${currentTab === 'map' ? 'scale-110 text-[#095c54]' : ''}`} />
+            <Calendar className={`w-5 h-5 transition-transform ${currentTab === 'drives' ? 'scale-110 text-[#095c54]' : ''}`} />
             <span className="text-[10px] mt-0.5 tracking-tight">
-              {t.nav_map}
+              {t.nav_drives}
             </span>
           </button>
 

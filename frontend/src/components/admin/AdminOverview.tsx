@@ -82,11 +82,8 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
               <span className="text-white/60 text-xs font-semibold">Navsari Municipal Corporation</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              City Administration & Governance Overview
+              City Administration &amp; Governance Overview
             </h1>
-            <p className="text-white/80 text-sm font-medium mt-1 max-w-2xl">
-              Real-time monitoring of all 13 administrative wards, field workforce dispatch, geofence compliance, and SLA grievance resolution.
-            </p>
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-center">
@@ -122,7 +119,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
                   {flaggedOfficers.length} Ward Officer{flaggedOfficers.length > 1 ? 's' : ''} Flagged for SLA Breach
                 </h3>
                 <p className="text-xs font-semibold text-red-700">
-                  Complaints exceeded maximum approval days without officer action. Urgent intervention required.
+                  Complaints exceeded Maximum Approval Days or Maximum Work Days limits. Urgent intervention required.
                 </p>
               </div>
             </div>
@@ -150,18 +147,29 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
                   Contact: <span className="text-[#095c54] font-black">{item.officer.phone}</span>
                 </div>
                 <div className="space-y-1.5 border-t border-red-100 pt-2">
-                  {item.overdue_complaints.slice(0, 2).map((oc: any, oIdx: number) => (
+                  {item.overdue_complaints.slice(0, 3).map((oc: any, oIdx: number) => (
                     <div key={oIdx} className="text-[11px] text-red-800 font-medium flex items-start gap-1.5">
                       <Clock className="w-3 h-3 text-red-500 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold">{oc.complaint_number}</span> ({oc.category_name}):{' '}
-                        <span className="font-black text-red-700">{oc.days_pending} days pending</span> (Max SLA: {oc.max_approval_days}d)
+                        <span
+                          className={`inline-block px-1.5 py-0.2 mr-1 rounded text-[9px] font-black uppercase ${
+                            oc.breach_type === 'work_sla'
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-amber-600 text-white'
+                          }`}
+                        >
+                          {oc.breach_type === 'work_sla' ? 'Work Days Breach' : 'Approval Breach'}
+                        </span>
+                        <span className="font-bold">{oc.complaint_number}</span> ({oc.category_name}
+                        {oc.team_leader_name ? ` · Leader: ${oc.team_leader_name}` : ''}):{' '}
+                        <span className="font-black text-red-700">{oc.days_pending} days</span>{' '}
+                        (Max: {oc.breach_type === 'work_sla' ? `${oc.max_work_days ?? 3}d work` : `${oc.max_approval_days ?? 2}d approval`})
                       </div>
                     </div>
                   ))}
-                  {item.overdue_complaints.length > 2 && (
+                  {item.overdue_complaints.length > 3 && (
                     <div className="text-[10px] font-bold text-red-600">
-                      +{item.overdue_complaints.length - 2} more overdue complaints
+                      +{item.overdue_complaints.length - 3} more overdue complaints
                     </div>
                   )}
                 </div>

@@ -32,6 +32,12 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
+import { enqueueOfflineSubmission, isNetworkError } from '../services/offlineSync.js';
+import {
+  extractImageVisualFeatures,
+  checkLocalCleanlinessRelevance,
+  ExtractedVisualFeatures
+} from '../utils/imageFeatures.js';
 import { checkTextForAbuse } from '../utils/moderation.js';
 import { ComplaintCategory, Complaint } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
@@ -302,6 +308,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 
   // 3. Location & Map State (Uber/Rapido style)
   const [selectedWardNumber, setSelectedWardNumber] = useState<number>(3);
+  const [showLocationMapAndWard, setShowLocationMapAndWard] = useState<boolean>(false);
   const [mapCenter, setMapCenter] = useState<[number, number]>(MAP_CONFIG.center);
   const [address, setAddress] = useState<string>('Detecting location...');
   const [landmark, setLandmark] = useState<string>('');
@@ -372,6 +379,10 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submittedComplaint, setSubmittedComplaint] = useState<Complaint | null>(null);
+  const [savedOfflineInfo, setSavedOfflineInfo] = useState<{ label: string; ward: number; address: string } | null>(null);
+  const [aiTrainedInfo, setAiTrainedInfo] = useState<{ trained: boolean; totalSamples: number } | null>(null);
+  const [imageVisualFeatures, setImageVisualFeatures] = useState<ExtractedVisualFeatures | null>(null);
+  const [photoRejectedAlert, setPhotoRejectedAlert] = useState<string | null>(null);
 
   // Reverse geocoding helper to convert coordinates to clean street address
   const reverseGeocode = async (lat: number, lng: number) => {
@@ -490,6 +501,74 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     }, 500);
   };
 
+  // Unified visual analysis, relevance check & category prediction for BOTH uploads and live camera captures
+  const analyzeAndValidatePhoto = async (
+    b64: string,
+    fileName: string,
+    fileSize: number,
+    source: 'live_camera' | 'upload'
+  ) => {
+    setPhotoRejectedAlert(null);
+    setFormError(null);
+
+    const visualFeatures = await extractImageVisualFeatures(b64);
+    setImageVisualFeatures(visualFeatures);
+
+    // 1. Immediate local cleanliness relevance gate (instant protection even offline)
+    const localRel = checkLocalCleanlinessRelevance(visualFeatures);
+    if (!localRel.isRelevant) {
+      const msg =
+        localRel.reason ||
+        'This photo is not relevant to a cleanliness issue and cannot be submitted. Please capture a clear photo of the civic issue.';
+      setPhotoRejectedAlert(msg);
+      setImageUrl('');
+      setAiIdentifiedCategory(null);
+      setImageValidationStatus('Photo rejected — Not a cleanliness issue');
+      return;
+    }
+
+    // 2. Backend + PyTorch ML classification & semantic relevance validation
+    try {
+      const mlRes = await api.classifyImage(fileName, fileSize, description, b64, visualFeatures, source);
+      if (mlRes.data?.is_relevant === false) {
+        const msg =
+          mlRes.data.relevance_reason ||
+          'This photo is not relevant to a cleanliness issue and cannot be submitted. Please capture a clear photo of the civic problem.';
+        setPhotoRejectedAlert(msg);
+        setImageUrl('');
+        setAiIdentifiedCategory(null);
+        setImageValidationStatus('Photo rejected — Not a cleanliness issue');
+        return;
+      }
+
+      if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
+        setSelectedCategoryId(mlRes.data.matched_category_id);
+        const catObj = categories.find(c => c.id === mlRes.data.matched_category_id);
+        setAiIdentifiedCategory({
+          id: mlRes.data.matched_category_id,
+          name: catObj?.category_name || mlRes.data.predicted_category_name || 'Civic Issue',
+          confidence: Math.round(
+            (mlRes.data as any).confidence_score || (mlRes.data.confidence ? mlRes.data.confidence * 100 : 94)
+          )
+        });
+        setImageValidationStatus(
+          `AI Predicted: ${mlRes.data.predicted_category_name}${
+            mlRes.data.matched_learned_sample ? ' (Learned Model)' : ''
+          }`
+        );
+      } else {
+        setImageValidationStatus('Photo verified (Cleanliness visual clear)');
+      }
+    } catch {
+      // Offline fallback: keyword detection from description/filename
+      const autoCat = detectCategoryFromText(description, fileName);
+      if (autoCat && categories.some(c => c.id === autoCat)) {
+        setSelectedCategoryId(autoCat);
+      }
+      setImageValidationStatus('Photo verified locally (Offline mode ready)');
+    }
+  };
+
   // Convert uploaded image file to Base64 and run validation
   const handleImageFileSelected = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -503,38 +582,15 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     }
 
     setFormError(null);
+    setPhotoRejectedAlert(null);
     setImageFileName(file.name);
-    setImageValidationStatus(`Photo attached (${(file.size / 1024).toFixed(0)} KB, verifying...)`);
+    setImageValidationStatus(`Analyzing photo (${(file.size / 1024).toFixed(0)} KB)...`);
 
     const reader = new FileReader();
     reader.onload = async e => {
       const b64 = e.target?.result as string;
       setImageUrl(b64);
-
-      // Fast immediate keyword detection
-      const autoCat = detectCategoryFromText(description, file.name);
-      if (autoCat && categories.some(c => c.id === autoCat)) {
-        setSelectedCategoryId(autoCat);
-      }
-
-      // PyTorch Deep Learning Image Classification via ML Microservice
-      try {
-        const mlRes = await api.classifyImage(file.name, file.size, description, b64);
-        if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
-          setSelectedCategoryId(mlRes.data.matched_category_id);
-          const catObj = categories.find(c => c.id === mlRes.data.matched_category_id);
-          setAiIdentifiedCategory({
-            id: mlRes.data.matched_category_id,
-            name: catObj?.category_name || mlRes.data.predicted_category_name || 'Civic Issue',
-            confidence: Math.round((mlRes.data as any).confidence_score || (mlRes.data.confidence ? mlRes.data.confidence * 100 : 94))
-          });
-          setImageValidationStatus(`Photo verified: ${mlRes.data.predicted_category_name}`);
-        } else {
-          setImageValidationStatus('Photo verified (JPEG, Clear visual)');
-        }
-      } catch {
-        setImageValidationStatus('Photo verified (JPEG, Clear visual)');
-      }
+      await analyzeAndValidatePhoto(b64, file.name, file.size, 'upload');
     };
     reader.readAsDataURL(file);
   };
@@ -614,26 +670,11 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const capturedName = `camera_capture_${Date.now()}.jpg`;
         setImageUrl(dataUrl);
-        setImageFileName(`camera_capture_${Date.now()}.jpg`);
-        setImageValidationStatus('Photo captured from camera (verifying...)');
-
-        api.classifyImage('camera_capture.jpg', 500000, description, dataUrl).then(res => {
-          if (res.data?.matched_category_id && categories.some(c => c.id === res.data.matched_category_id)) {
-            setSelectedCategoryId(res.data.matched_category_id);
-            const catObj = categories.find(c => c.id === res.data.matched_category_id);
-            setAiIdentifiedCategory({
-              id: res.data.matched_category_id,
-              name: catObj?.category_name || res.data.predicted_category_name || 'Civic Issue',
-              confidence: Math.round((res.data as any).confidence_score || (res.data.confidence ? res.data.confidence * 100 : 95))
-            });
-            setImageValidationStatus(`Photo verified: ${res.data.predicted_category_name}`);
-          } else {
-            setImageValidationStatus('Photo captured from live camera (JPEG, verified)');
-          }
-        }).catch(() => {
-          setImageValidationStatus('Photo captured from live camera (JPEG, verified)');
-        });
+        setImageFileName(capturedName);
+        setImageValidationStatus('Verifying live photo cleanliness relevance...');
+        analyzeAndValidatePhoto(dataUrl, capturedName, Math.round(dataUrl.length * 0.75), 'live_camera');
       }
     }
     stopLiveCamera();
@@ -740,9 +781,56 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       return;
     }
 
+    if (photoRejectedAlert || !imageUrl) {
+      setFormError(
+        photoRejectedAlert ||
+          'Please capture or upload a valid cleanliness issue photo before submitting.'
+      );
+      return;
+    }
+
     setLoading(true);
 
+    const catId = selectedCategoryId || (categories[0]?.id || 'cat-01');
+    const catName = categories.find(c => c.id === catId)?.category_name || 'Civic Issue';
+    const payload: any = {
+      category_id: catId,
+      ward_number: selectedWardNumber,
+      latitude: mapCenter[0],
+      longitude: mapCenter[1],
+      address: address || 'Navsari Municipal Area',
+      landmark: landmark || undefined,
+      description: description,
+      original_language: lang,
+      image_url: imageUrl,
+      visual_features: imageVisualFeatures || undefined,
+      is_urgent: isUrgent,
+      priority: isUrgent ? 'urgent' : 'medium',
+      confidence_score: aiIdentifiedCategory ? Number((aiIdentifiedCategory.confidence / 100).toFixed(2)) : 0.94,
+      ai_model_name: 'NavsariWasteClassifier-ResNet50-Online',
+      ai_model_version: 'v2.0.0'
+    };
+
+    const queueComplaintOffline = async () => {
+      await enqueueOfflineSubmission(
+        'complaint',
+        `${catName} — Ward ${selectedWardNumber}`,
+        payload
+      );
+      setSavedOfflineInfo({
+        label: catName,
+        ward: selectedWardNumber,
+        address: payload.address
+      });
+    };
+
     try {
+      // Offline check before hitting API
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await queueComplaintOffline();
+        return;
+      }
+
       // 3. AI Content Moderation & Abuse Check
       const modRes = await api.validateContent(description, 500000, 'image/jpeg');
       if (modRes.data?.moderation && !modRes.data.moderation.is_safe) {
@@ -754,24 +842,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         return;
       }
 
-      // 4. Submit to PostgreSQL database via backend API
-      const catId = selectedCategoryId || (categories[0]?.id || 'cat-01');
-      const payload = {
-        category_id: catId,
-        ward_number: selectedWardNumber,
-        latitude: mapCenter[0],
-        longitude: mapCenter[1],
-        address: address || 'Navsari Municipal Area',
-        landmark: landmark || undefined,
-        description: description,
-        original_language: lang,
-        image_url: imageUrl,
-        confidence_score: 0.95,
-        ai_model_name: 'NavsariWasteClassifier-PyTorch-ResNet50',
-        ai_model_version: 'v1.3.0'
-      };
-
-      const res = await api.createComplaint(payload);
+      // 4. Submit to PostgreSQL database via backend API (also auto-trains AI model on this photo)
+      const res: any = await api.createComplaint(payload);
 
       // Trigger Confetti Celebration!
       confetti({
@@ -780,14 +852,75 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         origin: { y: 0.6 }
       });
 
+      setAiTrainedInfo({
+        trained: Boolean(res.data?.ai_model_trained),
+        totalSamples: Number(res.data?.ai_total_samples || 0)
+      });
       setSubmittedComplaint(res.data.complaint);
       onComplaintSubmitted(res.data.complaint);
     } catch (err: any) {
-      setFormError(err.message || 'Failed to submit complaint. Please check your connection and try again.');
+      if (isNetworkError(err)) {
+        await queueComplaintOffline();
+      } else {
+        setFormError(err.message || 'Failed to submit complaint. Please check your connection and try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  // ========================================================
+  // OFFLINE QUEUED CONFIRMATION SCREEN
+  // ========================================================
+  if (savedOfflineInfo) {
+    return (
+      <div className="max-w-2xl mx-auto py-6 px-4 animate-scaleUp">
+        <div className="bg-white rounded-3xl shadow-xl border border-amber-300 p-6 sm:p-8 text-center space-y-5">
+          <div className="w-16 h-16 rounded-full bg-amber-50 border-4 border-white shadow-lg mx-auto flex items-center justify-center text-amber-600">
+            <CheckCircle2 className="w-10 h-10" />
+          </div>
+          <div>
+            <span className="text-[11px] font-extrabold uppercase px-3 py-1 rounded-full bg-amber-100 text-amber-900">
+              Saved Locally · Offline Queue Active
+            </span>
+            <h2 className="text-xl sm:text-2xl font-black text-[#0f2925] mt-2">
+              Report Saved Offline
+            </h2>
+            <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto">
+              Internet is currently unavailable. Your report for <strong>{savedOfflineInfo.label}</strong> (Ward {savedOfflineInfo.ward}) has been safely stored on your device and will <strong>automatically submit to the municipal server</strong> as soon as internet reconnects.
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#f8faf9] border border-slate-200 text-xs font-semibold text-slate-700 inline-flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-[#095c54]" />
+            <span>{savedOfflineInfo.address}</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <button
+              onClick={() => {
+                setSavedOfflineInfo(null);
+                setDescription('');
+                setLandmark('');
+                onBack();
+              }}
+              className="btn-primary-custom py-3 px-6 text-xs sm:text-sm font-extrabold shadow-lg"
+            >
+              Back to Dashboard
+            </button>
+            <button
+              onClick={() => {
+                setSavedOfflineInfo(null);
+                setDescription('');
+                setLandmark('');
+              }}
+              className="btn-outline-custom py-3 px-6 text-xs sm:text-sm font-extrabold"
+            >
+              Report Another Issue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ========================================================
   // SUCCESS SCREEN
@@ -825,6 +958,15 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
               <span className="truncate">{submittedComplaint.location?.address}</span>
             </div>
           </div>
+
+          {aiTrainedInfo?.trained && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] font-extrabold text-emerald-800">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              <span>
+                AI Vision Model automatically trained with your new photo ({aiTrainedInfo.totalSamples} learned sample{aiTrainedInfo.totalSamples === 1 ? '' : 's'})
+              </span>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
@@ -888,10 +1030,27 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           <h2 className="text-lg sm:text-xl font-extrabold text-[#095c54]">
             Report a Cleanliness Issue
           </h2>
-          <p className="text-xs text-[#64748b] mt-0.5">
-            Capture a live photo and describe the problem for rapid municipal cleanup dispatch
-          </p>
         </div>
+
+        {/* Irrelevant Photo Rejection Alert Banner */}
+        {photoRejectedAlert && (
+          <div className="p-4 rounded-2xl bg-red-50 border-2 border-red-300 text-xs font-bold text-red-900 flex items-start justify-between gap-3 shadow-sm animate-fadeIn">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0 text-red-600" />
+              <div className="space-y-1">
+                <p className="text-sm font-black text-red-800">Photo Cannot Be Submitted — Not Relevant to Cleanliness Issue</p>
+                <p className="font-semibold text-red-700 leading-relaxed">{photoRejectedAlert}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPhotoRejectedAlert(null)}
+              className="p-1 rounded-lg hover:bg-red-100 text-red-500 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Global Error Banner */}
         {formError && (
@@ -912,19 +1071,39 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 <Camera className="w-4 h-4 text-[#095c54]" />
                 Photo Evidence
               </label>
-              <span className="text-[11px] text-[#10b981] font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
+              <span
+                className={`text-[11px] font-bold flex items-center gap-1 ${
+                  photoRejectedAlert ? 'text-red-600' : 'text-[#10b981]'
+                }`}
+              >
+                {photoRejectedAlert ? (
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                )}
                 {imageValidationStatus}
               </span>
             </div>
 
             {/* Photo Preview Container */}
-            <div className="relative rounded-2xl overflow-hidden border-2 border-dashed border-[#b8e0d7] bg-[#f8faf9] aspect-video flex items-center justify-center">
-              <img
-                src={imageUrl}
-                alt="Issue preview"
-                className="w-full h-full object-cover"
-              />
+            <div
+              className={`relative rounded-2xl overflow-hidden border-2 border-dashed aspect-video flex items-center justify-center ${
+                photoRejectedAlert
+                  ? 'border-red-300 bg-red-50/60'
+                  : 'border-[#b8e0d7] bg-[#f8faf9]'
+              }`}
+            >
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt="Issue preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="text-center px-6 text-xs font-bold text-slate-500">
+                  Capture or upload a clear photo of the cleanliness issue
+                </div>
+              )}
 
               {/* Floating Camera Actions on Image (Responsive for small phones) */}
               <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-wrap items-center justify-center gap-2 p-2.5 sm:p-4">
@@ -1274,113 +1453,140 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* SECTION 4 (BOTTOM): UBER/RAPIDO MAP & ADDRESS CONFIRM    */}
+          {/* SECTION 4 (BOTTOM): CHECKBOX TOGGLE FOR MAP & WARD NO    */}
           {/* ======================================================== */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-[#095c54]" />
-                Incident Location & Municipal Ward
-              </label>
-              <span className="text-[11px] text-[#64748b] font-medium">
-                Drag map or choose ward
-              </span>
-            </div>
-
-            {/* Municipal Ward Selector */}
-            <div className="p-3 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="min-w-0">
-                <span className="text-[10px] font-black uppercase text-[#095c54] block tracking-wider">
-                  Target Municipal Ward *
-                </span>
-                <span className="text-[11px] text-[#64748b] font-medium">
-                  Auto-centers map and dispatches to that ward's officer
-                </span>
-              </div>
-              <select
-                value={selectedWardNumber}
-                onChange={e => handleWardChange(Number(e.target.value))}
-                className="text-xs font-bold text-[#0f2925] bg-[#f8faf9] border border-[#cbd5e1] rounded-xl px-3 py-2 outline-none focus:border-[#095c54] cursor-pointer"
-              >
-                {NAVSARI_WARDS_LIST.map(w => (
-                  <option key={w.number} value={w.number}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* GPS Notification if Location is Disabled */}
-            {gpsError && (
-              <div className="p-3 rounded-2xl bg-[#fef3c7] border border-[#fde68a] text-xs font-bold text-[#92400e] flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#d97706]" />
-                  <span>{gpsError}</span>
+          <div className="space-y-3">
+            {/* Checkbox Toggle Div: "Show location in map and ward no" */}
+            <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#f8faf9] hover:bg-[#e6f4f1]/60 border border-[#b8e0d7] cursor-pointer transition select-none">
+              <div className="flex items-center gap-3 min-w-0">
+                <input
+                  type="checkbox"
+                  checked={showLocationMapAndWard}
+                  onChange={e => setShowLocationMapAndWard(e.target.checked)}
+                  className="w-4 h-4 rounded accent-[#095c54] cursor-pointer shrink-0"
+                />
+                <div className="min-w-0">
+                  <span className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-[#095c54] shrink-0" />
+                    <span>Show location in map and ward no</span>
+                  </span>
+                  <span className="text-[11px] text-[#64748b] font-medium block mt-0.5 truncate">
+                    {showLocationMapAndWard
+                      ? 'Showing interactive map pin and municipal ward selector'
+                      : `Auto-detected: Ward ${selectedWardNumber} · Check to view map or change ward`}
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={fetchCurrentLocation}
-                  className="px-2.5 py-1 rounded-xl bg-white border border-[#d97706] text-[11px] font-black text-[#92400e] hover:bg-[#fffbeb] shrink-0"
-                >
-                  Turn On GPS
-                </button>
+              </div>
+              <span
+                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider shrink-0 border ${
+                  showLocationMapAndWard
+                    ? 'bg-[#095c54] text-white border-[#095c54]'
+                    : 'bg-white text-[#095c54] border-[#b8e0d7]'
+                }`}
+              >
+                {showLocationMapAndWard ? 'Shown' : 'Hidden'}
+              </span>
+            </label>
+
+            {/* Show Ward Selection & Map View ONLY when checkbox is checked */}
+            {showLocationMapAndWard && (
+              <div className="space-y-2.5 animate-fadeIn">
+                {/* Municipal Ward Selector */}
+                <div className="p-3 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-black uppercase text-[#095c54] block tracking-wider">
+                      Target Municipal Ward *
+                    </span>
+                    <span className="text-[11px] text-[#64748b] font-medium">
+                      Auto-centers map and dispatches to that ward's officer
+                    </span>
+                  </div>
+                  <select
+                    value={selectedWardNumber}
+                    onChange={e => handleWardChange(Number(e.target.value))}
+                    className="text-xs font-bold text-[#0f2925] bg-[#f8faf9] border border-[#cbd5e1] rounded-xl px-3 py-2 outline-none focus:border-[#095c54] cursor-pointer"
+                  >
+                    {NAVSARI_WARDS_LIST.map(w => (
+                      <option key={w.number} value={w.number}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* GPS Notification if Location is Disabled */}
+                {gpsError && (
+                  <div className="p-3 rounded-2xl bg-[#fef3c7] border border-[#fde68a] text-xs font-bold text-[#92400e] flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#d97706]" />
+                      <span>{gpsError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchCurrentLocation}
+                      className="px-2.5 py-1 rounded-xl bg-white border border-[#d97706] text-[11px] font-black text-[#92400e] hover:bg-[#fffbeb] shrink-0"
+                    >
+                      Turn On GPS
+                    </button>
+                  </div>
+                )}
+
+                {/* Interactive Uber/Rapido Map with Center Target Pin */}
+                <div className="relative rounded-2xl overflow-hidden border border-[#b8e0d7] shadow-md h-60 sm:h-64 bg-slate-100">
+                  <MapContainer
+                    center={mapCenter}
+                    zoom={16}
+                    minZoom={4}
+                    maxZoom={19}
+                    scrollWheelZoom={true}
+                    style={{ height: '100%', width: '100%', zIndex: 10 }}
+                  >
+                    <MapCenterController center={mapCenter} />
+                    <MapMoveListener onLocationChanged={handleMapLocationChanged} />
+
+                    {/* Clean CartoDB / OSM Tiles */}
+                    <TileLayer
+                      url={MAP_CONFIG.tileProvider.url}
+                      attribution={MAP_CONFIG.tileProvider.attribution}
+                      subdomains={MAP_CONFIG.tileProvider.subdomains}
+                      maxZoom={19}
+                    />
+                  </MapContainer>
+
+                  {/* Fixed Uber-Style Center Pin with Pulse */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[20] pointer-events-none flex flex-col items-center">
+                    <div className="relative">
+                      <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center shadow-2xl border-2 border-white font-black text-sm uber-pin-bounce">
+                        <MapPin className="w-5 h-5 text-white fill-white/20" />
+                      </div>
+                      <div className="gps-pulse-ring"></div>
+                    </div>
+                    {/* Pin Tip */}
+                    <div className="w-2 h-2 bg-[#095c54] rotate-45 -mt-1 shadow-sm"></div>
+                  </div>
+
+                  {/* Floating "Locate Me" GPS Button */}
+                  <button
+                    type="button"
+                    onClick={fetchCurrentLocation}
+                    disabled={isGpsLoading}
+                    className="absolute bottom-3 right-3 z-[20] bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-lg border border-[#b8e0d7] text-[#095c54] hover:bg-[#e6f4f1] transition disabled:opacity-50"
+                    title="Detect current GPS location"
+                  >
+                    {isGpsLoading ? (
+                      <RefreshCw className="w-5 h-5 animate-spin text-[#095c54]" />
+                    ) : (
+                      <Compass className="w-5 h-5 text-[#095c54]" />
+                    )}
+                  </button>
+
+                  {/* Floating Instructions */}
+                  <div className="absolute top-2.5 left-2.5 z-[20] bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-[10px] font-semibold pointer-events-none">
+                    Pin set at map center
+                  </div>
+                </div>
               </div>
             )}
-
-            {/* Interactive Uber/Rapido Map with Center Target Pin */}
-            <div className="relative rounded-2xl overflow-hidden border border-[#b8e0d7] shadow-md h-60 sm:h-64 bg-slate-100">
-              <MapContainer
-                center={mapCenter}
-                zoom={16}
-                minZoom={4}
-                maxZoom={19}
-                scrollWheelZoom={true}
-                style={{ height: '100%', width: '100%', zIndex: 10 }}
-              >
-                <MapCenterController center={mapCenter} />
-                <MapMoveListener onLocationChanged={handleMapLocationChanged} />
-
-                {/* Clean CartoDB / OSM Tiles */}
-                <TileLayer
-                  url={MAP_CONFIG.tileProvider.url}
-                  attribution={MAP_CONFIG.tileProvider.attribution}
-                  subdomains={MAP_CONFIG.tileProvider.subdomains}
-                  maxZoom={19}
-                />
-              </MapContainer>
-
-              {/* Fixed Uber-Style Center Pin with Pulse */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[20] pointer-events-none flex flex-col items-center">
-                <div className="relative">
-                  <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center shadow-2xl border-2 border-white font-black text-sm uber-pin-bounce">
-                    <MapPin className="w-5 h-5 text-white fill-white/20" />
-                  </div>
-                  <div className="gps-pulse-ring"></div>
-                </div>
-                {/* Pin Tip */}
-                <div className="w-2 h-2 bg-[#095c54] rotate-45 -mt-1 shadow-sm"></div>
-              </div>
-
-              {/* Floating "Locate Me" GPS Button */}
-              <button
-                type="button"
-                onClick={fetchCurrentLocation}
-                disabled={isGpsLoading}
-                className="absolute bottom-3 right-3 z-[20] bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-lg border border-[#b8e0d7] text-[#095c54] hover:bg-[#e6f4f1] transition disabled:opacity-50"
-                title="Detect current GPS location"
-              >
-                {isGpsLoading ? (
-                  <RefreshCw className="w-5 h-5 animate-spin text-[#095c54]" />
-                ) : (
-                  <Compass className="w-5 h-5 text-[#095c54]" />
-                )}
-              </button>
-
-              {/* Floating Instructions */}
-              <div className="absolute top-2.5 left-2.5 z-[20] bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-[10px] font-semibold pointer-events-none">
-                Pin set at map center
-              </div>
-            </div>
 
             {/* Readable Address Card (NO raw coordinates shown to user) */}
             <div className="p-3.5 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">

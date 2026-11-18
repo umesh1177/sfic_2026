@@ -56,9 +56,6 @@ export const WardCleanlinessScoreView: React.FC = () => {
             <Award className="w-5 h-5 text-[#095c54]" />
             <span>Ward Cleanliness Score Index</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Navsari Municipal Evaluation Model · Ward 3 Performance Metrics
-          </p>
         </div>
 
         <button

@@ -39,9 +39,6 @@ export const CommunitySettings: React.FC<CommunitySettingsProps> = ({
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
           Community Head Administration Settings
         </h1>
-        <p className="text-xs text-slate-500 font-medium">
-          Configure notification alerts, auto-registration policies, language preferences, and emergency officer contacts.
-        </p>
       </div>
 
       {saveSuccess && (

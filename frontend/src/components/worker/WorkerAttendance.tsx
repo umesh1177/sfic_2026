@@ -156,9 +156,6 @@ export const WorkerAttendance: React.FC<WorkerAttendanceProps> = ({
             <Clock className="w-5 h-5 text-[#095c54]" />
             <span>GPS Geofence-Validated Attendance</span>
           </h2>
-          <p className="text-xs text-[#64748b] mt-0.5 font-medium">
-            Navsari Municipal Corporation · Anti-Ghost Attendance System with PostGIS Geofencing
-          </p>
         </div>
 
         <button

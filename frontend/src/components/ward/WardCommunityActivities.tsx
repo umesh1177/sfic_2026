@@ -4,35 +4,59 @@ import {
   Users,
   MapPin,
   CheckCircle2,
-  AlertCircle,
   Clock,
-  Sparkles,
   RefreshCw,
   Eye,
-  Check,
-  X,
-  ShieldCheck,
-  ChevronRight,
   Plus,
   Building,
+  Award,
+  Camera,
+  UserCheck,
+  UserX,
+  Upload,
+  FileCheck2,
+  X,
+  AlertCircle,
+  Edit3,
+  Trash2,
   Phone,
   Mail,
-  Pencil,
-  Trash2
+  Search,
+  ShieldCheck
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 import { DriveInspectView } from './DriveInspectView.js';
 
-export const WardCommunityActivities: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'drives' | 'communities'>('drives');
-  const [activities, setActivities] = useState<any[]>([]);
-  const [communities, setCommunities] = useState<any[]>([]);
+interface WardCommunityActivitiesProps {
+  wardNumber?: number;
+}
+
+export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = ({ wardNumber }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'active' | 'completed' | 'organizations'>('active');
+  const [drives, setDrives] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [orgSearch, setOrgSearch] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingOrgs, setLoadingOrgs] = useState<boolean>(false);
   const [actionMessage, setActionMessage] = useState<string>('');
-  const [selectedActivity, setSelectedActivity] = useState<any | null>(null);
   const [inspectingActivity, setInspectingActivity] = useState<any | null>(null);
 
-  // Add Community Modal State
+  // View / Edit Organization Modals
+  const [viewingOrg, setViewingOrg] = useState<any | null>(null);
+  const [editingOrg, setEditingOrg] = useState<any | null>(null);
+  const [editOrgForm, setEditOrgForm] = useState({
+    community_name: '',
+    organisation_type: 'Resident Welfare Association',
+    head_name: '',
+    phone: '',
+    email: '',
+    locality: '',
+    address: ''
+  });
+  const [savingOrgEdit, setSavingOrgEdit] = useState<boolean>(false);
+  const [deletingOrgId, setDeletingOrgId] = useState<string | null>(null);
+
+  // Add Community / Organization Modal State (includes Verification Certificate upload!)
   const [showAddCommunityModal, setShowAddCommunityModal] = useState<boolean>(false);
   const [communityName, setCommunityName] = useState<string>('');
   const [headName, setHeadName] = useState<string>('');
@@ -42,118 +66,106 @@ export const WardCommunityActivities: React.FC = () => {
   const [password, setPassword] = useState<string>('Head@123');
   const [organisationType, setOrganisationType] = useState<string>('Resident Welfare Association');
   const [address, setAddress] = useState<string>('');
-  const [locality, setLocality] = useState<string>('Dudhiya Talao');
+  const [locality, setLocality] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [docUrl, setDocUrl] = useState<string>('');
+  const [docName, setDocName] = useState<string>('');
   const [submittingCommunity, setSubmittingCommunity] = useState<boolean>(false);
   const [communityError, setCommunityError] = useState<string>('');
 
-  // Edit Community State
-  const [editingCommunity, setEditingCommunity] = useState<any | null>(null);
-  const [editCommunityName, setEditCommunityName] = useState<string>('');
-  const [editHeadName, setEditHeadName] = useState<string>('');
-  const [editPhone, setEditPhone] = useState<string>('');
-  const [editEmail, setEditEmail] = useState<string>('');
-  const [editAddress, setEditAddress] = useState<string>('');
-  const [editLocality, setEditLocality] = useState<string>('Dudhiya Talao');
-  const [editOrgType, setEditOrgType] = useState<string>('Resident Welfare Association');
-  const [submittingEditCommunity, setSubmittingEditCommunity] = useState<boolean>(false);
-
-  const handleOpenEditCommunity = (com: any) => {
-    setEditingCommunity(com);
-    setEditCommunityName(com.community_name);
-    setEditHeadName(com.head_name);
-    setEditPhone(com.phone || '');
-    setEditEmail(com.email || '');
-    setEditAddress(com.address || '');
-    setEditLocality(com.locality || 'Dudhiya Talao');
-    setEditOrgType(com.organisation_type || 'Resident Welfare Association');
-  };
-
-  const handleUpdateCommunitySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingCommunity) return;
-    setSubmittingEditCommunity(true);
-    setCommunityError('');
+  const fetchOrganizations = async () => {
+    setLoadingOrgs(true);
     try {
-      const res = await api.updateWardCommunity(editingCommunity.id, {
-        community_name: editCommunityName,
-        head_name: editHeadName,
-        phone: editPhone,
-        email: editEmail,
-        address: editAddress,
-        locality: editLocality,
-        organisation_type: editOrgType
-      });
-      setActionMessage(res.message || 'Community updated successfully');
-      setEditingCommunity(null);
-      fetchData();
-      setTimeout(() => setActionMessage(''), 4000);
-    } catch (err: any) {
-      setCommunityError(err.message || 'Failed to update community');
+      const res = await api.getWardCommunities();
+      setOrganizations(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to load registered organizations:', err);
     } finally {
-      setSubmittingEditCommunity(false);
+      setLoadingOrgs(false);
     }
   };
 
-  const handleDeleteCommunity = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to remove "${name}" from Ward 3 directory?`)) {
-      return;
-    }
-    try {
-      const res = await api.deleteWardCommunity(id);
-      setActionMessage(res.message || `Community "${name}" removed`);
-      setCommunities(prev => prev.filter(c => c.id !== id));
-      setTimeout(() => setActionMessage(''), 4000);
-    } catch (err: any) {
-      console.error('Delete failed:', err);
-    }
-  };
-
-  const fetchData = async () => {
+  const fetchDrives = async () => {
     setLoading(true);
     try {
-      const [actRes, comRes] = await Promise.all([
-        api.getCommunityActivities().catch(() => ({ data: [] })),
-        api.getWardCommunities().catch(() => ({ data: [] }))
-      ]);
-      setActivities(actRes.data || []);
-      setCommunities(comRes.data || []);
+      const res = await api.getWardOrganizationDrives(wardNumber);
+      setDrives(res.data || []);
     } catch (err) {
-      console.error('Failed to load community activities:', err);
+      console.error('Failed to load organization drives:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchDrives();
+    fetchOrganizations();
+  }, [wardNumber]);
 
-  const handleReview = async (id: string, decision: 'ward_approved' | 'changes_requested' | 'rejected') => {
+  const openEditOrg = (org: any) => {
+    setEditingOrg(org);
+    setEditOrgForm({
+      community_name: org.community_name || '',
+      organisation_type: org.organisation_type || 'Resident Welfare Association',
+      head_name: org.head_name || '',
+      phone: org.phone || '',
+      email: org.email || '',
+      locality: org.locality || '',
+      address: org.address || ''
+    });
+  };
+
+  const handleSaveOrgEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrg) return;
+    setSavingOrgEdit(true);
     try {
-      const mappedDecision = decision === 'ward_approved' ? 'approved' : decision;
-      await api.officerReviewActivity(
-        id,
-        mappedDecision,
-        `Ward 3 Officer decision: ${decision.replace('_', ' ')}`
-      );
-      setActionMessage(`Activity successfully updated to ${decision.replace('_', ' ')}.`);
-      await fetchData();
-      if (selectedActivity?.id === id) {
-        setSelectedActivity({ ...selectedActivity, approval_status: decision });
-      }
+      const res = await api.updateWardCommunity(editingOrg.id, editOrgForm);
+      setActionMessage(res.message || `Organization "${editOrgForm.community_name}" updated successfully.`);
+      setEditingOrg(null);
+      await fetchOrganizations();
       setTimeout(() => setActionMessage(''), 4000);
     } catch (err: any) {
-      console.error('Review failed:', err);
+      alert(err.message || 'Failed to update organization.');
+    } finally {
+      setSavingOrgEdit(false);
     }
+  };
+
+  const handleDeleteOrg = async (org: any) => {
+    if (!window.confirm(`Are you sure you want to delete organization "${org.community_name}"? This action cannot be undone.`)) {
+      return;
+    }
+    setDeletingOrgId(org.id);
+    try {
+      const res = await api.deleteWardCommunity(org.id);
+      setOrganizations(prev => prev.filter(o => o.id !== org.id));
+      setActionMessage(res.message || `Organization "${org.community_name}" removed successfully.`);
+      setTimeout(() => setActionMessage(''), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete organization.');
+    } finally {
+      setDeletingOrgId(null);
+    }
+  };
+
+  const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDocName(file.name);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      if (typeof ev.target?.result === 'string') setDocUrl(ev.target.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleAddCommunitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!communityName.trim() || !headName.trim()) {
-      setCommunityError('Community name and Head name are required.');
+      setCommunityError('Organization name and Community Head name are required.');
       return;
     }
-
     setSubmittingCommunity(true);
     setCommunityError('');
     try {
@@ -166,10 +178,13 @@ export const WardCommunityActivities: React.FC = () => {
         password: password.trim(),
         address: address.trim(),
         locality: locality.trim(),
-        organisation_type: organisationType
+        description: description.trim(),
+        ward_number: wardNumber,
+        organisation_type: organisationType,
+        verification_document_url: docUrl || undefined,
+        verification_document_name: docName || undefined
       });
-
-      setActionMessage(res.message || 'Community organization successfully registered in Ward 3.');
+      setActionMessage(res.message || `Organization "${communityName}" registered for Ward ${wardNumber || 3}.`);
       setShowAddCommunityModal(false);
       setCommunityName('');
       setHeadName('');
@@ -178,11 +193,14 @@ export const WardCommunityActivities: React.FC = () => {
       setUsername('');
       setPassword('Head@123');
       setAddress('');
-      await fetchData();
-      setActiveSubTab('communities');
-      setTimeout(() => setActionMessage(''), 4000);
+      setLocality('');
+      setDescription('');
+      setDocUrl('');
+      setDocName('');
+      await fetchOrganizations();
+      setTimeout(() => setActionMessage(''), 5000);
     } catch (err: any) {
-      setCommunityError(err.message || 'Failed to add community organization');
+      setCommunityError(err.message || 'Failed to add organization.');
     } finally {
       setSubmittingCommunity(false);
     }
@@ -192,42 +210,57 @@ export const WardCommunityActivities: React.FC = () => {
     return (
       <DriveInspectView
         activity={inspectingActivity}
-        onBack={() => setInspectingActivity(null)}
-        onActionCompleted={() => {
+        onBack={() => {
           setInspectingActivity(null);
-          fetchData();
+          fetchDrives();
+        }}
+        onActionCompleted={() => {
+          fetchDrives();
         }}
       />
     );
   }
 
+  const activeDrives = drives.filter(
+    d => d.event_status !== 'completed' && d.evidence_status !== 'verified_complete'
+  );
+  const completedDrives = drives.filter(
+    d => d.event_status === 'completed' || d.evidence_status === 'verified_complete'
+  );
+  const displayedDrives = activeSubTab === 'active' ? activeDrives : completedDrives;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
-            Community Activities & Organisations
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-[10px] font-black uppercase tracking-wider">
+              Ward {wardNumber || 3} · Organization Drives
+            </span>
+          </div>
+          <h2 className="text-xl font-black text-[#0f2925] tracking-tight">
+            Organization Drives
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Review Citizen Drives & Manage Ward 3 Community Groups
-          </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {/* Add Community Button as specifically requested by user */}
           <button
-            onClick={() => setShowAddCommunityModal(true)}
-            className="px-4 py-2 rounded-xl bg-[#095c54] text-white hover:bg-emerald-800 text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
+            type="button"
+            onClick={() => {
+              setCommunityError('');
+              setShowAddCommunityModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
           >
             <Plus className="w-4 h-4" />
             <span>Add Community</span>
           </button>
-
           <button
-            onClick={fetchData}
-            className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#e2e8f0] transition shadow-2xs"
-            title="Refresh activities"
+            type="button"
+            onClick={fetchDrives}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+            title="Refresh drives"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#095c54]' : ''}`} />
           </button>
@@ -241,476 +274,727 @@ export const WardCommunityActivities: React.FC = () => {
         </div>
       )}
 
-      {/* Sub Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      {/* 3 PRIMARY SUB-TABS: ACTIVE DRIVES, COMPLETE DRIVE HISTORY, REGISTERED ORGANIZATIONS */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200/80">
         <button
-          onClick={() => setActiveSubTab('drives')}
-          className={`px-4 py-2 rounded-xl text-xs font-extrabold transition ${
-            activeSubTab === 'drives'
-              ? 'bg-[#095c54] text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          type="button"
+          onClick={() => setActiveSubTab('active')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
+            activeSubTab === 'active'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-slate-600 hover:bg-white/70 hover:text-[#0f2925]'
           }`}
         >
-          Cleanliness Drives Queue ({activities.length})
+          <Calendar className="w-4 h-4" />
+          <span>1. Active Drives ({activeDrives.length})</span>
         </button>
+
         <button
-          onClick={() => setActiveSubTab('communities')}
-          className={`px-4 py-2 rounded-xl text-xs font-extrabold transition ${
-            activeSubTab === 'communities'
-              ? 'bg-[#095c54] text-white shadow-xs'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          type="button"
+          onClick={() => setActiveSubTab('completed')}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
+            activeSubTab === 'completed'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-slate-600 hover:bg-white/70 hover:text-[#0f2925]'
           }`}
         >
-          Registered Communities & RWAs ({communities.length})
+          <CheckCircle2 className="w-4 h-4" />
+          <span>2. Complete Drive History ({completedDrives.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveSubTab('organizations');
+            fetchOrganizations();
+          }}
+          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
+            activeSubTab === 'organizations'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-slate-600 hover:bg-white/70 hover:text-[#0f2925]'
+          }`}
+        >
+          <Building className="w-4 h-4" />
+          <span>3. Registered Organizations ({organizations.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: CLEANLINESS DRIVES */}
-      {activeSubTab === 'drives' && (
+      {/* SUB-TAB 3: REGISTERED ORGANIZATIONS DIRECTORY (VIEW / EDIT / DELETE) */}
+      {activeSubTab === 'organizations' ? (
         <div className="space-y-4">
-          {loading ? (
-            <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0]">
-              <RefreshCw className="w-6 h-6 text-[#095c54] animate-spin mx-auto" />
-              <p className="text-xs font-bold text-slate-500 mt-2">Loading community activities...</p>
+          <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={orgSearch}
+                onChange={e => setOrgSearch(e.target.value)}
+                placeholder="Search registered organizations by name, head, phone, or type..."
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#f7f9f8] border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54] focus:bg-white transition"
+              />
             </div>
-          ) : activities.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] text-slate-500 text-xs">
-              No community activities found for Ward 3.
-            </div>
-          ) : (
-            activities.map(act => (
-              <div
-                key={act.id}
-                className="p-5 rounded-3xl bg-white border border-[#e2e8f0] hover:border-[#095c54] transition shadow-xs space-y-4"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-md">
-                        {act.activity_category}
-                      </span>
-                      <span
-                        className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
-                          act.approval_status === 'ward_approved' || act.approval_status === 'approved'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : act.approval_status === 'submitted'
-                            ? 'bg-amber-50 text-amber-800 border-amber-200'
-                            : act.approval_status === 'changes_requested'
-                            ? 'bg-purple-50 text-purple-800 border-purple-200'
-                            : 'bg-red-50 text-red-800 border-red-200'
-                        }`}
-                      >
-                        {act.approval_status?.replace('_', ' ')}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-extrabold text-[#0f2925]">{act.title}</h3>
-                    <p className="text-xs text-slate-500">
-                      Organised by: <strong>{act.community_name || 'Navsari Green Warriors RWA'}</strong>
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setInspectingActivity(act)}
-                      className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200 shadow-2xs"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-[#095c54]" />
-                      <span>Inspect</span>
-                    </button>
-                    {act.approval_status === 'submitted' && (
-                      <>
-                        <button
-                          onClick={() => handleReview(act.id, 'ward_approved')}
-                          className="px-3.5 py-1.5 rounded-xl bg-[#095c54] text-white hover:bg-emerald-800 text-xs font-bold transition flex items-center gap-1 shadow-2xs"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Approve Drive</span>
-                        </button>
-                        <button
-                          onClick={() => handleReview(act.id, 'changes_requested')}
-                          className="px-3.5 py-1.5 rounded-xl bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200 text-xs font-bold transition"
-                        >
-                          Request Changes
-                        </button>
-                        <button
-                          onClick={() => handleReview(act.id, 'rejected')}
-                          className="px-3 py-1.5 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 text-xs font-bold transition"
-                        >
-                          Reject
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  {act.short_description || act.detailed_description}
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1 border-t border-slate-100">
-                  <div className="flex items-center gap-1.5 text-slate-600">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Proposed: {new Date(act.proposed_start_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-slate-600">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{act.address || 'Ward 3, Navsari'}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-slate-600">
-                    <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Volunteers: <strong>{act.registered_count || 0}</strong> / {act.maximum_participants || 50} max</span>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: REGISTERED COMMUNITIES */}
-      {activeSubTab === 'communities' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {communities.map(com => (
-            <div
-              key={com.id}
-              className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3"
+            <button
+              type="button"
+              onClick={fetchOrganizations}
+              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 shrink-0"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center font-black text-sm shrink-0 border border-emerald-100">
-                    <Building className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-extrabold text-[#0f2925]">{com.community_name}</h4>
-                    <span className="text-[10px] font-bold text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-full inline-block mt-0.5">
-                      {com.organisation_type}
-                    </span>
-                  </div>
-                </div>
-                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Ward {com.ward_number || 3}
-                </span>
-              </div>
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingOrgs ? 'animate-spin text-[#095c54]' : ''}`} />
+              <span>Refresh List</span>
+            </button>
+          </div>
 
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs">
-                <p className="text-slate-700 font-bold">
-                  Community Head: <span className="font-extrabold text-[#0f2925]">{com.head_name}</span>
-                </p>
-                <div className="flex flex-wrap gap-3 text-slate-600 text-[11px]">
-                  <span className="flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-slate-400" />
-                    {com.phone}
-                  </span>
-                  {com.email && (
-                    <span className="flex items-center gap-1">
-                      <Mail className="w-3 h-3 text-slate-400" />
-                      {com.email}
-                    </span>
-                  )}
-                </div>
-                <p className="text-slate-500 text-[11px] flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                  <span>{com.address}</span>
-                </p>
-              </div>
-
-              {/* Action buttons: Edit & Delete */}
-              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
-                <button
-                  onClick={() => handleOpenEditCommunity(com)}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#095c54] text-[#095c54] hover:text-white text-xs font-bold transition flex items-center gap-1 border border-emerald-200"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  onClick={() => handleDeleteCommunity(com.id, com.community_name)}
-                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white text-xs font-bold transition flex items-center gap-1 border border-rose-200"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
-                </button>
-              </div>
+          {loadingOrgs ? (
+            <div className="p-12 text-center bg-white rounded-3xl border border-slate-200">
+              <RefreshCw className="w-6 h-6 text-[#095c54] animate-spin mx-auto" />
+              <p className="text-xs font-bold text-slate-500 mt-2">Loading registered organizations...</p>
             </div>
-          ))}
+          ) : (() => {
+            const q = orgSearch.trim().toLowerCase();
+            const filteredOrgs = organizations.filter(o =>
+              !q ||
+              (o.community_name || '').toLowerCase().includes(q) ||
+              (o.head_name || '').toLowerCase().includes(q) ||
+              (o.organisation_type || '').toLowerCase().includes(q) ||
+              (o.phone || '').toLowerCase().includes(q) ||
+              (o.email || '').toLowerCase().includes(q)
+            );
+            if (filteredOrgs.length === 0) {
+              return (
+                <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-2">
+                  <Building className="w-9 h-9 text-slate-300 mx-auto" />
+                  <h4 className="text-sm font-extrabold text-[#0f2925]">No Registered Organizations Found</h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Approved community organizations for Ward {wardNumber || 3} will appear here. Click &ldquo;Add Community&rdquo; above to register one directly.
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#f7f9f8] border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                        <th className="py-3.5 px-4">Organization</th>
+                        <th className="py-3.5 px-4">Community Head</th>
+                        <th className="py-3.5 px-4">Contact</th>
+                        <th className="py-3.5 px-4">Ward / Area</th>
+                        <th className="py-3.5 px-4">Document</th>
+                        <th className="py-3.5 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {filteredOrgs.map(org => (
+                        <tr key={org.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3.5 px-4">
+                            <p className="font-black text-[#0f2925]">{org.community_name}</p>
+                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-[10px] font-bold">
+                              {org.organisation_type || 'Community Org'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <p className="font-bold text-slate-800">{org.head_name || 'Community Head'}</p>
+                            {org.username && (
+                              <p className="text-[11px] text-slate-400 font-mono truncate max-w-[160px]">{org.username}</p>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 space-y-0.5">
+                            {org.phone && (
+                              <p className="text-slate-700 font-semibold flex items-center gap-1">
+                                <Phone className="w-3 h-3 text-[#095c54]" />
+                                {org.phone}
+                              </p>
+                            )}
+                            {org.email && (
+                              <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate max-w-[180px]">
+                                <Mail className="w-3 h-3 text-slate-400" />
+                                {org.email}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[11px]">
+                              Ward {org.ward_number || wardNumber || 3}
+                            </span>
+                            {org.locality && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[140px]">{org.locality}</p>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {org.verification_document_url ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                <FileCheck2 className="w-3 h-3" />
+                                Verified Doc
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Officer Added</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setViewingOrg(org)}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#f0f7f5] hover:bg-[#d9f0ea] text-[#095c54] border border-[#cde6df] text-[11px] font-extrabold inline-flex items-center gap-1 transition"
+                                title="View Details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditOrg(org)}
+                                className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-extrabold inline-flex items-center gap-1 transition"
+                                title="Edit Organization"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOrg(org)}
+                                disabled={deletingOrgId === org.id}
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-extrabold inline-flex items-center gap-1 transition disabled:opacity-50"
+                                title="Delete Organization"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{deletingOrgId === org.id ? '...' : 'Delete'}</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      ) : loading ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-slate-200">
+          <RefreshCw className="w-6 h-6 text-[#095c54] animate-spin mx-auto" />
+          <p className="text-xs font-bold text-slate-500 mt-2">Loading Ward {wardNumber || 3} organization drives...</p>
+        </div>
+      ) : displayedDrives.length === 0 ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-2">
+          <Calendar className="w-9 h-9 text-slate-300 mx-auto" />
+          <h4 className="text-sm font-extrabold text-[#0f2925]">
+            {activeSubTab === 'active' ? 'No Active Organization Drives' : 'No Completed Drives Yet'}
+          </h4>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {activeSubTab === 'active'
+              ? `Approved cleanliness drives for Ward ${wardNumber || 3} will appear here once approved from Approval Management.`
+              : `Once you verify submitted evidence and mark a drive complete, it will move to Complete Drive History.`}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {displayedDrives.map(drive => {
+            const isComplete = drive.event_status === 'completed' || drive.evidence_status === 'verified_complete';
+            return (
+              <div
+                key={drive.id}
+                className="bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#095c54]/40 transition p-5 space-y-4 flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-[10px] font-black uppercase">
+                          Ward {drive.ward_number || wardNumber || 3}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                            isComplete
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : drive.evidence_status === 'submitted'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-sky-50 text-sky-800 border-sky-200'
+                          }`}
+                        >
+                          {isComplete
+                            ? 'Completed & Verified'
+                            : drive.evidence_status === 'submitted'
+                            ? 'Evidence Ready'
+                            : 'Scheduled / Active'}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-black text-[#0f2925] leading-snug">
+                        {drive.title}
+                      </h3>
+                      <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                        <Building className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                        <span className="font-semibold truncate">{drive.community_name}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Schedule & Location */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">
+                        {drive.proposed_start_at
+                          ? new Date(drive.proposed_start_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                          : 'Scheduled'}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{drive.address || drive.landmark || `Ward ${drive.ward_number}`}</span>
+                    </span>
+                  </div>
+
+                  {/* Present / Absent / Evidence / Certificates Mini Metrics */}
+                  <div className="grid grid-cols-4 gap-2 pt-1">
+                    <div className="p-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200/70 text-center">
+                      <span className="text-[10px] font-bold text-slate-400 block">Registered</span>
+                      <strong className="text-sm font-black text-[#0f2925]">{drive.registered_count || 0}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/70 text-center">
+                      <span className="text-[10px] font-bold text-emerald-700 flex items-center justify-center gap-0.5">
+                        <UserCheck className="w-3 h-3" /> Present
+                      </span>
+                      <strong className="text-sm font-black text-emerald-800">{drive.present_count || 0}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200/70 text-center">
+                      <span className="text-[10px] font-bold text-rose-700 flex items-center justify-center gap-0.5">
+                        <UserX className="w-3 h-3" /> Absent
+                      </span>
+                      <strong className="text-sm font-black text-rose-700">{drive.absent_count || 0}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200/70 text-center">
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center justify-center gap-0.5">
+                        {isComplete ? <Award className="w-3 h-3 text-amber-500" /> : <Camera className="w-3 h-3 text-[#095c54]" />}
+                        {isComplete ? 'Certs' : 'Evidence'}
+                      </span>
+                      <strong className="text-sm font-black text-[#095c54]">
+                        {isComplete ? drive.certificates_count || 0 : drive.evidence_count || 0}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Action */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {drive.evidence_count || 0} Evidence Photo{(drive.evidence_count || 0) === 1 ? '' : 's'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setInspectingActivity(drive)}
+                    className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View Details</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* ADD COMMUNITY MODAL DIALOG */}
+      {/* ADD COMMUNITY / ORGANIZATION MODAL (WITH VERIFICATION DOCUMENT UPLOAD) */}
       {showAddCommunityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-[#e2e8f0] space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
-                  <Building className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-[#0f2925]">Register Community Group</h3>
-                  <p className="text-xs text-slate-500">Add an RWA, NGO, or volunteer body in Ward 3</p>
-                </div>
+              <div>
+                <h3 className="text-base font-black text-[#0f2925]">
+                  Register Community / Organization (Ward {wardNumber || 3})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Add a verified organization directly to Ward {wardNumber || 3} with their registration document.
+                </p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowAddCommunityModal(false)}
-                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {communityError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700">
-                {communityError}
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{communityError}</span>
               </div>
             )}
 
-            <form onSubmit={handleAddCommunitySubmit} className="space-y-4">
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                  Community / RWA Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={communityName}
-                  onChange={e => setCommunityName(e.target.value)}
-                  placeholder="e.g., Dudhiya Talao Youth Cleanliness Club"
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
-                />
-              </div>
-
+            <form onSubmit={handleAddCommunitySubmit} className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                    Community Head Name *
-                  </label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Organization Name *</label>
                   <input
                     type="text"
                     required
-                    value={headName}
-                    onChange={e => setHeadName(e.target.value)}
-                    placeholder="e.g., Sanjay Desai"
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
+                    value={communityName}
+                    onChange={e => setCommunityName(e.target.value)}
+                    placeholder="e.g. Swachh Navsari Youth Trust"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
                   />
                 </div>
-
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                    Organisation Type
-                  </label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Organization Type</label>
                   <select
                     value={organisationType}
                     onChange={e => setOrganisationType(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white outline-none focus:border-[#095c54]"
                   >
-                    <option value="Resident Welfare Association">Resident Welfare Association (RWA)</option>
-                    <option value="Environmental NGO">Environmental NGO</option>
-                    <option value="Citizen Action Group">Citizen Action Group</option>
-                    <option value="Youth Volunteers Club">Youth Volunteers Club</option>
+                    <option value="Resident Welfare Association">Resident Welfare Association</option>
+                    <option value="NGO / Charitable Trust">NGO / Charitable Trust</option>
+                    <option value="Youth Club / College NSS">Youth Club / College NSS</option>
+                    <option value="Market / Traders Association">Market / Traders Association</option>
+                    <option value="Religious / Cultural Trust">Religious / Cultural Trust</option>
+                    <option value="Corporate CSR Group">Corporate CSR Group</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Contact Phone *</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Community Head Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={headName}
+                    onChange={e => setHeadName(e.target.value)}
+                    placeholder="Head / Coordinator full name"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Mobile Number *</label>
                   <input
                     type="tel"
                     required
                     value={phone}
                     onChange={e => setPhone(e.target.value)}
-                    placeholder="+9198251XXXXX"
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono"
+                    placeholder="10-digit mobile"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Contact Email</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Email</label>
                   <input
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="head@community.org"
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                    placeholder="org@email.com"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Login Username</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    placeholder="Optional username"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Password *</label>
+                  <input
+                    type="text"
+                    required
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                  Login Username <span className="text-[10px] text-slate-400 font-normal">(Optional - defaults to email or phone)</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Locality</label>
+                  <input
+                    type="text"
+                    value={locality}
+                    onChange={e => setLocality(e.target.value)}
+                    placeholder={`Ward ${wardNumber || 3} Area`}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={e => setAddress(e.target.value)}
+                    placeholder="Office / Society address"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
+              </div>
+
+              {/* Certificate / Verification Document Upload */}
+              <div className="p-3.5 rounded-2xl bg-[#f7f9f8] border border-dashed border-[#095c54]/40 space-y-2">
+                <label className="text-xs font-extrabold text-[#095c54] block">
+                  Upload Registration Certificate / Verification Document
                 </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  placeholder="e.g. amit.sharma or green_youth"
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
-                />
+                <label className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white border border-slate-200 hover:border-[#095c54] text-xs font-bold text-[#095c54] cursor-pointer transition">
+                  {docUrl ? <FileCheck2 className="w-4 h-4 text-emerald-600" /> : <Upload className="w-4 h-4" />}
+                  <span className="truncate">{docName ? `Uploaded: ${docName}` : 'Choose Certificate / Document (Image or PDF)'}</span>
+                  <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleDocUpload} />
+                </label>
+                {docUrl && docUrl.startsWith('data:image') && (
+                  <img src={docUrl} alt="Document preview" className="h-24 w-full object-cover rounded-xl border border-slate-200" />
+                )}
               </div>
 
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">Login Password *</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Set password for Community Head login"
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:border-[#095c54] outline-hidden font-medium"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Community Head can log in using their phone number, email, or username, along with this password.</p>
-              </div>
-
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">Address & Locality in Ward 3</label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={e => setAddress(e.target.value)}
-                  placeholder="e.g., Near Ashapuri Garden Gate, Ward 3"
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowAddCommunityModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold"
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingCommunity}
-                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold disabled:opacity-50"
                 >
-                  {submittingCommunity ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                  <span>Register Community</span>
+                  {submittingCommunity ? 'Registering...' : 'Register Organization'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
-      {/* EDIT COMMUNITY MODAL DIALOG */}
-      {editingCommunity && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-[#e2e8f0] space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
-                  <Pencil className="w-5 h-5" />
+      {/* VIEW ORGANIZATION DETAILS MODAL */}
+      {viewingOrg && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-6">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3 gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    Registered Organization
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
+                    Ward {viewingOrg.ward_number || wardNumber || 3}
+                  </span>
                 </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-[#0f2925]">Edit Community Details</h3>
-                  <p className="text-xs text-slate-500">Update organization or leader details in Ward 3</p>
-                </div>
+                <h3 className="text-lg font-black text-[#0f2925]">{viewingOrg.community_name}</h3>
+                <p className="text-xs text-slate-500">{viewingOrg.organisation_type || 'Community Organization'}</p>
               </div>
               <button
-                onClick={() => setEditingCommunity(null)}
-                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+                type="button"
+                onClick={() => setViewingOrg(null)}
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleUpdateCommunitySubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Community Head</span>
+                <strong className="text-slate-900">{viewingOrg.head_name || 'N/A'}</strong>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Login Username</span>
+                <strong className="text-slate-900 font-mono">{viewingOrg.username || viewingOrg.email || 'N/A'}</strong>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Contact Phone</span>
+                <strong className="text-slate-900">{viewingOrg.phone || 'N/A'}</strong>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Contact Email</span>
+                <strong className="text-slate-900 break-all">{viewingOrg.email || 'N/A'}</strong>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-slate-200/70 sm:col-span-2">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Address &amp; Locality</span>
+                <strong className="text-slate-900">
+                  {[viewingOrg.address, viewingOrg.locality, `Ward ${viewingOrg.ward_number || wardNumber || 3}`].filter(Boolean).join(' · ')}
+                </strong>
+              </div>
+              {viewingOrg.description && (
+                <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-slate-200/70 sm:col-span-2">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">About Organization</span>
+                  <p className="text-slate-700 mt-0.5 leading-relaxed">{viewingOrg.description}</p>
+                </div>
+              )}
+            </div>
+
+            {viewingOrg.verification_document_url && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-black text-emerald-900 flex items-center gap-1.5">
+                    <FileCheck2 className="w-4 h-4 text-emerald-600" />
+                    Verification Certificate: {viewingOrg.verification_document_name || 'Uploaded Document'}
+                  </span>
+                  <a
+                    href={viewingOrg.verification_document_url}
+                    download={viewingOrg.verification_document_name || 'verification_certificate'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-extrabold text-[#095c54] underline"
+                  >
+                    Open / Download
+                  </a>
+                </div>
+                {viewingOrg.verification_document_url.startsWith('data:image') && (
+                  <img
+                    src={viewingOrg.verification_document_url}
+                    alt="Verification Document"
+                    className="max-h-48 w-full object-contain rounded-xl bg-white border border-emerald-200"
+                  />
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewingOrg;
+                  setViewingOrg(null);
+                  openEditOrg(target);
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-extrabold inline-flex items-center gap-1.5"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit Details</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingOrg(null)}
+                className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-extrabold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT ORGANIZATION MODAL */}
+      {editingOrg && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                  Community / RWA Name *
-                </label>
+                <h3 className="text-base font-black text-[#0f2925]">Edit Registered Organization</h3>
+                <p className="text-xs text-slate-500">Update organization contact and leadership information.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingOrg(null)}
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOrgEdit} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Organization Name *</label>
                 <input
                   type="text"
                   required
-                  value={editCommunityName}
-                  onChange={e => setEditCommunityName(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden"
+                  value={editOrgForm.community_name}
+                  onChange={e => setEditOrgForm(p => ({ ...p, community_name: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold outline-none focus:border-[#095c54]"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                    Community Head Name *
-                  </label>
+                  <label className="font-bold text-slate-700 block mb-1">Organization Type</label>
+                  <select
+                    value={editOrgForm.organisation_type}
+                    onChange={e => setEditOrgForm(p => ({ ...p, organisation_type: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold bg-white outline-none focus:border-[#095c54]"
+                  >
+                    <option value="Resident Welfare Association">Resident Welfare Association</option>
+                    <option value="NGO / Charitable Trust">NGO / Charitable Trust</option>
+                    <option value="Youth Club / College NSS">Youth Club / College NSS</option>
+                    <option value="Market / Traders Association">Market / Traders Association</option>
+                    <option value="Religious / Cultural Trust">Religious / Cultural Trust</option>
+                    <option value="Corporate CSR Group">Corporate CSR Group</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Community Head Name *</label>
                   <input
                     type="text"
                     required
-                    value={editHeadName}
-                    onChange={e => setEditHeadName(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925] focus:bg-white focus:border-[#095c54] outline-hidden"
+                    value={editOrgForm.head_name}
+                    onChange={e => setEditOrgForm(p => ({ ...p, head_name: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold outline-none focus:border-[#095c54]"
                   />
-                </div>
-
-                <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">
-                    Organization Type
-                  </label>
-                  <select
-                    value={editOrgType}
-                    onChange={e => setEditOrgType(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#0f2925]"
-                  >
-                    <option value="Resident Welfare Association">Resident Welfare Association (RWA)</option>
-                    <option value="Non-Governmental Organization">Non-Governmental Organization (NGO)</option>
-                    <option value="Youth Volunteer Group">Youth Volunteer Group</option>
-                    <option value="Market Traders Association">Market Traders Association</option>
-                    <option value="Environmental Club">Environmental Club</option>
-                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Contact Phone</label>
+                  <label className="font-bold text-slate-700 block mb-1">Phone</label>
                   <input
-                    type="tel"
-                    value={editPhone}
-                    onChange={e => setEditPhone(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                    type="text"
+                    value={editOrgForm.phone}
+                    onChange={e => setEditOrgForm(p => ({ ...p, phone: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold outline-none focus:border-[#095c54]"
                   />
                 </div>
-
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Contact Email</label>
+                  <label className="font-bold text-slate-700 block mb-1">Email</label>
                   <input
                     type="email"
-                    value={editEmail}
-                    onChange={e => setEditEmail(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                    value={editOrgForm.email}
+                    onChange={e => setEditOrgForm(p => ({ ...p, email: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold outline-none focus:border-[#095c54]"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">Address & Locality in Ward 3</label>
-                <input
-                  type="text"
-                  value={editAddress}
-                  onChange={e => setEditAddress(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Locality</label>
+                  <input
+                    type="text"
+                    value={editOrgForm.locality}
+                    onChange={e => setEditOrgForm(p => ({ ...p, locality: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={editOrgForm.address}
+                    onChange={e => setEditOrgForm(p => ({ ...p, address: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold outline-none focus:border-[#095c54]"
+                  />
+                </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setEditingCommunity(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold"
+                  onClick={() => setEditingOrg(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingEditCommunity}
-                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
+                  disabled={savingOrgEdit}
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold disabled:opacity-50"
                 >
-                  {submittingEditCommunity ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>Save Changes</span>
+                  {savingOrgEdit ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

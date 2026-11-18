@@ -20,7 +20,9 @@ import {
   Users,
   MessageSquare,
   Copy,
-  X
+  X,
+  Upload,
+  FileCheck2
 } from 'lucide-react';
 import { SwachhSetuLogo } from './SwachhSetuLogo.js';
 import { api } from '../services/api.js';
@@ -39,8 +41,83 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onLanguageChange
 }) => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [signupType, setSignupType] = useState<'citizen' | 'community'>('citizen');
   const [signupStep, setSignupStep] = useState<1 | 2 | 3>(1);
   const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
+
+  // Community Self-Registration Form State
+  const [commName, setCommName] = useState('');
+  const [commOrgType, setCommOrgType] = useState('Resident Welfare Association');
+  const [commHeadName, setCommHeadName] = useState('');
+  const [commPhone, setCommPhone] = useState('');
+  const [commEmail, setCommEmail] = useState('');
+  const [commUsername, setCommUsername] = useState('');
+  const [commUsernameStatus, setCommUsernameStatus] = useState<{ checking?: boolean; available?: boolean; message?: string } | null>(null);
+  const [citizenUsername, setCitizenUsername] = useState('');
+  const [citizenUsernameStatus, setCitizenUsernameStatus] = useState<{ checking?: boolean; available?: boolean; message?: string } | null>(null);
+  const [commPassword, setCommPassword] = useState('');
+  const [commWardNumber, setCommWardNumber] = useState<number>(3);
+  const [commLocality, setCommLocality] = useState('');
+  const [commAddress, setCommAddress] = useState('');
+  const [commDescription, setCommDescription] = useState('');
+  const [commDocUrl, setCommDocUrl] = useState('');
+  const [commDocName, setCommDocName] = useState('');
+  const [commSubmittedInfo, setCommSubmittedInfo] = useState<{ name: string; ward: number } | null>(null);
+
+  const handleCommDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCommDocName(file.name);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      if (typeof ev.target?.result === 'string') {
+        setCommDocUrl(ev.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRegisterCommunity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (!commName.trim() || !commHeadName.trim() || !commPhone.trim() || !commPassword.trim()) {
+      setErrorMessage('Organization name, Community Head name, mobile number, and password are required.');
+      return;
+    }
+    if (commPassword.trim().length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      return;
+    }
+    if (!commDocUrl) {
+      setErrorMessage('Please upload an organization registration certificate or official document for Ward Officer verification.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.registerCommunity({
+        community_name: commName.trim(),
+        organisation_type: commOrgType,
+        head_name: commHeadName.trim(),
+        phone: commPhone.trim(),
+        email: commEmail.trim() || undefined,
+        username: commUsername.trim() || undefined,
+        password: commPassword.trim(),
+        ward_number: commWardNumber,
+        locality: commLocality.trim() || undefined,
+        address: commAddress.trim() || undefined,
+        description: commDescription.trim() || undefined,
+        verification_document_url: commDocUrl,
+        verification_document_name: commDocName || 'Verification Certificate'
+      });
+      setCommSubmittedInfo({ name: commName.trim(), ward: commWardNumber });
+      setSuccessMessage(res.message || 'Community registration submitted for Ward Officer approval.');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Community registration failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Common inputs
   const [phone, setPhone] = useState('');
@@ -345,6 +422,28 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  const validateUniqueUsername = async (
+    val: string,
+    setter: React.Dispatch<React.SetStateAction<{ checking?: boolean; available?: boolean; message?: string } | null>>
+  ) => {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setter(null);
+      return;
+    }
+    if (/\s/.test(trimmed)) {
+      setter({ available: false, message: 'Username cannot contain spaces.' });
+      return;
+    }
+    setter({ checking: true });
+    try {
+      const res = await api.checkUsername(trimmed);
+      setter({ available: res.available, message: res.available ? 'Username is available' : (res.message || res.error || 'Username already taken') });
+    } catch {
+      setter(null);
+    }
+  };
+
   // 4. Submit Signup Step 3: Complete Profile
   const handleCompleteProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -352,6 +451,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
     if (!fullName.trim()) {
       setErrorMessage('Please enter your full name');
+      return;
+    }
+    if (citizenUsername.trim() && citizenUsernameStatus?.available === false) {
+      setErrorMessage(citizenUsernameStatus.message || 'Please choose a unique username');
       return;
     }
     if (password.length < 8) {
@@ -368,6 +471,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       const res = await api.signupCompleteProfile({
         verification_token: verificationToken,
         full_name: fullName,
+        username: citizenUsername.trim() || undefined,
         password: password,
         confirm_password: confirmPassword,
         preferred_language: preferredLang,
@@ -736,10 +840,307 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* VIEW B: CITIZEN SIGN UP                                   */}
+          {/* VIEW B: CITIZEN & COMMUNITY SIGN UP                      */}
           {/* ======================================================== */}
           {mode === 'signup' && (
-            <div>
+            <div className="space-y-4">
+              {/* Account Type Toggle: Citizen vs Community / Organization */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupType('citizen');
+                    setErrorMessage('');
+                    setSuccessMessage('');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                    signupType === 'citizen'
+                      ? 'bg-[#095c54] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>Citizen Sign Up</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupType('community');
+                    setCommSubmittedInfo(null);
+                    setErrorMessage('');
+                    setSuccessMessage('');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                    signupType === 'community'
+                      ? 'bg-[#095c54] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Building className="w-3.5 h-3.5" />
+                  <span>Community Sign Up</span>
+                </button>
+              </div>
+
+              {/* COMMUNITY SELF-REGISTRATION FORM */}
+              {signupType === 'community' && (
+                commSubmittedInfo ? (
+                  <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#095c54] text-white flex items-center justify-center mx-auto shadow-sm">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-300" />
+                    </div>
+                    <h3 className="text-base font-black text-[#0f2925]">
+                      Sent for Ward {commSubmittedInfo.ward} Officer Approval
+                    </h3>
+                    <p className="text-xs text-slate-700 leading-relaxed">
+                      <strong>{commSubmittedInfo.name}</strong> has been submitted along with your verification certificate. Once the Ward {commSubmittedInfo.ward} Officer approves your organization, you can sign in to your Community Head Dashboard.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('login');
+                        setCommSubmittedInfo(null);
+                        setErrorMessage('');
+                      }}
+                      className="w-full btn-primary-custom py-2.5 text-xs font-extrabold rounded-xl"
+                    >
+                      Return to Sign In
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleRegisterCommunity} className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+                    <div className="text-center">
+                      <h2 className="text-lg font-extrabold text-[#095c54]">
+                        Community / Organization Registration
+                      </h2>
+                      <p className="text-[11px] text-[#64748b] mt-0.5">
+                        Register your NGO, RWA, or civic group. Ward Officer approval is required before login.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Organization Name *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Green Navsari Welfare Trust"
+                          value={commName}
+                          onChange={e => setCommName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Organization Type *</label>
+                        <select
+                          value={commOrgType}
+                          onChange={e => setCommOrgType(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold bg-white outline-none focus:border-[#095c54]"
+                        >
+                          <option value="Resident Welfare Association">Resident Welfare Association</option>
+                          <option value="NGO / Charitable Trust">NGO / Charitable Trust</option>
+                          <option value="Youth Club / College NSS">Youth Club / College NSS</option>
+                          <option value="Market / Traders Association">Market / Traders Association</option>
+                          <option value="Religious / Cultural Trust">Religious / Cultural Trust</option>
+                          <option value="Corporate CSR Group">Corporate CSR Group</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Community Head Name *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Full name of head/coordinator"
+                          value={commHeadName}
+                          onChange={e => setCommHeadName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Mobile Number *</label>
+                        <input
+                          type="tel"
+                          required
+                          maxLength={10}
+                          placeholder="10-digit mobile"
+                          value={commPhone}
+                          onChange={e => setCommPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Official Email</label>
+                        <input
+                          type="email"
+                          placeholder="contact@organization.org"
+                          value={commEmail}
+                          onChange={e => setCommEmail(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Select Municipal Ward *</label>
+                        <select
+                          value={commWardNumber}
+                          onChange={e => setCommWardNumber(Number(e.target.value))}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-bold bg-white outline-none focus:border-[#095c54]"
+                        >
+                          {[
+                            { n: 1, name: 'Ward 1 - Lunsikui / Tower Road' },
+                            { n: 2, name: 'Ward 2 - Station Road / Fuwara' },
+                            { n: 3, name: 'Ward 3 - Dudhiya Talao / Ashapuri' },
+                            { n: 4, name: 'Ward 4 - Kaliawadi / Sayaji Road' },
+                            { n: 5, name: 'Ward 5 - Jalalpore Road / Shanta Devi' },
+                            { n: 6, name: 'Ward 6 - Vijalpore North / Eru' },
+                            { n: 7, name: 'Ward 7 - Vijalpore South / GIDC' },
+                            { n: 8, name: 'Ward 8 - Madhumati / Parsi Wad' },
+                            { n: 9, name: 'Ward 9 - Sandhkuva / Junathana' },
+                            { n: 10, name: 'Ward 10 - Chhapra Road / Vejalpore' },
+                            { n: 11, name: 'Ward 11 - Vansda Road / Italva' },
+                            { n: 12, name: 'Ward 12 - Mahuva Highway / Chikhli' },
+                            { n: 13, name: 'Ward 13 - Dandi Coastal Corridor' }
+                          ].map(w => (
+                            <option key={w.n} value={w.n}>{w.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Login Username (unique)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. green_navsari"
+                          value={commUsername}
+                          onChange={e => {
+                            setCommUsername(e.target.value);
+                            setCommUsernameStatus(null);
+                          }}
+                          onBlur={e => validateUniqueUsername(e.target.value, setCommUsernameStatus)}
+                          className={`w-full px-3 py-2 rounded-xl border text-xs font-semibold outline-none ${
+                            commUsernameStatus?.available === false
+                              ? 'border-rose-400 focus:border-rose-500'
+                              : commUsernameStatus?.available === true
+                              ? 'border-emerald-400 focus:border-emerald-600'
+                              : 'border-[#e2e8f0] focus:border-[#095c54]'
+                          }`}
+                        />
+                        {commUsernameStatus && !commUsernameStatus.checking && (
+                          <p
+                            className={`text-[10px] font-bold mt-1 ${
+                              commUsernameStatus.available ? 'text-emerald-700' : 'text-rose-600'
+                            }`}
+                          >
+                            {commUsernameStatus.message}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Create Password *</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="Min 6 characters"
+                          value={commPassword}
+                          onChange={e => setCommPassword(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Locality / Area</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Dudhiya Talao"
+                          value={commLocality}
+                          onChange={e => setCommLocality(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#0f2925] mb-1">Office Address</label>
+                        <input
+                          type="text"
+                          placeholder="Full street address"
+                          value={commAddress}
+                          onChange={e => setCommAddress(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-semibold outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0f2925] mb-1">About Your Organization</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Brief description of your organization's community activities..."
+                        value={commDescription}
+                        onChange={e => setCommDescription(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-[#e2e8f0] text-xs font-medium outline-none focus:border-[#095c54] resize-none"
+                      />
+                    </div>
+
+                    {/* Verification Certificate / Registration Document Upload */}
+                    <div className="p-3 rounded-2xl bg-[#f7f9f8] border border-dashed border-[#095c54]/40 space-y-2">
+                      <label className="block text-[11px] font-extrabold text-[#095c54]">
+                        Upload Organization Registration Certificate / Proof Document *
+                      </label>
+                      <p className="text-[10px] text-slate-500">
+                        Upload NGO trust certificate, RWA registration letter, or institutional ID (Image / PDF) for Ward Officer verification.
+                      </p>
+                      <label className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white border border-slate-200 hover:border-[#095c54] text-xs font-bold text-[#095c54] cursor-pointer transition">
+                        {commDocUrl ? <FileCheck2 className="w-4 h-4 text-emerald-600" /> : <Upload className="w-4 h-4" />}
+                        <span className="truncate">{commDocName ? `Uploaded: ${commDocName}` : 'Choose Certificate / Document File'}</span>
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          className="hidden"
+                          onChange={handleCommDocUpload}
+                        />
+                      </label>
+                      {commDocUrl && commDocUrl.startsWith('data:image') && (
+                        <img src={commDocUrl} alt="Certificate preview" className="h-24 w-full object-cover rounded-xl border border-slate-200" />
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full btn-primary-custom py-3 text-xs sm:text-sm font-extrabold rounded-2xl shadow-lg disabled:opacity-60 transition"
+                    >
+                      {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Submit Community Registration for Approval'}
+                    </button>
+
+                    <div className="text-center pt-1">
+                      <p className="text-xs text-[#64748b]">
+                        Already registered?{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMode('login');
+                            setErrorMessage('');
+                          }}
+                          className="font-extrabold text-[#095c54] hover:underline"
+                        >
+                          Sign In
+                        </button>
+                      </p>
+                    </div>
+                  </form>
+                )
+              )}
+
+              {/* CITIZEN SIGN UP FLOW */}
+              {signupType === 'citizen' && (
+              <div>
               {/* Step 1: Mobile & Consent */}
               {signupStep === 1 && (
                 <form onSubmit={handleSendSignupOtp} className="space-y-4">
@@ -933,6 +1334,38 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-[#0f2925] mb-1">
+                      Unique Username <span className="text-[10px] font-normal text-slate-400">(optional, must be unique)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ramesh_patel"
+                      value={citizenUsername}
+                      onChange={e => {
+                        setCitizenUsername(e.target.value);
+                        setCitizenUsernameStatus(null);
+                      }}
+                      onBlur={e => validateUniqueUsername(e.target.value, setCitizenUsernameStatus)}
+                      className={`w-full px-3 py-2.5 rounded-2xl border text-sm font-semibold outline-none ${
+                        citizenUsernameStatus?.available === false
+                          ? 'border-rose-400 focus:border-rose-500'
+                          : citizenUsernameStatus?.available === true
+                          ? 'border-emerald-400 focus:border-emerald-600'
+                          : 'border-[#e2e8f0] focus:border-[#095c54]'
+                      }`}
+                    />
+                    {citizenUsernameStatus && !citizenUsernameStatus.checking && (
+                      <p
+                        className={`text-[11px] font-bold mt-1 ${
+                          citizenUsernameStatus.available ? 'text-emerald-700' : 'text-rose-600'
+                        }`}
+                      >
+                        {citizenUsernameStatus.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#0f2925] mb-1">
                       Create Password (Min 8 characters)
                     </label>
                     <input
@@ -982,6 +1415,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Create Account & Start'}
                   </button>
                 </form>
+              )}
+              </div>
               )}
             </div>
           )}

@@ -55,6 +55,20 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
   const [savingWorker, setSavingWorker] = useState<boolean>(false);
 
   // Add Officer Modal
+  const WARD_NAV_TABS = [
+    { id: 'overview', label: '1. Ward Overview' },
+    { id: 'complaints', label: '2. Complaint Catalogue' },
+    { id: 'hotspots', label: '3. Hotspots Map' },
+    { id: 'workers', label: '4. Worker Management' },
+    { id: 'teams', label: '5. Team Management' },
+    { id: 'activities', label: '6. Organization Drives' },
+    { id: 'approvals', label: '7. Approval Management' },
+    { id: 'posts', label: '8. Community & Citizen Posts' },
+    { id: 'community_problems', label: '9. Add Problem for Community' },
+    { id: 'ai_analytics', label: '10. AI Analytics' },
+    { id: 'notifications', label: '11. Notifications' },
+    { id: 'settings', label: '12. Settings' }
+  ];
   const [addOfficerOpen, setAddOfficerOpen] = useState<boolean>(false);
   const [oName, setOName] = useState<string>('');
   const [oPhone, setOPhone] = useState<string>('');
@@ -63,6 +77,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
   const [showOPassword, setShowOPassword] = useState<boolean>(false);
   const [oDesignation, setODesignation] = useState<string>('Ward Officer');
   const [oWards, setOWards] = useState<number[]>([1]);
+  const [oAllowedTabs, setOAllowedTabs] = useState<string[]>(WARD_NAV_TABS.map(t => t.id));
   const [savingOfficer, setSavingOfficer] = useState<boolean>(false);
 
   const fetchData = async () => {
@@ -166,7 +181,8 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
         email: oEmail,
         password: oPassword,
         designation: oDesignation,
-        assigned_wards: oWards
+        assigned_wards: oWards,
+        allowed_tabs: oAllowedTabs
       });
 
       if (res.success) {
@@ -178,6 +194,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
         setOEmail('');
         setOPassword('');
         setOWards([1]);
+        setOAllowedTabs(WARD_NAV_TABS.map(t => t.id));
         fetchData();
       }
     } catch (err: any) {
@@ -223,11 +240,8 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
             </span>
           </div>
           <h2 className="text-xl font-black text-[#0f2925] tracking-tight">
-            Municipal Worker & Officer Management
+            Municipal Worker &amp; Officer Management
           </h2>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Register new personnel with username and password login credentials, assign wards, and manage field staff.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 w-full md:w-auto">
@@ -795,6 +809,64 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
                       >
                         Ward {wNum}
                       </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Granular Dashboard Main Navigation Tabs Access */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-xs font-black text-[#0f2925]">
+                      Dashboard Main Navigation Tabs Access
+                    </label>
+                    <span className="text-[11px] font-bold text-[#095c54]">
+                      {oAllowedTabs.length === WARD_NAV_TABS.length
+                        ? 'Full Access (All 12 Tabs)'
+                        : `${oAllowedTabs.length} of ${WARD_NAV_TABS.length} Tabs Enabled`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOAllowedTabs(WARD_NAV_TABS.map(t => t.id))}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition border ${
+                      oAllowedTabs.length === WARD_NAV_TABS.length
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                    }`}
+                  >
+                    Give Full Access
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                  {WARD_NAV_TABS.map(tab => {
+                    const checked = oAllowedTabs.includes(tab.id);
+                    return (
+                      <label
+                        key={tab.id}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition ${
+                          checked
+                            ? 'bg-white border-[#095c54] text-[#0f2925]'
+                            : 'bg-slate-50 border-slate-200 text-slate-500'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setOAllowedTabs(prev =>
+                              prev.includes(tab.id)
+                                ? prev.length === 1
+                                  ? prev
+                                  : prev.filter(id => id !== tab.id)
+                                : [...prev, tab.id]
+                            )
+                          }
+                          className="rounded text-[#095c54] focus:ring-[#095c54]"
+                        />
+                        <span className="truncate">{tab.label}</span>
+                      </label>
                     );
                   })}
                 </div>

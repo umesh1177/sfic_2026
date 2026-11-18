@@ -118,11 +118,8 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-            Event Registrations & Attendance
+            Event Registrations &amp; Attendance
           </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Monitor registered citizens, mark ground attendance, and export official NMC reports.
-          </p>
         </div>
 
         <button

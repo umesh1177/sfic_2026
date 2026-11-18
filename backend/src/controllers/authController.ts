@@ -189,6 +189,7 @@ export class AuthController {
       const {
         verification_token,
         full_name,
+        username,
         password,
         confirm_password,
         preferred_language,
@@ -233,6 +234,22 @@ export class AuthController {
         return;
       }
 
+      const trimmedUsername = username && String(username).trim() ? String(username).trim() : undefined;
+      if (trimmedUsername) {
+        if (/\s/.test(trimmedUsername)) {
+          res.status(400).json({ success: false, error: 'Username cannot contain spaces.' });
+          return;
+        }
+        const unameCheck = await DbRepository.isUsernameTaken(trimmedUsername);
+        if (unameCheck.taken) {
+          res.status(409).json({
+            success: false,
+            error: `Username "${trimmedUsername}" is already taken. Please choose a unique username.`
+          });
+          return;
+        }
+      }
+
       // Hash password securely with bcrypt
       const passwordHash = await bcrypt.hash(password, 10);
       const newUserId = randomUUID();
@@ -241,6 +258,7 @@ export class AuthController {
         id: newUserId,
         full_name: full_name.trim(),
         phone: session.mobile_number,
+        username: trimmedUsername,
         email: email?.trim() || undefined,
         avatar_url: avatar_url || undefined,
         preferred_language: preferred_language === 'gu' || preferred_language === 'hi' ? preferred_language : 'en',
@@ -335,19 +353,50 @@ export class AuthController {
       const normalizedPhone = normalizeIndianPhone(inputStr);
 
       let profile: Profile | undefined;
+      let authProfile: CitizenAuthProfile | null = null;
 
-      // 1. Look up in store.profiles
-      profile = (store.profiles || []).find(p => {
-        if (normalizedPhone && p.phone === normalizedPhone) return true;
-        if (p.phone === inputStr) return true;
-        if (inputCleanDigits.length >= 10 && p.phone && p.phone.replace(/\D/g, '').endsWith(inputCleanDigits.slice(-10))) return true;
-        if (p.email && p.email.toLowerCase() === inputStr.toLowerCase()) return true;
-        if (p.username && p.username.toLowerCase() === inputStr.toLowerCase()) return true;
-        if (p.full_name && p.full_name.toLowerCase() === inputStr.toLowerCase()) return true;
-        return false;
-      });
+      // 1. ALWAYS look up in PostgreSQL DB FIRST so fresh passwords, roles & approvals take effect immediately
+      const searchPhone = normalizedPhone || (inputCleanDigits.length >= 10 ? `+91${inputCleanDigits.slice(-10)}` : inputStr);
+      const dbUser =
+        (await DbRepository.findUserByIdentifier(inputStr)) ||
+        (normalizedPhone ? await DbRepository.findUserByPhone(searchPhone) : null);
 
-      // 2. Look up in store.workers
+      if (dbUser) {
+        profile = dbUser.profile;
+        authProfile = dbUser.authProfile;
+
+        // Sync/replace in-memory caches with fresh DB state
+        const pIdx = (store.profiles || []).findIndex(p => p.id === profile!.id);
+        if (pIdx !== -1) {
+          store.profiles[pIdx] = profile;
+        } else {
+          store.profiles.push(profile);
+        }
+
+        if (authProfile) {
+          const aIdx = (store.authProfiles || []).findIndex(a => a.user_id === profile!.id);
+          if (aIdx !== -1) {
+            store.authProfiles[aIdx] = authProfile;
+          } else {
+            store.authProfiles.push(authProfile);
+          }
+        }
+      }
+
+      // 2. Fallback to in-memory store.profiles (demo/seed accounts not in DB)
+      if (!profile) {
+        profile = (store.profiles || []).find(p => {
+          if (p.username && p.username.toLowerCase() === inputStr.toLowerCase()) return true;
+          if (p.email && p.email.toLowerCase() === inputStr.toLowerCase()) return true;
+          if (normalizedPhone && p.phone === normalizedPhone) return true;
+          if (p.phone === inputStr) return true;
+          if (inputCleanDigits.length >= 10 && p.phone && p.phone.replace(/\D/g, '').endsWith(inputCleanDigits.slice(-10))) return true;
+          if (p.full_name && p.full_name.toLowerCase() === inputStr.toLowerCase()) return true;
+          return false;
+        });
+      }
+
+      // 3. Fallback to in-memory store.workers
       if (!profile) {
         const matchedWorker = (store.workers || []).find(w =>
           (w.worker_code && w.worker_code.toLowerCase() === inputStr.toLowerCase()) ||
@@ -383,13 +432,13 @@ export class AuthController {
         }
       }
 
-      // 3. Look up in store.communities
+      // 4. Fallback to in-memory store.communities
       if (!profile) {
         const matchedComm = (store.communities || []).find(c =>
+          (c.username && c.username.toLowerCase() === inputStr.toLowerCase()) ||
+          (c.email && c.email.toLowerCase() === inputStr.toLowerCase()) ||
           (c.head_name && c.head_name.toLowerCase() === inputStr.toLowerCase()) ||
           (c.community_name && c.community_name.toLowerCase() === inputStr.toLowerCase()) ||
-          (c.email && c.email.toLowerCase() === inputStr.toLowerCase()) ||
-          (c.username && c.username.toLowerCase() === inputStr.toLowerCase()) ||
           (normalizedPhone && c.phone === normalizedPhone) ||
           (c.phone === inputStr) ||
           (inputCleanDigits.length >= 10 && c.phone && c.phone.replace(/\D/g, '').endsWith(inputCleanDigits.slice(-10)))
@@ -420,28 +469,17 @@ export class AuthController {
         }
       }
 
-      // 4. Look up in PostgreSQL DB if not found
-      if (!profile) {
-        const searchPhone = normalizedPhone || (inputCleanDigits.length >= 10 ? `+91${inputCleanDigits.slice(-10)}` : inputStr);
-        const dbUser = await DbRepository.findUserByIdentifier(inputStr) || await DbRepository.findUserByPhone(searchPhone);
-        if (dbUser) {
-          profile = dbUser.profile;
-          if (!store.profiles.some(p => p.id === profile!.id)) {
-            store.profiles.push(profile);
-          }
-          if (dbUser.authProfile && !store.authProfiles.some(a => a.user_id === profile!.id)) {
-            store.authProfiles.push(dbUser.authProfile);
-          }
-        }
+      if (profile && !authProfile) {
+        authProfile =
+          (store.authProfiles || []).find(
+            a =>
+              a.user_id === profile!.id ||
+              a.mobile_number === profile!.phone ||
+              (inputCleanDigits.length >= 10 &&
+                a.mobile_number &&
+                a.mobile_number.replace(/\D/g, '').endsWith(inputCleanDigits.slice(-10)))
+          ) || null;
       }
-
-      let authProfile: CitizenAuthProfile | null = profile
-        ? (store.authProfiles || []).find(a =>
-            a.user_id === profile!.id ||
-            a.mobile_number === profile!.phone ||
-            (inputCleanDigits.length >= 10 && a.mobile_number && a.mobile_number.replace(/\D/g, '').endsWith(inputCleanDigits.slice(-10)))
-          ) || null
-        : null;
 
       // Auto-create active session authProfile if profile exists
       if (profile && !authProfile) {
@@ -458,6 +496,38 @@ export class AuthController {
         };
         (authProfile as any).plain_password = inputPass;
         store.authProfiles.push(authProfile);
+      }
+
+      // Check if this is a self-registered Community Head awaiting Ward Officer approval
+      if (profile && profile.role === 'community_head') {
+        const allComms = await DbRepository.getCommunitiesList(undefined, true).catch(() => store.communities || []);
+        const matchedComm = allComms.find(
+          (c: any) =>
+            c.user_id === profile!.id ||
+            (profile!.phone && c.phone === profile!.phone) ||
+            (profile!.email && c.email && c.email.toLowerCase() === profile!.email.toLowerCase())
+        );
+        if (matchedComm) {
+          if (matchedComm.approval_status === 'pending_approval') {
+            res.status(403).json({
+              success: false,
+              error: `Your organization "${matchedComm.community_name}" registration is currently pending approval from the Ward ${matchedComm.ward_number || 3} Officer. You will be able to log in once approved.`
+            });
+            return;
+          }
+          if (matchedComm.approval_status === 'rejected') {
+            res.status(403).json({
+              success: false,
+              error: `Your organization registration for "${matchedComm.community_name}" was rejected by the Ward Officer.${matchedComm.rejection_reason ? ` Reason: ${matchedComm.rejection_reason}` : ''}`
+            });
+            return;
+          }
+          // If approved in DB, ensure in-memory profile & authProfile are active
+          if (matchedComm.approval_status === 'approved') {
+            profile.is_active = true;
+            if (authProfile) authProfile.account_status = 'active';
+          }
+        }
       }
 
       // Ensure profile and authProfile exist and are active
@@ -494,6 +564,25 @@ export class AuthController {
           error: 'Invalid username/mobile number or password. Please verify your credentials.'
         });
         return;
+      }
+
+      // Hydrate live Ward Officer ward assignments before returning profile
+      if (profile.role === 'ward_officer') {
+        await DbRepository.syncWardOfficersFromDb().catch(() => {});
+        const officerRec = (store.wardOfficers || []).find(
+          o => o.user_id === profile!.id || (profile!.phone && o.phone === profile!.phone)
+        );
+        if (officerRec && Array.isArray(officerRec.assigned_wards) && officerRec.assigned_wards.length > 0) {
+          const primaryWard = Number(officerRec.assigned_wards[0]);
+          const wardObj = (store.wards || []).find(w => w.ward_number === primaryWard);
+          (profile as any).ward_number = primaryWard;
+          (profile as any).assigned_wards = officerRec.assigned_wards.map(Number);
+          (profile as any).allowed_tabs = (officerRec as any).allowed_tabs || undefined;
+          (profile as any).ward_name = wardObj?.ward_name || `Ward ${primaryWard}`;
+          if (wardObj) {
+            profile.locality = `Ward ${wardObj.ward_number} - ${wardObj.ward_name}`;
+          }
+        }
       }
 
       // Generate session token
@@ -651,12 +740,217 @@ export class AuthController {
       return;
     }
 
+    const profile: any = { ...req.user };
+    if (profile.role === 'ward_officer') {
+      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      const officerRec = (store.wardOfficers || []).find(
+        o => o.user_id === profile.id || (profile.phone && o.phone === profile.phone)
+      );
+      if (officerRec) {
+        if (Array.isArray(officerRec.assigned_wards) && officerRec.assigned_wards.length > 0) {
+          profile.assigned_wards = officerRec.assigned_wards.map(Number);
+          profile.ward_number = profile.assigned_wards[0];
+        }
+        profile.allowed_tabs = (officerRec as any).allowed_tabs || undefined;
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
-        profile: req.user
+        profile
       }
     });
+  }
+
+  /**
+   * POST /api/auth/register-community
+   * Self-registration for Community / Organization Heads — requires Ward Officer approval before login.
+   */
+  public static async registerCommunity(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        community_name,
+        head_name,
+        phone,
+        email,
+        username,
+        password,
+        organisation_type = 'Resident Welfare Association',
+        ward_number = 3,
+        locality,
+        address,
+        description,
+        verification_document_url,
+        verification_document_name
+      } = req.body;
+
+      if (!community_name?.trim() || !head_name?.trim() || !phone?.trim() || !password?.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'Organization name, Community Head name, mobile number, and password are required.'
+        });
+        return;
+      }
+
+      if (String(password).trim().length < 6) {
+        res.status(400).json({
+          success: false,
+          error: 'Password must be at least 6 characters long.'
+        });
+        return;
+      }
+
+      if (!verification_document_url || !String(verification_document_url).trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'Please upload an organization registration certificate or verification document so the Ward Officer can verify your organization.'
+        });
+        return;
+      }
+
+      const normalizedPhone = normalizeIndianPhone(String(phone)) || String(phone).trim();
+      const wardNum = Math.min(13, Math.max(1, Number(ward_number) || 3));
+      const wardObj = (store.wards || []).find(w => w.ward_number === wardNum);
+      const wardName = wardObj ? `Ward ${wardObj.ward_number} - ${wardObj.ward_name}` : `Ward ${wardNum}`;
+
+      const passwordHash = await bcrypt.hash(String(password).trim(), 10);
+      const newUserId = randomUUID();
+      const newCommunityId = randomUUID();
+      const effectiveEmail = email?.trim() || `${head_name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@community.org`;
+      const effectiveUsername = username?.trim() || effectiveEmail;
+
+      if (/\s/.test(effectiveUsername)) {
+        res.status(400).json({
+          success: false,
+          error: 'Username cannot contain spaces. Please enter a valid unique username.'
+        });
+        return;
+      }
+
+      const usernameCheck = await DbRepository.isUsernameTaken(effectiveUsername);
+      if (usernameCheck.taken) {
+        res.status(409).json({
+          success: false,
+          error: `Username "${effectiveUsername}" is already taken across the platform. Please choose a different unique username.`
+        });
+        return;
+      }
+
+      const newCommunity = {
+        id: newCommunityId,
+        user_id: newUserId,
+        community_name: community_name.trim(),
+        organisation_type: organisation_type || 'Resident Welfare Association',
+        head_name: head_name.trim(),
+        phone: normalizedPhone,
+        email: effectiveEmail,
+        username: effectiveUsername,
+        plain_password: String(password).trim(),
+        ward_number: wardNum,
+        ward_name: wardName,
+        address: address?.trim() || `${wardName}, Navsari`,
+        locality: locality?.trim() || wardObj?.ward_name || `Ward ${wardNum}`,
+        description: description?.trim() || '',
+        verification_document_url: String(verification_document_url),
+        verification_document_name: verification_document_name || 'Organization Verification Certificate',
+        approval_status: 'pending_approval',
+        registered_via: 'self_signup',
+        active_drives_count: 0,
+        created_at: new Date().toISOString()
+      };
+
+      const saved = await DbRepository.saveCommunityToDb(newCommunity, passwordHash);
+
+      // Sync inactive profile in memory so login hits the approval gate clearly
+      const pendingProfile: any = {
+        id: saved.user_id,
+        full_name: saved.head_name,
+        phone: saved.phone,
+        email: saved.email,
+        username: saved.username,
+        plain_password: saved.plain_password,
+        preferred_language: 'en',
+        locality: saved.locality,
+        address: saved.address,
+        ward_number: wardNum,
+        is_active: false,
+        role: 'community_head',
+        created_at: saved.created_at,
+        updated_at: saved.created_at
+      };
+      const pIdx = (store.profiles || []).findIndex(p => p.id === pendingProfile.id || p.phone === pendingProfile.phone);
+      if (pIdx !== -1) store.profiles[pIdx] = pendingProfile;
+      else store.profiles.push(pendingProfile);
+
+      const pendingAuth: any = {
+        id: `auth-${saved.user_id}`,
+        user_id: saved.user_id,
+        mobile_number: saved.phone,
+        password_hash: passwordHash,
+        plain_password: saved.plain_password,
+        mobile_verified: true,
+        account_status: 'pending_approval',
+        created_at: saved.created_at,
+        updated_at: saved.created_at
+      };
+      const aIdx = (store.authProfiles || []).findIndex(a => a.user_id === pendingAuth.user_id);
+      if (aIdx !== -1) store.authProfiles[aIdx] = pendingAuth;
+      else store.authProfiles.push(pendingAuth);
+
+      // Notify Ward Officer for this ward
+      await DbRepository.createNotification(
+        `ward-officer-${wardNum}`,
+        'New Community Registration Pending Approval',
+        `"${saved.community_name}" (Head: ${saved.head_name}) registered for Ward ${wardNum} with verification certificate. Please review in Approval Management.`,
+        saved.id,
+        'community_registration'
+      ).catch(() => {});
+
+      res.status(201).json({
+        success: true,
+        message: `Registration submitted for "${saved.community_name}" (Ward ${wardNum})! Your verification certificate has been sent to the Ward ${wardNum} Officer for approval. Once approved, you can log in with ${normalizedPhone} or ${effectiveUsername}.`,
+        data: {
+          id: saved.id,
+          community_id: saved.id,
+          user_id: saved.user_id,
+          community_name: saved.community_name,
+          ward_number: wardNum,
+          approval_status: 'pending_approval'
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Community registration failed.' });
+    }
+  }
+
+  /**
+   * GET /api/auth/check-username?username=...
+   * Public helper to validate global username uniqueness across all roles/formats
+   */
+  public static async checkUsername(req: Request, res: Response): Promise<void> {
+    try {
+      const raw = String(req.query.username || '').trim();
+      if (!raw) {
+        res.status(400).json({ success: false, available: false, error: 'Username is required.' });
+        return;
+      }
+      if (/\s/.test(raw)) {
+        res.status(200).json({ success: true, available: false, error: 'Username cannot contain spaces.' });
+        return;
+      }
+      const excludeUserId = req.query.exclude_user_id ? String(req.query.exclude_user_id) : undefined;
+      const check = await DbRepository.isUsernameTaken(raw, excludeUserId ? { userId: excludeUserId } : undefined);
+      res.status(200).json({
+        success: true,
+        available: !check.taken,
+        message: check.taken
+          ? `Username "${raw}" is already taken across the platform. Please choose a unique username.`
+          : 'Username is available.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   }
 
   /**

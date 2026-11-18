@@ -52,7 +52,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
   const fetchSummary = async () => {
     setLoading(true);
     try {
-      const res = await api.getWardDashboardSummary();
+      const res = await api.getWardDashboardSummary(wardNumber);
       setSummary(res.data);
     } catch (err) {
       console.error('Failed to load ward dashboard summary:', err);
@@ -93,7 +93,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
   const criticalSlaCount = (m.overdue_complaints || 0) + (m.reopened_complaints || 0);
   const resolutionRate = m.total_complaints > 0
     ? Math.min(100, Math.round((m.closed_complaints / m.total_complaints) * 100))
-    : 92;
+    : 0;
 
   const keyKpiCards = [
     {
@@ -133,7 +133,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
       bg: 'bg-white hover:bg-blue-50/50',
       border: 'border-blue-200',
       badgeBg: 'bg-blue-100 text-blue-900 border-blue-300',
-      badge: `${f?.teams_working || 4} ${lang === 'gu' ? 'ટીમો સક્રિય' : lang === 'hi' ? 'टीमें सक्रिय' : 'Teams Active'}`,
+      badge: `${f?.teams_working ?? 0} ${lang === 'gu' ? 'ટીમો સક્રિય' : lang === 'hi' ? 'टीमें सक्रिय' : 'Teams Active'}`,
       icon: Wrench,
       onClick: () => onNavigateToCatalogue({ status: 'in_progress' })
     },

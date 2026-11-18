@@ -236,11 +236,8 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
             </span>
           </div>
           <h2 className="text-xl font-black text-[#0f2925] tracking-tight">
-            Manage Complaint Categories & SLA Deadlines
+            Manage Complaint Categories &amp; SLA Deadlines
           </h2>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Configure issue categories (Littering, Waterlogging, etc.), max approval days (breaches flag the ward officer), and max work days.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 w-full md:w-auto">

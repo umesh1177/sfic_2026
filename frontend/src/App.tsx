@@ -4,7 +4,6 @@ import { DesktopSidebar } from './components/DesktopSidebar.js';
 import { MobileBottomNavigation } from './components/MobileBottomNavigation.js';
 import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
-import { NavsariMap } from './components/NavsariMap.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
@@ -17,6 +16,8 @@ import { CommunityHeadDashboard } from './components/community/CommunityHeadDash
 import { WorkerDashboard } from './components/worker/WorkerDashboard.js';
 import { WardOfficerDashboard } from './components/ward/WardOfficerDashboard.js';
 import { NMCAdminDashboard } from './components/admin/NMCAdminDashboard.js';
+import { LocationMonitor } from './components/common/LocationMonitor.js';
+import { OfflineSyncBanner } from './components/common/OfflineSyncBanner.js';
 import { api } from './services/api.js';
 import { Profile, AppNotification, ComplaintCategory, Complaint } from './types/index.js';
 import { Language, translations } from './i18n/translations.js';
@@ -283,6 +284,10 @@ export const App: React.FC = () => {
           />
         </div>
 
+        {/* Continuous Location Monitoring & Offline Auto-Sync for Citizens */}
+        <LocationMonitor roleLabel="Citizen" />
+        <OfflineSyncBanner onSynced={loadInitialData} />
+
         {/* Content Container (Mobile-first padding with safe-area support) */}
         <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-8 pb-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))] lg:pb-12">
           {/* Direct Full-Page View: Report an Issue (NO modal) */}
@@ -311,10 +316,6 @@ export const App: React.FC = () => {
               onOpenReport={() => setCurrentTab('report')}
               lang={lang}
             />
-          )}
-
-          {currentTab === 'map' && (
-            <NavsariMap categories={categories} lang={lang} />
           )}
 
           {currentTab === 'drives' && (

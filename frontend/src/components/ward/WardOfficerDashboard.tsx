@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   LayoutDashboard,
   FileText,
@@ -26,6 +26,23 @@ import {
 import { Profile } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
 import { SwachhSetuIcon } from '../SwachhSetuLogo.js';
+import { api } from '../../services/api.js';
+
+const NAVSARI_WARD_NAMES: Record<number, string> = {
+  1: 'Lunsikui - Tower Road',
+  2: 'Station Road - Fuwara',
+  3: 'Dudhiya Talao - Ashapuri',
+  4: 'Kaliawadi - Sayaji Road',
+  5: 'Jalalpore Road - Shanta Devi',
+  6: 'Vijalpore North - Eru Char Rasta',
+  7: 'Vijalpore South - GIDC',
+  8: 'Madhumati - Parsi Wad',
+  9: 'Sandhkuva - Junathana',
+  10: 'Chhapra Road - Vejalpore',
+  11: 'Vansda Road - Italva',
+  12: 'Mahuva Highway - Chikhli Approach',
+  13: 'Dandi Coastal Corridor'
+};
 
 // Internal Tab Views
 import { WardOverview } from './WardOverview.js';
@@ -64,42 +81,93 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
   const t = translations[lang];
 
-  // Dynamic Ward & Officer resolution
-  const officerName = user?.full_name || 'Ramesh Patel';
-  const officerInitials = officerName
-    .split(' ')
-    .filter(Boolean)
-    .map(n => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'WO';
+  // Dynamic Ward & Officer resolution (reflects Admin-assigned ward(s) immediately)
+  const officerName = user?.full_name || 'Ward Officer';
   const wardMatch = user?.locality?.match(/Ward\s*(\d+)/i) || user?.address?.match(/Ward\s*(\d+)/i);
-  const userWardNum = (user as any)?.ward_number || (wardMatch ? Number(wardMatch[1]) : 3);
-  const wardArea = user?.locality?.replace(/Ward\s*\d+/i, '').replace(/NMC/i, '').trim() || (userWardNum === 8 ? 'Madhumati - Parsi Wad' : 'Dudhiya Talao');
+  const initialWards: number[] = Array.isArray((user as any)?.assigned_wards) && (user as any).assigned_wards.length > 0
+    ? (user as any).assigned_wards.map(Number).filter((n: number) => !isNaN(n))
+    : [(user as any)?.ward_number ? Number((user as any).ward_number) : (wardMatch ? Number(wardMatch[1]) : 3)];
 
-  // 11 Navigation items with fully dynamic language labels
-  const navItems = [
-    { id: 'overview', label: `1. ${t.wo_nav_overview}`, icon: LayoutDashboard },
-    { id: 'complaints', label: `2. ${t.wo_nav_complaints}`, icon: FileText },
-    { id: 'hotspots', label: `3. ${t.wo_nav_hotspots}`, icon: MapPin },
-    { id: 'workers', label: `4. ${t.wo_nav_workers}`, icon: UserCheck },
-    { id: 'teams', label: `5. ${t.wo_nav_teams}`, icon: Users },
-    { id: 'activities', label: `6. ${t.wo_nav_activities}`, icon: Calendar },
-    { id: 'approvals', label: `7. ${t.wo_nav_approvals}`, icon: ShieldCheck },
-    { id: 'posts', label: `8. ${t.wo_nav_posts}`, icon: Megaphone },
-    { id: 'community_problems', label: `9. ${t.wo_nav_community_problems}`, icon: HeartHandshake },
-    { id: 'ai_analytics', label: `10. ${t.wo_nav_ai_analytics || 'AI Analytics'}`, icon: BrainCircuit },
-    { id: 'notifications', label: `11. ${t.wo_nav_notifications}`, icon: Bell },
-    { id: 'settings', label: `12. ${t.wo_nav_settings}`, icon: Settings }
+  const [assignedWards, setAssignedWards] = useState<number[]>(initialWards);
+  const [selectedWardNum, setSelectedWardNum] = useState<number>(initialWards[0] || 3);
+  const initialAllowedTabs: string[] | null =
+    Array.isArray((user as any)?.allowed_tabs) && (user as any).allowed_tabs.length > 0
+      ? (user as any).allowed_tabs
+      : null;
+  const [allowedTabs, setAllowedTabs] = useState<string[] | null>(initialAllowedTabs);
+
+  // Sync live ward assignment & tab access permissions from server (in case Admin updated after login)
+  useEffect(() => {
+    api.getWardDashboardSummary().then(res => {
+      const data: any = res?.data;
+      if (data?.assigned_wards && Array.isArray(data.assigned_wards) && data.assigned_wards.length > 0) {
+        const liveWards = data.assigned_wards.map(Number).filter((n: number) => !isNaN(n));
+        setAssignedWards(liveWards);
+        if (!liveWards.includes(selectedWardNum)) {
+          setSelectedWardNum(liveWards[0]);
+        }
+      } else if (data?.ward_number) {
+        const w = Number(data.ward_number);
+        setAssignedWards([w]);
+        setSelectedWardNum(w);
+      }
+      if (Array.isArray(data?.allowed_tabs) && data.allowed_tabs.length > 0) {
+        setAllowedTabs(data.allowed_tabs);
+      }
+    }).catch(() => {});
+  }, [user?.id]);
+
+  const userWardNum = selectedWardNum;
+  const wardArea = NAVSARI_WARD_NAMES[userWardNum] || `Navsari Ward ${userWardNum}`;
+
+  const catalogueInitialFilter = useMemo(
+    () => ({ ward_number: userWardNum, ...(catalogueFilter || {}) }),
+    [userWardNum, catalogueFilter]
+  );
+
+  // All 12 Navigation items filtered dynamically by Super Admin tab access permissions
+  const allNavItems = [
+    { id: 'overview', rawLabel: t.wo_nav_overview, icon: LayoutDashboard },
+    { id: 'complaints', rawLabel: t.wo_nav_complaints, icon: FileText },
+    { id: 'hotspots', rawLabel: t.wo_nav_hotspots, icon: MapPin },
+    { id: 'workers', rawLabel: t.wo_nav_workers, icon: UserCheck },
+    { id: 'teams', rawLabel: t.wo_nav_teams, icon: Users },
+    { id: 'activities', rawLabel: t.wo_nav_activities, icon: Calendar },
+    { id: 'approvals', rawLabel: t.wo_nav_approvals, icon: ShieldCheck },
+    { id: 'posts', rawLabel: t.wo_nav_posts, icon: Megaphone },
+    { id: 'community_problems', rawLabel: t.wo_nav_community_problems, icon: HeartHandshake },
+    { id: 'ai_analytics', rawLabel: t.wo_nav_ai_analytics || 'AI Analytics', icon: BrainCircuit },
+    { id: 'notifications', rawLabel: t.wo_nav_notifications, icon: Bell },
+    { id: 'settings', rawLabel: t.wo_nav_settings, icon: Settings }
   ];
 
-  // Callback from overview cards to open catalogue with pre-applied filter
+  const isTabAllowed = (tabId: string) =>
+    !allowedTabs || allowedTabs.length === 0 || allowedTabs.includes(tabId);
+
+  const navItems = allNavItems
+    .filter(item => isTabAllowed(item.id))
+    .map((item, idx) => ({
+      id: item.id,
+      label: `${idx + 1}. ${item.rawLabel}`,
+      icon: item.icon
+    }));
+
+  // Ensure activeTab is always within this officer's granted tabs
+  useEffect(() => {
+    if (navItems.length > 0 && !navItems.some(n => n.id === activeTab)) {
+      setActiveTab(navItems[0].id);
+    }
+  }, [allowedTabs, activeTab]);
+
+  // Callback from overview cards to open catalogue with pre-applied filter (if permitted)
   const handleNavigateToCatalogue = (filter?: any) => {
+    if (!isTabAllowed('complaints')) return;
     setCatalogueFilter(filter);
     setActiveTab('complaints');
   };
 
   const handleTabClick = (tabId: string) => {
+    if (!isTabAllowed(tabId)) return;
     if (tabId === 'complaints') {
       setCatalogueFilter(undefined);
     }
@@ -196,7 +264,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Ward indicator badge */}
+            {/* Ward indicator badge + multi-ward switcher if officer is assigned multiple wards */}
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <div className="leading-tight truncate">
@@ -207,6 +275,20 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
                   · {wardArea}
                 </span>
               </div>
+              {assignedWards.length > 1 && (
+                <select
+                  value={userWardNum}
+                  onChange={e => setSelectedWardNum(Number(e.target.value))}
+                  className="ml-2 px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200 text-[11px] font-black text-[#095c54] outline-none cursor-pointer"
+                  title="Switch between your assigned wards"
+                >
+                  {assignedWards.map(w => (
+                    <option key={w} value={w}>
+                      Ward {w} · {NAVSARI_WARD_NAMES[w] || `Ward ${w}`}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 
@@ -227,15 +309,17 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
               ))}
             </div>
 
-            {/* Notifications button */}
-            <button
-              onClick={() => setActiveTab('notifications')}
-              className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 relative transition"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
-            </button>
+            {/* Notifications button (shown only if Notifications tab is permitted) */}
+            {isTabAllowed('notifications') && (
+              <button
+                onClick={() => handleTabClick('notifications')}
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 relative transition"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+              </button>
+            )}
 
             {/* Logout (Mobile) */}
             <button
@@ -261,7 +345,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           )}
 
           {activeTab === 'complaints' && (
-            <ComplaintCatalogue initialFilter={{ ward_number: userWardNum, ...(catalogueFilter || {}) }} />
+            <ComplaintCatalogue initialFilter={catalogueInitialFilter} />
           )}
 
           {activeTab === 'hotspots' && (
@@ -274,7 +358,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
           {activeTab === 'teams' && <TeamManagementView />}
 
-          {activeTab === 'activities' && <WardCommunityActivities />}
+          {activeTab === 'activities' && <WardCommunityActivities wardNumber={userWardNum} />}
 
           {activeTab === 'approvals' && <ApprovalManagementView wardNumber={userWardNum} />}
 
@@ -293,75 +377,43 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           {activeTab === 'settings' && <WardSettingsView />}
         </main>
 
-        {/* 4. Dedicated Mobile Bottom Navigation (Visible on < lg) */}
+        {/* 4. Dedicated Mobile Bottom Navigation (Visible on < lg, respects granted tabs) */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] py-1.5 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
           <div className="flex items-center justify-around max-w-lg mx-auto">
-            {/* 1. Overview */}
-            <button
-              onClick={() => handleTabClick('overview')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'overview' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <LayoutDashboard className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'overview' ? 'font-black' : 'font-semibold'}`}>
-                {t.wo_nav_overview}
-              </span>
-            </button>
+            {navItems.slice(0, 4).map(item => {
+              const Icon = item.icon;
+              const isAct = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleTabClick(item.id)}
+                  className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
+                    isAct ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className={`text-[10px] mt-0.5 truncate max-w-[68px] ${isAct ? 'font-black' : 'font-semibold'}`}>
+                    {item.label.replace(/^\d+\.\s*/, '')}
+                  </span>
+                </button>
+              );
+            })}
 
-            {/* 2. Complaints */}
-            <button
-              onClick={() => handleTabClick('complaints')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
-                activeTab === 'complaints' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <FileText className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'complaints' ? 'font-black' : 'font-semibold'}`}>
-                {t.wo_nav_complaints}
-              </span>
-            </button>
-
-            {/* 3. AI Analytics */}
-            <button
-              onClick={() => handleTabClick('ai_analytics')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'ai_analytics' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <BrainCircuit className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'ai_analytics' ? 'font-black' : 'font-semibold'}`}>
-                {t.wo_nav_ai_analytics || 'AI Analytics'}
-              </span>
-            </button>
-
-            {/* 4. Teams */}
-            <button
-              onClick={() => handleTabClick('teams')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'teams' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Users className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'teams' ? 'font-black' : 'font-semibold'}`}>
-                {t.wo_nav_teams}
-              </span>
-            </button>
-
-            {/* 5. More (Drawer Trigger) */}
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                !['overview', 'complaints', 'ai_analytics', 'teams'].includes(activeTab)
-                  ? 'text-[#095c54] font-black'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Menu className="w-5 h-5" />
-              <span className="text-[10px] mt-0.5 font-semibold">
-                {t.wo_nav_more}
-              </span>
-            </button>
+            {navItems.length > 4 && (
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
+                  !navItems.slice(0, 4).some(i => i.id === activeTab)
+                    ? 'text-[#095c54] font-black'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Menu className="w-5 h-5" />
+                <span className="text-[10px] mt-0.5 font-semibold">
+                  {t.wo_nav_more}
+                </span>
+              </button>
+            )}
           </div>
         </nav>
       </div>

@@ -53,11 +53,12 @@ export const WardManagement: React.FC<WardManagementProps> = ({ lang, onNavigate
   const filteredWards = wards.filter(w => {
     const query = searchQuery.toLowerCase();
     return (
-      w.ward_name.toLowerCase().includes(query) ||
-      w.ward_name_gu.toLowerCase().includes(query) ||
+      (w.ward_name || '').toLowerCase().includes(query) ||
+      (w.ward_name_gu || '').toLowerCase().includes(query) ||
       String(w.ward_number).includes(query) ||
-      w.ward_officer_name.toLowerCase().includes(query) ||
-      w.office_address.toLowerCase().includes(query)
+      (w.ward_officer_name || '').toLowerCase().includes(query) ||
+      (w.office_address || '').toLowerCase().includes(query) ||
+      (w.assigned_officers || []).some((o: any) => (o.name || '').toLowerCase().includes(query))
     );
   });
 
@@ -75,9 +76,6 @@ export const WardManagement: React.FC<WardManagementProps> = ({ lang, onNavigate
           <h2 className="text-xl font-black text-[#0f2925] tracking-tight">
             Navsari Municipal Corporation Ward Management
           </h2>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Complete information on ward administrative offices, allocated ward officers, field personnel, and cleanliness performance.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 w-full md:w-auto">
@@ -166,11 +164,27 @@ export const WardManagement: React.FC<WardManagementProps> = ({ lang, onNavigate
 
                     {/* Officer & Phone */}
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#0f2925]">{ward.ward_officer_name || 'Unassigned'}</div>
-                      <div className="text-[11px] text-[#095c54] font-bold flex items-center gap-1 mt-0.5">
-                        <Phone className="w-3 h-3 text-[#095c54]" />
-                        <span>{ward.contact_phone || 'N/A'}</span>
-                      </div>
+                      {Array.isArray(ward.assigned_officers) && ward.assigned_officers.length > 0 ? (
+                        <div className="space-y-1">
+                          {ward.assigned_officers.map((off: any, idx: number) => (
+                            <div key={off.id || idx}>
+                              <div className="font-bold text-[#0f2925]">{off.name}</div>
+                              <div className="text-[11px] text-[#095c54] font-bold flex items-center gap-1">
+                                <Phone className="w-3 h-3 text-[#095c54]" />
+                                <span>{off.phone || 'N/A'}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="font-bold text-[#0f2925]">{ward.ward_officer_name || 'Unassigned'}</div>
+                          <div className="text-[11px] text-[#095c54] font-bold flex items-center gap-1 mt-0.5">
+                            <Phone className="w-3 h-3 text-[#095c54]" />
+                            <span>{ward.contact_phone || 'N/A'}</span>
+                          </div>
+                        </>
+                      )}
                     </td>
 
                     {/* Active Complaints */}
@@ -190,7 +204,7 @@ export const WardManagement: React.FC<WardManagementProps> = ({ lang, onNavigate
                     <td className="py-3.5 px-4 text-center">
                       <span className="inline-flex items-center gap-1 font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-full text-[11px]">
                         <Users className="w-3 h-3 text-slate-500" />
-                        {ward.total_workers_count || 4}
+                        {ward.total_workers_count ?? 0}
                       </span>
                     </td>
 

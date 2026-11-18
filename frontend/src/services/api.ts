@@ -89,9 +89,18 @@ class ApiService {
     );
   }
 
+  async checkUsername(username: string, excludeUserId?: string) {
+    const qs = new URLSearchParams({ username: username.trim() });
+    if (excludeUserId) qs.set('exclude_user_id', excludeUserId);
+    return this.request<{ success: boolean; available: boolean; message?: string; error?: string }>(
+      `/auth/check-username?${qs.toString()}`
+    );
+  }
+
   async signupCompleteProfile(payload: {
     verification_token: string;
     full_name: string;
+    username?: string;
     password: string;
     confirm_password: string;
     preferred_language: string;
@@ -219,7 +228,14 @@ class ApiService {
     });
   }
 
-  async classifyImage(fileName: string, fileSize: number, description?: string, imageBase64?: string) {
+  async classifyImage(
+    fileName: string,
+    fileSize: number,
+    description?: string,
+    imageBase64?: string,
+    visualFeatures?: any,
+    source: 'live_camera' | 'upload' = 'upload'
+  ) {
     return this.request<{
       success: boolean;
       data: {
@@ -227,13 +243,24 @@ class ApiService {
         confidence: number;
         alternative_predictions: { category_name: string; confidence: number }[];
         matched_category_id?: string;
+        is_relevant?: boolean;
+        relevance_reason?: string;
+        matched_learned_sample?: boolean;
+        learned_samples_count?: number;
         model_name: string;
         model_version: string;
         processing_time_ms: number;
       };
     }>('/complaints/classify-image', {
       method: 'POST',
-      body: JSON.stringify({ file_name: fileName, file_size: fileSize, description, image_base64: imageBase64 })
+      body: JSON.stringify({
+        file_name: fileName,
+        file_size: fileSize,
+        description,
+        image_base64: imageBase64,
+        visual_features: visualFeatures,
+        source
+      })
     });
   }
 
@@ -362,6 +389,10 @@ class ApiService {
 
   async getDrives() {
     return this.request<{ success: boolean; data: CleanlinessDrive[] }>('/drives');
+  }
+
+  async getDriveQuestions(driveId: string) {
+    return this.request<{ success: boolean; data: any[]; total?: number }>(`/drives/${driveId}/questions`);
   }
 
   async registerForDrive(driveId: string) {
@@ -673,10 +704,32 @@ class ApiService {
     return this.request<{ success: boolean; data: ActivityEvidence[] }>(`/community/activities/${activityId}/evidence`);
   }
 
-  async uploadActivityEvidence(activityId: string, data: { image_url: string; stage: 'before' | 'during' | 'after'; caption?: string; file_size_bytes?: number }) {
+  async uploadActivityEvidence(
+    activityId: string,
+    data: {
+      image_url?: string;
+      storage_path?: string;
+      stage?: 'before' | 'during' | 'after';
+      evidence_type?: 'before' | 'during' | 'after';
+      caption?: string;
+      description?: string;
+      latitude?: number;
+      longitude?: number;
+      file_size_bytes?: number;
+      review_metadata?: Record<string, any>;
+    }
+  ) {
+    const stageVal = data.evidence_type || data.stage || 'before';
+    const pathVal = data.storage_path || data.image_url || '';
     return this.request<{ success: boolean; message: string; data: ActivityEvidence }>(`/community/activities/${activityId}/evidence`, {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify({
+        ...data,
+        stage: stageVal,
+        evidence_type: stageVal,
+        image_url: pathVal,
+        storage_path: pathVal
+      })
     });
   }
 
@@ -842,8 +895,9 @@ class ApiService {
   // =========================================================================
   // WARD OFFICER DASHBOARD (Navsari Municipal Corporation - Ward 3)
   // =========================================================================
-  async getWardDashboardSummary() {
-    return this.request<{ success: boolean; data: WardDashboardSummary }>('/ward/dashboard/summary');
+  async getWardDashboardSummary(wardNumber?: number) {
+    const qs = wardNumber ? `?ward_number=${encodeURIComponent(String(wardNumber))}` : '';
+    return this.request<{ success: boolean; data: WardDashboardSummary }>(`/ward/dashboard/summary${qs}`);
   }
 
   async getWardComplaints(params?: Record<string, any>) {
@@ -859,6 +913,12 @@ class ApiService {
 
   async getWardComplaintDetails(id: string) {
     return this.request<{ success: boolean; data: any }>(`/ward/complaints/${id}`);
+  }
+
+  async deleteWardComplaint(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/ward/complaints/${id}`, {
+      method: 'DELETE'
+    });
   }
 
   async reopenWardComplaint(id: string, data: {
@@ -912,6 +972,10 @@ class ApiService {
     after_photo_url: string;
     after_photos?: string[];
     waste_kg?: number;
+    completed_date?: string;
+    completed_time?: string;
+    location_name?: string;
+    team_name?: string;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/publish-community`, {
       method: 'POST',
@@ -928,8 +992,27 @@ class ApiService {
     return this.request<{ success: boolean; data: WardHotspot[]; meta: any }>(`/ward/hotspots${qStr}`);
   }
 
-  async getWardAssignments(filters?: any) {
+  async getWardAssignments(_filters?: any) {
     return this.request<{ success: boolean; data: any[] }>('/ward/assignments');
+  }
+
+  async createWardAssignment(data: {
+    title: string;
+    description?: string;
+    category?: string;
+    location_name?: string;
+    address?: string;
+    priority?: string;
+    team_id?: string;
+    worker_ids?: string[];
+    temporary_leader_id?: string;
+    work_instructions?: string;
+    deadline?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/ward/assignments', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   }
 
   async getWardWorkers(params?: { search?: string; availability?: string }) {
@@ -1008,8 +1091,9 @@ class ApiService {
     });
   }
 
-  async getWardCommunities() {
-    return this.request<{ success: boolean; data: any[] }>('/ward/communities');
+  async getWardCommunities(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/communities${q}`);
   }
 
   async addWardCommunity(data: {
@@ -1021,9 +1105,34 @@ class ApiService {
     password?: string;
     address?: string;
     locality?: string;
+    description?: string;
+    ward_number?: number;
     organisation_type?: string;
+    verification_document_url?: string;
+    verification_document_name?: string;
   }) {
     return this.request<{ success: boolean; message: string; data: any }>('/ward/communities', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async registerCommunity(data: {
+    community_name: string;
+    head_name: string;
+    phone: string;
+    email?: string;
+    username?: string;
+    password: string;
+    organisation_type?: string;
+    ward_number: number;
+    locality?: string;
+    address?: string;
+    description?: string;
+    verification_document_url: string;
+    verification_document_name?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/auth/register-community', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -1052,14 +1161,54 @@ class ApiService {
 
   async getWardApprovals(wardNumber?: number) {
     const q = wardNumber ? `?ward_number=${wardNumber}` : '';
-    return this.request<{ success: boolean; data: WardApprovalItem[] }>(`/ward/approvals${q}`);
+    return this.request<{ success: boolean; data: any[]; counts?: { community_registrations: number; cleanliness_drives: number } }>(`/ward/approvals${q}`);
   }
 
-  async reviewWardApproval(id: string, action: 'approve' | 'changes_requested' | 'reject', comments?: string) {
+  async reviewWardApproval(
+    id: string,
+    action: 'approve' | 'changes_requested' | 'reject',
+    comments?: string,
+    options?: { allow_multiple_orgs?: boolean; approval_type?: string }
+  ) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/approvals/${id}/review`, {
       method: 'POST',
-      body: JSON.stringify({ action, comments })
+      body: JSON.stringify({
+        action,
+        comments,
+        allow_multiple_orgs: options?.allow_multiple_orgs,
+        approval_type: options?.approval_type
+      })
     });
+  }
+
+  async getWardOrganizationDrives(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/organization-drives${q}`);
+  }
+
+  async completeOrganizationDrive(id: string, comments?: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/organization-drives/${id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ comments })
+    });
+  }
+
+  async issueDriveCertificates(id: string) {
+    return this.request<{ success: boolean; message: string; data: any[] }>(`/ward/organization-drives/${id}/certificates`, {
+      method: 'POST'
+    });
+  }
+
+  async getDriveCertificates(id: string) {
+    return this.request<{ success: boolean; data: any[] }>(`/ward/organization-drives/${id}/certificates`);
+  }
+
+  async getMyCertificates() {
+    return this.request<{ success: boolean; data: any[] }>('/certificates/my');
+  }
+
+  async verifyCertificate(code: string) {
+    return this.request<{ success: boolean; valid: boolean; data: any }>(`/certificates/verify/${encodeURIComponent(code)}`);
   }
 
   async getWardCleanlinessScore() {
@@ -1088,6 +1237,7 @@ class ApiService {
     suggested_equipment?: string[];
     image_url?: string;
     ward_number?: number;
+    allow_multiple_orgs?: boolean;
   }) {
     return this.request<{ success: boolean; message: string; data: CommunityProblem }>('/ward/community-problems', {
       method: 'POST',
@@ -1216,10 +1366,10 @@ class ApiService {
     })[] }>('/admin/wards');
   }
 
-  async updateWardBoundary(wardId: string, boundary_coordinates: [number, number][]) {
+  async updateWardBoundary(wardId: string, boundary_coordinates: [number, number][], location_summary?: string) {
     return this.request<{ success: boolean; message: string; data: any }>(`/admin/wards/${wardId}/boundary`, {
       method: 'PUT',
-      body: JSON.stringify({ boundary_coordinates })
+      body: JSON.stringify({ boundary_coordinates, location_summary })
     });
   }
 
@@ -1234,16 +1384,44 @@ class ApiService {
     }>('/admin/city-boundary');
   }
 
-  async updateCityBoundary(city_boundary: [number, number][]) {
+  async updateCityBoundary(city_boundary: [number, number][], location_summary?: string) {
     return this.request<{ success: boolean; message: string; data: any }>('/admin/city-boundary', {
       method: 'PUT',
-      body: JSON.stringify({ city_boundary })
+      body: JSON.stringify({ city_boundary, location_summary })
+    });
+  }
+
+  async getBoundaryHistory(type?: 'city' | 'ward', wardNumber?: number) {
+    const params = new URLSearchParams();
+    if (type) params.set('type', type);
+    if (wardNumber !== undefined) params.set('ward_number', String(wardNumber));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        boundary_type: 'city' | 'ward';
+        ward_id?: string | null;
+        ward_number?: number | null;
+        ward_name?: string | null;
+        coordinates: [number, number][];
+        location_summary?: string;
+        saved_by?: string;
+        created_at: string;
+      }>;
+    }>(`/admin/boundary-history${qs}`);
+  }
+
+  async restoreBoundaryHistory(id: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/admin/boundary-history/${id}/restore`, {
+      method: 'POST'
     });
   }
 
   async getWardOfficers() {
     return this.request<{ success: boolean; data: (import('../types/index.js').WardOfficerRecord & {
       flagged_count?: number;
+      allowed_tabs?: string[];
     })[] }>('/admin/ward-officers');
   }
 
@@ -1251,9 +1429,11 @@ class ApiService {
     full_name: string;
     phone: string;
     email?: string;
+    username?: string;
     password: string;
     designation?: string;
     assigned_wards: number[];
+    allowed_tabs?: string[];
   }) {
     return this.request<{ success: boolean; message: string; data: import('../types/index.js').WardOfficerRecord }>('/admin/ward-officers', {
       method: 'POST',
@@ -1265,9 +1445,11 @@ class ApiService {
     full_name?: string;
     phone?: string;
     email?: string;
+    username?: string;
     password?: string;
     designation?: string;
     assigned_wards?: number[];
+    allowed_tabs?: string[];
     is_active?: boolean;
   }) {
     return this.request<{ success: boolean; message: string; data: import('../types/index.js').WardOfficerRecord }>(`/admin/ward-officers/${id}`, {

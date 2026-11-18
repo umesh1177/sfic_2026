@@ -17,7 +17,9 @@ import {
   Navigation,
   AlertCircle,
   HelpCircle,
-  Share2
+  Share2,
+  MessageSquare,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { CleanlinessDrive } from '../types/index.js';
@@ -92,10 +94,32 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   const [selectedDrive, setSelectedDrive] = useState<CleanlinessDrive | null>(null);
   const [activeTab, setActiveTab] = useState<'info' | 'organizer' | 'attendance'>('info');
 
-  // Citizen Question state
+  // Citizen Question & Official Replies state
   const [citizenQuestion, setCitizenQuestion] = useState<string>('');
   const [askingQuestion, setAskingQuestion] = useState<boolean>(false);
   const [questionSentMessage, setQuestionSentMessage] = useState<string>('');
+  const [driveQuestions, setDriveQuestions] = useState<any[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState<boolean>(false);
+
+  const fetchDriveQuestions = async (driveId: string) => {
+    setLoadingQuestions(true);
+    try {
+      const res = await api.getDriveQuestions(driveId);
+      setDriveQuestions(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setDriveQuestions([]);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedDrive?.id) {
+      fetchDriveQuestions(selectedDrive.id);
+    } else {
+      setDriveQuestions([]);
+    }
+  }, [selectedDrive?.id]);
 
   // Attendance state
   const [verifyingAttendance, setVerifyingAttendance] = useState(false);
@@ -171,8 +195,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     setQuestionSentMessage('');
     try {
       await api.askActivityQuestion(selectedDrive.id, citizenQuestion.trim(), lang);
-      setQuestionSentMessage('Your question has been sent directly to the Community Head! You will receive a notification once answered.');
+      setQuestionSentMessage('Your question has been sent directly to the Community Head! Check below once they reply.');
       setCitizenQuestion('');
+      await fetchDriveQuestions(selectedDrive.id);
+      setTimeout(() => setQuestionSentMessage(''), 4000);
     } catch (err: any) {
       alert(`Error submitting question: ${err.message}`);
     } finally {
@@ -407,6 +433,20 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     Cancel
                   </button>
                 </div>
+              ) : (selectedDrive as any).registration_status === 'closed' ||
+                (selectedDrive as any).registration_status === 'not_open' ||
+                selectedDrive.status === 'completed' ||
+                (selectedDrive.max_volunteers > 0 && selectedDrive.registered_volunteers_count >= selectedDrive.max_volunteers) ? (
+                <div className="px-5 py-2.5 rounded-2xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-rose-500" />
+                  <span>
+                    {selectedDrive.status === 'completed'
+                      ? 'Drive Completed'
+                      : selectedDrive.registered_volunteers_count >= selectedDrive.max_volunteers
+                      ? `Registration Full (${selectedDrive.registered_volunteers_count}/${selectedDrive.max_volunteers})`
+                      : 'Registration Closed by Organizer'}
+                  </span>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -587,30 +627,122 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   </span>
                 </div>
 
-                {questionSentMessage ? (
+                {questionSentMessage && (
                   <div className="p-3.5 rounded-xl bg-emerald-100 text-emerald-900 text-xs font-bold flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
                     <span>{questionSentMessage}</span>
                   </div>
+                )}
+
+                <form onSubmit={handleAskQuestion} className="space-y-2.5">
+                  <input
+                    type="text"
+                    value={citizenQuestion}
+                    onChange={e => setCitizenQuestion(e.target.value)}
+                    placeholder="e.g. Will refreshments or certificate be provided? What is the meeting landmark?"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-teal-300 focus:border-[#095c54] text-xs bg-white text-slate-900 outline-none"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={askingQuestion || !citizenQuestion.trim()}
+                      className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-bold hover:bg-[#074741] transition disabled:opacity-50"
+                    >
+                      {askingQuestion ? 'Submitting Question...' : 'Submit Question'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Citizen Questions & Official Community Head Replies */}
+              <div className="pt-2 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-black text-[#0f2925] uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageSquare className="w-4 h-4 text-[#095c54]" />
+                    <span>Questions &amp; Official Organizer Replies ({driveQuestions.length})</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => fetchDriveQuestions(selectedDrive.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${loadingQuestions ? 'animate-spin text-[#095c54]' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {loadingQuestions ? (
+                  <div className="p-6 text-center rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-500 font-semibold">
+                    Loading questions &amp; replies...
+                  </div>
+                ) : driveQuestions.length === 0 ? (
+                  <div className="p-6 text-center rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-500">
+                    No questions asked yet for this drive. Have a doubt? Ask the Community Head above!
+                  </div>
                 ) : (
-                  <form onSubmit={handleAskQuestion} className="space-y-2.5">
-                    <input
-                      type="text"
-                      value={citizenQuestion}
-                      onChange={e => setCitizenQuestion(e.target.value)}
-                      placeholder="e.g. Will refreshments or certificate be provided? What is the meeting landmark?"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-teal-300 focus:border-[#095c54] text-xs bg-white text-slate-900 outline-none"
-                    />
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={askingQuestion || !citizenQuestion.trim()}
-                        className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-bold hover:bg-[#074741] transition disabled:opacity-50"
-                      >
-                        {askingQuestion ? 'Submitting Question...' : 'Submit Question'}
-                      </button>
-                    </div>
-                  </form>
+                  <div className="space-y-3">
+                    {driveQuestions.map((q: any) => {
+                      const replyText = q.response_text || q.response?.response_text;
+                      const replyAuthor = q.responder_name || q.response?.responder_name || 'Community Head';
+                      const replyTime = q.answered_at || q.response?.created_at;
+                      const isAnswered = q.status === 'answered' || Boolean(replyText);
+
+                      return (
+                        <div
+                          key={q.id}
+                          className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-black text-[#095c54]">
+                                  {q.citizen_name || 'Citizen Volunteer'}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {q.created_at ? new Date(q.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                                </span>
+                              </div>
+                              <p className="text-xs font-semibold text-slate-900 mt-1">
+                                Q: {q.question_text}
+                              </p>
+                            </div>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                                isAnswered
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              {isAnswered ? 'Answered' : 'Awaiting Reply'}
+                            </span>
+                          </div>
+
+                          {replyText ? (
+                            <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 space-y-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="text-[11px] font-black text-emerald-900 flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Official Reply · {replyAuthor}</span>
+                                </span>
+                                {replyTime && (
+                                  <span className="text-[10px] text-emerald-700 font-semibold">
+                                    {new Date(replyTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                                {replyText}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-500 italic">
+                              Sent to the Community Head — official answer will appear here shortly.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
@@ -780,9 +912,6 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           <h2 className="text-lg sm:text-xl font-extrabold text-[#095c54] mt-1">
             {t.nav_drives}
           </h2>
-          <p className="text-xs text-[#64748b]">
-            {t.drives_desc}
-          </p>
         </div>
 
         {/* Search Input */}

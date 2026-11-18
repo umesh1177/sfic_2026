@@ -154,15 +154,18 @@ export const WorkerManagementView: React.FC = () => {
         availability_status: availabilityStatus
       });
 
-      setActionSuccess(res.message || 'Worker added successfully to Ward 3.');
+      setActionSuccess(res.message || 'Worker added successfully.');
       setShowAddModal(false);
       setFullName('');
       setPhone('');
       setUsername('');
       setPassword('Worker@123');
       setSelectedSkills(['Litter Abatement', 'Bin Clearance']);
+      setSearch('');
+      setAvailabilityFilter('all');
+      setPage(1);
       await fetchWorkers();
-      setTimeout(() => setActionSuccess(''), 4000);
+      setTimeout(() => setActionSuccess(''), 6000);
     } catch (err: any) {
       setActionError(err.message || 'Failed to add worker');
     } finally {
@@ -194,9 +197,6 @@ export const WorkerManagementView: React.FC = () => {
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
             Worker Management Directory
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Sanitation Personnel Assigned to Ward 3 · Total Staff: <strong>{workers.length}</strong>
-          </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">

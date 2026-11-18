@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, AlertCircle, XCircle } from 'lucide-react';
+import { Check, Clock, XCircle, RotateCcw } from 'lucide-react';
 
 export interface StatusProgressionStepperProps {
   status: string;
@@ -14,33 +14,38 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
   compact = false,
   className = ''
 }) => {
-  const isRejected = status === 'rejected';
+  const normRaw = (status || 'submitted').toLowerCase().trim();
+  const isRejected = normRaw === 'rejected';
+  const isReopened = normRaw === 'reopened';
+  const isResolved = normRaw === 'resolved' || normRaw === 'verified_complete' || normRaw === 'closed';
 
-  // Standard 5 unified steps
+  // Unified 6-step lifecycle shared across Citizen, Worker, and Ward Officer views
   const steps = [
     { key: 'submitted', label: 'Submitted', desc: 'Logged by Citizen' },
-    { key: 'under_review', label: 'Under Review', desc: 'Ward Officer Review' },
+    { key: 'under_review', label: 'Under Review', desc: 'Officer Triage' },
     { key: 'assigned', label: 'Team Assigned', desc: 'Squad Dispatched' },
-    { key: 'in_progress', label: 'In Progress', desc: 'Field Work & Evidence' },
+    { key: 'in_progress', label: 'In Progress', desc: 'Field Work Active' },
+    { key: 'awaiting_verification', label: 'Verification', desc: 'Evidence Uploaded' },
     { key: 'resolved', label: 'Resolved', desc: 'Verified Complete' }
   ];
 
-  // Helper to determine step status
-  const getStepState = (stepKey: string) => {
-    if (isRejected) {
-      if (stepKey === 'submitted') return 'completed';
-      if (stepKey === 'under_review') return 'rejected';
-      return 'future';
-    }
+  const order = steps.map(s => s.key);
 
-    const order = ['submitted', 'under_review', 'assigned', 'in_progress', 'resolved'];
-    let currentNorm = status;
-    if (status === 'awaiting_verification' || status === 'evidence_submitted') currentNorm = 'in_progress';
-    if (status === 'verified_complete' || status === 'closed') currentNorm = 'resolved';
+  let currentNorm = normRaw;
+  if (normRaw === 'evidence_submitted' || normRaw === 'completion_submitted') {
+    currentNorm = 'awaiting_verification';
+  } else if (isResolved) {
+    currentNorm = 'resolved';
+  } else if (isReopened) {
+    currentNorm = 'assigned';
+  } else if (!order.includes(currentNorm)) {
+    currentNorm = 'submitted';
+  }
 
-    const currentIndex = order.indexOf(currentNorm);
-    const stepIndex = order.indexOf(stepKey);
+  const currentIndex = order.indexOf(currentNorm);
 
+  const getStepState = (stepIndex: number) => {
+    if (isResolved) return 'completed';
     if (stepIndex < currentIndex) return 'completed';
     if (stepIndex === currentIndex) return 'current';
     return 'future';
@@ -49,10 +54,10 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
   if (isRejected) {
     return (
       <div className={`space-y-2 ${className}`}>
-        <div className="flex items-center gap-2 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-900">
+        <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-900">
           <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
           <div>
-            <span className="font-extrabold block">Complaint Rejected by Ward Officer</span>
+            <span className="font-bold block">Complaint Rejected by Ward Officer</span>
             {rejectionReason && (
               <p className="text-[11px] text-rose-700 mt-0.5 font-medium leading-relaxed">
                 Reason: "{rejectionReason}"
@@ -65,21 +70,28 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
   }
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className={`space-y-2.5 ${className}`}>
+      {isReopened && (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800">
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Complaint Reopened — Re-dispatched for Follow-up Cleanup</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-1 sm:gap-2 relative">
         {steps.map((step, idx) => {
-          const state = getStepState(step.key);
+          const state = getStepState(idx);
           const isLast = idx === steps.length - 1;
 
           return (
             <React.Fragment key={step.key}>
               <div className="flex flex-col items-center flex-1 text-center min-w-0">
                 <div
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-black text-xs transition duration-200 shrink-0 ${
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-xs transition duration-200 shrink-0 ${
                     state === 'completed'
-                      ? 'bg-[#095c54] text-white shadow-xs'
+                      ? 'bg-[#095c54] text-white shadow-2xs'
                       : state === 'current'
-                      ? 'bg-amber-500 text-white shadow-md ring-4 ring-amber-100 animate-pulse'
+                      ? 'bg-amber-500 text-white shadow-sm ring-4 ring-amber-100'
                       : 'bg-slate-100 text-slate-400 border border-slate-200'
                   }`}
                 >
@@ -92,9 +104,9 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
                   )}
                 </div>
 
-                <div className="mt-1.5 leading-tight min-w-0">
+                <div className="mt-1.5 leading-tight min-w-0 w-full">
                   <span
-                    className={`block font-extrabold text-[10px] sm:text-[11px] truncate ${
+                    className={`block font-bold text-[10px] sm:text-[11px] truncate ${
                       state === 'completed'
                         ? 'text-[#095c54]'
                         : state === 'current'
@@ -105,7 +117,7 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
                     {step.label}
                   </span>
                   {!compact && (
-                    <span className="hidden sm:block text-[9px] text-slate-400 truncate">
+                    <span className="hidden md:block text-[9px] text-slate-400 truncate mt-0.5">
                       {step.desc}
                     </span>
                   )}
@@ -115,7 +127,7 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
               {!isLast && (
                 <div
                   className={`h-0.5 flex-1 mb-5 transition-colors ${
-                    state === 'completed' ? 'bg-[#095c54]' : 'bg-slate-200'
+                    state === 'completed' && (isResolved || idx < currentIndex) ? 'bg-[#095c54]' : 'bg-slate-200'
                   }`}
                 />
               )}
@@ -126,4 +138,3 @@ export const StatusProgressionStepper: React.FC<StatusProgressionStepperProps> =
     </div>
   );
 };
-

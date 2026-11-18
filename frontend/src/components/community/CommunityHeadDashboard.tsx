@@ -42,6 +42,9 @@ import { CommunityAnalytics } from './CommunityAnalytics.js';
 import { CommunityNotifications } from './CommunityNotifications.js';
 import { CommunitySettings } from './CommunitySettings.js';
 import { RewardsRecognition } from '../RewardsRecognition.js';
+import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
+import { LocationMonitor } from '../common/LocationMonitor.js';
+import { OfflineSyncBanner } from '../common/OfflineSyncBanner.js';
 
 const buildDynamicInitialSummary = (user: Profile): CommunityDashboardSummary => ({
   community: {
@@ -113,8 +116,24 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [openCreateWizardDirectly, setOpenCreateWizardDirectly] = useState<boolean>(false);
   const [linkedProblemForDrive, setLinkedProblemForDrive] = useState<CommunityProblem | null>(null);
+  const [myCertificates, setMyCertificates] = useState<DriveCertificateData[]>([]);
+  const [loadingCerts, setLoadingCerts] = useState<boolean>(false);
 
   const t = translations[lang];
+
+  const loadCertificates = async () => {
+    try {
+      setLoadingCerts(true);
+      const res = await api.getMyCertificates();
+      if (res.success && Array.isArray(res.data)) {
+        setMyCertificates(res.data);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingCerts(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -128,12 +147,10 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
       } else if (!dashboardSummary) {
         setDashboardSummary(buildDynamicInitialSummary(user));
       }
-      if (actRes.data && actRes.data.length > 0) {
+      if (Array.isArray(actRes.data)) {
         setActivities(actRes.data);
-        if (!selectedActivityId) {
-          setSelectedActivityId(actRes.data[0].id);
-        }
       }
+      loadCertificates();
     } catch (err) {
       console.error('Failed to load Community Head data:', err);
     } finally {
@@ -145,11 +162,23 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'activities' || activeTab === 'certificates') {
+      loadData();
+    }
+  }, [activeTab]);
+
   const navItems: { id: string; label: string; icon: any; badge?: number }[] = [
     { id: 'overview', label: t.ch_nav_overview, icon: LayoutDashboard },
     { id: 'activities', label: t.ch_nav_activities, icon: Calendar },
     { id: 'ward_problems', label: t.ch_nav_ward_problems, icon: HeartHandshake },
-    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Award },
+    {
+      id: 'certificates',
+      label: lang === 'gu' ? 'પ્રમાણપત્રો' : lang === 'hi' ? 'प्रमाणपत्र' : 'Certificates',
+      icon: Award,
+      badge: myCertificates.length > 0 ? myCertificates.length : undefined
+    },
+    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Sparkles },
     { id: 'community', label: t.ch_nav_community, icon: Building2 },
     { id: 'analytics', label: t.ch_nav_analytics, icon: TrendingUp },
     { id: 'notifications', label: t.ch_nav_notifications, icon: Bell },
@@ -189,7 +218,13 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  if (item.id === 'activities') {
+                    setSelectedActivityId(null);
+                    setOpenCreateWizardDirectly(false);
+                  }
+                  setActiveTab(item.id);
+                }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition duration-150 ${
                   isActive
                     ? 'bg-[#095c54] text-white shadow-sm'
@@ -279,6 +314,10 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
                   <button
                     key={item.id}
                     onClick={() => {
+                      if (item.id === 'activities') {
+                        setSelectedActivityId(null);
+                        setOpenCreateWizardDirectly(false);
+                      }
                       setActiveTab(item.id);
                       setMobileDrawerOpen(false);
                     }}
@@ -407,6 +446,10 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
           </div>
         </header>
 
+        {/* Continuous Location Monitoring & Offline Evidence Auto-Sync */}
+        <LocationMonitor roleLabel="Community Head" />
+        <OfflineSyncBanner onSynced={loadData} />
+
         {/* TAB CONTENT CONTAINER (Padded pb-24 for mobile bottom bar) */}
         <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 lg:pb-8">
           {/* Tab 1: Overview */}
@@ -441,6 +484,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               initialOpenCreateWizard={openCreateWizardDirectly}
               initialLinkedProblem={linkedProblemForDrive}
               selectedActivityId={selectedActivityId || undefined}
+              onClearSelectedActivity={() => setSelectedActivityId(null)}
               initialSubTab={
                 activeTab === 'questions'
                   ? 'questions'
@@ -462,6 +506,47 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
                 setOpenCreateWizardDirectly(true);
               }}
             />
+          )}
+
+          {/* Tab: Certificates (QR-Verified NMC Drive Certificates) */}
+          {activeTab === 'certificates' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-gradient-to-r from-[#095c54] to-[#0f766e] rounded-3xl p-6 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight">
+                    Organization &amp; Leadership Certificates
+                  </h1>
+                </div>
+                <button
+                  onClick={loadCertificates}
+                  className="px-4 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-extrabold transition shrink-0"
+                >
+                  Refresh Certificates ({myCertificates.length})
+                </button>
+              </div>
+
+              {loadingCerts ? (
+                <div className="bg-white rounded-3xl p-12 border border-[#e2e8f0] text-center text-xs font-bold text-slate-500">
+                  Loading issued certificates...
+                </div>
+              ) : myCertificates.length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 border border-[#e2e8f0] text-center space-y-3">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#095c54]">
+                    <Award className="w-7 h-7" />
+                  </div>
+                  <h3 className="text-base font-extrabold text-[#095c54]">No Certificates Issued Yet</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Complete an approved cleanliness drive and submit your Before/During/After evidence. Once the Ward Officer verifies completion and issues certificates, your official QR-verified certificates will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {myCertificates.map(cert => (
+                    <CertificateCard key={cert.id || cert.certificate_code} certificate={cert} />
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Tab: Posts & Cleanliness Spotlights */}

@@ -47,21 +47,56 @@ export class DrivesController {
 
   /**
    * POST /api/drives/:id/register
-   * Prevents duplicate registration
+   * Prevents duplicate registration and enforces max volunteer capacity
    */
   public static async registerForDrive(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
       const { id } = req.params;
-      await DbRepository.registerForDrive(id, citizenId);
+      const result = await DbRepository.registerForDrive(id, citizenId, {
+        fullName: req.user?.full_name,
+        phone: req.user?.phone,
+        email: req.user?.email
+      });
+
+      if (!result.success) {
+        res.status(400).json({
+          success: false,
+          error: result.error || 'Unable to register for this cleanliness drive.'
+        });
+        return;
+      }
 
       res.status(200).json({
         success: true,
-        message: 'Successfully registered for this cleanliness drive and recorded in database!',
+        message: result.autoClosed
+          ? 'Successfully registered! Volunteer capacity is now full and registrations have automatically closed.'
+          : 'Successfully registered for this cleanliness drive and recorded in database!',
         data: {
           drive_id: id,
-          is_registered: true
+          is_registered: true,
+          registered_volunteers_count: result.registeredCount,
+          max_volunteers: result.maxVolunteers,
+          registration_status: result.autoClosed ? 'closed' : 'open'
         }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/drives/:id/questions
+   * Returns all citizen questions and official Community Head replies for a drive
+   */
+  public static async getDriveQuestions(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const result = await DbRepository.getActivityQuestions('', { activityId: id, limit: 100 });
+      res.status(200).json({
+        success: true,
+        data: result.questions,
+        total: result.total
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

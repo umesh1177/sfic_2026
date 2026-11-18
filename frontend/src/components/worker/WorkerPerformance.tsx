@@ -39,11 +39,8 @@ export const WorkerPerformance: React.FC<WorkerPerformanceProps> = ({
         <div>
           <h2 className="text-lg sm:text-xl font-black text-[#0f2925] flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-[#095c54]" />
-            <span>Field Performance & Municipal Recognition</span>
+            <span>Field Performance &amp; Municipal Recognition</span>
           </h2>
-          <p className="text-xs text-[#64748b] mt-0.5 font-medium">
-            Navsari Municipal Corporation · Objective Metrics Based on GPS Attendance & Verification Audits
-          </p>
         </div>
 
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0] rounded-2xl text-xs font-black shrink-0">

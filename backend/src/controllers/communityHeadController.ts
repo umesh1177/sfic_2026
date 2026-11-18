@@ -232,6 +232,19 @@ export class CommunityHeadController {
       const { id } = req.params;
       const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
 
+      const existing = await DbRepository.getActivityById(id);
+      if (existing) {
+        const maxCap = existing.maximum_participants || 50;
+        const currentCount = existing.registered_count || 0;
+        if (currentCount >= maxCap) {
+          res.status(400).json({
+            success: false,
+            error: `Drive is already at maximum capacity (${currentCount}/${maxCap}). Increase the Max Volunteer Limit first before reopening registrations.`
+          });
+          return;
+        }
+      }
+
       const activity = await DbRepository.changeActivityStatus(
         id,
         { registration_status: 'open', publication_status: 'published' },
@@ -413,7 +426,8 @@ export class CommunityHeadController {
         act.community_id,
         citizenId,
         question_text,
-        language || 'en'
+        language || 'en',
+        { fullName: req.user?.full_name, phone: req.user?.phone }
       );
 
       // 2. Trigger AI answer suggestion generation using approved event context
@@ -624,27 +638,41 @@ export class CommunityHeadController {
   public static async uploadEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params; // activity_id
-      const { evidence_type, storage_path, caption, description, latitude, longitude, image_hash } = req.body;
+      const {
+        evidence_type,
+        stage,
+        storage_path,
+        image_url,
+        caption,
+        description,
+        latitude,
+        longitude,
+        image_hash,
+        review_metadata
+      } = req.body;
       const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
+      const resolvedStage = (evidence_type || stage) as 'before' | 'during' | 'after';
+      const resolvedPath = storage_path || image_url;
 
-      if (!storage_path || !caption || !evidence_type) {
-        res.status(400).json({ success: false, error: 'Evidence type, photograph, and caption are required' });
+      if (!resolvedPath || !resolvedStage) {
+        res.status(400).json({ success: false, error: 'Evidence stage (before/during/after) and photograph are required' });
         return;
       }
 
       const ev = await DbRepository.createActivityEvidence({
         activity_id: id,
         uploaded_by: userId,
-        evidence_type,
-        storage_path,
-        caption,
-        description,
+        evidence_type: resolvedStage,
+        storage_path: resolvedPath,
+        caption: caption?.trim() || `${String(resolvedStage).toUpperCase()} Stage Evidence`,
+        description: description || caption,
         latitude,
         longitude,
-        image_hash
+        image_hash,
+        review_metadata: review_metadata || {}
       });
 
-      res.status(201).json({ success: true, data: ev, message: 'Evidence photograph recorded' });
+      res.status(201).json({ success: true, data: ev, message: 'Evidence photograph and details recorded' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -760,8 +788,13 @@ export class CommunityHeadController {
       // If ward_number is specified (and not 'all'), filter by ward; otherwise return ALL problems across all wards
       const wardQuery = req.query.ward_number as string | undefined;
       const wardNum = wardQuery && wardQuery !== 'all' ? parseInt(wardQuery, 10) : undefined;
-      const problems = await DbRepository.getCommunityProblems(wardNum);
-      res.status(200).json({ success: true, data: problems });
+      const allProblems = await DbRepository.getCommunityProblems(wardNum);
+      // Exclude problems already solved/completed and verified by the Ward Officer
+      const activeProblems = allProblems.filter(p => {
+        const st = String(p.status || 'open').toLowerCase();
+        return st !== 'completed' && st !== 'resolved';
+      });
+      res.status(200).json({ success: true, data: activeProblems });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

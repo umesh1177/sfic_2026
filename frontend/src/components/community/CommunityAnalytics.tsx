@@ -63,11 +63,8 @@ export const CommunityAnalytics: React.FC<CommunityAnalyticsProps> = ({ summary 
     <div className="space-y-6">
       <div>
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-          Community Reports & AI Analytics
+          Community Reports &amp; AI Analytics
         </h1>
-        <p className="text-xs text-slate-500 font-medium">
-          Comprehensive civic impact metrics, volunteer turnout forecasts, and data-driven recommendations for Navsari.
-        </p>
       </div>
 
       {/* AI INTELLIGENCE & FORECASTING CARD */}

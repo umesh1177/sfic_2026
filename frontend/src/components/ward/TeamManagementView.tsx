@@ -168,23 +168,32 @@ export const TeamManagementView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
-            Team Management & Temporary Leadership
+            Team Management &amp; Temporary Leadership
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Form Field Units · Select Temporary Team Leaders for Complaint Assignments
-          </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {/* Create New Team Button at top as specifically requested by user */}
           <button
-            onClick={() => {
-              if (workers.length > 0) {
-                setSelectedWorkerIds([workers[0].id]);
-                setTemporaryLeaderId(workers[0].id);
-                setNewTeamName(`Sanitation Squad ${teams.length + 1}`);
-              }
+            onClick={async () => {
+              setActionError('');
               setShowCreateTeamModal(true);
+              try {
+                const res = await api.getWardWorkers();
+                const freshWorkers = res.data || [];
+                setWorkers(freshWorkers);
+                if (freshWorkers.length > 0) {
+                  setSelectedWorkerIds([freshWorkers[0].id]);
+                  setTemporaryLeaderId(freshWorkers[0].id);
+                }
+                setNewTeamName(`Sanitation Squad ${teams.length + 1}`);
+              } catch {
+                if (workers.length > 0) {
+                  setSelectedWorkerIds([workers[0].id]);
+                  setTemporaryLeaderId(workers[0].id);
+                  setNewTeamName(`Sanitation Squad ${teams.length + 1}`);
+                }
+              }
             }}
             className="px-4 py-2 rounded-xl bg-[#095c54] text-white hover:bg-emerald-800 text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
           >

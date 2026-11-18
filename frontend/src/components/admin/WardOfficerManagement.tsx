@@ -25,6 +25,23 @@ interface WardOfficerManagementProps {
   lang: Language;
 }
 
+const WARD_OFFICER_NAV_TABS: Array<{ id: string; label: string; group: string }> = [
+  { id: 'overview', label: '1. Ward Overview', group: 'Core' },
+  { id: 'complaints', label: '2. Complaint Catalogue', group: 'Operations' },
+  { id: 'hotspots', label: '3. Hotspots Map', group: 'Operations' },
+  { id: 'workers', label: '4. Worker Management', group: 'Workforce' },
+  { id: 'teams', label: '5. Team Management', group: 'Workforce' },
+  { id: 'activities', label: '6. Organization Drives', group: 'Community' },
+  { id: 'approvals', label: '7. Approval Management', group: 'Community' },
+  { id: 'posts', label: '8. Community & Citizen Posts', group: 'Community' },
+  { id: 'community_problems', label: '9. Add Problem for Community', group: 'Community' },
+  { id: 'ai_analytics', label: '10. AI Analytics', group: 'Insights' },
+  { id: 'notifications', label: '11. Notifications', group: 'Account' },
+  { id: 'settings', label: '12. Settings', group: 'Account' }
+];
+
+const ALL_TAB_IDS = WARD_OFFICER_NAV_TABS.map(t => t.id);
+
 export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ lang }) => {
   const [officers, setOfficers] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -48,6 +65,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
   const [editEmail, setEditEmail] = useState<string>('');
   const [editDesignation, setEditDesignation] = useState<string>('');
   const [editAssignedWards, setEditAssignedWards] = useState<number[]>([]);
+  const [editAllowedTabs, setEditAllowedTabs] = useState<string[]>([...ALL_TAB_IDS]);
   const [editIsActive, setEditIsActive] = useState<boolean>(true);
   const [editPassword, setEditPassword] = useState<string>('');
   const [showEditPassword, setShowEditPassword] = useState<boolean>(false);
@@ -61,6 +79,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
   const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
   const [newDesignation, setNewDesignation] = useState<string>('Ward Officer');
   const [newAssignedWards, setNewAssignedWards] = useState<number[]>([1]);
+  const [newAllowedTabs, setNewAllowedTabs] = useState<string[]>([...ALL_TAB_IDS]);
   const [savingNew, setSavingNew] = useState<boolean>(false);
 
   const fetchOfficers = async () => {
@@ -104,10 +123,28 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
     setEditEmail(officer.email || '');
     setEditDesignation(officer.designation || 'Ward Officer');
     setEditAssignedWards(officer.assigned_wards || [1]);
+    setEditAllowedTabs(
+      Array.isArray(officer.allowed_tabs) && officer.allowed_tabs.length > 0
+        ? officer.allowed_tabs
+        : [...ALL_TAB_IDS]
+    );
     setEditIsActive(officer.is_active !== false);
     setEditPassword('');
     setShowEditPassword(false);
     setEditModalOpen(true);
+  };
+
+  const toggleTabSelection = (
+    tabId: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    setter(prev => {
+      if (prev.includes(tabId)) {
+        if (prev.length === 1) return prev; // Keep at least 1 tab selected
+        return prev.filter(t => t !== tabId);
+      }
+      return [...prev, tabId];
+    });
   };
 
   const handleToggleWardInEdit = (wardNum: number) => {
@@ -145,6 +182,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
         email: editEmail,
         designation: editDesignation,
         assigned_wards: editAssignedWards,
+        allowed_tabs: editAllowedTabs,
         is_active: editIsActive
       };
       if (editPassword.trim()) {
@@ -181,7 +219,8 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
         email: newEmail,
         password: newPassword,
         designation: newDesignation,
-        assigned_wards: newAssignedWards
+        assigned_wards: newAssignedWards,
+        allowed_tabs: newAllowedTabs
       };
 
       const res = await api.createWardOfficer(payload);
@@ -195,6 +234,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
         setNewEmail('');
         setNewPassword('');
         setNewAssignedWards([1]);
+        setNewAllowedTabs([...ALL_TAB_IDS]);
         fetchOfficers();
       }
     } catch (err: any) {
@@ -217,9 +257,6 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
           <h2 className="text-xl font-black text-[#0f2925] tracking-tight">
             Ward Officer Management
           </h2>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Allocate single or multiple wards per officer, oversee SLA approval performance, and edit credentials.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 w-full md:w-auto">
@@ -322,9 +359,9 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                       </div>
                     </td>
 
-                    {/* Assigned Wards (Multi-ward chips) */}
+                    {/* Assigned Wards (Multi-ward chips) & Dashboard Tab Access */}
                     <td className="py-3.5 px-4">
-                      <div className="flex flex-wrap gap-1.5 max-w-[200px]">
+                      <div className="flex flex-wrap gap-1.5 max-w-[220px]">
                         {officer.assigned_wards?.map((wNum: number) => (
                           <span
                             key={wNum}
@@ -334,6 +371,27 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                           </span>
                         ))}
                       </div>
+                      {(() => {
+                        const tabs: string[] =
+                          Array.isArray(officer.allowed_tabs) && officer.allowed_tabs.length > 0
+                            ? officer.allowed_tabs
+                            : ALL_TAB_IDS;
+                        const isFull = tabs.length >= ALL_TAB_IDS.length;
+                        return (
+                          <div className="mt-1.5">
+                            <span
+                              title={tabs.map(id => WARD_OFFICER_NAV_TABS.find(t => t.id === id)?.label || id).join(', ')}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                                isFull
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              }`}
+                            >
+                              {isFull ? 'Full Access (All 12 Tabs)' : `Custom Access (${tabs.length}/${ALL_TAB_IDS.length} Tabs)`}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Cleanliness Score */}
@@ -530,6 +588,57 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                 </div>
               </div>
 
+              {/* Granular Main Navigation Tabs Access Control */}
+              <div className="space-y-2 pt-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-black text-[#0f2925] block">
+                      Dashboard Main Navigation Tabs Access
+                    </label>
+                    <span className="text-[11px] font-bold text-[#095c54]">
+                      {editAllowedTabs.length === ALL_TAB_IDS.length
+                        ? 'Full Access (All 12 Tabs Enabled)'
+                        : `${editAllowedTabs.length} of ${ALL_TAB_IDS.length} Tabs Enabled`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditAllowedTabs([...ALL_TAB_IDS])}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition border ${
+                      editAllowedTabs.length === ALL_TAB_IDS.length
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                    }`}
+                  >
+                    Give Full Access
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                  {WARD_OFFICER_NAV_TABS.map(tab => {
+                    const checked = editAllowedTabs.includes(tab.id);
+                    return (
+                      <label
+                        key={tab.id}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition select-none ${
+                          checked
+                            ? 'bg-white border-[#095c54] text-[#0f2925] shadow-2xs'
+                            : 'bg-slate-50/70 border-slate-200 text-slate-500 hover:bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTabSelection(tab.id, setEditAllowedTabs)}
+                          className="rounded text-[#095c54] focus:ring-[#095c54]"
+                        />
+                        <span className="truncate">{tab.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Password update field */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -708,6 +817,57 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                       >
                         Ward {wNum}
                       </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Granular Main Navigation Tabs Access Control */}
+              <div className="space-y-2 pt-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-black text-[#0f2925] block">
+                      Dashboard Main Navigation Tabs Access
+                    </label>
+                    <span className="text-[11px] font-bold text-[#095c54]">
+                      {newAllowedTabs.length === ALL_TAB_IDS.length
+                        ? 'Full Access (All 12 Tabs Enabled)'
+                        : `${newAllowedTabs.length} of ${ALL_TAB_IDS.length} Tabs Enabled`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNewAllowedTabs([...ALL_TAB_IDS])}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition border ${
+                      newAllowedTabs.length === ALL_TAB_IDS.length
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                    }`}
+                  >
+                    Give Full Access
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                  {WARD_OFFICER_NAV_TABS.map(tab => {
+                    const checked = newAllowedTabs.includes(tab.id);
+                    return (
+                      <label
+                        key={tab.id}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition select-none ${
+                          checked
+                            ? 'bg-white border-[#095c54] text-[#0f2925] shadow-2xs'
+                            : 'bg-slate-50/70 border-slate-200 text-slate-500 hover:bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTabSelection(tab.id, setNewAllowedTabs)}
+                          className="rounded text-[#095c54] focus:ring-[#095c54]"
+                        />
+                        <span className="truncate">{tab.label}</span>
+                      </label>
                     );
                   })}
                 </div>

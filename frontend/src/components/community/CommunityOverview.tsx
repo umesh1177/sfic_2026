@@ -103,9 +103,6 @@ export const CommunityOverview: React.FC<CommunityOverviewProps> = ({
           <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
             {comm.community_name}
           </h1>
-          <p className="text-xs text-[#64748b] mt-0.5">
-            {comm.organisation_type} · Ward {comm.ward_number || 3} ({comm.ward_name || 'Ward 3 - Dudhiya Talao & Ashapuri'}) · NMC Action Command
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

@@ -70,11 +70,8 @@ export const WorkerNotifications: React.FC<WorkerNotificationsProps> = ({
         <div>
           <h2 className="text-xl font-black text-[#0f2925] flex items-center gap-2">
             <Bell className="w-5 h-5 text-[#095c54]" />
-            <span>Worker Field Notifications & Duty Alerts</span>
+            <span>Worker Field Notifications &amp; Duty Alerts</span>
           </h2>
-          <p className="text-xs text-[#64748b] mt-1">
-            Real-time assignment updates, shift schedules, and safety instructions from Ward Operations Command.
-          </p>
         </div>
 
         <div className="flex gap-1.5 flex-wrap items-center">

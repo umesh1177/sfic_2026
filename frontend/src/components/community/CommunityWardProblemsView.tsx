@@ -39,7 +39,11 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
       const targetWard = wardFilter === 'all' ? undefined : parseInt(wardFilter, 10);
       const res = await api.getCommunityWardProblems(targetWard);
       if (res.success && res.data) {
-        setProblems(res.data);
+        const activeOnly = res.data.filter((p: any) => {
+          const st = String(p.status || 'open').toLowerCase();
+          return st !== 'completed' && st !== 'resolved';
+        });
+        setProblems(activeOnly);
       }
     } catch (err: any) {
       console.error('Failed to load ward problems for community:', err);
@@ -73,17 +77,9 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
       {/* 1. Clean Header (Removed bulky banner box) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e2e8f0] pb-5">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
-            <HeartHandshake className="w-3.5 h-3.5 text-emerald-600" />
-            Civic Partnership · Ward {community?.ward_number || 3}
-          </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0f2925] tracking-tight">
             Ward Problems for Community Action
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl font-medium">
-            These civic issues have been flagged by Municipal Ward Officers specifically for community-led volunteer intervention.
-            Review the problem, inspect the officer's recommended action plan, and adopt the issue to organize a citizen cleanliness drive.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto shrink-0">
@@ -95,7 +91,7 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
               className="bg-white text-slate-800 font-bold text-xs rounded-lg px-2 py-1 outline-none border border-slate-200"
             >
               <option value="all">All Wards (Entire Navsari)</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(w => (
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(w => (
                 <option key={w} value={String(w)}>Ward {w}</option>
               ))}
             </select>
@@ -237,15 +233,30 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
                 </div>
 
                 {/* Footer Action Button */}
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500 font-semibold">
-                    Posted by: {prob.officer_name || 'Ward Officer'}
-                  </span>
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] text-slate-500 font-semibold">
+                      Posted by: {prob.officer_name || 'Ward Officer'}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      (prob as any).allow_multiple_orgs === false
+                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    }`}>
+                      {(prob as any).allow_multiple_orgs === false ? 'Single Org Exclusive' : 'Multi-Org Open'}
+                    </span>
+                  </div>
 
-                  {prob.status && prob.status !== 'open' ? (
+                  {prob.status === 'resolved' || (prob.status && prob.status !== 'open' && (prob as any).allow_multiple_orgs === false) ? (
                     <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-200 text-slate-700 text-xs font-black">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>{prob.claimed_by_community_name ? `Claimed by ${prob.claimed_by_community_name}` : 'Drive Claimed / In Progress'}</span>
+                      <span>
+                        {prob.status === 'resolved'
+                          ? 'Problem Resolved'
+                          : prob.claimed_by_community_name
+                          ? `Exclusive to ${prob.claimed_by_community_name}`
+                          : 'Assigned Exclusively'}
+                      </span>
                     </div>
                   ) : (
                     <button

@@ -22,7 +22,8 @@ import {
   Eye,
   Camera,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
@@ -55,6 +56,18 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
 
   const t = translations[lang];
 
+  const handleSelectComplaint = async (c: Complaint) => {
+    setSelectedComplaint(c);
+    try {
+      const detailRes = await api.getComplaintById(c.id);
+      if (detailRes?.data) {
+        setSelectedComplaint(detailRes.data);
+      }
+    } catch {
+      // keep list version if detail fetch fails
+    }
+  };
+
   const fetchComplaints = async () => {
     setLoading(true);
     try {
@@ -64,8 +77,13 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
       });
       setComplaints(res.data || []);
       if (selectedComplaint) {
-        const updated = (res.data || []).find((c: Complaint) => c.id === selectedComplaint.id);
-        if (updated) setSelectedComplaint(updated);
+        const detailRes = await api.getComplaintById(selectedComplaint.id).catch(() => null);
+        if (detailRes?.data) {
+          setSelectedComplaint(detailRes.data);
+        } else {
+          const updated = (res.data || []).find((c: Complaint) => c.id === selectedComplaint.id);
+          if (updated) setSelectedComplaint(updated);
+        }
       }
     } catch (err) {
       console.error('Error fetching complaints:', err);
@@ -156,6 +174,8 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
       in_progress: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-800', dot: 'bg-blue-600 animate-pulse', label: t.tab_in_progress },
       awaiting_verification: { bg: 'bg-purple-50 border-purple-200', text: 'text-purple-800', dot: 'bg-purple-600 animate-pulse', label: t.tab_awaiting_verification },
       resolved: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800', dot: 'bg-emerald-500', label: t.tab_resolved },
+      verified_complete: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800', dot: 'bg-emerald-500', label: t.tab_resolved },
+      closed: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800', dot: 'bg-emerald-500', label: t.tab_resolved },
       rejected: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-800', dot: 'bg-rose-500', label: t.tab_rejected },
       reopened: { bg: 'bg-orange-50 border-orange-200', text: 'text-orange-800', dot: 'bg-orange-500 animate-pulse', label: t.tab_reopened }
     };
@@ -173,7 +193,10 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
   // FULL PAGE VIEW: COMPLAINT DETAILS & RESOLUTION TIMELINE
   // =========================================================================
   if (selectedComplaint) {
-    const isResolved = selectedComplaint.status === 'resolved';
+    const isResolved =
+      selectedComplaint.status === 'resolved' ||
+      (selectedComplaint.status as string) === 'verified_complete' ||
+      (selectedComplaint.status as string) === 'closed';
 
     return (
       <div className="space-y-6 animate-fadeIn pb-16">
@@ -207,7 +230,15 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
             </div>
           </div>
 
-          <div className="self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => handleSelectComplaint(selectedComplaint)}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+              title="Refresh live status"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
             {getStatusBadge(selectedComplaint.status)}
           </div>
         </div>
@@ -573,7 +604,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
         {/* Actions Bar (Reopen or Delete) */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {(selectedComplaint.status === 'resolved' || selectedComplaint.status === 'rejected') && (
+            {(isResolved || selectedComplaint.status === 'rejected') && (
               <button
                 type="button"
                 onClick={() => setIsReopening(true)}
@@ -656,18 +687,25 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
             <FileText className="w-5 h-5 text-[#10b981]" />
             <span>{t.nav_complaints}</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Track and monitor the real-time resolution of your municipal cleanliness complaints.
-          </p>
         </div>
 
-        <button
-          onClick={onOpenReport}
-          className="btn-primary-custom px-5 py-2.5 text-xs font-black shadow-md shadow-[#095c54]/20 touch-press w-full sm:w-auto justify-center flex items-center gap-2"
-        >
-          <Camera className="w-4 h-4" />
-          <span>{t.action_report}</span>
-        </button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={fetchComplaints}
+            className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0"
+            title="Refresh complaints"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={onOpenReport}
+            className="btn-primary-custom px-5 py-2.5 text-xs font-black shadow-md shadow-[#095c54]/20 touch-press flex-1 sm:flex-none justify-center flex items-center gap-2"
+          >
+            <Camera className="w-4 h-4" />
+            <span>{t.action_report}</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter Tabs & Search */}
@@ -737,7 +775,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
           {complaints.map(c => (
             <div
               key={c.id}
-              onClick={() => setSelectedComplaint(c)}
+              onClick={() => handleSelectComplaint(c)}
               className="rounded-3xl border border-slate-200/90 bg-white shadow-xs hover:shadow-lg hover:border-[#095c54]/50 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden group"
             >
               <div>
@@ -791,7 +829,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
-                    setSelectedComplaint(c);
+                    handleSelectComplaint(c);
                   }}
                   className="w-full py-2.5 rounded-2xl bg-slate-50 hover:bg-[#e6f4f1] text-[#095c54] border border-slate-200 group-hover:border-[#095c54]/30 text-xs font-black transition flex items-center justify-center gap-1.5"
                 >

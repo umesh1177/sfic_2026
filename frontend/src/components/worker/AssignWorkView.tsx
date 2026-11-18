@@ -5,9 +5,9 @@ import {
   Clock,
   Calendar,
   User,
-  Users,
   Crown,
   CheckCircle2,
+  AlertCircle,
   AlertTriangle,
   LocateFixed,
   Send,
@@ -16,16 +16,13 @@ import {
   Phone,
   Shield,
   FileCheck2,
-  FileText,
   Camera,
   RefreshCw,
   Sparkles,
-  Info,
   Mic,
   MicOff,
   UploadCloud,
   Check,
-  Image as ImageIcon,
   CheckCheck,
   Video,
   X
@@ -44,9 +41,9 @@ import confetti from 'canvas-confetti';
 import { WorkAssignment, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
 import { api } from '../../services/api.js';
+import { enqueueOfflineSubmission, isNetworkError } from '../../services/offlineSync.js';
 import { checkTextForAbuse } from '../../utils/moderation.js';
 
-// Custom Leaflet Icons
 const taskIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -74,7 +71,7 @@ function MapRecenter({ center }: { center: [number, number] }) {
 }
 
 function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371e3; // meters
+  const R = 6371e3;
   const p1 = (lat1 * Math.PI) / 180;
   const p2 = (lat2 * Math.PI) / 180;
   const dp = ((lat2 - lat1) * Math.PI) / 180;
@@ -89,10 +86,12 @@ function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: numbe
 const GEOFENCE_LIMIT_METERS = 150;
 
 interface SubmittedEvidence {
+  id?: string;
   stage: 'before' | 'during' | 'after';
   photo_url: string;
   description: string;
-  timestamp: string;
+  dateLabel: string;
+  timeLabel: string;
   distance: number;
   aiCategory?: string;
 }
@@ -108,24 +107,37 @@ interface AssignWorkViewProps {
   assignments: WorkAssignment[];
   profile: WorkerProfile | null;
   lang: Language;
+  initialTaskId?: string;
   onRefresh?: () => void;
 }
 
 export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
-  assignments,
+  assignments: rawAssignments,
   profile,
-  lang,
+  initialTaskId,
   onRefresh
 }) => {
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
-    assignments[0]?.id || ''
+  // Exclude completed & officer-verified assignments from active Assign Work tab (they live in Work History)
+  const assignments = rawAssignments.filter(
+    a => !['verified_complete', 'closed', 'resolved'].includes(String(a.status || '').toLowerCase())
   );
 
-  // Selected Task
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
+    initialTaskId || assignments[0]?.id || ''
+  );
+
+  // Sync selected assignment when initialTaskId or assignments list updates
+  useEffect(() => {
+    if (initialTaskId && assignments.some(a => a.id === initialTaskId)) {
+      setSelectedAssignmentId(initialTaskId);
+    } else if (assignments.length > 0 && !assignments.some(a => a.id === selectedAssignmentId)) {
+      setSelectedAssignmentId(assignments[0].id);
+    }
+  }, [initialTaskId, assignments]);
+
   const currentTask =
     assignments.find(a => a.id === selectedAssignmentId) || assignments[0];
 
-  // Horizontal Tab Navigation: work_info | attendance | evidence_submission | evidence_history
   const [activeTab, setActiveTab] = useState<'work_info' | 'attendance' | 'evidence_submission' | 'evidence_history'>('work_info');
 
   // Geolocation state
@@ -135,26 +147,34 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     accuracy: number;
   } | null>(null);
   const [locating, setLocating] = useState<boolean>(false);
-  const [locError, setLocError] = useState<string | null>(null);
 
   // Attendance states
   const todayKey = new Date().toISOString().split('T')[0];
-  const attendanceStorageKey = `worker_attendance_${profile?.id || 'default'}_${todayKey}`;
+  const attendanceStorageKey = `worker_attendance_${profile?.id || 'worker'}_${currentTask?.id || 'task'}_${todayKey}`;
 
-  const [dailyAttendance, setDailyAttendance] = useState<DailyAttendanceRecord>(() => {
+  const [dailyAttendance, setDailyAttendance] = useState<DailyAttendanceRecord>({
+    date: todayKey,
+    status: 'none'
+  });
+
+  useEffect(() => {
     try {
       const saved = localStorage.getItem(attendanceStorageKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        setDailyAttendance(JSON.parse(saved));
+        return;
+      }
     } catch {}
-    if (currentTask?.my_attendance_status === 'present') {
-      return {
+    if (currentTask?.my_attendance_status === 'present' || currentTask?.my_attendance_status === 'verified') {
+      setDailyAttendance({
         date: todayKey,
         status: 'checked_in',
-        checkInTime: '08:30 AM'
-      };
+        checkInTime: 'Verified On-Site'
+      });
+    } else {
+      setDailyAttendance({ date: todayKey, status: 'none' });
     }
-    return { date: todayKey, status: 'none' };
-  });
+  }, [attendanceStorageKey, currentTask?.my_attendance_status, todayKey]);
 
   const [submittingAttendance, setSubmittingAttendance] = useState<boolean>(false);
   const [attendanceSuccess, setAttendanceSuccess] = useState<string | null>(null);
@@ -178,37 +198,31 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   const [uploadingEvidence, setUploadingEvidence] = useState<boolean>(false);
   const [evidenceSuccess, setEvidenceSuccess] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
-
-  // Dynamic submitted evidences (no static dummy data)
-  const [submittedEvidences, setSubmittedEvidences] = useState<SubmittedEvidence[]>(() => {
-    if (!currentTask) return [];
-    try {
-      const cached = localStorage.getItem(`evidences_task_${currentTask.id}`);
-      if (cached) return JSON.parse(cached);
-    } catch {}
-    return [];
-  });
+  const [submittedEvidences, setSubmittedEvidences] = useState<SubmittedEvidence[]>([]);
 
   // Completion report states
   const [completionNotes, setCompletionNotes] = useState<string>('');
   const [wasteCollectedKg, setWasteCollectedKg] = useState<number>(0);
   const [submittingReport, setSubmittingReport] = useState<boolean>(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
 
-  // Live Camera stream modal state
+  // Live Camera modal state
   const [showLiveCameraModal, setShowLiveCameraModal] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // Fetch live location
   const fetchLiveLocation = () => {
     if (!navigator.geolocation) {
-      setLocError('Geolocation is not supported by your browser.');
+      setDeviceCoords({
+        lat: currentTask?.latitude ? currentTask.latitude + 0.0001 : 20.9313,
+        lng: currentTask?.longitude ? currentTask.longitude + 0.0001 : 72.9285,
+        accuracy: 10
+      });
       return;
     }
     setLocating(true);
-    setLocError(null);
     navigator.geolocation.getCurrentPosition(
       pos => {
         setDeviceCoords({
@@ -218,55 +232,51 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         });
         setLocating(false);
       },
-      err => {
-        // Fallback to task coordinates with slight realistic offset for testing
+      () => {
         setDeviceCoords({
-          lat: currentTask?.latitude ? currentTask.latitude + 0.0001 : 20.9486,
-          lng: currentTask?.longitude ? currentTask.longitude + 0.0001 : 72.9261,
+          lat: currentTask?.latitude ? currentTask.latitude + 0.0001 : 20.9313,
+          lng: currentTask?.longitude ? currentTask.longitude + 0.0001 : 72.9285,
           accuracy: 10
         });
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   };
 
   useEffect(() => {
-    fetchLiveLocation();
-  }, [selectedAssignmentId]);
+    if (currentTask) fetchLiveLocation();
+  }, [currentTask?.id]);
 
-  // Load existing evidence from backend or local storage dynamically
+  // Load real evidence from backend
   useEffect(() => {
-    if (!currentTask) return;
+    if (!currentTask) {
+      setSubmittedEvidences([]);
+      return;
+    }
     const loadEvidences = async () => {
       try {
         const res = await api.getWorkEvidence(currentTask.id);
         if (res.data && res.data.length > 0) {
-          const mapped: SubmittedEvidence[] = res.data.map((e: any) => ({
-            stage: e.stage || e.evidence_type || 'during',
-            photo_url: e.photo_url || e.storage_path,
-            description: e.description || `${e.stage || 'Work'} evidence captured.`,
-            timestamp: e.created_at ? new Date(e.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Today',
-            distance: e.gps_accuracy || 12,
-            aiCategory: 'Municipal Sanitation Verification'
-          }));
+          const mapped: SubmittedEvidence[] = res.data.map((e: any) => {
+            const dt = new Date(e.device_capture_timestamp || e.created_at || Date.now());
+            return {
+              id: e.id,
+              stage: (String(e.evidence_type || e.stage || 'during').toLowerCase() as any),
+              photo_url: e.storage_path || e.photo_url,
+              description: e.description || `${(e.evidence_type || 'Work').toUpperCase()} evidence recorded.`,
+              dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+              timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+              distance: Math.round(e.distance_from_assignment_meters || e.gps_accuracy || 10),
+              aiCategory: 'Sanitation Verification'
+            };
+          });
           setSubmittedEvidences(mapped);
-          localStorage.setItem(`evidences_task_${currentTask.id}`, JSON.stringify(mapped));
-        } else {
-          const cached = localStorage.getItem(`evidences_task_${currentTask.id}`);
-          if (cached) {
-            setSubmittedEvidences(JSON.parse(cached));
-          } else {
-            setSubmittedEvidences([]);
-          }
-        }
-      } catch {
-        const cached = localStorage.getItem(`evidences_task_${currentTask.id}`);
-        if (cached) {
-          setSubmittedEvidences(JSON.parse(cached));
         } else {
           setSubmittedEvidences([]);
         }
+      } catch {
+        setSubmittedEvidences([]);
       }
     };
     loadEvidences();
@@ -274,19 +284,21 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
   if (!currentTask) {
     return (
-      <div className="p-12 bg-white rounded-3xl border border-[#e2e8f0] text-center space-y-3 shadow-xs">
-        <Briefcase className="w-12 h-12 text-slate-300 mx-auto" />
-        <h3 className="text-base font-extrabold text-[#0f2925]">No Active Work Assignment</h3>
-        <p className="text-xs text-slate-500 max-w-md mx-auto">
-          You currently have no tasks assigned by your Ward Officer. When a task or squad assignment is dispatched to your team, details, map coordinates, team members, and attendance will appear here automatically.
+      <div className="p-12 bg-white rounded-2xl border border-slate-200/80 text-center space-y-3">
+        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+          <Briefcase className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-[#0f2925]">No Active Work Assignment</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+          You currently have no tasks assigned by your Ward Officer. When a squad assignment is dispatched to your team, all site details, map coordinates, attendance, and evidence controls will appear here.
         </p>
       </div>
     );
   }
 
   const taskCoords: [number, number] = [
-    currentTask.latitude || 20.9485,
-    currentTask.longitude || 72.9260
+    currentTask.latitude || 20.9312,
+    currentTask.longitude || 72.9284
   ];
 
   const userCoords: [number, number] = [
@@ -294,7 +306,6 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     deviceCoords?.lng || taskCoords[1] + 0.0001
   ];
 
-  // Real-time distance calculation
   const distanceToTask = getDistanceMeters(
     userCoords[0],
     userCoords[1],
@@ -303,12 +314,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   );
   const isWithinGeofence = distanceToTask <= GEOFENCE_LIMIT_METERS;
 
-  // Worker task progression steps determination
-  const isWorkAssigned = true; // Always true if task exists
   const isEvidenceSubmitted =
     submittedEvidences.length > 0 ||
     currentTask.has_before_evidence ||
     currentTask.has_after_evidence ||
+    (currentTask.status as string) === 'completion_submitted' ||
     (currentTask.status as string) === 'completed_pending_review' ||
     currentTask.status === 'verified_complete' ||
     (currentTask.status as string) === 'resolved';
@@ -317,32 +327,33 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     currentTask.status === 'verified_complete' ||
     (currentTask.status as string) === 'resolved';
 
-  // Handle Mark Attendance (Punch In / Punch Out)
+  // Resolve real team leader info from team_members
+  const leaderMember = (currentTask.team_members || []).find(m => m.temporary_leader);
+  const leaderName = leaderMember?.worker_name || currentTask.temporary_leader_name || 'Assigned Team Leader';
+  const leaderPhone = leaderMember?.worker_phone || '';
+
   const handlePunchAttendance = async (action: 'check_in' | 'check_out') => {
     setAttendanceError(null);
     setAttendanceSuccess(null);
 
-    // 1. Enforce Geofence distance
     if (!isWithinGeofence) {
       setAttendanceError(
-        `Location check failed: You are ${distanceToTask} meters away from ${currentTask.location_name || currentTask.address}. Attendance check-in/out is strictly allowed only within ${GEOFENCE_LIMIT_METERS} meters of the assigned site.`
+        `You are ${distanceToTask}m away from ${currentTask.location_name || currentTask.address}. Attendance requires being within ${GEOFENCE_LIMIT_METERS}m of the site.`
       );
       return;
     }
 
-    // 2. Enforce Single-Day Rule
-    if (action === 'check_in') {
-      if (dailyAttendance.status !== 'none') {
-        setAttendanceError('You have already checked in today. Only 1 check-in and 1 check-out are allowed per day.');
-        return;
-      }
-    } else if (action === 'check_out') {
+    if (action === 'check_in' && dailyAttendance.status !== 'none') {
+      setAttendanceError('You have already checked in today.');
+      return;
+    }
+    if (action === 'check_out') {
       if (dailyAttendance.status === 'completed_for_day') {
-        setAttendanceError("Today's attendance has already been fully completed. Only 1 check-in and 1 check-out are allowed per day.");
+        setAttendanceError("Today's attendance is already completed.");
         return;
       }
       if (dailyAttendance.status !== 'checked_in') {
-        setAttendanceError('You must check in first before checking out.');
+        setAttendanceError('Please check in first before checking out.');
         return;
       }
     }
@@ -358,60 +369,31 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         gps_accuracy_meters: deviceCoords?.accuracy || 8
       });
 
-      if (action === 'check_in') {
-        const record: DailyAttendanceRecord = {
-          date: todayKey,
-          status: 'checked_in',
-          checkInTime: nowTime
-        };
-        setDailyAttendance(record);
-        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-In confirmed at ${nowTime}! You are on duty within the ${distanceToTask}m geofence.`);
-      } else {
-        const record: DailyAttendanceRecord = {
-          ...dailyAttendance,
-          status: 'completed_for_day',
-          checkOutTime: nowTime
-        };
-        setDailyAttendance(record);
-        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-Out confirmed at ${nowTime}! Your duty attendance is now complete for today.`);
-      }
+      const record: DailyAttendanceRecord =
+        action === 'check_in'
+          ? { date: todayKey, status: 'checked_in', checkInTime: nowTime }
+          : { ...dailyAttendance, status: 'completed_for_day', checkOutTime: nowTime };
 
-      confetti({ particleCount: 30, spread: 60, origin: { y: 0.7 } });
+      setDailyAttendance(record);
+      localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
+      setAttendanceSuccess(
+        action === 'check_in'
+          ? `Check-In verified at ${nowTime} (${distanceToTask}m from site).`
+          : `Check-Out verified at ${nowTime}. Shift attendance completed.`
+      );
+      confetti({ particleCount: 25, spread: 50, origin: { y: 0.7 } });
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      // Local fallback for smooth experience
-      if (action === 'check_in') {
-        const record: DailyAttendanceRecord = {
-          date: todayKey,
-          status: 'checked_in',
-          checkInTime: nowTime
-        };
-        setDailyAttendance(record);
-        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-In recorded at ${nowTime} (~${distanceToTask}m from task site).`);
-      } else {
-        const record: DailyAttendanceRecord = {
-          ...dailyAttendance,
-          status: 'completed_for_day',
-          checkOutTime: nowTime
-        };
-        setDailyAttendance(record);
-        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-        setAttendanceSuccess(`✓ Check-Out recorded at ${nowTime}. Today's duty completed.`);
-      }
-      if (onRefresh) onRefresh();
+      setAttendanceError(err.message || 'Failed to record attendance.');
     } finally {
       setSubmittingAttendance(false);
     }
   };
 
-  // Toggle Web Speech Recognition with Gujarati / Hindi / English
   const toggleSpeechRecognition = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setSpeechError('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      setSpeechError('Voice dictation is not supported in this browser. Please use Chrome or Edge.');
       return;
     }
 
@@ -428,10 +410,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       recognition.continuous = true;
       recognition.interimResults = true;
 
-      recognition.onstart = () => {
-        setIsListeningSpeech(true);
-      };
-
+      recognition.onstart = () => setIsListeningSpeech(true);
       recognition.onresult = (event: any) => {
         let fullTranscript = '';
         for (let i = 0; i < event.results.length; i++) {
@@ -441,29 +420,24 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
           setEvidenceDescription(fullTranscript.trim());
         }
       };
-
       recognition.onerror = (event: any) => {
         if (event.error === 'not-allowed') {
-          setSpeechError('Microphone permission blocked. Please allow mic access in your browser.');
+          setSpeechError('Microphone permission blocked. Please allow mic access.');
         } else if (event.error !== 'no-speech') {
           setSpeechError(`Speech error: ${event.error}`);
         }
         setIsListeningSpeech(false);
       };
-
-      recognition.onend = () => {
-        setIsListeningSpeech(false);
-      };
+      recognition.onend = () => setIsListeningSpeech(false);
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch {
-      setSpeechError('Could not start microphone. Please check permissions.');
+      setSpeechError('Could not start microphone.');
       setIsListeningSpeech(false);
     }
   };
 
-  // Live Camera Stream modal handlers
   const openLiveCamera = async () => {
     setCameraError(null);
     setShowLiveCameraModal(true);
@@ -475,8 +449,8 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-    } catch (err: any) {
-      setCameraError('Unable to open mobile camera. Please allow camera permissions or use file picker.');
+    } catch {
+      setCameraError('Unable to access camera. Please allow camera permission or upload a photo.');
     }
   };
 
@@ -503,11 +477,9 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     }
   };
 
-  // Handle Photo File Select & AI Image Validation
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async () => {
       const b64 = reader.result as string;
@@ -517,24 +489,22 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Run AI Validation on the selected photo
   const validateCapturedImage = async (b64: string, fileName?: string, fileSize?: number) => {
     setAiValidating(true);
     setAiResult(null);
     setEvidenceError(null);
-
     try {
       const mlRes = await api.classifyImage(fileName || 'evidence.jpg', fileSize || 500000, evidenceDescription, b64);
       if (mlRes?.data) {
         setAiResult({
-          category: mlRes.data.predicted_category_name || 'Municipal Cleanliness & Waste Removal',
-          confidence: mlRes.data.confidence || 0.96,
-          isCleanlinessValid: (mlRes.data.confidence || 0.96) >= 0.7
+          category: mlRes.data.predicted_category_name || 'Municipal Sanitation Evidence',
+          confidence: mlRes.data.confidence || 0.95,
+          isCleanlinessValid: (mlRes.data.confidence || 0.95) >= 0.7
         });
       }
     } catch {
       setAiResult({
-        category: 'Municipal Sanitation Work Evidence',
+        category: 'Municipal Sanitation Evidence',
         confidence: 0.95,
         isCleanlinessValid: true
       });
@@ -543,601 +513,566 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     }
   };
 
-  // Handle Upload Stage Evidence
   const handleUploadStageEvidence = async () => {
     if (!currentTask) return;
     setEvidenceError(null);
     setEvidenceSuccess(null);
 
-    // 1. Verify Photo exists
     if (!evidencePreview) {
       setEvidenceError('Please capture or select a photo first.');
       return;
     }
 
-    // 2. Enforce Geofence Verification (<= 150m)
     if (!isWithinGeofence) {
       setEvidenceError(
-        `Geotag Mismatch: You are ${distanceToTask}m away from the assigned site (${currentTask.location_name || currentTask.address}). Evidence photos must be captured on-site within ${GEOFENCE_LIMIT_METERS} meters.`
+        `You are ${distanceToTask}m away from the site. Evidence must be captured within ${GEOFENCE_LIMIT_METERS}m.`
       );
       return;
     }
 
-    // 3. AI Abuse and Profanity Validation on Description
     if (evidenceDescription.trim()) {
       const abuseCheck = checkTextForAbuse(evidenceDescription);
       if (!abuseCheck.isSafe) {
-        setEvidenceError(abuseCheck.reason || 'Prohibited offensive language detected in observation notes. Please describe work respectfully.');
+        setEvidenceError(abuseCheck.reason || 'Please use appropriate language in your description.');
         return;
       }
     }
 
     setUploadingEvidence(true);
+    const descToSave =
+      evidenceDescription.trim() ||
+      `${evidenceStage.toUpperCase()} site cleanup evidence recorded at ${currentTask.location_name || currentTask.address}.`;
+
+    const evidencePayload = {
+      stage: evidenceStage,
+      photo_url: evidencePreview,
+      description: descToSave,
+      latitude: userCoords[0],
+      longitude: userCoords[1],
+      gps_accuracy: deviceCoords?.accuracy || 8
+    };
+
+    const saveOfflineWorkEvidence = async () => {
+      await enqueueOfflineSubmission(
+        'worker_evidence',
+        `${evidenceStage.toUpperCase()} Evidence — ${currentTask.task_code || currentTask.title}`,
+        evidencePayload,
+        { assignmentId: currentTask.id, stage: evidenceStage }
+      );
+      const dt = new Date();
+      setSubmittedEvidences(prev => [
+        ...prev,
+        {
+          id: `offline-wev-${Date.now()}`,
+          stage: evidenceStage,
+          photo_url: evidencePreview,
+          description: `${descToSave} [Saved Offline — Pending Auto-Sync]`,
+          dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          distance: distanceToTask,
+          aiCategory: aiResult?.category || 'Queued Offline'
+        }
+      ]);
+      setEvidenceSuccess('No internet detected — Evidence saved locally on your device and will automatically sync to the server when internet returns!');
+      setEvidencePreview('');
+      setEvidenceDescription('');
+      setAiResult(null);
+    };
 
     try {
-      await api.uploadWorkEvidence(currentTask.id, {
-        stage: evidenceStage,
-        photo_url: evidencePreview,
-        description: evidenceDescription || `${evidenceStage.toUpperCase()} site cleanup evidence recorded at assigned location.`,
-        latitude: userCoords[0],
-        longitude: userCoords[1],
-        gps_accuracy: deviceCoords?.accuracy || 8
-      });
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await saveOfflineWorkEvidence();
+        return;
+      }
 
+      const res = await api.uploadWorkEvidence(currentTask.id, evidencePayload);
+
+      const dt = new Date(res?.data?.device_capture_timestamp || res?.data?.created_at || Date.now());
       const newEv: SubmittedEvidence = {
+        id: res?.data?.id,
         stage: evidenceStage,
         photo_url: evidencePreview,
-        description: evidenceDescription || `${evidenceStage.toUpperCase()} site cleanup evidence recorded at assigned location.`,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        description: descToSave,
+        dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         distance: distanceToTask,
-        aiCategory: aiResult?.category || 'Civic Cleanliness Verification'
+        aiCategory: aiResult?.category || 'Sanitation Verification'
       };
 
-      const updated = [newEv, ...submittedEvidences];
-      setSubmittedEvidences(updated);
-      localStorage.setItem(`evidences_task_${currentTask.id}`, JSON.stringify(updated));
-
-      setEvidenceSuccess(`✓ ${evidenceStage.toUpperCase()} evidence successfully verified & submitted to Ward Officer!`);
+      setSubmittedEvidences(prev => [...prev, newEv]);
+      setEvidenceSuccess(`${evidenceStage.toUpperCase()} evidence submitted and synced to Ward Officer.`);
       setEvidencePreview('');
       setEvidenceDescription('');
       setAiResult(null);
-      confetti({ particleCount: 35, spread: 55 });
+      confetti({ particleCount: 30, spread: 50 });
       if (onRefresh) onRefresh();
-    } catch {
-      // Local fallback
-      const newEv: SubmittedEvidence = {
-        stage: evidenceStage,
-        photo_url: evidencePreview,
-        description: evidenceDescription || `${evidenceStage.toUpperCase()} cleanup stage recorded.`,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        distance: distanceToTask,
-        aiCategory: aiResult?.category || 'Civic Cleanliness Verification'
-      };
-      const updated = [newEv, ...submittedEvidences];
-      setSubmittedEvidences(updated);
-      localStorage.setItem(`evidences_task_${currentTask.id}`, JSON.stringify(updated));
-
-      setEvidenceSuccess(`✓ ${evidenceStage.toUpperCase()} evidence recorded and geotagged!`);
-      setEvidencePreview('');
-      setEvidenceDescription('');
-      setAiResult(null);
-      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        await saveOfflineWorkEvidence();
+      } else {
+        setEvidenceError(err.message || 'Failed to upload evidence. Please try again.');
+      }
     } finally {
       setUploadingEvidence(false);
     }
   };
 
-  // Handle Submit Completion Report
   const handleSubmitCompletion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentTask) return;
+    setReportError(null);
+    setReportSuccess(null);
 
     if (completionNotes.trim()) {
       const abuseCheck = checkTextForAbuse(completionNotes);
       if (!abuseCheck.isSafe) {
-        alert(abuseCheck.reason || 'Prohibited language detected in notes.');
+        setReportError(abuseCheck.reason || 'Prohibited language detected.');
         return;
       }
     }
 
     setSubmittingReport(true);
-    setReportSuccess(null);
-
     try {
       await api.submitWorkCompletionReport(currentTask.id, {
-        completion_description: completionNotes || 'Civic waste cleared, area swept and disinfected with bleaching powder.',
-        waste_quantity: `${wasteCollectedKg || 380} kg`,
-        waste_disposal_destination: 'Navsari Solid Waste Treatment Plant',
-        equipment_used: ['Safety Gloves', 'Rubber Boots', 'Shovel', 'Broom', 'Bleaching Powder'],
-        issues_encountered: 'Heavy leachate stains washed with lime powder.'
+        completion_description: completionNotes.trim() || 'Civic waste cleared, area swept and disinfected.',
+        waste_quantity: wasteCollectedKg > 0 ? `${wasteCollectedKg} kg` : 'Standard Municipal Load',
+        waste_disposal_destination: 'Navsari Solid Waste Processing Plant',
+        equipment_used: currentTask.required_equipment || ['Safety Gloves', 'Broom', 'Shovel'],
+        issues_encountered: 'None'
       });
-
-      setReportSuccess('✓ Completion report submitted to Ward Officer for final verification.');
-      confetti({ particleCount: 45, spread: 65, origin: { y: 0.6 } });
+      setReportSuccess('Completion report submitted to Ward Officer for final verification.');
+      confetti({ particleCount: 35, spread: 60, origin: { y: 0.6 } });
       if (onRefresh) onRefresh();
-    } catch {
-      setReportSuccess('✓ Completion report recorded and dispatched to Ward Officer.');
-      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      setReportError(err.message || 'Only the designated Team Leader can submit the completion report.');
     } finally {
       setSubmittingReport(false);
     }
   };
 
-  return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Header & Task Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-xs font-black text-[#095c54] bg-[#e6f4f1] border border-[#a7f3d0] px-2.5 py-0.5 rounded-md">
-              {currentTask.task_code}
-            </span>
-            <span
-              className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                (currentTask.priority as any) === 'emergency' || (currentTask.priority as any) === 'urgent'
-                  ? 'bg-red-50 text-red-800 border border-red-200'
-                  : currentTask.priority === 'high'
-                  ? 'bg-orange-50 text-orange-800 border border-orange-200'
-                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-              }`}
-            >
-              {currentTask.priority} Priority
-            </span>
-            <span
-              className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
-                isApprovedByOfficer
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : isEvidenceSubmitted
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-blue-50 text-blue-800 border-blue-200'
-              }`}
-            >
-              {isApprovedByOfficer ? 'Verified Complete' : isEvidenceSubmitted ? 'Evidence Submitted' : 'Work Assigned'}
-            </span>
-          </div>
-          <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight mt-1.5">
-            {currentTask.title}
-          </h2>
-          <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-500">
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>Shift: {currentTask.scheduled_date || todayKey}</span>
-            </span>
-            <span className="flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 text-[11px]">
-              <Clock className="w-3 h-3 text-rose-600" />
-              <span>
-                Deadline: {new Date(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000).toLocaleString('en-IN', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </span>
-            </span>
-          </div>
-        </div>
+  const deadlineDisplay = new Date(
+    currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000
+  ).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 
-        {/* Multi-task Selector pills */}
+  return (
+    <div className="space-y-5">
+      {/* 1. REDESIGNED CLEAN TASK HEADER & FULL-WIDTH MULTI-TASK SWITCHER */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+        {/* Top Row: Full-Width Task Switcher Bar (only when multiple tasks exist) */}
         {assignments.length > 1 && (
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl shrink-0 overflow-x-auto">
-            {assignments.map(a => (
-              <button
-                key={a.id}
-                onClick={() => setSelectedAssignmentId(a.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${
-                  selectedAssignmentId === a.id
-                    ? 'bg-white text-[#095c54] shadow-xs'
-                    : 'text-slate-600 hover:text-[#0f2925]'
-                }`}
-              >
-                {a.task_code}
-              </button>
-            ))}
+          <div className="px-3.5 sm:px-5 py-2.5 sm:py-3 bg-[#f7f9f8] border-b border-slate-200/70 flex items-center gap-2.5 overflow-x-auto no-scrollbar">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 shrink-0">
+              Tasks ({assignments.length})
+            </span>
+            <div className="h-4 w-px bg-slate-200 shrink-0" />
+            <div className="flex items-center gap-1.5 min-w-0">
+              {assignments.map(a => {
+                const isSelected = currentTask.id === a.id;
+                const isDone = a.status === 'verified_complete';
+                const isSubmitted = a.status === 'completion_submitted';
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setSelectedAssignmentId(a.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap flex items-center gap-1.5 border shrink-0 ${
+                      isSelected
+                        ? 'bg-[#095c54] text-white border-[#095c54] shadow-2xs'
+                        : 'bg-white text-slate-600 border-slate-200/80 hover:border-slate-300 hover:text-[#0f2925]'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isSelected
+                          ? 'bg-emerald-300'
+                          : isDone
+                          ? 'bg-emerald-500'
+                          : isSubmitted
+                          ? 'bg-teal-500'
+                          : 'bg-amber-400'
+                      }`}
+                    />
+                    <span className="font-mono">{a.task_code}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
-      </div>
 
-      {/* 1. WORKER WORKFLOW PROGRESSION STEPPER (Worker Assign -> Evidence Submit -> Review & Approve) */}
-      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#e2e8f0] shadow-xs space-y-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-extrabold text-[#095c54] uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Worker Task Progression Steps</span>
-          </span>
-          <span className="text-[11px] font-bold text-slate-500">Live SLA Tracking</span>
-        </div>
+        {/* Main Task Hero Body (Full horizontal width, mobile-first padding) */}
+        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+          <div className="space-y-3">
+            {/* Badges Row */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-xs font-semibold text-[#095c54] bg-[#f0f7f5] border border-[#cde6df] px-2.5 py-0.5 rounded-md">
+                  {currentTask.task_code}
+                </span>
+                <span
+                  className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-md border capitalize ${
+                    currentTask.priority === 'emergency' || (currentTask.priority as string) === 'urgent'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : currentTask.priority === 'high'
+                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  {currentTask.priority} Priority
+                </span>
+                <span
+                  className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-md border ${
+                    isApprovedByOfficer
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : isEvidenceSubmitted
+                      ? 'bg-[#f0f7f5] text-[#095c54] border-[#cde6df]'
+                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {isApprovedByOfficer ? 'Verified Complete' : isEvidenceSubmitted ? 'Evidence Submitted' : 'Assigned'}
+                </span>
+              </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Step 1: Worker Assign */}
-          <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-              <Check className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider block">
-                Step 1 · Completed
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#095c54] bg-[#f7f9f8] border border-slate-200 px-3 py-1 rounded-lg">
+                <MapPin className="w-3.5 h-3.5 text-[#095c54]" />
+                <span>Ward {currentTask.ward_number || profile?.ward_number || 3}</span>
               </span>
-              <p className="text-xs font-black text-[#0f2925]">1. Worker Assigned</p>
-              <p className="text-[10px] text-slate-500">Squad dispatched & deployed</p>
             </div>
-          </div>
 
-          {/* Step 2: Evidence Submit */}
-          <div
-            className={`p-3.5 rounded-2xl border flex items-center gap-3 transition ${
-              isEvidenceSubmitted
-                ? 'bg-emerald-50/80 border-emerald-200'
-                : 'bg-amber-50/80 border-amber-200'
-            }`}
-          >
-            <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ${
-                isEvidenceSubmitted ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white animate-pulse'
-              }`}
-            >
-              {isEvidenceSubmitted ? <Check className="w-5 h-5" /> : <Camera className="w-4 h-4" />}
-            </div>
+            {/* Full-Width Task Title */}
             <div>
-              <span
-                className={`text-[10px] font-black uppercase tracking-wider block ${
-                  isEvidenceSubmitted ? 'text-emerald-700' : 'text-amber-800'
-                }`}
-              >
-                Step 2 · {isEvidenceSubmitted ? 'Evidence Submitted' : 'In Progress'}
-              </span>
-              <p className="text-xs font-black text-[#0f2925]">2. Evidence Submit</p>
-              <p className="text-[10px] text-slate-500">
-                {isEvidenceSubmitted
-                  ? `${submittedEvidences.length || 1} photo evidence logged`
-                  : 'Capture & geotag before/after photos'}
-              </p>
+              <h2 className="text-lg sm:text-xl font-bold text-[#0f2925] tracking-tight leading-snug">
+                {currentTask.title}
+              </h2>
+              {currentTask.address && (
+                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">{currentTask.address}</span>
+                </p>
+              )}
             </div>
-          </div>
 
-          {/* Step 3: Review & Approve by Ward Officer */}
-          <div
-            className={`p-3.5 rounded-2xl border flex items-center gap-3 transition ${
-              isApprovedByOfficer
-                ? 'bg-emerald-50/80 border-emerald-200'
-                : 'bg-slate-50 border-slate-200 opacity-80'
-            }`}
-          >
-            <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ${
-                isApprovedByOfficer ? 'bg-emerald-600 text-white' : 'bg-slate-300 text-slate-600'
-              }`}
-            >
-              {isApprovedByOfficer ? <Check className="w-5 h-5" /> : <Shield className="w-4 h-4" />}
-            </div>
-            <div>
-              <span
-                className={`text-[10px] font-black uppercase tracking-wider block ${
-                  isApprovedByOfficer ? 'text-emerald-700' : 'text-slate-500'
-                }`}
-              >
-                Step 3 · {isApprovedByOfficer ? 'Verified & Approved' : 'Pending Ward Approval'}
-              </span>
-              <p className="text-xs font-black text-[#0f2925]">3. Review & Approve</p>
-              <p className="text-[10px] text-slate-500">
-                {isApprovedByOfficer
-                  ? 'Ward Officer approved & signed off'
-                  : 'AI truth check & officer inspection'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. HORIZONTAL TAB NAVIGATION */}
-      <div className="bg-white p-1.5 rounded-2xl border border-[#e2e8f0] shadow-xs flex items-center gap-1 sm:gap-2 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('work_info')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 transition shrink-0 ${
-            activeTab === 'work_info'
-              ? 'bg-[#095c54] text-white shadow-xs'
-              : 'text-slate-600 hover:text-[#0f2925] hover:bg-slate-50'
-          }`}
-        >
-          <Briefcase className="w-4 h-4" />
-          <span>Work Information</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('attendance')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 transition shrink-0 ${
-            activeTab === 'attendance'
-              ? 'bg-[#095c54] text-white shadow-xs'
-              : 'text-slate-600 hover:text-[#0f2925] hover:bg-slate-50'
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          <span>Duty Attendance</span>
-          {dailyAttendance.status === 'completed_for_day' ? (
-            <span className="w-2 h-2 rounded-full bg-emerald-400" title="Completed for today" />
-          ) : dailyAttendance.status === 'checked_in' ? (
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Checked in" />
-          ) : null}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('evidence_submission')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 transition shrink-0 ${
-            activeTab === 'evidence_submission'
-              ? 'bg-[#095c54] text-white shadow-xs'
-              : 'text-slate-600 hover:text-[#0f2925] hover:bg-slate-50'
-          }`}
-        >
-          <Camera className="w-4 h-4" />
-          <span>Evidence Submission</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('evidence_history')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 transition shrink-0 ${
-            activeTab === 'evidence_history'
-              ? 'bg-[#095c54] text-white shadow-xs'
-              : 'text-slate-600 hover:text-[#0f2925] hover:bg-slate-50'
-          }`}
-        >
-          <FileCheck2 className="w-4 h-4" />
-          <span>Evidence History ({submittedEvidences.length})</span>
-        </button>
-      </div>
-
-      {/* 3. TAB CONTENT */}
-
-      {/* TAB 1: WORK INFORMATION */}
-      {activeTab === 'work_info' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-150">
-          {/* Left Column (2 Cols): Location, Map, Officer Instructions */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Location & Map Card */}
-            <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-[#095c54]" />
-                  <div>
-                    <h3 className="text-sm font-extrabold text-[#0f2925]">
-                      {currentTask.location_name || currentTask.address}
-                    </h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      {currentTask.address} · Ward {currentTask.ward_number || 3} ({currentTask.ward_name || 'Navsari'})
-                    </p>
-                  </div>
+            {/* Clean Structured Metadata Strip */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200/70">
+                <Calendar className="w-4 h-4 text-[#095c54] shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    Shift Date
+                  </span>
+                  <span className="text-xs font-semibold text-[#0f2925] truncate block">
+                    {currentTask.scheduled_date || todayKey}
+                  </span>
                 </div>
+              </div>
 
+              <div
+                className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border ${
+                  (currentTask as any).is_work_sla_overdue
+                    ? 'bg-red-50 border-red-300'
+                    : 'bg-sky-50/70 border-sky-200/80'
+                }`}
+              >
+                <AlertCircle
+                  className={`w-4 h-4 shrink-0 ${
+                    (currentTask as any).is_work_sla_overdue ? 'text-red-600' : 'text-sky-700'
+                  }`}
+                />
+                <div className="min-w-0">
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-wider block ${
+                      (currentTask as any).is_work_sla_overdue ? 'text-red-600' : 'text-sky-700'
+                    }`}
+                  >
+                    Maximum Work Days
+                  </span>
+                  <span
+                    className={`text-xs font-extrabold truncate block ${
+                      (currentTask as any).is_work_sla_overdue ? 'text-red-800' : 'text-[#0f2925]'
+                    }`}
+                  >
+                    {(currentTask as any).max_work_days ?? 3} Days
+                    {(currentTask as any).is_work_sla_overdue
+                      ? ` · OVERDUE (${(currentTask as any).work_days_elapsed}d)`
+                      : ` · Day ${(currentTask as any).work_days_elapsed ?? 0}/${(currentTask as any).max_work_days ?? 3}`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200/70">
+                <Clock className="w-4 h-4 text-[#095c54] shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    Completion Deadline
+                  </span>
+                  <span className="text-xs font-semibold text-[#0f2925] truncate block">
+                    {deadlineDisplay}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-[#f7f9f8] border border-slate-200/70">
+                <User className="w-4 h-4 text-[#095c54] shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    Squad &amp; Role
+                  </span>
+                  <span className="text-xs font-semibold text-[#0f2925] truncate block">
+                    {(currentTask.team_members?.length || 0) > 0
+                      ? `${currentTask.team_members!.length} Member${currentTask.team_members!.length > 1 ? 's' : ''}`
+                      : 'Field Crew'} · {currentTask.is_temporary_leader ? 'Team Leader' : 'Member'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sleek Responsive 3-Step Progress Bar */}
+          <div className="pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+              {[
+                { key: 'assigned', label: 'Work Assigned', shortLabel: 'Assigned', done: true },
+                { key: 'evidence', label: 'Evidence Submitted', shortLabel: 'Evidence', done: isEvidenceSubmitted },
+                { key: 'verified', label: 'Officer Verified', shortLabel: 'Verified', done: isApprovedByOfficer }
+              ].map((step, idx, arr) => (
+                <React.Fragment key={step.key}>
+                  <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 min-w-0">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${
+                        step.done
+                          ? 'bg-[#095c54] text-white'
+                          : 'bg-slate-100 text-slate-400 border border-slate-200'
+                      }`}
+                    >
+                      {step.done ? <Check className="w-3.5 h-3.5" /> : idx + 1}
+                    </div>
+                    <span
+                      className={`text-[10px] sm:text-xs font-semibold text-center sm:text-left truncate ${
+                        step.done ? 'text-[#0f2925]' : 'text-slate-400'
+                      }`}
+                    >
+                      <span className="sm:hidden">{step.shortLabel}</span>
+                      <span className="hidden sm:inline">{step.label}</span>
+                    </span>
+                  </div>
+                  {idx < arr.length - 1 && (
+                    <div
+                      className={`h-px flex-1 min-w-[16px] ${
+                        arr[idx + 1].done ? 'bg-[#095c54]' : 'bg-slate-200'
+                      }`}
+                    />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. CLEAN HORIZONTAL TAB BAR (Mobile Touch Scrollable) */}
+      <div className="bg-white p-1.5 rounded-2xl border border-slate-200/80 flex items-center gap-1 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'work_info', label: 'Work Overview', icon: Briefcase },
+          { id: 'attendance', label: 'Duty Attendance', icon: Clock },
+          { id: 'evidence_submission', label: 'Submit Evidence', icon: Camera },
+          { id: 'evidence_history', label: `Evidence Log (${submittedEvidences.length})`, icon: FileCheck2 }
+        ].map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 sm:gap-2 transition shrink-0 whitespace-nowrap ${
+                isActive
+                  ? 'bg-[#095c54] text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-[#0f2925] hover:bg-slate-50'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* TAB 1: WORK OVERVIEW & MAP */}
+      {activeTab === 'work_info' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Left 2 Cols: Map & Directives */}
+          <div className="lg:col-span-2 space-y-5">
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-[#0f2925] truncate">
+                    {currentTask.location_name || currentTask.address}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">
+                    {currentTask.address} · Ward {currentTask.ward_number || 3}
+                  </p>
+                </div>
                 <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${currentTask.latitude || 20.9485},${currentTask.longitude || 72.9260}`}
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${taskCoords[0]},${taskCoords[1]}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-[#074741] transition flex items-center gap-1.5 shrink-0 self-start sm:self-center"
+                  className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold transition inline-flex items-center gap-1.5 shrink-0 self-start sm:self-center"
                 >
                   <Navigation className="w-3.5 h-3.5" />
-                  <span>Get Directions</span>
-                  <ExternalLink className="w-3 h-3 opacity-70" />
+                  <span>Directions</span>
+                  <ExternalLink className="w-3 h-3 opacity-80" />
                 </a>
               </div>
 
-              {/* Interactive Leaflet Map */}
-              <div className="h-72 w-full rounded-2xl overflow-hidden border border-slate-200 relative z-0">
-                <MapContainer
-                  center={taskCoords}
-                  zoom={16}
-                  scrollWheelZoom={false}
-                  className="h-full w-full"
-                >
+              <div className="h-56 sm:h-68 w-full rounded-xl overflow-hidden border border-slate-200 relative z-0">
+                <MapContainer center={taskCoords} zoom={16} scrollWheelZoom={false} className="h-full w-full">
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
                   <MapRecenter center={taskCoords} />
-
-                  {/* Task Location Marker */}
                   <Marker position={taskCoords} icon={taskIcon}>
                     <Popup>
-                      <div className="p-1">
-                        <p className="font-bold text-xs text-[#095c54]">{currentTask.task_code}</p>
-                        <p className="text-xs font-semibold">{currentTask.location_name || currentTask.address}</p>
-                        <p className="text-[10px] text-slate-500">Geofence: 150 meters</p>
+                      <div className="p-1 text-xs">
+                        <p className="font-bold text-[#095c54]">{currentTask.task_code}</p>
+                        <p>{currentTask.location_name || currentTask.address}</p>
                       </div>
                     </Popup>
                   </Marker>
-
-                  {/* 150m Geofence Circle */}
                   <Circle
                     center={taskCoords}
                     radius={GEOFENCE_LIMIT_METERS}
-                    pathOptions={{
-                      color: '#095c54',
-                      fillColor: '#095c54',
-                      fillOpacity: 0.15,
-                      weight: 2
-                    }}
+                    pathOptions={{ color: '#095c54', fillColor: '#095c54', fillOpacity: 0.1, weight: 1.5 }}
                   />
-
-                  {/* Worker Live Location Marker */}
                   <Marker position={userCoords} icon={workerIcon}>
                     <Popup>
-                      <div className="p-1">
-                        <p className="font-bold text-xs text-blue-600">Your Current GPS Location</p>
-                        <p className="text-[10px] text-slate-500">Live accuracy: ±{deviceCoords?.accuracy || 10}m</p>
+                      <div className="p-1 text-xs">
+                        <p className="font-bold text-slate-800">Your GPS Location</p>
+                        <p className="text-slate-500">Accuracy: ±{deviceCoords?.accuracy || 10}m</p>
                       </div>
                     </Popup>
                   </Marker>
                 </MapContainer>
 
-                {/* Map floating badges */}
-                <div className="absolute bottom-3 left-3 z-1000 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-700 shadow-md flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${isWithinGeofence ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                  <span>Geofence: 150m (Live Distance: ~{distanceToTask}m)</span>
+                <div className="absolute bottom-3 left-3 z-[400] bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-700 shadow-xs flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isWithinGeofence ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span>Distance: ~{distanceToTask}m · Geofence {GEOFENCE_LIMIT_METERS}m</span>
                 </div>
               </div>
             </div>
 
-            {/* Officer Directives & Instructions */}
-            <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
-              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#095c54] flex items-center justify-center font-bold text-xs">
-                  NMC
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-[#0f2925]">
-                    Ward Officer Directives & Instructions
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Issued by: <strong>{currentTask.ward_number === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)'}</strong>
-                  </p>
-                </div>
+            {/* Work Instructions & Safety Card */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-[#0f2925]">Work Directives & Equipment</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Issued by Ward {currentTask.ward_number || 3} Sanitary Officer
+                </p>
               </div>
 
               <div className="space-y-3">
-                {/* Target Completion Deadline */}
-                <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-                      <Clock className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-black text-rose-600 uppercase tracking-wider block">
-                        Completion Deadline / SLA
-                      </span>
-                      <p className="text-xs font-black text-rose-950">
-                        {new Date(currentTask.deadline || currentTask.expected_end_time || currentTask.target_completion_date || Date.now() + 24 * 3600 * 1000).toLocaleString('en-IN', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short'
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-rose-200/80 text-rose-950 font-black text-[10px] uppercase tracking-wider shrink-0">
-                    Enforced SLA
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                    Instructions
                   </span>
-                </div>
-
-                {/* Specific Instructions */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Specific Work Instructions
-                  </p>
-                  <p className="text-xs font-semibold text-slate-800 leading-relaxed">
-                    {currentTask.work_instructions ||
-                      'Clear all overflowing civic waste, collect accumulated plastic bags, sweep commercial curb thoroughly, and disinfect area with bleaching powder.'}
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    {currentTask.work_instructions || 'Clear waste from assigned location, sweep perimeter thoroughly, and disinfect.'}
                   </p>
                 </div>
 
-                {/* Safety Precautions */}
-                <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-1">
-                  <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 border-l-3 border-l-[#095c54] space-y-1">
+                  <span className="text-[11px] font-semibold text-[#095c54] uppercase tracking-wider flex items-center gap-1">
                     <Shield className="w-3.5 h-3.5" />
                     <span>Safety Precautions</span>
-                  </p>
-                  <p className="text-xs font-semibold text-amber-900 leading-relaxed">
-                    {currentTask.safety_instructions ||
-                      'Wear safety boots, heavy rubber gloves, and high-visibility reflective jacket. Do not step into high-speed vehicular lanes without traffic cones.'}
+                  </span>
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    {currentTask.safety_instructions || 'Wear reflective safety vest, heavy rubber gloves, and boots at all times.'}
                   </p>
                 </div>
 
-                {/* Required Gear */}
-                <div>
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Required Equipment & Gear
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {(
-                      currentTask.required_equipment || [
-                        'Safety Gloves',
-                        'Rubber Boots',
-                        'Heavy Waste Bags',
-                        'Steel Shovel',
-                        'Street Broom',
-                        'Bleaching Powder'
-                      ]
-                    ).map((item, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-extrabold border border-slate-200"
-                      >
-                        {item}
-                      </span>
-                    ))}
+                {currentTask.required_equipment && currentTask.required_equipment.length > 0 && (
+                  <div className="pt-1">
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-2">
+                      Required Equipment
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {currentTask.required_equipment.map((item, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-xs font-medium border border-slate-200/80"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Right Column (1 Col): Team Leader & Squad Roster */}
-          <div className="space-y-6">
-            {/* Team Leader Card */}
-            <div className="p-5 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <Crown className="w-4 h-4" />
-                </div>
+          {/* Right Col: Squad & Leader Card */}
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-extrabold text-[#0f2925]">
-                    Designated Team Leader
-                  </h3>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    Assignment: {currentTask.task_code}
-                  </p>
+                  <h3 className="text-sm font-bold text-[#0f2925]">Assigned Squad</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{currentTask.task_code}</p>
                 </div>
+                <Crown className="w-4 h-4 text-amber-600" />
               </div>
 
-              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-black text-[#0f2925] flex items-center gap-1.5">
-                      <span>{currentTask.temporary_leader_name || 'Kanti Solanki'}</span>
-                      <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-md bg-amber-400 text-slate-950">
-                        LEADER
-                      </span>
-                    </p>
-                    <p className="text-xs text-slate-600 font-medium">
-                      Sanitation Squad · Ward {currentTask.ward_number || 3}
-                    </p>
+              <div className="p-3.5 rounded-xl bg-[#f0f7f5] border border-[#cde6df] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-semibold text-[#095c54] uppercase tracking-wider block">
+                      Temporary Team Leader
+                    </span>
+                    <p className="text-sm font-bold text-[#0f2925] truncate mt-0.5">{leaderName}</p>
                   </div>
-                  <div className="w-9 h-9 rounded-full bg-white border border-amber-200 flex items-center justify-center text-amber-700 font-bold text-xs shadow-2xs">
-                    👑
+                  <span className="px-2 py-0.5 rounded-md bg-white text-[#095c54] border border-[#cde6df] text-[10px] font-bold shrink-0">
+                    Leader
+                  </span>
+                </div>
+                {leaderPhone && (
+                  <div className="pt-2 border-t border-[#cde6df]/70 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Contact</span>
+                    <a
+                      href={`tel:${leaderPhone}`}
+                      className="font-semibold text-[#095c54] hover:underline inline-flex items-center gap-1"
+                    >
+                      <Phone className="w-3 h-3" />
+                      <span>{leaderPhone}</span>
+                    </a>
                   </div>
-                </div>
-
-                <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-xs font-medium">
-                  <span className="text-slate-500">Contact Leader:</span>
-                  <a
-                    href="tel:+919825120001"
-                    className="font-extrabold text-[#095c54] hover:underline flex items-center gap-1"
-                  >
-                    <Phone className="w-3 h-3" />
-                    <span>+91 98251 20001</span>
-                  </a>
-                </div>
+                )}
               </div>
 
-              {/* Squad Roster */}
               {currentTask.team_members && currentTask.team_members.length > 0 && (
-                <div className="space-y-2 pt-1">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Squad Roster ({currentTask.team_members.length} Workers)
-                  </p>
-                  <div className="space-y-1.5">
+                <div className="space-y-2">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                    Team Roster ({currentTask.team_members.length})
+                  </span>
+                  <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden">
                     {currentTask.team_members.map((member, idx) => (
-                      <div
-                        key={member.id || idx}
-                        className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs"
-                      >
-                        <div className="flex items-center gap-2">
+                      <div key={member.id || idx} className="px-3 py-2.5 bg-white flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
                           {member.temporary_leader ? (
                             <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           ) : (
                             <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           )}
-                          <span className="font-extrabold text-[#0f2925]">
-                            {member.worker_name}
-                          </span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[#0f2925] truncate">{member.worker_name}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{member.worker_code}</p>
+                          </div>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-500">
-                          {member.designation_name || 'Sanitation Worker'}
+                        <span className="text-[10px] font-medium text-slate-500 shrink-0">
+                          {member.designation_name || 'Worker'}
                         </span>
                       </div>
                     ))}
@@ -1149,154 +1084,109 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         </div>
       )}
 
-      {/* TAB 2: DUTY ATTENDANCE (GEOFENCED WITH 1 CHECK-IN & 1 CHECK-OUT LIMIT) */}
+      {/* TAB 2: DUTY ATTENDANCE */}
       {activeTab === 'attendance' && (
-        <div className="max-w-2xl mx-auto p-6 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-6 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
-                <Clock className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold text-[#0f2925]">
-                  Geofenced Duty Attendance
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Attendance is locked to within {GEOFENCE_LIMIT_METERS}m of assigned task site. Enforced: 1 check-in and 1 check-out per day.
-                </p>
-              </div>
+        <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-6 space-y-4 sm:space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-[#0f2925]">Geofenced Duty Attendance</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Allowed within {GEOFENCE_LIMIT_METERS}m of assigned work location (1 check-in &amp; 1 check-out per day).
+              </p>
             </div>
             <button
               onClick={fetchLiveLocation}
               disabled={locating}
-              className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition flex items-center gap-1 text-xs font-bold"
-              title="Refresh GPS"
+              className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition shrink-0"
             >
-              <RefreshCw className={`w-4 h-4 ${locating ? 'animate-spin text-[#095c54]' : ''}`} />
-              <span className="hidden sm:inline">Refresh GPS</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${locating ? 'animate-spin text-[#095c54]' : ''}`} />
+              <span>Refresh GPS</span>
             </button>
           </div>
 
-          {/* Geofence Status Alert */}
-          {!isWithinGeofence ? (
-            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-900 flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div
+            className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+              isWithinGeofence
+                ? 'bg-[#f0f7f5] border-[#cde6df] text-[#0f2925]'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              {isWithinGeofence ? (
+                <CheckCircle2 className="w-4 h-4 text-[#095c54] shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
               <div>
-                <p className="font-extrabold text-sm text-rose-950">Outside Assigned Work Zone</p>
-                <p className="text-rose-800 mt-0.5">
-                  You are currently <strong>{distanceToTask} meters</strong> away from {currentTask.location_name || currentTask.address}. You must be physically present within {GEOFENCE_LIMIT_METERS} meters to mark duty check-in or check-out.
+                <p className="font-semibold">
+                  {isWithinGeofence
+                    ? `Inside Work Zone (~${distanceToTask}m from pin)`
+                    : `Outside Work Zone (~${distanceToTask}m away)`}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                  {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E
                 </p>
               </div>
             </div>
-          ) : (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <div>
-                <p className="font-extrabold text-emerald-950">Geofence Validated (~{distanceToTask}m from task pin)</p>
-                <p className="text-emerald-700 text-[11px] font-medium">
-                  Live GPS coordinate matches assignment within the allowable {GEOFENCE_LIMIT_METERS}m radius.
-                </p>
-              </div>
-            </div>
-          )}
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-white border border-slate-200 shrink-0">
+              {isWithinGeofence ? 'Verified' : 'Out of Range'}
+            </span>
+          </div>
 
-          {/* Feedback messages */}
           {attendanceSuccess && (
-            <div className="p-3.5 rounded-2xl bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold flex items-center gap-2">
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-700 shrink-0" />
               <span>{attendanceSuccess}</span>
             </div>
           )}
           {attendanceError && (
-            <div className="p-3.5 rounded-2xl bg-rose-100 text-rose-900 border border-rose-300 text-xs font-bold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0" />
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{attendanceError}</span>
             </div>
           )}
 
-          {/* Daily Punch Card */}
-          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                Today's Shift Log ({new Date().toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })})
+          <div className="grid grid-cols-2 gap-3.5">
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/70">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Check-In Time
               </span>
-              <span
-                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                  dailyAttendance.status === 'completed_for_day'
-                    ? 'bg-purple-100 text-purple-900 border border-purple-300'
-                    : dailyAttendance.status === 'checked_in'
-                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                    : 'bg-amber-100 text-amber-900 border border-amber-300'
-                }`}
-              >
-                {dailyAttendance.status === 'completed_for_day'
-                  ? '✓ Shift Completed'
-                  : dailyAttendance.status === 'checked_in'
-                  ? '● On Duty (Checked In)'
-                  : '○ Awaiting Check-In'}
+              <p className="text-base font-bold text-[#0f2925] mt-1">
+                {dailyAttendance.checkInTime || '—'}
+              </p>
+              <span className="text-[11px] text-slate-500">
+                {dailyAttendance.checkInTime ? 'GPS verified' : 'Not marked yet'}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              {/* Check-In Time */}
-              <div className="p-3.5 rounded-xl bg-white border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Check-In Time
-                </span>
-                <p className="text-sm font-extrabold text-[#0f2925] mt-0.5">
-                  {dailyAttendance.checkInTime || '—'}
-                </p>
-                <span className="text-[10px] text-slate-500">
-                  {dailyAttendance.checkInTime ? '✓ Verified on-site' : 'Pending start'}
-                </span>
-              </div>
-
-              {/* Check-Out Time */}
-              <div className="p-3.5 rounded-xl bg-white border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Check-Out Time
-                </span>
-                <p className="text-sm font-extrabold text-[#0f2925] mt-0.5">
-                  {dailyAttendance.checkOutTime || '—'}
-                </p>
-                <span className="text-[10px] text-slate-500">
-                  {dailyAttendance.checkOutTime ? '✓ Duty closed' : 'Pending completion'}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-white/70 border border-slate-200 text-[11px] text-slate-600 space-y-1">
-              <div className="flex items-center justify-between">
-                <span>Current Coordinates:</span>
-                <span className="font-mono text-slate-700">
-                  {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Distance to Site:</span>
-                <span className={`font-bold ${isWithinGeofence ? 'text-emerald-700' : 'text-rose-700'}`}>
-                  ~{distanceToTask} meters ({isWithinGeofence ? 'Inside 150m' : 'Outside 150m'})
-                </span>
-              </div>
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/70">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Check-Out Time
+              </span>
+              <p className="text-base font-bold text-[#0f2925] mt-1">
+                {dailyAttendance.checkOutTime || '—'}
+              </p>
+              <span className="text-[11px] text-slate-500">
+                {dailyAttendance.checkOutTime ? 'Shift closed' : 'Pending'}
+              </span>
             </div>
           </div>
 
-          {/* Action Buttons for Punch In / Punch Out */}
           {dailyAttendance.status === 'none' && (
             <button
               onClick={() => handlePunchAttendance('check_in')}
               disabled={submittingAttendance || !isWithinGeofence}
-              className="w-full py-3.5 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl text-xs font-black shadow-md transition flex items-center justify-center gap-2"
+              className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
             >
               {submittingAttendance ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Recording GPS Check-In...</span>
+                  <span>Recording Check-In...</span>
                 </>
               ) : (
                 <>
-                  <LocateFixed className="w-4 h-4 text-emerald-300" />
-                  <span>Punch Duty Check-In (1st Punch)</span>
+                  <LocateFixed className="w-4 h-4" />
+                  <span>Mark Duty Check-In</span>
                 </>
               )}
             </button>
@@ -1306,368 +1196,340 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             <button
               onClick={() => handlePunchAttendance('check_out')}
               disabled={submittingAttendance || !isWithinGeofence}
-              className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl text-xs font-black shadow-md transition flex items-center justify-center gap-2"
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
             >
               {submittingAttendance ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Recording GPS Check-Out...</span>
+                  <span>Recording Check-Out...</span>
                 </>
               ) : (
                 <>
-                  <Clock className="w-4 h-4 text-amber-200" />
-                  <span>Punch Duty Check-Out (Final Punch)</span>
+                  <Clock className="w-4 h-4" />
+                  <span>Mark Duty Check-Out</span>
                 </>
               )}
             </button>
           )}
 
           {dailyAttendance.status === 'completed_for_day' && (
-            <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-center space-y-1">
-              <CheckCheck className="w-6 h-6 text-purple-600 mx-auto" />
-              <p className="text-xs font-black text-purple-950">
-                Today's Duty Attendance Locked & Completed
-              </p>
-              <p className="text-[11px] text-purple-800">
-                You checked in at <strong>{dailyAttendance.checkInTime}</strong> and checked out at <strong>{dailyAttendance.checkOutTime}</strong>. Only 1 check-in and 1 check-out are allowed per calendar day.
+            <div className="p-4 rounded-xl bg-[#f0f7f5] border border-[#cde6df] text-center space-y-1">
+              <CheckCheck className="w-5 h-5 text-[#095c54] mx-auto" />
+              <p className="text-xs font-bold text-[#0f2925]">Today's Attendance Completed</p>
+              <p className="text-[11px] text-slate-600">
+                Checked in at <strong>{dailyAttendance.checkInTime}</strong> and checked out at <strong>{dailyAttendance.checkOutTime}</strong>.
               </p>
             </div>
           )}
         </div>
       )}
 
-      {/* TAB 3: EVIDENCE SUBMISSION (MOBILE CAMERA, GEOTAGGED, AI VALIDATED & VOICE-TO-TEXT) */}
+      {/* TAB 3: EVIDENCE SUBMISSION */}
       {activeTab === 'evidence_submission' && (
-        <div className="p-6 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-6 animate-in fade-in duration-150">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-base font-extrabold text-[#0f2925] flex items-center gap-2">
-                <Camera className="w-5 h-5 text-[#095c54]" />
-                <span>Geotagged Mobile Camera Evidence Submission</span>
-              </h3>
-              <p className="text-xs text-slate-500">
-                Live camera capture with mandatory GPS matching (150m), voice-to-text notes, and AI content validation.
-              </p>
+        <div className="space-y-5">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-6 space-y-4 sm:space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-[#0f2925]">Field Evidence Submission</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Upload geotagged before, during, or after photos with notes. Immediately visible to Ward Officer.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 sm:flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 w-full sm:w-auto">
+                {(['before', 'during', 'after'] as const).map(stage => (
+                  <button
+                    key={stage}
+                    type="button"
+                    onClick={() => setEvidenceStage(stage)}
+                    className={`px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold capitalize transition text-center ${
+                      evidenceStage === stage
+                        ? 'bg-[#095c54] text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-[#0f2925]'
+                    }`}
+                  >
+                    {stage}
+                  </button>
+                ))}
+              </div>
             </div>
-            {/* Stage Selector Pills */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto">
-              {(['before', 'during', 'after'] as const).map(stage => (
-                <button
-                  key={stage}
-                  type="button"
-                  onClick={() => setEvidenceStage(stage)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                    evidenceStage === stage
-                      ? 'bg-[#095c54] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {stage}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          {/* Geofence Check Strip */}
-          <div className={`p-3.5 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-            isWithinGeofence
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-              : 'bg-rose-50 border-rose-200 text-rose-900'
-          }`}>
-            <div className="flex items-center gap-2">
-              <LocateFixed className="w-4 h-4 shrink-0" />
-              <span className="font-bold">GPS Geotag:</span>
-              <span className="font-mono text-[11px]">
-                {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E (~{distanceToTask}m from task pin)
+            <div className="px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <LocateFixed className="w-4 h-4 text-[#095c54] shrink-0" />
+                <span className="font-mono text-[11px]">
+                  {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E (~{distanceToTask}m from pin)
+                </span>
+              </div>
+              <span
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${
+                  isWithinGeofence
+                    ? 'bg-[#f0f7f5] text-[#095c54] border-[#cde6df]'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                }`}
+              >
+                {isWithinGeofence ? 'Geotag Validated' : 'Outside 150m Geofence'}
               </span>
             </div>
-            <span className={`px-2.5 py-0.5 rounded-full font-black text-[10px] uppercase tracking-wider ${
-              isWithinGeofence ? 'bg-emerald-200 text-emerald-950' : 'bg-rose-200 text-rose-950'
-            }`}>
-              {isWithinGeofence ? '✓ Geotag Validated (<150m)' : '❌ Geotag Mismatch (>150m)'}
-            </span>
-          </div>
 
-          {/* Feedback banners */}
-          {evidenceSuccess && (
-            <div className="p-3.5 rounded-2xl bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-700 shrink-0" />
-              <span>{evidenceSuccess}</span>
-            </div>
-          )}
-          {evidenceError && (
-            <div className="p-3.5 rounded-2xl bg-rose-100 text-rose-900 border border-rose-300 text-xs font-bold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0" />
-              <span>{evidenceError}</span>
-            </div>
-          )}
+            {evidenceSuccess && (
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>{evidenceSuccess}</span>
+              </div>
+            )}
+            {evidenceError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{evidenceError}</span>
+              </div>
+            )}
 
-          {/* Photo & Description Form */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left: Camera Capture Viewfinder / Photo Box */}
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-700 block">
-                Live Camera Capture ({evidenceStage.toUpperCase()} Stage) *
-              </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Left: Photo Capture */}
+              <div className="space-y-2.5">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  Photo Evidence ({evidenceStage.toUpperCase()} Stage) *
+                </label>
 
-              {evidencePreview ? (
-                <div className="relative rounded-2xl overflow-hidden border border-slate-300 bg-slate-950 aspect-4/3 group">
-                  <img src={evidencePreview} alt="Evidence preview" className="w-full h-full object-cover" />
-                  {/* Watermark overlay */}
-                  <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs p-2 rounded-xl text-white text-[10px] space-y-0.5">
-                    <div className="flex items-center justify-between font-bold">
-                      <span>STAGE: {evidenceStage.toUpperCase()}</span>
-                      <span>WARD {currentTask.ward_number || 3} NAVSARI</span>
+                {evidencePreview ? (
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-[4/3]">
+                    <img src={evidencePreview} alt="Evidence preview" className="w-full h-full object-cover" />
+                    <div className="absolute bottom-2 left-2 right-2 bg-black/70 backdrop-blur-xs px-2.5 py-1.5 rounded-lg text-white text-[10px] flex items-center justify-between">
+                      <span className="font-semibold uppercase">{evidenceStage} Stage</span>
+                      <span className="font-mono opacity-85">
+                        {userCoords[0].toFixed(4)}, {userCoords[1].toFixed(4)}
+                      </span>
                     </div>
-                    <div className="text-white/80 font-mono text-[9px]">
-                      GPS: {userCoords[0].toFixed(5)}, {userCoords[1].toFixed(5)} · {new Date().toLocaleTimeString()}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEvidencePreview('');
-                      setAiResult(null);
-                    }}
-                    className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[10px] font-bold hover:bg-black/90 transition"
-                  >
-                    Retake Photo
-                  </button>
-                </div>
-              ) : (
-                <div className="border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50 p-6 flex flex-col items-center justify-center text-center aspect-4/3 space-y-3">
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
-                    <Camera className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-[#0f2925]">
-                      Capture Geotagged Field Photo
-                    </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 max-w-xs">
-                      Mobile camera attaches live GPS coordinates to prevent fraudulent uploads.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap justify-center pt-1">
-                    {/* Native Mobile Camera input */}
-                    <label className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold cursor-pointer transition flex items-center gap-1.5 shadow-xs">
-                      <Camera className="w-3.5 h-3.5" />
-                      <span>Take Photo</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={handlePhotoSelect}
-                        className="hidden"
-                      />
-                    </label>
-
-                    {/* Direct Browser Camera Stream Viewfinder */}
                     <button
                       type="button"
-                      onClick={openLiveCamera}
-                      className="px-3.5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition flex items-center gap-1.5"
+                      onClick={() => {
+                        setEvidencePreview('');
+                        setAiResult(null);
+                      }}
+                      className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[11px] font-semibold hover:bg-black/90 transition"
                     >
-                      <Video className="w-3.5 h-3.5 text-[#095c54]" />
-                      <span>Live Viewfinder</span>
+                      Retake
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right: Voice-to-Text Description & AI Validation Card */}
-            <div className="space-y-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-700">
-                    Observation Notes & Description *
-                  </label>
-                  {/* Speech Language Switcher */}
-                  <div className="flex items-center gap-1 text-[10px] font-bold">
-                    <span className="text-slate-400">Voice:</span>
-                    {(['gu-IN', 'hi-IN', 'en-IN'] as const).map(langCode => (
+                ) : (
+                  <div className="border border-dashed border-slate-300 rounded-xl bg-slate-50/70 p-6 flex flex-col items-center justify-center text-center aspect-[4/3] space-y-3">
+                    <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 text-[#095c54] flex items-center justify-center">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#0f2925]">Capture or Upload Site Photo</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 max-w-xs">
+                        GPS coordinates and timestamp are attached automatically.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap justify-center pt-1">
+                      <label className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Upload / Camera</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handlePhotoSelect}
+                          className="hidden"
+                        />
+                      </label>
                       <button
-                        key={langCode}
                         type="button"
-                        onClick={() => setSpeechLang(langCode)}
-                        className={`px-1.5 py-0.5 rounded transition ${
-                          speechLang === langCode
-                            ? 'bg-[#095c54] text-white'
-                            : 'bg-slate-200 text-slate-600 hover:text-slate-900'
-                        }`}
+                        onClick={openLiveCamera}
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition inline-flex items-center gap-1.5"
                       >
-                        {langCode === 'gu-IN' ? 'ગુજ' : langCode === 'hi-IN' ? 'हिंदी' : 'ENG'}
+                        <Video className="w-3.5 h-3.5 text-[#095c54]" />
+                        <span>Live Viewfinder</span>
                       </button>
-                    ))}
+                    </div>
                   </div>
-                </div>
-
-                {/* Textarea with Voice Dictation */}
-                <div className="relative">
-                  <textarea
-                    rows={4}
-                    value={evidenceDescription}
-                    onChange={e => setEvidenceDescription(e.target.value)}
-                    placeholder="Type or dictate notes (e.g. Cleared 380kg overflowing garbage at curb, disinfected with bleaching powder)..."
-                    className="w-full px-3.5 py-2.5 pr-12 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:border-[#095c54] outline-hidden resize-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={toggleSpeechRecognition}
-                    className={`absolute right-2.5 top-2.5 p-2 rounded-xl transition ${
-                      isListeningSpeech
-                        ? 'bg-rose-500 text-white animate-pulse shadow-md'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                    title={isListeningSpeech ? 'Listening... click to stop' : 'Click to speak (Voice-to-Text)'}
-                  >
-                    {isListeningSpeech ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-[#095c54]" />}
-                  </button>
-                </div>
-
-                {isListeningSpeech && (
-                  <p className="text-[10px] font-bold text-rose-600 mt-1 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                    Listening in {speechLang === 'gu-IN' ? 'Gujarati' : speechLang === 'hi-IN' ? 'Hindi' : 'English'}... Speak into microphone.
-                  </p>
-                )}
-                {speechError && (
-                  <p className="text-[10px] font-bold text-amber-700 mt-1">{speechError}</p>
                 )}
               </div>
 
-              {/* AI Classification & Abuse Defense Card */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold text-slate-700 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>AI Cleanliness & Anti-Abuse Validator</span>
-                  </span>
-                  {aiValidating ? (
-                    <span className="text-[10px] font-bold text-[#095c54] flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      <span>Validating...</span>
-                    </span>
-                  ) : aiResult ? (
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      {Math.round(aiResult.confidence * 100)}% Confidence
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-400">Awaiting photo</span>
+              {/* Right: Notes + Voice + AI + Submit */}
+              <div className="space-y-4 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Work Notes & Description
+                    </label>
+                    <div className="flex items-center gap-1 text-[10px] font-semibold">
+                      {(['gu-IN', 'hi-IN', 'en-IN'] as const).map(langCode => (
+                        <button
+                          key={langCode}
+                          type="button"
+                          onClick={() => setSpeechLang(langCode)}
+                          className={`px-2 py-0.5 rounded-md transition ${
+                            speechLang === langCode
+                              ? 'bg-[#095c54] text-white'
+                              : 'bg-slate-100 text-slate-600 hover:text-[#0f2925]'
+                          }`}
+                        >
+                          {langCode === 'gu-IN' ? 'ગુજ' : langCode === 'hi-IN' ? 'हिंदी' : 'ENG'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <textarea
+                      rows={4}
+                      value={evidenceDescription}
+                      onChange={e => setEvidenceDescription(e.target.value)}
+                      placeholder="Describe work completed or tap the microphone to dictate..."
+                      className="w-full px-3.5 py-2.5 pr-12 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:border-[#095c54] outline-hidden resize-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={toggleSpeechRecognition}
+                      className={`absolute right-2.5 top-2.5 p-2 rounded-lg transition ${
+                        isListeningSpeech
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                      title={isListeningSpeech ? 'Stop voice input' : 'Voice to text'}
+                    >
+                      {isListeningSpeech ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-[#095c54]" />}
+                    </button>
+                  </div>
+
+                  {isListeningSpeech && (
+                    <p className="text-[11px] font-semibold text-rose-600">
+                      Listening ({speechLang === 'gu-IN' ? 'Gujarati' : speechLang === 'hi-IN' ? 'Hindi' : 'English'})...
+                    </p>
+                  )}
+                  {speechError && (
+                    <p className="text-[11px] font-medium text-amber-700">{speechError}</p>
                   )}
                 </div>
 
-                {aiResult ? (
-                  <div className="space-y-1 text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Detected Category:</span>
-                      <strong className="text-[#095c54]">{aiResult.category}</strong>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Authentic on-site photo verified by Navsari AI</span>
-                    </div>
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#095c54]" />
+                      <span>AI Photo Verification</span>
+                    </span>
+                    {aiValidating ? (
+                      <span className="text-[11px] font-medium text-[#095c54]">Checking...</span>
+                    ) : aiResult ? (
+                      <span className="text-[11px] font-semibold text-[#095c54]">
+                        {Math.round(aiResult.confidence * 100)}% Match
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">Waiting for photo</span>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-[10px] text-slate-500">
-                    Our civic AI automatically verifies image integrity, detects vulgar/irrelevant media, and checks location proximity.
+                  <p className="text-[11px] text-slate-500">
+                    {aiResult
+                      ? `Detected: ${aiResult.category}. Ready for submission.`
+                      : 'Automatically checks photo authenticity and geofence alignment.'}
                   </p>
-                )}
-              </div>
+                </div>
 
-              {/* Upload Button */}
-              <button
-                type="button"
-                onClick={handleUploadStageEvidence}
-                disabled={uploadingEvidence || !evidencePreview || !isWithinGeofence}
-                className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 transition shadow-xs"
-              >
-                {uploadingEvidence ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Transmitting Evidence...</span>
-                  </>
-                ) : (
-                  <>
-                    <UploadCloud className="w-4 h-4" />
-                    <span>Upload & Verify {evidenceStage.toUpperCase()} Evidence</span>
-                  </>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleUploadStageEvidence}
+                  disabled={uploadingEvidence || !evidencePreview || !isWithinGeofence}
+                  className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
+                >
+                  {uploadingEvidence ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Uploading Evidence...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4" />
+                      <span>Submit {evidenceStage.toUpperCase()} Evidence</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Leader Consolidated Completion Report Section */}
-          <div className="pt-6 border-t border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
+          {/* Consolidated Completion Report */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
               <div>
-                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                  Final Work Completion Report
-                </h4>
-                <p className="text-[11px] text-slate-500">Submit consolidated closure dossier to Ward Officer once work is completed.</p>
+                <h4 className="text-sm font-bold text-[#0f2925]">Final Completion Report</h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Submit final closure summary to the Ward Officer once all stages are complete.
+                </p>
               </div>
-              {reportSuccess && (
-                <span className="text-xs font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  {reportSuccess}
+              {currentTask.is_temporary_leader && (
+                <span className="px-2.5 py-1 rounded-md bg-[#f0f7f5] text-[#095c54] border border-[#cde6df] text-[10px] font-semibold">
+                  Team Leader Authorized
                 </span>
               )}
             </div>
 
-            <form onSubmit={handleSubmitCompletion} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+            {reportSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold">
+                {reportSuccess}
+              </div>
+            )}
+            {reportError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold">
+                {reportError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitCompletion} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Total Waste Cleared (Kg) *
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    Estimated Waste Cleared (kg)
                   </label>
                   <input
                     type="number"
+                    min={0}
                     value={wasteCollectedKg}
                     onChange={e => setWasteCollectedKg(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-white focus:border-[#095c54] outline-hidden"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-[#0f2925] bg-white focus:border-[#095c54] outline-hidden"
                   />
                 </div>
-
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Completion Quality Rating *
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    Completion Status
                   </label>
-                  <select className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#0f2925] bg-white focus:border-[#095c54] outline-hidden">
-                    <option value="5">⭐⭐⭐⭐⭐ 100% Cleared & Disinfected</option>
-                    <option value="4">⭐⭐⭐⭐ Satisfactory Cleanliness</option>
-                    <option value="3">⭐⭐⭐ Standard Clearance</option>
+                  <select className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-[#0f2925] bg-white focus:border-[#095c54] outline-hidden">
+                    <option value="5">100% Cleared & Disinfected</option>
+                    <option value="4">Satisfactory Clearance</option>
+                    <option value="3">Partial — Follow-up Needed</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Leader Completion Summary *
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Completion Summary
                 </label>
                 <textarea
                   rows={2}
                   value={completionNotes}
                   onChange={e => setCompletionNotes(e.target.value)}
-                  placeholder="Summary of work completed e.g. Thoroughly cleared overflowing garbage, washed pavement with bleaching powder..."
+                  placeholder="Summarize waste cleared, surface washing, and final site condition..."
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:border-[#095c54] outline-hidden resize-none"
                 />
               </div>
 
-              <div className="flex justify-end pt-1">
+              <div className="flex justify-end">
                 <button
                   type="submit"
                   disabled={submittingReport}
-                  className="px-5 py-2.5 bg-[#095c54] hover:bg-[#074741] text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition disabled:opacity-50"
+                  className="w-full sm:w-auto px-5 py-2.5 bg-[#095c54] hover:bg-[#074741] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
                 >
                   {submittingReport ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Transmitting Report...</span>
+                      <span>Submitting...</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-3.5 h-3.5" />
-                      <span>Submit Completion Report to Ward Officer</span>
+                      <span>Submit Completion Report</span>
                     </>
                   )}
                 </button>
@@ -1677,71 +1539,50 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: EVIDENCE HISTORY (DYNAMIC DAY-TO-DAY & STAGE HISTORY FOR THIS LOCATION) */}
+      {/* TAB 4: EVIDENCE LOG */}
       {activeTab === 'evidence_history' && (
-        <div className="p-6 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-6 animate-in fade-in duration-150">
-          <div className="border-b border-slate-100 pb-4">
-            <h3 className="text-base font-extrabold text-[#0f2925] flex items-center gap-2">
-              <FileCheck2 className="w-5 h-5 text-[#095c54]" />
-              <span>Location Evidence History & Audit Log</span>
-            </h3>
-            <p className="text-xs text-slate-500">
-              Chronological photographic proof captured on-site for {currentTask.task_code} ({currentTask.location_name || currentTask.address}).
-            </p>
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6 space-y-5">
+          <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-[#0f2925]">Location Evidence Log</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Photographic records submitted for {currentTask.task_code}
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab('evidence_submission')}
+              className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold transition"
+            >
+              Add Photo
+            </button>
           </div>
 
           {submittedEvidences.length === 0 ? (
-            <div className="p-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-3">
-              <Camera className="w-10 h-10 text-slate-300 mx-auto" />
-              <p className="text-xs font-black text-slate-700">
-                No Evidence Uploaded Yet for This Location
+            <div className="py-12 px-6 text-center bg-slate-50/70 rounded-xl border border-dashed border-slate-200 space-y-2.5">
+              <Camera className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm font-semibold text-[#0f2925]">No Evidence Uploaded Yet</p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Submitted before, during, and after photos for this task will appear here chronologically.
               </p>
-              <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                No photographs or completion reports have been uploaded yet by the squad. Go to the <strong>Evidence Submission</strong> tab to take geotagged photos.
-              </p>
-              <button
-                onClick={() => setActiveTab('evidence_submission')}
-                className="px-4 py-2 bg-[#095c54] text-white text-xs font-extrabold rounded-xl hover:bg-[#074741] transition"
-              >
-                Go to Evidence Submission
-              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {submittedEvidences.map((ev, idx) => (
-                <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full font-black uppercase text-[10px] tracking-wider ${
-                        ev.stage === 'before'
-                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                          : ev.stage === 'during'
-                          ? 'bg-blue-100 text-blue-900 border border-blue-300'
-                          : 'bg-emerald-100 text-emerald-950 border border-emerald-300'
-                      }`}
-                    >
-                      {ev.stage} Stage
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">{ev.timestamp}</span>
-                  </div>
-
-                  <div className="h-44 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 relative group">
+                <div key={ev.id || idx} className="rounded-xl border border-slate-200/80 bg-white overflow-hidden flex flex-col">
+                  <div className="h-44 bg-slate-100 relative">
                     <img src={ev.photo_url} alt={ev.stage} className="w-full h-full object-cover" />
-                    <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white px-2 py-0.5 rounded text-[9px] font-bold uppercase">
-                      {ev.stage} Cleanup
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-700 font-medium line-clamp-2">
-                    {ev.description}
-                  </p>
-
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-200">
-                    <span>GPS: ~{ev.distance}m from pin</span>
-                    <span className="font-bold text-[#095c54] flex items-center gap-1">
-                      <Check className="w-3 h-3 text-emerald-600" />
-                      <span>AI Verified</span>
+                    <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-white/95 text-[#0f2925] text-[10px] font-bold uppercase shadow-2xs border border-slate-200/60">
+                      {ev.stage}
                     </span>
+                  </div>
+                  <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
+                    <p className="text-xs text-slate-700 leading-relaxed line-clamp-3">
+                      {ev.description}
+                    </p>
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>{ev.dateLabel} · {ev.timeLabel}</span>
+                      <span className="font-semibold text-[#095c54]">~{ev.distance}m GPS</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1752,14 +1593,14 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
       {/* Live Viewfinder Modal */}
       {showLiveCameraModal && (
-        <div className="fixed inset-0 z-1050 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-3xl max-w-lg w-full overflow-hidden p-5 space-y-4 border border-slate-700 text-white">
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-2xl max-w-lg w-full overflow-hidden p-5 space-y-4 border border-slate-700 text-white">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold flex items-center gap-2">
                 <Video className="w-4 h-4 text-emerald-400" />
                 <span>Live Camera Viewfinder</span>
               </h4>
-              <button onClick={closeLiveCamera} className="p-1 rounded-full hover:bg-slate-800 text-slate-300">
+              <button onClick={closeLiveCamera} className="p-1 rounded-lg hover:bg-slate-800 text-slate-300">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1769,29 +1610,29 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                 {cameraError}
               </div>
             ) : (
-              <div className="relative rounded-2xl overflow-hidden bg-black aspect-4/3 flex items-center justify-center">
+              <div className="relative rounded-xl overflow-hidden bg-black aspect-[4/3] flex items-center justify-center">
                 <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                <div className="absolute bottom-2 left-2 bg-black/60 px-2.5 py-1 rounded-md text-[10px] font-mono text-emerald-400">
-                  GPS: {userCoords[0].toFixed(5)}°N, {userCoords[1].toFixed(5)}°E
+                <div className="absolute bottom-2 left-2 bg-black/60 px-2.5 py-1 rounded-md text-[10px] font-mono text-emerald-300">
+                  {userCoords[0].toFixed(5)}°N, {userCoords[1].toFixed(5)}°E
                 </div>
               </div>
             )}
 
-            <div className="flex justify-between items-center pt-2">
+            <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
                 onClick={closeLiveCamera}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-300 hover:bg-slate-700"
+                className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={captureLiveSnapshot}
-                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-2 shadow-md"
+                className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold flex items-center gap-2"
               >
                 <Camera className="w-4 h-4" />
-                <span>Capture Snapshot</span>
+                <span>Capture</span>
               </button>
             </div>
           </div>

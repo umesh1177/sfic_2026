@@ -79,10 +79,6 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
             <h1 className="text-xl sm:text-3xl font-black text-white tracking-tight leading-tight">
               {greeting}, {user?.full_name ? user.full_name.split(' ')[0] : t.citizen}!
             </h1>
-
-            <p className="text-xs sm:text-sm text-white/90 max-w-xl font-medium leading-relaxed">
-              {t.hero_card_desc}
-            </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0 pt-2 sm:pt-0">
@@ -179,26 +175,9 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
       </div>
 
       {/* ======================================================== */}
-      {/* 3. QUICK CIVIC ACCESS CHIPS (RESPONSIVE 3-COLUMN)        */}
+      {/* 3. QUICK CIVIC ACCESS CHIPS (RESPONSIVE 2-COLUMN)        */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        {/* Cleanliness Map */}
-        <button
-          onClick={() => onNavigateTab('map')}
-          className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#095c54] transition text-left flex flex-col sm:flex-row items-center sm:items-center justify-between gap-2 group touch-press"
-        >
-          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left min-w-0">
-            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center font-bold shrink-0">
-              <MapIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_map_title}</div>
-              <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_map_sub}</div>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition hidden sm:block shrink-0" />
-        </button>
-
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
         {/* Cleanliness Drives */}
         <button
           onClick={() => onNavigateTab('drives')}
@@ -216,17 +195,17 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
           <ChevronRight className="w-4 h-4 text-[#94a3b8] group-hover:text-[#095c54] group-hover:translate-x-0.5 transition hidden sm:block shrink-0" />
         </button>
 
-        {/* Civic Challenges */}
+        {/* Rewards & Spotlights */}
         <button
-          onClick={() => onNavigateTab('challenges')}
+          onClick={() => onNavigateTab('rewards')}
           className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white border border-[#e2e8f0] shadow-xs hover:border-[#095c54] transition text-left flex flex-col sm:flex-row items-center sm:items-center justify-between gap-2 group touch-press"
         >
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left min-w-0">
             <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#fef3c7] text-[#d97706] flex items-center justify-center font-bold shrink-0">
-              <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Award className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.action_challenges_title}</div>
+              <div className="text-[11px] sm:text-xs font-black text-[#0f2925] truncate">{t.nav_rewards}</div>
               <div className="text-[9px] sm:text-[10px] text-[#64748b] truncate hidden sm:block">{t.action_challenges_sub}</div>
             </div>
           </div>
@@ -337,10 +316,10 @@ export  const DashboardHome: React.FC<DashboardHomeProps> = ({
 
           <div className="pt-2 text-center">
             <button
-              onClick={() => onNavigateTab('map')}
+              onClick={() => onNavigateTab('drives')}
               className="text-xs font-extrabold text-[#095c54] hover:underline"
             >
-              {t.action_map} →
+              {t.action_drives_title} →
             </button>
           </div>
         </div>

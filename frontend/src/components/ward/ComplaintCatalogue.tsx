@@ -20,7 +20,8 @@ import {
   Users,
   ClipboardCheck,
   Activity,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 import { api } from '../../services/api.js';
 import { ComplaintViewModal } from './ComplaintViewModal.js';
@@ -66,6 +67,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
   const [submittingReopen, setSubmittingReopen] = useState<boolean>(false);
   const [reopenSuccess, setReopenSuccess] = useState<string | null>(null);
   const [reopenError, setReopenError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Sync when initialFilter prop changes or is cleared
   useEffect(() => {
@@ -149,6 +151,27 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     }
   };
 
+  // Handle Delete Complaint
+  const handleDeleteComplaint = async (complaint: any) => {
+    const ok = window.confirm(
+      `Are you sure you want to permanently delete complaint ${complaint.complaint_number} (${complaint.category_name})?`
+    );
+    if (!ok) return;
+    setDeletingId(complaint.id);
+    setReopenError(null);
+    try {
+      await api.deleteWardComplaint(complaint.id);
+      setReopenSuccess(`Complaint ${complaint.complaint_number} deleted permanently.`);
+      if (trackingComplaintId === complaint.id) setTrackingComplaintId(null);
+      await fetchComplaints();
+      setTimeout(() => setReopenSuccess(null), 4000);
+    } catch (err: any) {
+      setReopenError(err.message || 'Failed to delete complaint.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const displayedComplaints = complaints.filter(c => {
     if (catalogueView === 'active') {
       return c.status !== 'resolved' && c.status !== 'closed';
@@ -202,10 +225,6 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
             Complaint Catalogue
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {initialFilter?.ward_number ? `Ward ${initialFilter.ward_number} Operations Central` : 'Ward Operations Central'} · Total Registered Complaints:{' '}
-            <strong className="text-[#095c54]">{totalCount}</strong>
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -644,6 +663,23 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                             <span>Reopen</span>
                           </button>
                         )}
+
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleDeleteComplaint(complaint);
+                          }}
+                          disabled={deletingId === complaint.id}
+                          className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                          title="Delete this complaint permanently"
+                        >
+                          {deletingId === complaint.id ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -774,6 +810,23 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         <span>Reopen</span>
                       </button>
                     )}
+
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleDeleteComplaint(complaint);
+                      }}
+                      disabled={deletingId === complaint.id}
+                      className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                      title="Delete this complaint permanently"
+                    >
+                      {deletingId === complaint.id ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>Delete</span>
+                    </button>
                   </div>
                 </div>
 
