@@ -99,15 +99,33 @@ export class AIService {
     this.learnedLoaded = true;
 
     // 1. Load from local JSON file if present
-    try {
-      if (fs.existsSync(this.TRAINING_STORE_PATH)) {
-        const parsed = JSON.parse(fs.readFileSync(this.TRAINING_STORE_PATH, 'utf8'));
-        if (Array.isArray(parsed)) {
-          this.learnedSamples = parsed;
+    const candidatePaths = [
+      this.TRAINING_STORE_PATH,
+      path.resolve(process.cwd(), 'backend', 'data', 'ai_training_samples.json'),
+      path.resolve(process.cwd(), '..', 'backend', 'data', 'ai_training_samples.json'),
+      path.resolve(process.cwd(), 'data', 'ai_training_samples.json'),
+      path.resolve(process.cwd(), 'ml-service', 'weights', 'online_prototypes.json'),
+      path.resolve(process.cwd(), '..', 'ml-service', 'weights', 'online_prototypes.json')
+    ];
+    for (const p of candidatePaths) {
+      try {
+        if (fs.existsSync(p)) {
+          const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.learnedSamples = parsed.map((item: any) => ({
+              category_id: item.category_id,
+              category_name: item.category_name || item.category || 'Other Cleanliness Issues',
+              vector: Array.isArray(item.vector) ? item.vector : [],
+              description: item.description || '',
+              created_at: item.created_at || new Date().toISOString()
+            }));
+            this.TRAINING_STORE_PATH = p;
+            break;
+          }
         }
+      } catch {
+        // silent
       }
-    } catch {
-      // silent
     }
 
     // 2. Load from PostgreSQL ai_image_training_samples table
@@ -126,7 +144,7 @@ export class AIService {
         const res = await pool.query(
           `SELECT category_id, category_name, feature_vector, description, created_at
            FROM ai_image_training_samples
-           ORDER BY created_at DESC LIMIT 500`
+           ORDER BY created_at DESC LIMIT 5000`
         );
         if (res.rows.length > 0) {
           this.learnedSamples = res.rows.map((r: any) => ({
@@ -168,8 +186,8 @@ export class AIService {
         created_at: new Date().toISOString()
       };
       this.learnedSamples.unshift(sample);
-      if (this.learnedSamples.length > 500) {
-        this.learnedSamples = this.learnedSamples.slice(0, 500);
+      if (this.learnedSamples.length > 5000) {
+        this.learnedSamples = this.learnedSamples.slice(0, 5000);
       }
 
       // Persist to PostgreSQL
@@ -310,6 +328,8 @@ export class AIService {
       const skin = visualFeatures.skin_ratio ?? 0;
       const white = visualFeatures.white_ratio ?? 0;
       const grayRoad = visualFeatures.gray_road_ratio ?? 0;
+      const green = visualFeatures.green_ratio ?? 0;
+      const blueWater = visualFeatures.blue_water_ratio ?? 0;
 
       if (b < 18 || b > 246 || sd < 13 || edge < 0.025) {
         isRelevant = false;
@@ -323,6 +343,19 @@ export class AIService {
         isRelevant = false;
         relevanceReason =
           'This photo appears to be a document, blank wall, or screen capture rather than a cleanliness issue. This photo cannot be submitted.';
+      } else if (
+        // Door / wall panel heuristic: high uniformity, no road/water/vegetation outdoor cues
+        edge < 0.045 &&
+        grayRoad < 0.15 &&
+        green < 0.05 &&
+        blueWater < 0.05 &&
+        sd < 35 &&
+        b > 55 &&
+        b < 215
+      ) {
+        isRelevant = false;
+        relevanceReason =
+          'This photo appears to show an indoor door or wall panel rather than a municipal cleanliness issue. This photo cannot be submitted.';
       }
     }
 
@@ -384,20 +417,46 @@ export class AIService {
       }
     }
 
-    // 3a. Online-learned k-NN similarity matching (improves automatically with every new photo uploaded!)
+    // 3a. Online-learned k-NN similarity matching with 2,200+ prototypes (Cleanliness + Negative Rejection)
     const queryVec = visualFeatures?.vector;
     if (Array.isArray(queryVec) && queryVec.length > 0 && this.learnedSamples.length > 0) {
-      const matches: Array<{ sim: number; category_name: string }> = [];
+      const matches: Array<{ sim: number; category_name: string; category_id?: string }> = [];
       for (const s of this.learnedSamples) {
         const sim = this.cosineSim(queryVec, s.vector);
-        if (sim >= 0.78) {
-          matches.push({ sim, category_name: s.category_name });
+        if (sim >= 0.74) {
+          matches.push({ sim, category_name: s.category_name, category_id: s.category_id });
         }
       }
       matches.sort((a, b) => b.sim - a.sim);
-      for (const m of matches.slice(0, 5)) {
-        if (scores[m.category_name] !== undefined) {
-          scores[m.category_name] += m.sim * 3.0;
+
+      const topMatches = matches.slice(0, 7);
+      const rejectMatches = topMatches.filter(
+        m => m.category_name.toLowerCase().startsWith('invalid') || (m.category_id && m.category_id.startsWith('invalid'))
+      );
+
+      if (rejectMatches.length > 0 && (topMatches[0].category_name.toLowerCase().startsWith('invalid') || rejectMatches[0].sim >= 0.82)) {
+        isRelevant = false;
+        const rejectName = rejectMatches[0].category_name;
+        if (rejectName.includes('Door')) {
+          relevanceReason = 'Photo rejected: This photo appears to show an indoor door or household frame rather than a municipal cleanliness issue. This photo cannot be submitted.';
+        } else if (rejectName.includes('Pet') || rejectName.includes('Dog') || rejectName.includes('Cat')) {
+          relevanceReason = 'Photo rejected: This photo appears to show a pet dog, cat, or animal rather than an outdoor municipal cleanliness issue. This photo cannot be submitted.';
+        } else if (rejectName.includes('Furniture')) {
+          relevanceReason = 'Photo rejected: This photo appears to show indoor furniture or home interior rather than an outdoor cleanliness issue. This photo cannot be submitted.';
+        } else if (rejectName.includes('Person') || rejectName.includes('Selfie')) {
+          relevanceReason = 'Photo rejected: This photo appears to be a person or portrait selfie rather than a civic cleanliness issue. This photo cannot be submitted.';
+        } else if (rejectName.includes('Document') || rejectName.includes('Screen')) {
+          relevanceReason = 'Photo rejected: This photo appears to be a document or screen capture rather than a real cleanliness issue. This photo cannot be submitted.';
+        } else if (rejectName.includes('Vehicle')) {
+          relevanceReason = 'Photo rejected: This photo appears to show a private vehicle interior rather than a public civic issue. This photo cannot be submitted.';
+        } else {
+          relevanceReason = 'Photo rejected: This photo is not relevant to a municipal cleanliness issue. Please capture an outdoor photo of the civic problem.';
+        }
+      }
+
+      for (const m of topMatches) {
+        if (!m.category_name.toLowerCase().startsWith('invalid') && scores[m.category_name] !== undefined) {
+          scores[m.category_name] += m.sim * 3.5;
           matchedLearnedSample = true;
         }
       }
@@ -453,6 +512,32 @@ export class AIService {
 
     // 3c. Multilingual Text Semantics (Filename + Description)
     const textCorpus = `${fileName} ${description || ''}`.toLowerCase();
+
+    // Check for irrelevant non-cleanliness keywords (doors, pets, furniture, selfies)
+    const irrelevantKeywords = [
+      {
+        words: ['dog', 'puppy', 'kutta', 'kutte', 'કુતરો', 'કુતરા', 'golden retriever', 'labrador', 'shepherd', 'bulldog', 'pug', 'cat', 'kitten', 'billi', 'બિલાડી'],
+        reason: 'Photo / description indicates a pet or domestic animal rather than an outdoor municipal cleanliness issue. This photo cannot be submitted.'
+      },
+      {
+        words: ['door', 'doorknob', 'doorframe', 'darwaja', 'darwaza', 'દરવાજો', 'દરવાજા', 'bedroom door', 'sliding door'],
+        reason: 'Photo / description indicates an interior door rather than a public civic cleanliness issue. This photo cannot be submitted.'
+      },
+      {
+        words: ['sofa', 'couch', 'dining table', 'bed', 'wardrobe', 'curtain', 'fan', 'tv', 'television', 'laptop'],
+        reason: 'Photo / description indicates household furniture or interior decor rather than an outdoor civic cleanliness issue. This photo cannot be submitted.'
+      }
+    ];
+
+    if (isRelevant) {
+      for (const item of irrelevantKeywords) {
+        if (item.words.some(w => textCorpus.includes(w))) {
+          isRelevant = false;
+          relevanceReason = item.reason;
+          break;
+        }
+      }
+    }
     const kwMap: Record<string, string[]> = {
       'Drainage / Waste Accumulation': ['drain', 'gutter', 'sewer', 'sewage', 'stagnant', 'choked', 'nala', 'ગટર', 'નાલી', 'नाली', 'गटर'],
       'Overflowing Dustbin': ['dustbin', 'bin', 'container', 'trash can', 'overfill', 'overflowing', 'કચરાપેટી', 'ડસ્ટબિન', 'कूड़ेदान'],

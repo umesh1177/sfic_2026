@@ -5,6 +5,7 @@ const store_js_1 = require("../data/store.js");
 const dbRepository_js_1 = require("../data/dbRepository.js");
 const aiService_js_1 = require("../services/aiService.js");
 const postgis_js_1 = require("../utils/postgis.js");
+const exifParser_js_1 = require("../utils/exifParser.js");
 class ComplaintsController {
     /**
      * POST /api/complaints/validate-content
@@ -157,6 +158,32 @@ class ComplaintsController {
                     error: moderation.reason || 'Content rejected due to policy violations.'
                 });
                 return;
+            }
+            // 1b. Non-cleanliness Photo Relevance Gate (Doors, Pets, Furniture, Selfies, etc.)
+            if (req.body.is_relevant === false) {
+                res.status(400).json({
+                    success: false,
+                    error: req.body.relevance_reason || 'Photo rejected: Captured or uploaded image does not appear to show a municipal cleanliness issue.'
+                });
+                return;
+            }
+            // 1c. Mandatory EXIF Geo-Tag Gate for Gallery Uploads
+            const captureSource = req.body.capture_source || req.body.source || 'live_camera';
+            if (captureSource === 'gallery' || captureSource === 'upload') {
+                let hasValidGeoTag = Boolean(req.body.photo_geo_tagged);
+                if (!hasValidGeoTag && image_url && typeof image_url === 'string' && image_url.startsWith('data:image')) {
+                    const exifCheck = (0, exifParser_js_1.extractExifGeoTagFromBase64)(image_url);
+                    if (exifCheck.hasGeoTag && exifCheck.latitude && exifCheck.longitude) {
+                        hasValidGeoTag = true;
+                    }
+                }
+                if (!hasValidGeoTag) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'Submission rejected: Gallery photos must contain GPS location metadata (EXIF geo-tag). Please enable GPS in your camera or use the live camera option.'
+                    });
+                    return;
+                }
             }
             // 2. Ward Resolution (prefer live store.wards so admin officer updates apply)
             const allWards = (store_js_1.store.wards && store_js_1.store.wards.length > 0) ? store_js_1.store.wards : postgis_js_1.NAVSARI_WARDS;

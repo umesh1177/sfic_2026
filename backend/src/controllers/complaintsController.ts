@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../middleware/auth.js';
 import { Complaint, ComplaintLocation, ComplaintActivityLog } from '../types/index.js';
 import { AIService } from '../services/aiService.js';
 import { findWardByCoordinates, calculateDistanceMeters, NAVSARI_WARDS, isPointInPolygon, DEFAULT_NAVSARI_CITY_BOUNDARY } from '../utils/postgis.js';
+import { extractExifGeoTagFromBase64 } from '../utils/exifParser.js';
 
 export class ComplaintsController {
   /**
@@ -194,6 +195,34 @@ export class ComplaintsController {
           error: moderation.reason || 'Content rejected due to policy violations.'
         });
         return;
+      }
+
+      // 1b. Non-cleanliness Photo Relevance Gate (Doors, Pets, Furniture, Selfies, etc.)
+      if (req.body.is_relevant === false) {
+        res.status(400).json({
+          success: false,
+          error: req.body.relevance_reason || 'Photo rejected: Captured or uploaded image does not appear to show a municipal cleanliness issue.'
+        });
+        return;
+      }
+
+      // 1c. Mandatory EXIF Geo-Tag Gate for Gallery Uploads
+      const captureSource = req.body.capture_source || req.body.source || 'live_camera';
+      if (captureSource === 'gallery' || captureSource === 'upload') {
+        let hasValidGeoTag = Boolean(req.body.photo_geo_tagged);
+        if (!hasValidGeoTag && image_url && typeof image_url === 'string' && image_url.startsWith('data:image')) {
+          const exifCheck = extractExifGeoTagFromBase64(image_url);
+          if (exifCheck.hasGeoTag && exifCheck.latitude && exifCheck.longitude) {
+            hasValidGeoTag = true;
+          }
+        }
+        if (!hasValidGeoTag) {
+          res.status(400).json({
+            success: false,
+            error: 'Submission rejected: Gallery photos must contain GPS location metadata (EXIF geo-tag). Please enable GPS in your camera or use the live camera option.'
+          });
+          return;
+        }
       }
 
       // 2. Ward Resolution (prefer live store.wards so admin officer updates apply)

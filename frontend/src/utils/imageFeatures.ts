@@ -16,7 +16,7 @@ export interface ExtractedVisualFeatures {
  * Extracts compact pixel-level visual features + a 40-dimensional visual fingerprint
  * from any base64 image in <15ms using an offscreen HTMLCanvasElement.
  * Powers accurate category prediction, online incremental training, and
- * non-cleanliness photo rejection (selfies, blank walls, dark/covered camera, documents).
+ * non-cleanliness photo rejection (doors, pets, selfies, blank walls, dark/covered camera, documents).
  */
 export function extractImageVisualFeatures(dataUrl: string): Promise<ExtractedVisualFeatures | null> {
   return new Promise(resolve => {
@@ -156,30 +156,135 @@ export function extractImageVisualFeatures(dataUrl: string): Promise<ExtractedVi
   });
 }
 
+function calcCosine(a: number[], b: number[]): number {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+// Pre-calibrated Negative Rejection Archetypes (40-dim visual fingerprints)
+const DOOR_ARCHETYPE = [
+  0.038, 0.114, 0.380, 0.722, 0.456, 0.152, 0.038, 0.000,
+  0.076, 0.228, 0.532, 0.608, 0.342, 0.095, 0.019, 0.000,
+  0.152, 0.418, 0.646, 0.418, 0.190, 0.057, 0.019, 0.000,
+  0.35, 0.58, 0.58, 0.35, 0.35, 0.59, 0.59, 0.35,
+  0.36, 0.58, 0.58, 0.36, 0.36, 0.57, 0.57, 0.36
+];
+
+const PET_DOG_ARCHETYPE = [
+  0.061, 0.203, 0.446, 0.648, 0.446, 0.162, 0.041, 0.020,
+  0.101, 0.284, 0.527, 0.608, 0.365, 0.101, 0.020, 0.020,
+  0.203, 0.486, 0.567, 0.446, 0.223, 0.061, 0.020, 0.020,
+  0.48, 0.50, 0.50, 0.48, 0.49, 0.64, 0.65, 0.49,
+  0.49, 0.63, 0.64, 0.49, 0.47, 0.49, 0.49, 0.47
+];
+
+const FURNITURE_ARCHETYPE = [
+  0.081, 0.284, 0.567, 0.608, 0.324, 0.122, 0.041, 0.000,
+  0.101, 0.324, 0.588, 0.567, 0.304, 0.101, 0.041, 0.000,
+  0.122, 0.365, 0.567, 0.527, 0.304, 0.101, 0.041, 0.000,
+  0.42, 0.44, 0.43, 0.41, 0.50, 0.54, 0.53, 0.49,
+  0.52, 0.56, 0.55, 0.51, 0.45, 0.47, 0.46, 0.43
+];
+
+const DOCUMENT_ARCHETYPE = [
+  0.019, 0.019, 0.038, 0.076, 0.152, 0.342, 0.722, 0.532,
+  0.019, 0.019, 0.038, 0.076, 0.152, 0.342, 0.722, 0.532,
+  0.019, 0.019, 0.038, 0.076, 0.152, 0.342, 0.722, 0.532,
+  0.85, 0.86, 0.86, 0.85, 0.86, 0.88, 0.88, 0.86,
+  0.86, 0.88, 0.88, 0.86, 0.84, 0.85, 0.85, 0.84
+];
+
 /**
- * Local cleanliness relevance gate (runs even when offline or before server response)
+ * Local cleanliness relevance gate (runs instantly in browser even offline)
  */
 export function checkLocalCleanlinessRelevance(
   f: ExtractedVisualFeatures | null
 ): { isRelevant: boolean; reason?: string } {
   if (!f) return { isRelevant: true };
+
+  // 1. Darkness / blank / out of focus check
   if (f.brightness < 18 || f.brightness > 246 || f.std_dev < 13 || f.edge_density < 0.025) {
     return {
       isRelevant: false,
       reason: 'Captured photo is blank, too dark, or out of focus. This photo is not relevant to a cleanliness issue and cannot be submitted.'
     };
   }
+
+  // 2. Selfie / Person check
   if (f.skin_ratio > 0.25 && f.gray_road_ratio < 0.28) {
     return {
       isRelevant: false,
-      reason: 'This photo appears to show a person/selfie rather than a civic cleanliness issue and cannot be submitted.'
+      reason: 'This photo appears to show a person or selfie rather than a civic cleanliness issue. This photo cannot be submitted.'
     };
   }
+
+  // 3. Document / white screen / plain wall check
   if (f.white_ratio > 0.74 && f.edge_density > 0.05) {
     return {
       isRelevant: false,
-      reason: 'This photo appears to be a document, blank wall, or screen capture rather than a cleanliness issue and cannot be submitted.'
+      reason: 'This photo appears to be a document, blank wall, or screen capture rather than a cleanliness issue. This photo cannot be submitted.'
     };
   }
+
+  // 4. Door / Flat wall panel heuristic
+  if (
+    f.edge_density < 0.045 &&
+    f.gray_road_ratio < 0.15 &&
+    f.green_ratio < 0.05 &&
+    f.blue_water_ratio < 0.05 &&
+    f.std_dev < 35 &&
+    f.brightness > 55 &&
+    f.brightness < 215
+  ) {
+    return {
+      isRelevant: false,
+      reason: 'This photo appears to show an indoor door or wall panel rather than a municipal cleanliness issue. This photo cannot be submitted.'
+    };
+  }
+
+  // 5. Negative Rejection Prototype Matching
+  if (Array.isArray(f.vector) && f.vector.length === 40) {
+    const doorSim = calcCosine(f.vector, DOOR_ARCHETYPE);
+    if (doorSim >= 0.85) {
+      return {
+        isRelevant: false,
+        reason: 'Photo rejected: This photo appears to show an indoor door or entry frame rather than an outdoor municipal cleanliness issue. This photo cannot be submitted.'
+      };
+    }
+
+    const petSim = calcCosine(f.vector, PET_DOG_ARCHETYPE);
+    if (petSim >= 0.85) {
+      return {
+        isRelevant: false,
+        reason: 'Photo rejected: This photo appears to show a pet dog, cat, or animal rather than an outdoor municipal cleanliness issue. This photo cannot be submitted.'
+      };
+    }
+
+    const furnSim = calcCosine(f.vector, FURNITURE_ARCHETYPE);
+    if (furnSim >= 0.87) {
+      return {
+        isRelevant: false,
+        reason: 'Photo rejected: This photo appears to show indoor furniture rather than a public civic cleanliness issue. This photo cannot be submitted.'
+      };
+    }
+
+    const docSim = calcCosine(f.vector, DOCUMENT_ARCHETYPE);
+    if (docSim >= 0.90) {
+      return {
+        isRelevant: false,
+        reason: 'Photo rejected: This photo appears to be a paper document or screen capture rather than a real cleanliness issue. This photo cannot be submitted.'
+      };
+    }
+  }
+
   return { isRelevant: true };
 }

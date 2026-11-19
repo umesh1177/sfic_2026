@@ -69,7 +69,7 @@ KEYWORDS: Dict[str, List[str]] = {
     ],
     "Railing / Parapet Damaged": [
         "railing", "parapet", "bridge", "culvert", "broken wall", "fence",
-        "રેલિંગ", "પેરાપેટ", "પુલ", "रेलिंग"
+        "રેલિંગ", "પેરાપેટ", "પુલ", "રેલિંગ"
     ],
     "Road Overtopped / Waterlogging": [
         "waterlog", "flood", "overtop", "submerged", "flooded road", "water logging",
@@ -77,14 +77,42 @@ KEYWORDS: Dict[str, List[str]] = {
     ]
 }
 
+# Comprehensive ontology of non-cleanliness objects (doors, pets, furniture, appliances, personal items)
 IRRELEVANT_IMAGENET_TERMS = [
-    "laptop", "notebook", "desktop computer", "monitor", "screen", "television", "keyboard",
-    "mouse", "cellular telephone", "ipod", "hand-held computer", "web site", "menu", "book jacket",
-    "comic book", "crossword", "suit", "tie", "jersey", "t-shirt", "sunglasses", "wig", "lipstick",
-    "face powder", "sofa", "couch", "studio couch", "bed", "pillow", "dining table", "desk",
-    "coffee mug", "pizza", "hamburger", "ice cream", "plate", "tabby", "persian cat", "golden retriever",
-    "labrador", "beagle", "poodle", "chihuahua", "groom", "bride", "academic gown", "lab coat",
-    "stethoscope", "headphones", "microphone", "guitar", "piano", "clock", "watch"
+    # Doors, architectural interiors & entryways
+    "door", "sliding door", "folding door", "revolving door", "doorknob", "doorplate",
+    "turnstile", "gate", "window screen", "window shade", "shutter", "wall tile",
+    # Dogs (all major ImageNet breeds)
+    "dog", "golden retriever", "labrador", "retriever", "german shepherd", "shepherd",
+    "bulldog", "french bulldog", "pug", "beagle", "terrier", "hound", "poodle",
+    "chihuahua", "husky", "siberian husky", "malamute", "rottweiler", "boxer",
+    "mastiff", "cocker spaniel", "spaniel", "dalmatian", "collie", "border collie",
+    "pinscher", "setter", "corgi", "pomeranian", "samoyed", "shih-tzu", "dachshund",
+    "basset", "bloodhound", "whippet", "greyhound", "dhole", "dingo", "canine",
+    # Cats & other domestic pets
+    "cat", "tabby", "persian cat", "siamese", "egyptian cat", "kitten", "puppy",
+    "hamster", "guinea pig", "rabbit", "wood rabbit", "hare", "squirrel", "marmot",
+    "parrot", "canary", "pet", "animal",
+    # Furniture & interior home living
+    "sofa", "couch", "studio couch", "bed", "day bed", "cradle", "crib", "pillow",
+    "dining table", "desk", "table", "chair", "folding chair", "rocking chair",
+    "armchair", "wardrobe", "closet", "cabinet", "bookcase", "chiffonier", "dresser",
+    "lamp", "lampshade", "table lamp", "curtain", "quilt", "blanket",
+    # Household appliances & electronics
+    "refrigerator", "microwave", "toaster", "oven", "stove", "washer", "dishwasher",
+    "vacuum", "sewing machine", "iron", "television", "monitor", "screen",
+    "cellular telephone", "cellphone", "mobile phone", "telephone", "ipod", "laptop",
+    "notebook", "desktop computer", "keyboard", "mouse", "modem", "joystick",
+    # Personal attire, portraits & selfies
+    "suit", "tie", "jersey", "t-shirt", "jean", "swimming trunks", "brassiere", "gown",
+    "kimono", "sarong", "wig", "sunglasses", "lipstick", "face powder", "groom", "bride",
+    "academic gown", "lab coat", "portrait", "headshot", "face", "selfie", "person",
+    # Kitchen dishes & food items
+    "coffee mug", "cup", "plate", "soup bowl", "espresso", "pizza", "hamburger",
+    "hotdog", "bagel", "pretzel", "sandwich", "ice cream",
+    # Personal vehicle interiors
+    "steering wheel", "dashboard", "seatbelt", "odometer", "sports car", "convertible",
+    "minivan", "sedan", "go-kart", "golfcart", "motorcycle", "moped"
 ]
 
 IMAGENET_TO_CATEGORY = {
@@ -116,7 +144,7 @@ class WasteClassifierInference:
         self.weights_path = weights_path
         self.prototypes_path = "weights/online_prototypes.json"
         self.model_name = "NavsariWasteClassifier-ResNet50-Online"
-        self.model_version = "v2.0.0"
+        self.model_version = "v2.5.0-CleanlinessGate"
         self.has_weights = False
         self.imagenet_model = None
         self.imagenet_labels: List[str] = []
@@ -128,20 +156,31 @@ class WasteClassifierInference:
         self._init_vision_backbone()
 
     def _load_online_samples(self):
-        if os.path.exists(self.prototypes_path):
-            try:
-                with open(self.prototypes_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        self.online_samples = data
-                print(f"[ONLINE MODEL] Loaded {len(self.online_samples)} learned photo samples from {self.prototypes_path}")
-            except Exception as e:
-                print(f"[ONLINE MODEL WARN] Failed to load prototypes: {e}")
+        # Check relative and parent directory paths for weights/online_prototypes.json
+        candidate_paths = [
+            self.prototypes_path,
+            os.path.join(os.path.dirname(__file__), "weights", "online_prototypes.json"),
+            os.path.join("ml-service", "weights", "online_prototypes.json"),
+            os.path.join("backend", "data", "ai_training_samples.json"),
+            os.path.join("data", "ai_training_samples.json")
+        ]
+        for p in candidate_paths:
+            if os.path.exists(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list) and len(data) > 0:
+                            self.online_samples = data
+                            self.prototypes_path = p
+                            print(f"[ONLINE MODEL] Successfully loaded {len(self.online_samples)} verified prototypes from {p}")
+                            break
+                except Exception as e:
+                    print(f"[ONLINE MODEL WARN] Failed to load prototypes from {p}: {e}")
 
     def _save_online_samples(self):
         os.makedirs(os.path.dirname(self.prototypes_path), exist_ok=True)
         with open(self.prototypes_path, "w", encoding="utf-8") as f:
-            json.dump(self.online_samples[-500:], f)
+            json.dump(self.online_samples[-5000:], f)
 
     def _init_vision_backbone(self):
         if os.getenv("DISABLE_TORCH", "").strip().lower() in ("1", "true", "yes"):
@@ -260,13 +299,12 @@ class WasteClassifierInference:
         image_base64: Optional[str] = None,
         description: str = ""
     ) -> Dict[str, Any]:
-        """Automatically saves & trains on every newly uploaded complaint image."""
+        """Automatically saves & trains on newly uploaded complaint images."""
         cat = category_name if category_name in CATEGORIES else "Other Cleanliness Issues"
         img = self._decode_image(image_base64)
         if img is None:
             return {"trained": False, "reason": "No valid image data provided", "total_samples": len(self.online_samples)}
 
-        # Persist image into data/train/<category>/ for full PyTorch fine-tuning dataset
         cat_clean = cat.replace(" / ", "_").replace(" ", "_")
         train_dir = os.path.join("data", "train", cat_clean)
         os.makedirs(train_dir, exist_ok=True)
@@ -311,46 +349,86 @@ class WasteClassifierInference:
         feats = self._extract_pixel_features(img) if img is not None else None
         top_labels, top_probs = self._run_imagenet_semantics(img) if img is not None else ([], [])
 
-        # 1. Cleanliness / Civic Relevance Check
+        # 1. Cleanliness / Civic Relevance Check from Pixel Features
         if feats is not None:
             if feats["brightness"] < 18 or feats["brightness"] > 246 or feats["std_dev"] < 14:
                 is_relevant = False
                 relevance_reason = "Captured photo is too dark, blank, or obscured. Please take a clear outdoor photo of the cleanliness issue."
-            elif feats["skin_ratio"] > 0.28 and feats["gray_road_ratio"] < 0.25:
+            elif feats["skin_ratio"] > 0.25 and feats["gray_road_ratio"] < 0.28:
                 is_relevant = False
                 relevance_reason = "This photo appears to show a person/selfie rather than a civic cleanliness issue and cannot be submitted."
             elif feats["white_ratio"] > 0.72 and feats["edge_density"] > 0.05:
                 is_relevant = False
                 relevance_reason = "This photo appears to be a document or screen capture rather than a real cleanliness issue and cannot be submitted."
 
+        # 2. ImageNet Deep Semantic Relevance Gate (Catches doors, dogs, cats, furniture, appliances)
         if is_relevant and top_labels:
-            top1_label = top_labels[0]
-            top1_prob = top_probs[0] if top_probs else 0.0
-            if top1_prob >= 0.35 and any(term in top1_label for term in IRRELEVANT_IMAGENET_TERMS):
-                is_relevant = False
-                relevance_reason = f"Photo detected as '{top1_label}' rather than a cleanliness or civic sanitation issue. This photo cannot be submitted."
+            for lbl, prob in zip(top_labels[:3], top_probs[:3]):
+                if prob >= 0.15 and any(term in lbl for term in IRRELEVANT_IMAGENET_TERMS):
+                    is_relevant = False
+                    if any(d in lbl for d in ["door", "gate", "turnstile", "doorknob"]):
+                        relevance_reason = f"Photo detected as a door / indoor entry ('{lbl}') rather than a civic cleanliness issue. This photo cannot be submitted."
+                    elif any(a in lbl for a in ["dog", "cat", "retriever", "terrier", "hound", "shepherd", "bulldog", "pug", "kitten", "puppy", "pet", "animal"]):
+                        relevance_reason = f"Photo detected as a pet dog or animal ('{lbl}') rather than a municipal cleanliness issue. This photo cannot be submitted."
+                    elif any(f in lbl for f in ["sofa", "couch", "chair", "table", "bed", "wardrobe", "desk", "curtain"]):
+                        relevance_reason = f"Photo detected as indoor furniture ('{lbl}') rather than a civic cleanliness issue. This photo cannot be submitted."
+                    elif any(v in lbl for v in ["steering wheel", "dashboard", "odometer", "car", "sedan", "minivan"]):
+                        relevance_reason = f"Photo detected as vehicle interior ('{lbl}') rather than a civic cleanliness issue. This photo cannot be submitted."
+                    else:
+                        relevance_reason = f"Photo detected as '{lbl}' rather than an outdoor cleanliness or civic issue. This photo cannot be submitted."
+                    break
 
-        # 2. Online Learned k-NN Similarity Matching (trained automatically from uploaded photos)
+        # 3. Online Learned k-NN Matching with 2,200+ prototypes (Cleanliness + Negative Rejection)
         if feats is not None and self.online_samples:
             sims = []
             for sample in self.online_samples:
+                cat_name = sample.get("category") or sample.get("category_name", "")
+                cat_id = sample.get("category_id", "")
                 sim = _cosine_similarity(feats["vector"], sample.get("vector", []))
-                if sim >= 0.78:
-                    sims.append((sim, sample["category"]))
+                if sim >= 0.75:
+                    sims.append((sim, cat_name, cat_id))
             sims.sort(key=lambda x: x[0], reverse=True)
-            for sim, cat in sims[:5]:
-                if cat in scores:
-                    scores[cat] += sim * 2.8
+
+            top_matches = sims[:7]
+            reject_matches = [
+                m for m in top_matches
+                if m[1].lower().startswith("invalid") or m[2].lower().startswith("invalid")
+            ]
+
+            # If negative rejection prototypes dominate or top match has high similarity
+            if reject_matches and (top_matches[0][1].lower().startswith("invalid") or reject_matches[0][0] >= 0.82):
+                is_relevant = False
+                rej_name = reject_matches[0][1]
+                if "Door" in rej_name:
+                    relevance_reason = "Photo rejected: This photo appears to show an indoor door or household frame rather than a municipal cleanliness issue. This photo cannot be submitted."
+                elif "Pet" in rej_name or "Dog" in rej_name or "Cat" in rej_name:
+                    relevance_reason = "Photo rejected: This photo appears to show a pet dog, cat, or domestic animal rather than an outdoor municipal cleanliness issue. This photo cannot be submitted."
+                elif "Furniture" in rej_name:
+                    relevance_reason = "Photo rejected: This photo appears to show indoor furniture or home interior rather than an outdoor cleanliness issue. This photo cannot be submitted."
+                elif "Person" in rej_name or "Selfie" in rej_name:
+                    relevance_reason = "Photo rejected: This photo appears to be a person or portrait selfie rather than a civic cleanliness issue. This photo cannot be submitted."
+                elif "Document" in rej_name or "Screen" in rej_name:
+                    relevance_reason = "Photo rejected: This photo appears to be a document or screen capture rather than a real cleanliness issue. This photo cannot be submitted."
+                elif "Vehicle" in rej_name:
+                    relevance_reason = "Photo rejected: This photo appears to show a private vehicle interior rather than a public civic issue. This photo cannot be submitted."
+                else:
+                    relevance_reason = "Photo rejected: This photo is not relevant to a municipal cleanliness issue. Please capture an outdoor photo of the civic problem."
+
+            # Boost scores for valid cleanliness categories
+            for sim, cat, _ in top_matches:
+                if not cat.lower().startswith("invalid") and cat in scores:
+                    scores[cat] += sim * 3.5
                     matched_learned = True
 
-        # 3. ImageNet Semantic Mapping
-        for lbl, prob in zip(top_labels, top_probs):
-            for cat, terms in IMAGENET_TO_CATEGORY.items():
-                if any(t in lbl for t in terms):
-                    scores[cat] += prob * 2.4
+        # 4. ImageNet Semantic Mapping for Cleanliness Categories
+        if is_relevant:
+            for lbl, prob in zip(top_labels, top_probs):
+                for cat, terms in IMAGENET_TO_CATEGORY.items():
+                    if any(t in lbl for t in terms):
+                        scores[cat] += prob * 2.4
 
-        # 4. Visual Pixel-Feature Heuristics
-        if feats is not None:
+        # 5. Visual Pixel-Feature Heuristics
+        if feats is not None and is_relevant:
             if feats["green_ratio"] > 0.22 and feats["brown_earth_ratio"] > 0.08:
                 scores["Fallen Tree / Blockage"] += 1.4
             if feats["blue_water_ratio"] > 0.16:
@@ -367,7 +445,7 @@ class WasteClassifierInference:
                 scores["Overflowing Dustbin"] += 0.8
                 scores["Littering"] += 0.75
 
-        # 5. Multilingual Text Semantics (Filename + Description)
+        # 6. Multilingual Text Semantics (Filename + Description)
         text_corpus = f"{filename} {description}".lower()
         for category, kw_list in KEYWORDS.items():
             for kw in kw_list:

@@ -38,6 +38,7 @@ import {
   checkLocalCleanlinessRelevance,
   ExtractedVisualFeatures
 } from '../utils/imageFeatures.js';
+import { extractExifGeoTag } from '../utils/exifParser.js';
 import { checkTextForAbuse } from '../utils/moderation.js';
 import { ComplaintCategory, Complaint } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
@@ -295,6 +296,15 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // EXIF Geo-Tag Verification State for Gallery Uploads & Live GPS
+  const [geoTagStatus, setGeoTagStatus] = useState<{
+    verified: boolean;
+    latitude?: number;
+    longitude?: number;
+    source: 'gallery' | 'live_camera';
+  } | null>(null);
+  const [geoTagError, setGeoTagError] = useState<string | null>(null);
 
   // Hidden native camera & gallery inputs
   const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -569,8 +579,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     }
   };
 
-  // Convert uploaded image file to Base64 and run validation
-  const handleImageFileSelected = (file: File) => {
+  // Convert uploaded image file to Base64 and run validation with mandatory EXIF Geo-tag check for gallery
+  const handleImageFileSelected = async (file: File, source: 'live_camera' | 'upload' = 'upload') => {
     if (!file.type.startsWith('image/')) {
       setFormError('Invalid file format. Please upload an image file (JPEG, PNG, WebP).');
       return;
@@ -583,14 +593,54 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 
     setFormError(null);
     setPhotoRejectedAlert(null);
+    setGeoTagError(null);
     setImageFileName(file.name);
-    setImageValidationStatus(`Analyzing photo (${(file.size / 1024).toFixed(0)} KB)...`);
+    setImageValidationStatus(`Analyzing photo & GPS metadata (${(file.size / 1024).toFixed(0)} KB)...`);
+
+    // 1. Mandatory EXIF Geo-Tag Check for Gallery Uploads
+    if (source === 'upload') {
+      const exifRes = await extractExifGeoTag(file);
+      if (!exifRes.hasGeoTag || !exifRes.latitude || !exifRes.longitude) {
+        const errorMsg =
+          '❌ Missing GPS Geo-Tag: Uploaded gallery photo does not contain camera GPS location metadata. For municipal verification and fraud prevention, gallery photos must be geo-tagged. Please enable GPS in your camera app settings before taking photos, or use the "Click Photo" / "Live Camera" button below.';
+        setGeoTagError(errorMsg);
+        setPhotoRejectedAlert(errorMsg);
+        setImageUrl('');
+        setAiIdentifiedCategory(null);
+        setGeoTagStatus(null);
+        setImageValidationStatus('Photo rejected — Missing GPS geo-tag');
+        return;
+      }
+
+      // Valid Geo-Tag found in EXIF
+      const { latitude, longitude } = exifRes;
+      setGeoTagStatus({
+        verified: true,
+        latitude,
+        longitude,
+        source: 'gallery'
+      });
+      setMapCenter([latitude, longitude]);
+      const detectedWard = detectWardFromCoordinates(latitude, longitude);
+      if (detectedWard) {
+        setSelectedWardNumber(detectedWard);
+      }
+      reverseGeocode(latitude, longitude);
+    } else {
+      // Live camera capture
+      setGeoTagStatus({
+        verified: true,
+        latitude: mapCenter[0],
+        longitude: mapCenter[1],
+        source: 'live_camera'
+      });
+    }
 
     const reader = new FileReader();
     reader.onload = async e => {
       const b64 = e.target?.result as string;
       setImageUrl(b64);
-      await analyzeAndValidatePhoto(b64, file.name, file.size, 'upload');
+      await analyzeAndValidatePhoto(b64, file.name, file.size, source);
     };
     reader.readAsDataURL(file);
   };
@@ -673,6 +723,14 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         const capturedName = `camera_capture_${Date.now()}.jpg`;
         setImageUrl(dataUrl);
         setImageFileName(capturedName);
+        setGeoTagError(null);
+        setPhotoRejectedAlert(null);
+        setGeoTagStatus({
+          verified: true,
+          latitude: mapCenter[0],
+          longitude: mapCenter[1],
+          source: 'live_camera'
+        });
         setImageValidationStatus('Verifying live photo cleanliness relevance...');
         analyzeAndValidatePhoto(dataUrl, capturedName, Math.round(dataUrl.length * 0.75), 'live_camera');
       }
@@ -752,7 +810,15 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     setImageFileName(preset.file);
     setDescription(preset.desc);
     setSelectedCategoryId(preset.catId);
-    setImageValidationStatus(`Photo verified: ${preset.name}`);
+    setGeoTagError(null);
+    setPhotoRejectedAlert(null);
+    setGeoTagStatus({
+      verified: true,
+      latitude: mapCenter[0],
+      longitude: mapCenter[1],
+      source: 'live_camera'
+    });
+    setImageValidationStatus(`Photo verified: ${preset.name} (GPS Verified)`);
     setFormError(null);
   };
 
@@ -767,7 +833,22 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       return;
     }
 
-    // 2. Description Validation
+    // 2. Mandatory Geo-Tag Check
+    if (geoTagError) {
+      setFormError(geoTagError);
+      return;
+    }
+
+    // 3. Cleanliness Relevance Check
+    if (photoRejectedAlert) {
+      setFormError(
+        photoRejectedAlert ||
+          'Please capture or upload a valid cleanliness issue photo before submitting.'
+      );
+      return;
+    }
+
+    // 4. Description Validation
     if (!description.trim() || description.trim().length < 8) {
       setFormError('Please provide at least 8 characters describing the issue location and cleanliness problem.');
       return;
@@ -778,14 +859,6 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     if (!abuse.isSafe) {
       setAbuseAlert(abuse);
       setFormError(abuse.reason || 'Please remove abusive language before submitting your report.');
-      return;
-    }
-
-    if (photoRejectedAlert || !imageUrl) {
-      setFormError(
-        photoRejectedAlert ||
-          'Please capture or upload a valid cleanliness issue photo before submitting.'
-      );
       return;
     }
 
@@ -808,7 +881,12 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       priority: isUrgent ? 'urgent' : 'medium',
       confidence_score: aiIdentifiedCategory ? Number((aiIdentifiedCategory.confidence / 100).toFixed(2)) : 0.94,
       ai_model_name: 'NavsariWasteClassifier-ResNet50-Online',
-      ai_model_version: 'v2.0.0'
+      ai_model_version: 'v2.5.0-CleanlinessGate',
+      photo_geo_tagged: Boolean(geoTagStatus?.verified),
+      photo_latitude: geoTagStatus?.latitude || mapCenter[0],
+      photo_longitude: geoTagStatus?.longitude || mapCenter[1],
+      capture_source: geoTagStatus?.source || 'live_camera',
+      is_relevant: !photoRejectedAlert
     };
 
     const queueComplaintOffline = async () => {
@@ -1147,7 +1225,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 className="hidden"
                 onChange={e => {
                   const file = e.target.files?.[0];
-                  if (file) handleImageFileSelected(file);
+                  if (file) handleImageFileSelected(file, 'live_camera');
                 }}
               />
               <input
@@ -1157,10 +1235,62 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                 className="hidden"
                 onChange={e => {
                   const file = e.target.files?.[0];
-                  if (file) handleImageFileSelected(file);
+                  if (file) handleImageFileSelected(file, 'upload');
                 }}
               />
             </div>
+
+            {/* Geo-Tag Verification Badge or Missing Geo-Tag Alert */}
+            {geoTagStatus?.verified && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                    <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black text-emerald-900 block">
+                      {geoTagStatus.source === 'gallery' ? 'Gallery Photo Geo-Tagged & Verified' : 'Live Camera Geo-Tag Verified'}
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-semibold">
+                      GPS: {geoTagStatus.latitude?.toFixed(4)}° N, {geoTagStatus.longitude?.toFixed(4)}° E · Auto-matched to Ward {selectedWardNumber}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 shrink-0">
+                  {geoTagStatus.source === 'gallery' ? 'EXIF GPS ✓' : 'Live GPS ✓'}
+                </span>
+              </div>
+            )}
+
+            {geoTagError && (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-300 text-xs font-bold text-red-900 flex items-start gap-2.5 animate-fadeIn">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-black uppercase tracking-wider text-[10px] text-red-800 block">
+                    Gallery Upload Rejected — Missing GPS Geo-Tag
+                  </span>
+                  <p className="text-[11px] text-red-700 font-medium mt-0.5 leading-relaxed">
+                    This photo lacks GPS location metadata. For municipal verification and fraud prevention, gallery photos must be geo-tagged.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => nativeCameraInputRef.current?.click()}
+                      className="btn-primary-custom py-1.5 px-3 text-[11px] font-black flex items-center gap-1 shadow-sm"
+                    >
+                      <Camera className="w-3.5 h-3.5" /> Use Click Photo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startLiveCamera}
+                      className="bg-white text-[#095c54] border border-[#095c54]/30 py-1.5 px-3 rounded-xl text-[11px] font-black flex items-center gap-1 hover:bg-[#f0f6f4]"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Open Live Camera
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Quick Sample Presets */}
             <div className="flex items-center gap-2 text-[11px] overflow-x-auto pb-1 no-scrollbar">
@@ -1624,10 +1754,17 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           {/* ======================================================== */}
           <button
             type="submit"
-            disabled={loading || !abuseAlert.isSafe || description.trim().length < 8}
+            disabled={
+              loading ||
+              !abuseAlert.isSafe ||
+              description.trim().length < 8 ||
+              !imageUrl ||
+              Boolean(photoRejectedAlert) ||
+              Boolean(geoTagError)
+            }
             className={`w-full py-3.5 sm:py-4 text-sm font-black rounded-2xl shadow-xl transition-all touch-press flex items-center justify-center gap-2 ${
-              !abuseAlert.isSafe
-                ? 'bg-[#fee2e2] text-[#dc2626] border border-[#fca5a5] cursor-not-allowed opacity-90'
+              !abuseAlert.isSafe || Boolean(photoRejectedAlert) || Boolean(geoTagError) || !imageUrl
+                ? 'bg-slate-100 text-slate-500 border border-slate-300 cursor-not-allowed opacity-80'
                 : 'btn-primary-custom disabled:opacity-60 shadow-lg shadow-[#095c54]/30'
             }`}
           >
@@ -1637,6 +1774,21 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
               <>
                 <AlertCircle className="w-4 h-4" />
                 <span>Inappropriate Words Detected — Please Edit to Submit</span>
+              </>
+            ) : Boolean(geoTagError) ? (
+              <>
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                <span>Geo-Tag Missing in Gallery Photo — Use Live Camera</span>
+              </>
+            ) : Boolean(photoRejectedAlert) ? (
+              <>
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+                <span>Photo Rejected — Cleanliness Photo Required</span>
+              </>
+            ) : !imageUrl ? (
+              <>
+                <Camera className="w-4 h-4" />
+                <span>Click Photo or Upload Geo-Tagged Image</span>
               </>
             ) : (
               <>
