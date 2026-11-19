@@ -259,11 +259,13 @@ class ComplaintsController {
                 res.status(401).json({ success: false, error: 'Unauthorized' });
                 return;
             }
-            const { status, category_id, search, page = '1', limit = '10' } = req.query;
+            const { status, category_id, search, page = '1', limit = '50' } = req.query;
             const pageNum = parseInt(page, 10) || 1;
-            const limitNum = parseInt(limit, 10) || 10;
+            const limitNum = parseInt(limit, 10) || 50;
             const complaints = await dbRepository_js_1.DbRepository.getComplaints({
                 citizen_id: req.user.id,
+                citizen_phone: req.user.phone,
+                citizen_name: req.user.full_name,
                 status: status,
                 category_id: category_id,
                 search: search
@@ -293,12 +295,19 @@ class ComplaintsController {
     static async getComplaintById(req, res) {
         try {
             const { id } = req.params;
-            const complaint = await dbRepository_js_1.DbRepository.getComplaintById(id);
+            let complaint = await dbRepository_js_1.DbRepository.getComplaintById(id);
+            if (!complaint) {
+                complaint = (store_js_1.store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+            }
             if (!complaint) {
                 res.status(404).json({ success: false, error: 'Complaint not found' });
                 return;
             }
-            const isOwner = req.user && req.user.id === complaint.citizen_id;
+            const userDigits = req.user?.phone ? req.user.phone.replace(/\D/g, '') : '';
+            const compDigits = (complaint.citizen_phone || '').replace(/\D/g, '');
+            const isOwner = Boolean(req.user && (req.user.id === complaint.citizen_id ||
+                (userDigits && compDigits && (userDigits === compDigits || compDigits.endsWith(userDigits) || userDigits.endsWith(compDigits))) ||
+                (req.user.full_name && complaint.citizen_name && req.user.full_name.toLowerCase() === complaint.citizen_name.toLowerCase())));
             const safeComplaint = {
                 ...complaint,
                 citizen_name: isOwner ? complaint.citizen_name : 'Anonymous Citizen'
@@ -323,7 +332,12 @@ class ComplaintsController {
             }
             const { id } = req.params;
             const deleted = await dbRepository_js_1.DbRepository.deleteComplaint(id);
-            if (!deleted) {
+            // Also clean up from in-memory store
+            const idx = (store_js_1.store.complaints || []).findIndex(c => c.id === id || c.complaint_number === id);
+            if (idx !== -1) {
+                store_js_1.store.complaints.splice(idx, 1);
+            }
+            if (!deleted && idx === -1) {
                 res.status(404).json({ success: false, error: 'Complaint not found or already deleted' });
                 return;
             }
@@ -347,12 +361,20 @@ class ComplaintsController {
             }
             const { id } = req.params;
             const { rating, feedback_text, resolution_satisfactory } = req.body;
-            const complaint = store_js_1.store.complaints.find(c => c.id === id);
+            let complaint = await dbRepository_js_1.DbRepository.getComplaintById(id);
+            if (!complaint) {
+                complaint = (store_js_1.store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+            }
             if (!complaint) {
                 res.status(404).json({ success: false, error: 'Complaint not found' });
                 return;
             }
-            if (complaint.citizen_id !== req.user.id) {
+            const userDigits = req.user.phone ? req.user.phone.replace(/\D/g, '') : '';
+            const compDigits = (complaint.citizen_phone || '').replace(/\D/g, '');
+            const isOwner = Boolean(complaint.citizen_id === req.user.id ||
+                (userDigits && compDigits && (userDigits === compDigits || compDigits.endsWith(userDigits) || userDigits.endsWith(compDigits))) ||
+                (req.user.full_name && complaint.citizen_name && req.user.full_name.toLowerCase() === complaint.citizen_name.toLowerCase()));
+            if (!isOwner) {
                 res.status(403).json({ success: false, error: 'Only the complaint author can submit resolution feedback' });
                 return;
             }

@@ -822,6 +822,25 @@ export class WardOfficerController {
         return;
       }
 
+      // Check if a recognition post already exists for this complaint
+      let isPublished = Boolean((complaint as any).is_published_to_community);
+      if (!isPublished) {
+        if (isDbConnected()) {
+          const postCheck = await pool.query(
+            `SELECT id FROM community_recognition_posts WHERE badge_title ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%' LIMIT 1`,
+            [complaint.complaint_number]
+          ).catch(() => ({ rows: [] as any[] }));
+          if (postCheck.rows.length > 0) isPublished = true;
+        }
+        if (!isPublished && Array.isArray(store.recognitionPosts)) {
+          isPublished = store.recognitionPosts.some(p =>
+            (p.badge_title && p.badge_title.includes(complaint.complaint_number)) ||
+            (p.description && p.description.includes(complaint.complaint_number))
+          );
+        }
+      }
+      (complaint as any).is_published_to_community = isPublished;
+
       // Sync merged complaint back into store
       const sIdx = (store.complaints || []).findIndex(c => c.id === complaint.id);
       if (sIdx !== -1) store.complaints[sIdx] = complaint;
@@ -2411,6 +2430,212 @@ export class WardOfficerController {
     }
   }
 
+  /**
+   * POST /api/ward/communities/bulk
+   * Bulk register multiple communities/organizations uploaded from Excel by a Ward Officer.
+   */
+  public static async bulkAddCommunities(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { communities } = req.body;
+      if (!Array.isArray(communities) || communities.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Please upload an Excel file containing at least one community row.'
+        });
+        return;
+      }
+
+      const officerWard = WardOfficerController.resolveOfficerWard(req);
+      const wardObj = (store.wards || []).find(w => Number(w.ward_number) === officerWard);
+      const wardName = wardObj ? `Ward ${wardObj.ward_number} - ${wardObj.ward_name}` : `Ward ${officerWard}`;
+
+      const created: any[] = [];
+      const errors: Array<{ row: number; community_name: string; error: string }> = [];
+      const seenUsernamesInBatch = new Set<string>();
+
+      for (let i = 0; i < communities.length; i++) {
+        const rowNum = i + 2; // Excel row number (row 1 = headers)
+        const item = communities[i] || {};
+        const communityName = String(item.community_name || '').trim();
+        const headName = String(item.head_name || '').trim();
+
+        if (!communityName || !headName) {
+          errors.push({
+            row: rowNum,
+            community_name: communityName || `Row ${rowNum}`,
+            error: 'Organization Name and Community Head Name are required.'
+          });
+          continue;
+        }
+
+        const rawPhone = String(item.phone || '').trim();
+        const normalizedPhone = normalizeIndianPhone(rawPhone);
+        if (!normalizedPhone) {
+          errors.push({
+            row: rowNum,
+            community_name: communityName,
+            error: 'Valid 10-digit Indian Mobile Number is required.'
+          });
+          continue;
+        }
+
+        const organisationType = String(item.organisation_type || 'Resident Welfare Association').trim() || 'Resident Welfare Association';
+        const effectiveLocality = String(item.locality || '').trim() || wardObj?.ward_name || `Ward ${officerWard}`;
+        const effectiveAddress = String(item.address || '').trim() || `${wardName}, Navsari`;
+        const description = String(item.description || '').trim();
+        const rawPassword = String(item.password || '').trim();
+        const headPassword = rawPassword.length >= 6 ? rawPassword : 'Head@123';
+
+        const slugBase = headName.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || `head${rowNum}`;
+        const effectiveEmail =
+          String(item.email || '').trim() ||
+          `${slugBase}.${normalizedPhone.slice(-4)}@community.org`;
+
+        let effectiveUsername = String(item.username || '').trim();
+        if (!effectiveUsername) {
+          effectiveUsername = `${slugBase.replace(/\./g, '_')}_${normalizedPhone.slice(-4)}`;
+        }
+
+        if (/\s/.test(effectiveUsername)) {
+          errors.push({
+            row: rowNum,
+            community_name: communityName,
+            error: `Username "${effectiveUsername}" cannot contain spaces.`
+          });
+          continue;
+        }
+
+        const lowerUname = effectiveUsername.toLowerCase();
+        if (seenUsernamesInBatch.has(lowerUname)) {
+          errors.push({
+            row: rowNum,
+            community_name: communityName,
+            error: `Duplicate username "${effectiveUsername}" found in the uploaded sheet.`
+          });
+          continue;
+        }
+
+        const unameCheck = await DbRepository.isUsernameTaken(effectiveUsername).catch(() => ({ taken: false }));
+        if (unameCheck.taken) {
+          errors.push({
+            row: rowNum,
+            community_name: communityName,
+            error: `Username "${effectiveUsername}" is already registered on the platform.`
+          });
+          continue;
+        }
+
+        try {
+          const passwordHash = await bcrypt.hash(headPassword, 10);
+          const newUserId = randomUUID();
+          const newCommunityId = randomUUID();
+
+          const newProfile: any = {
+            id: newUserId,
+            full_name: headName,
+            phone: normalizedPhone,
+            email: effectiveEmail,
+            username: effectiveUsername,
+            plain_password: headPassword,
+            preferred_language: 'en',
+            locality: effectiveLocality,
+            address: effectiveAddress,
+            ward_number: officerWard,
+            is_active: true,
+            role: 'community_head',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+
+          const newAuthProfile: any = {
+            id: `auth-${newUserId}`,
+            user_id: newUserId,
+            mobile_number: normalizedPhone,
+            password_hash: passwordHash,
+            plain_password: headPassword,
+            mobile_verified: true,
+            verification_completed_at: new Date().toISOString(),
+            account_status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+
+          if (!store.profiles) store.profiles = [];
+          store.profiles.push(newProfile);
+
+          if (!store.authProfiles) store.authProfiles = [];
+          store.authProfiles.push(newAuthProfile);
+
+          const newCommunity = {
+            id: newCommunityId,
+            user_id: newUserId,
+            community_name: communityName,
+            organisation_type: organisationType,
+            head_name: headName,
+            phone: normalizedPhone,
+            email: effectiveEmail,
+            username: effectiveUsername,
+            plain_password: headPassword,
+            ward_number: officerWard,
+            ward_name: wardName,
+            address: effectiveAddress,
+            locality: effectiveLocality,
+            description,
+            verification_document_url: null,
+            verification_document_name: null,
+            approval_status: 'approved',
+            registered_via: 'ward_officer_bulk_excel',
+            active_drives_count: 0,
+            created_at: new Date().toISOString()
+          };
+
+          const savedComm = await DbRepository.saveCommunityToDb(newCommunity, passwordHash);
+
+          if (!store.communities) store.communities = [];
+          const commIdx = store.communities.findIndex(c => c.id === savedComm.id);
+          if (commIdx !== -1) {
+            store.communities[commIdx] = savedComm;
+          } else {
+            store.communities.push(savedComm);
+          }
+
+          seenUsernamesInBatch.add(lowerUname);
+          created.push({
+            row: rowNum,
+            id: savedComm.id,
+            community_name: savedComm.community_name,
+            head_name: savedComm.head_name,
+            phone: normalizedPhone,
+            username: effectiveUsername
+          });
+        } catch (rowErr: any) {
+          errors.push({
+            row: rowNum,
+            community_name: communityName,
+            error: rowErr?.message || 'Failed to save community record.'
+          });
+        }
+      }
+
+      res.status(created.length > 0 ? 201 : 400).json({
+        success: created.length > 0,
+        message:
+          created.length > 0
+            ? `${created.length} communit${created.length === 1 ? 'y' : 'ies'} registered in Ward ${officerWard}${errors.length > 0 ? ` (${errors.length} skipped)` : ''}.`
+            : `No communities were registered (${errors.length} row error${errors.length === 1 ? '' : 's'}).`,
+        data: {
+          ward_number: officerWard,
+          created_count: created.length,
+          failed_count: errors.length,
+          created,
+          errors
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Bulk community registration failed.' });
+    }
+  }
+
   public static async updateCommunity(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -2928,7 +3153,7 @@ export class WardOfficerController {
 
       if (isDbConnected() && DbRepository.isValidUUID(complaint.id)) {
         await pool.query(
-          `UPDATE complaints SET status = 'resolved', resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
+          `UPDATE complaints SET status = 'resolved', is_published_to_community = true, resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
           [primaryAfterPhoto, complaint.id]
         ).catch(() => {});
       }

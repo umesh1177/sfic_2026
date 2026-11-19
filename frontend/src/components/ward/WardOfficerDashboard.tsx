@@ -345,7 +345,10 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
           )}
 
           {activeTab === 'complaints' && (
-            <ComplaintCatalogue initialFilter={catalogueInitialFilter} />
+            <ComplaintCatalogue
+              initialFilter={catalogueInitialFilter}
+              onNavigateTab={handleTabClick}
+            />
           )}
 
           {activeTab === 'hotspots' && (

@@ -73,6 +73,14 @@ export async function ensureDatabaseInitialized(): Promise<void> {
     if (!row.posts_tbl) {
       await runSqlFile(dbDir, 'create_community_posts.sql');
     }
+
+    // Safe column migrations
+    await pool.query(`
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS is_published_to_community BOOLEAN DEFAULT FALSE;
+      ALTER TABLE community_recognition_posts ADD COLUMN IF NOT EXISTS before_image_url TEXT;
+      ALTER TABLE community_recognition_posts ADD COLUMN IF NOT EXISTS after_image_url TEXT;
+      ALTER TABLE community_recognition_posts ADD COLUMN IF NOT EXISTS after_photos JSONB;
+    `).catch(() => {});
   } catch (err: any) {
     console.error('[DB BOOTSTRAP WARN]:', err.message);
   }

@@ -121,6 +121,7 @@ export interface Complaint {
   complaint_number: string;
   citizen_id: string;
   citizen_name: string;
+  citizen_phone?: string;
   category_id: string;
   category_name: string;
   location: ComplaintLocation;
@@ -136,6 +137,7 @@ export interface Complaint {
   ai_model_version?: string;
   is_duplicate: boolean;
   submitted_at: string;
+  created_at?: string;
   reviewed_at?: string;
   resolved_at?: string;
   reopened_at?: string;

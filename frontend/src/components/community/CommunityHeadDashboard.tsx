@@ -38,11 +38,11 @@ import { CitizenQuestions } from './CitizenQuestions.js';
 import { EventNotifications } from './EventNotifications.js';
 import { EventGalleryEvidence } from './EventGalleryEvidence.js';
 import { ApprovalTracking } from './ApprovalTracking.js';
-import { CommunityAnalytics } from './CommunityAnalytics.js';
 import { CommunityNotifications } from './CommunityNotifications.js';
 import { CommunitySettings } from './CommunitySettings.js';
 import { RewardsRecognition } from '../RewardsRecognition.js';
 import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
+import { CertificatesTableView } from '../common/CertificatesTableView.js';
 import { LocationMonitor } from '../common/LocationMonitor.js';
 import { OfflineSyncBanner } from '../common/OfflineSyncBanner.js';
 
@@ -180,7 +180,6 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
     },
     { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Sparkles },
     { id: 'community', label: t.ch_nav_community, icon: Building2 },
-    { id: 'analytics', label: t.ch_nav_analytics, icon: TrendingUp },
     { id: 'notifications', label: t.ch_nav_notifications, icon: Bell },
     { id: 'settings', label: t.ch_nav_settings, icon: Settings }
   ];
@@ -508,55 +507,21 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             />
           )}
 
-          {/* Tab: Certificates (QR-Verified NMC Drive Certificates) */}
+          {/* Tab: Certificates (QR-Verified NMC Drive Certificates Table with View, Print, Download) */}
           {activeTab === 'certificates' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="bg-gradient-to-r from-[#095c54] to-[#0f766e] rounded-3xl p-6 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-                    Organization &amp; Leadership Certificates
-                  </h1>
-                </div>
-                <button
-                  onClick={loadCertificates}
-                  className="px-4 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-extrabold transition shrink-0"
-                >
-                  Refresh Certificates ({myCertificates.length})
-                </button>
-              </div>
-
-              {loadingCerts ? (
-                <div className="bg-white rounded-3xl p-12 border border-[#e2e8f0] text-center text-xs font-bold text-slate-500">
-                  Loading issued certificates...
-                </div>
-              ) : myCertificates.length === 0 ? (
-                <div className="bg-white rounded-3xl p-12 border border-[#e2e8f0] text-center space-y-3">
-                  <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#095c54]">
-                    <Award className="w-7 h-7" />
-                  </div>
-                  <h3 className="text-base font-extrabold text-[#095c54]">No Certificates Issued Yet</h3>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Complete an approved cleanliness drive and submit your Before/During/After evidence. Once the Ward Officer verifies completion and issues certificates, your official QR-verified certificates will appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {myCertificates.map(cert => (
-                    <CertificateCard key={cert.id || cert.certificate_code} certificate={cert} />
-                  ))}
-                </div>
-              )}
-            </div>
+            <CertificatesTableView
+              certificates={myCertificates}
+              loading={loadingCerts}
+              onRefresh={loadCertificates}
+              role="community_head"
+              title="Organization & Leadership Certificates"
+              subtitle="Official QR-verified certificates issued by Navsari Municipal Corporation for civic leadership and cleanliness drive execution."
+            />
           )}
 
           {/* Tab: Posts & Cleanliness Spotlights */}
           {activeTab === 'posts' && (
             <RewardsRecognition lang={lang} />
-          )}
-
-          {/* Tab 4: Reports & Analytics */}
-          {activeTab === 'analytics' && (
-            <CommunityAnalytics summary={dashboardSummary} />
           )}
 
           {/* Tab 5: Notifications */}

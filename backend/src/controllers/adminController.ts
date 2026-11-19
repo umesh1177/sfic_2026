@@ -6,6 +6,7 @@ import { store } from '../data/store.js';
 import { DbRepository } from '../data/dbRepository.js';
 import { Profile, CitizenAuthProfile, WardOfficerRecord, ComplaintCategory, Ward } from '../types/index.js';
 import { DEFAULT_NAVSARI_CITY_BOUNDARY, NAVSARI_WARDS } from '../utils/postgis.js';
+import { AIAnalyticsService } from '../services/aiAnalyticsService.js';
 
 export const ALL_WARD_OFFICER_TABS = [
   'overview',
@@ -1187,6 +1188,827 @@ export class AdminController {
       res.status(200).json({ success: true, data: flagged });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/admin/ward-analysis/:wardNumber
+   * End-to-end dynamic Ward Analysis for Super Admin:
+   * - Ward profile, geofence polygon & centroid, assigned officers & SLA breaches
+   * - Real-time KPIs & live formula-driven cleanliness score
+   * - Dynamic geospatial hotspots & individual complaint markers
+   * - Category-wise counts, SLA breaches & average resolution hours
+   * - Status breakdown & 6-month reported vs resolved trend
+   * - Full ward complaints list with live assignment & status-tracking timelines
+   * - Live AI Analytics suite (Seasonal Predictions, Chronic Hotspots, Top Performers, Executive Insights)
+   * - Workforce, teams, registered communities, drives & community problems
+   */
+  public static async getWardAnalysis(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const wardNumber = Number(req.params.wardNumber);
+      if (!Number.isFinite(wardNumber) || wardNumber < 1) {
+        res.status(400).json({ success: false, error: 'Valid wardNumber is required.' });
+        return;
+      }
+
+      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+
+      const ward = store.wards.find(w => Number(w.ward_number) === wardNumber);
+      if (!ward) {
+        res.status(404).json({ success: false, error: `Ward ${wardNumber} not found.` });
+        return;
+      }
+
+      // Parallel fetch of all live PostgreSQL + AI analytics data for this ward
+      const [
+        dbComplaints,
+        dbWorkers,
+        dbTeams,
+        dbCommunities,
+        dbDrives,
+        dbCommunityProblems,
+        wardBoundaryHistory,
+        allFlaggedOfficers,
+        aiSeasonal,
+        aiPerformers,
+        aiChronic
+      ] = await Promise.all([
+        DbRepository.getComplaints({}).catch(() => []),
+        DbRepository.getWorkersList({ ward_number: wardNumber }).catch(() => []),
+        DbRepository.getTeamsList(wardNumber).catch(() => []),
+        DbRepository.getCommunitiesList([wardNumber], true).catch(() => []),
+        DbRepository.getWardOrganizationDrives([wardNumber]).catch(() => []),
+        DbRepository.getCommunityProblems([wardNumber]).catch(() => []),
+        DbRepository.getBoundaryHistory('ward').catch(() => []),
+        AdminController.computeFlaggedOfficers().catch(() => []),
+        AIAnalyticsService.getSeasonalPredictions([wardNumber]).catch(() => ({
+          current_season: '',
+          forecast_month: '',
+          total_predictions: 0,
+          ward_numbers: [wardNumber],
+          predictions: []
+        })),
+        AIAnalyticsService.getPerformersSuggestions([wardNumber]).catch(() => ({
+          ward_numbers: [wardNumber],
+          top_workers: [],
+          top_communities: [],
+          top_citizens: []
+        })),
+        AIAnalyticsService.getChronicHotspots([wardNumber]).catch(() => ({
+          ward_numbers: [wardNumber],
+          total_chronic_spots: 0,
+          high_reopen_spots_count: 0,
+          chronic_hotspots: []
+        }))
+      ]);
+
+      // Merge store + DB complaints (DB wins on duplicate ID) and filter strictly to this ward
+      const mergedComplaintsMap = new Map<string, any>();
+      for (const sc of store.complaints || []) mergedComplaintsMap.set(sc.id, sc);
+      for (const dc of dbComplaints || []) mergedComplaintsMap.set(dc.id, dc);
+
+      const wardComplaintsRaw = Array.from(mergedComplaintsMap.values())
+        .filter(c => Number(c.location?.ward_number ?? c.ward_number) === wardNumber)
+        .sort((a, b) => {
+          const ta = new Date(a.submitted_at || a.created_at || 0).getTime();
+          const tb = new Date(b.submitted_at || b.created_at || 0).getTime();
+          return tb - ta;
+        });
+
+      // Resolve latest ward boundary polygon ([lng, lat][] -> [lat, lng][] for Leaflet)
+      const latestHistoryBoundary = (wardBoundaryHistory || []).find(
+        (h: any) => Number(h.ward_number) === wardNumber && Array.isArray(h.coordinates) && h.coordinates.length >= 3
+      );
+      const overrideBoundary = store.adminBoundarySettings?.ward_boundary_overrides?.[wardNumber];
+      const rawBoundaryCoords: [number, number][] =
+        (latestHistoryBoundary?.coordinates as [number, number][]) ||
+        overrideBoundary ||
+        ward.boundary_coordinates ||
+        [];
+
+      const leafletPolygon: [number, number][] = rawBoundaryCoords.map(pt => {
+        const a = Number(pt[0]);
+        const b = Number(pt[1]);
+        // Navsari lat ~20.8-21.1, lng ~72.8-73.1: detect order safely
+        return a > 60 ? [b, a] : [a, b];
+      });
+
+      const centroid: [number, number] =
+        leafletPolygon.length > 0
+          ? [
+              Number((leafletPolygon.reduce((s, p) => s + p[0], 0) / leafletPolygon.length).toFixed(5)),
+              Number((leafletPolygon.reduce((s, p) => s + p[1], 0) / leafletPolygon.length).toFixed(5))
+            ]
+          : [Number((20.925 + wardNumber * 0.0022).toFixed(5)), Number((72.922 + wardNumber * 0.0018).toFixed(5))];
+
+      // Filter SLA breaches strictly to this ward
+      const wardBreaches = allFlaggedOfficers.flatMap(f =>
+        (f.overdue_complaints || [])
+          .filter((b: any) => Number(b.ward_number) === wardNumber)
+          .map((b: any) => ({
+            ...b,
+            officer_name: f.officer.full_name,
+            officer_phone: f.officer.phone
+          }))
+      );
+      const breachByComplaintNumber = new Map<string, any>();
+      for (const b of wardBreaches) {
+        breachByComplaintNumber.set(String(b.complaint_number), b);
+      }
+
+      // Enrich each complaint with live assignments, SLA tracking, and complete status timeline
+      const now = Date.now();
+      const RESOLVED_STATUSES = new Set(['resolved', 'closed', 'verified_complete']);
+      const CLOSED_OR_REJECTED = new Set(['resolved', 'closed', 'verified_complete', 'rejected']);
+
+      const enrichedComplaints = await Promise.all(
+        wardComplaintsRaw.map(async c => {
+          const st = String(c.status || 'submitted').toLowerCase();
+          const category = (store.categories || []).find(
+            cat =>
+              cat.id === c.category_id ||
+              cat.category_name.toLowerCase() === String(c.category_name || '').toLowerCase()
+          );
+          const maxApprovalDays = category?.max_approval_days ?? 2;
+          const maxWorkDays = category?.max_work_days ?? 3;
+
+          const attempts = await DbRepository.getAssignmentsAndEvidenceForComplaint(
+            c.id,
+            c.complaint_number
+          ).catch(() => []);
+          const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
+
+          const submittedMs = new Date(c.submitted_at || c.created_at || now).getTime();
+          const resolvedMs = c.resolved_at ? new Date(c.resolved_at).getTime() : null;
+          const daysElapsed = Math.max(0, Math.floor((now - submittedMs) / (1000 * 60 * 60 * 24)));
+          const resolutionHours =
+            resolvedMs && resolvedMs >= submittedMs
+              ? Number(((resolvedMs - submittedMs) / (1000 * 60 * 60)).toFixed(1))
+              : null;
+
+          const breach = breachByComplaintNumber.get(String(c.complaint_number));
+          let slaStatus: 'on_track' | 'approval_breach' | 'work_breach' | 'resolved_on_time' | 'resolved_late' | 'rejected' = 'on_track';
+          if (st === 'rejected') {
+            slaStatus = 'rejected';
+          } else if (RESOLVED_STATUSES.has(st)) {
+            const maxTotalHours = (maxApprovalDays + maxWorkDays) * 24;
+            slaStatus = resolutionHours !== null && resolutionHours > maxTotalHours ? 'resolved_late' : 'resolved_on_time';
+          } else if (breach?.breach_type === 'approval_sla') {
+            slaStatus = 'approval_breach';
+          } else if (breach?.breach_type === 'work_sla') {
+            slaStatus = 'work_breach';
+          }
+
+          // Normalize status timeline
+          const rawTimeline: any[] = Array.isArray(c.timeline) ? c.timeline : [];
+          const normalizedTimeline =
+            rawTimeline.length > 0
+              ? rawTimeline.map((t: any) => ({
+                  status: t.status || 'updated',
+                  timestamp: t.timestamp || t.created_at || c.submitted_at,
+                  actor_name: t.actor_name || t.actor || 'NMC System',
+                  actor_role: t.actor_role || 'system',
+                  note: t.note || ''
+                }))
+              : [
+                  {
+                    status: 'submitted',
+                    timestamp: c.submitted_at || c.created_at,
+                    actor_name: c.citizen_name || 'Citizen',
+                    actor_role: 'citizen',
+                    note: 'Complaint registered with geo-tagged evidence.'
+                  },
+                  ...(latestAttempt?.assigned_at
+                    ? [
+                        {
+                          status: 'assigned',
+                          timestamp: latestAttempt.assigned_at,
+                          actor_name: latestAttempt.team_leader_name || 'Ward Officer',
+                          actor_role: 'ward_officer',
+                          note: `Assigned to ${latestAttempt.team_name || 'Ward Field Squad'}`
+                        }
+                      ]
+                    : []),
+                  ...(c.resolved_at
+                    ? [
+                        {
+                          status: st,
+                          timestamp: c.resolved_at,
+                          actor_name: 'Ward Officer',
+                          actor_role: 'ward_officer',
+                          note: 'Work completed and verified.'
+                        }
+                      ]
+                    : [])
+                ];
+
+          const rawLat = Number(c.location?.latitude ?? c.latitude);
+          const rawLng = Number(c.location?.longitude ?? c.longitude);
+          const hasValidCoords = Number.isFinite(rawLat) && Number.isFinite(rawLng) && rawLat !== 0 && rawLng !== 0;
+
+          return {
+            id: c.id,
+            complaint_number: c.complaint_number,
+            category_id: c.category_id || category?.id || 'general',
+            category_name: category?.category_name || c.category_name || 'General Waste',
+            category_name_gu: category?.category_name_gu || '',
+            description: c.description || '',
+            status: st,
+            is_urgent: Boolean(c.is_urgent || c.priority === 'urgent' || c.priority === 'high'),
+            priority: c.priority || (c.is_urgent ? 'high' : 'normal'),
+            submitted_at: c.submitted_at || c.created_at,
+            approved_at: c.approved_at || null,
+            resolved_at: c.resolved_at || null,
+            updated_at: c.updated_at || c.submitted_at || c.created_at,
+            days_elapsed: daysElapsed,
+            resolution_hours: resolutionHours,
+            max_approval_days: maxApprovalDays,
+            max_work_days: maxWorkDays,
+            sla_status: slaStatus,
+            sla_breached: slaStatus === 'approval_breach' || slaStatus === 'work_breach',
+            rejection_reason: c.rejection_reason || null,
+            citizen_name: c.citizen_name || 'Navsari Citizen',
+            citizen_phone: c.citizen_phone || null,
+            address: c.location?.address || c.address || `Ward ${wardNumber}, Navsari`,
+            landmark: c.location?.landmark || c.landmark || '',
+            latitude: hasValidCoords ? rawLat : centroid[0],
+            longitude: hasValidCoords ? rawLng : centroid[1],
+            has_exact_coords: hasValidCoords,
+            image_url: c.image_url || null,
+            resolved_image_url: c.resolved_image_url || null,
+            followers_count: Number(c.followers_count || 0),
+            assigned_team_name: latestAttempt?.team_name || c.assigned_team_name || null,
+            team_leader_name: latestAttempt?.team_leader_name || c.temporary_team_leader_name || null,
+            assigned_workers_count: Array.isArray(latestAttempt?.members) ? latestAttempt.members.length : 0,
+            assignment_status: latestAttempt?.status || null,
+            attempts_count: attempts.length,
+            status_timeline: normalizedTimeline
+          };
+        })
+      );
+
+      // Summary counts
+      const totalComplaints = enrichedComplaints.length;
+      const resolvedComplaints = enrichedComplaints.filter(c => RESOLVED_STATUSES.has(c.status)).length;
+      const rejectedComplaints = enrichedComplaints.filter(c => c.status === 'rejected').length;
+      const reopenedComplaints = enrichedComplaints.filter(c => c.status === 'reopened').length;
+      const activeComplaints = enrichedComplaints.filter(c => !CLOSED_OR_REJECTED.has(c.status)).length;
+      const pendingApproval = enrichedComplaints.filter(
+        c => c.status === 'submitted' || c.status === 'under_review'
+      ).length;
+      const inProgress = enrichedComplaints.filter(c =>
+        ['approved', 'assigned', 'team_assigned', 'in_progress', 'work_submitted', 'reopened'].includes(c.status)
+      ).length;
+      const urgentComplaints = enrichedComplaints.filter(c => c.is_urgent && !CLOSED_OR_REJECTED.has(c.status)).length;
+
+      const resolvedHoursList = enrichedComplaints
+        .map(c => c.resolution_hours)
+        .filter((h): h is number => h !== null && Number.isFinite(h));
+      const avgResolutionHours =
+        resolvedHoursList.length > 0
+          ? Number((resolvedHoursList.reduce((a, b) => a + b, 0) / resolvedHoursList.length).toFixed(1))
+          : 0;
+
+      const approvalSlaBreaches = wardBreaches.filter((b: any) => b.breach_type === 'approval_sla').length;
+      const workSlaBreaches = wardBreaches.filter((b: any) => b.breach_type === 'work_sla').length;
+      const totalSlaBreaches = approvalSlaBreaches + workSlaBreaches;
+
+      const effectiveComplaints = Math.max(0, totalComplaints - rejectedComplaints);
+      const resolutionRatePct =
+        effectiveComplaints > 0 ? Math.round((resolvedComplaints / effectiveComplaints) * 100) : 100;
+      const slaCompliancePct =
+        effectiveComplaints > 0
+          ? Math.max(0, Math.round(((effectiveComplaints - totalSlaBreaches) / effectiveComplaints) * 100))
+          : 100;
+
+      // Dynamic Geospatial Hotspots Clustering for this ward
+      interface ClusterAcc {
+        centerLat: number;
+        centerLng: number;
+        locality: string;
+        address: string;
+        items: typeof enrichedComplaints;
+      }
+      const hotspotClusters: ClusterAcc[] = [];
+      for (const comp of enrichedComplaints) {
+        const loc = comp.landmark || comp.address || `Ward ${wardNumber}`;
+        const matched = hotspotClusters.find(cl => {
+          const dist = Math.hypot(cl.centerLat - comp.latitude, cl.centerLng - comp.longitude);
+          const sameLoc =
+            cl.locality.toLowerCase().includes(loc.toLowerCase()) ||
+            loc.toLowerCase().includes(cl.locality.toLowerCase());
+          return dist < 0.003 || (sameLoc && dist < 0.007);
+        });
+        if (matched) {
+          matched.items.push(comp);
+          matched.centerLat = (matched.centerLat + comp.latitude) / 2;
+          matched.centerLng = (matched.centerLng + comp.longitude) / 2;
+        } else {
+          hotspotClusters.push({
+            centerLat: comp.latitude,
+            centerLng: comp.longitude,
+            locality: loc,
+            address: comp.address,
+            items: [comp]
+          });
+        }
+      }
+
+      const dynamicHotspots = hotspotClusters
+        .map((cl, idx) => {
+          const total = cl.items.length;
+          const active = cl.items.filter(i => !CLOSED_OR_REJECTED.has(i.status)).length;
+          const resolved = cl.items.filter(i => RESOLVED_STATUSES.has(i.status)).length;
+          const reopened = cl.items.filter(i => i.status === 'reopened').length;
+          const slaBreached = cl.items.filter(i => i.sla_breached).length;
+
+          const catFreq: Record<string, number> = {};
+          for (const it of cl.items) {
+            catFreq[it.category_name] = (catFreq[it.category_name] || 0) + 1;
+          }
+          const dominantCategory =
+            Object.entries(catFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || 'General Waste';
+
+          const frequencyLevel: 'high' | 'medium' | 'low' =
+            total >= 3 || active >= 2 || reopened >= 1
+              ? 'high'
+              : total >= 2 || active >= 1
+              ? 'medium'
+              : 'low';
+
+          const riskScore = Math.min(100, total * 18 + active * 15 + reopened * 20 + slaBreached * 15);
+          const sortedDates = cl.items
+            .map(i => new Date(i.submitted_at || 0).getTime())
+            .filter(t => t > 0)
+            .sort((a, b) => b - a);
+
+          return {
+            id: `whs-w${wardNumber}-${idx + 1}`,
+            ward_number: wardNumber,
+            locality: cl.locality,
+            address: cl.address,
+            latitude: Number(cl.centerLat.toFixed(5)),
+            longitude: Number(cl.centerLng.toFixed(5)),
+            total_complaints: total,
+            active_complaints: active,
+            resolved_complaints: resolved,
+            reopened_complaints: reopened,
+            sla_breached_count: slaBreached,
+            dominant_category: dominantCategory,
+            frequency_level: frequencyLevel,
+            risk_score: riskScore,
+            last_reported_at: sortedDates[0] ? new Date(sortedDates[0]).toISOString() : null,
+            complaint_ids: cl.items.map(i => i.id),
+            complaint_numbers: cl.items.map(i => i.complaint_number)
+          };
+        })
+        .sort((a, b) => b.risk_score - a.risk_score || b.total_complaints - a.total_complaints);
+
+      // Category-wise dynamic breakdown
+      const catAccMap = new Map<string, {
+        category_id: string;
+        category_name: string;
+        category_name_gu: string;
+        icon: string;
+        max_approval_days: number;
+        max_work_days: number;
+        items: typeof enrichedComplaints;
+      }>();
+
+      for (const cat of store.categories || []) {
+        if (cat.is_active === false) continue;
+        catAccMap.set(cat.category_name.toLowerCase(), {
+          category_id: cat.id,
+          category_name: cat.category_name,
+          category_name_gu: cat.category_name_gu || '',
+          icon: cat.icon || 'trash',
+          max_approval_days: cat.max_approval_days ?? 2,
+          max_work_days: cat.max_work_days ?? 3,
+          items: []
+        });
+      }
+
+      for (const comp of enrichedComplaints) {
+        const key = comp.category_name.toLowerCase();
+        if (!catAccMap.has(key)) {
+          catAccMap.set(key, {
+            category_id: comp.category_id,
+            category_name: comp.category_name,
+            category_name_gu: comp.category_name_gu || '',
+            icon: 'alert',
+            max_approval_days: comp.max_approval_days,
+            max_work_days: comp.max_work_days,
+            items: []
+          });
+        }
+        catAccMap.get(key)!.items.push(comp);
+      }
+
+      const categoryBreakdown = Array.from(catAccMap.values())
+        .map(entry => {
+          const total = entry.items.length;
+          const active = entry.items.filter(i => !CLOSED_OR_REJECTED.has(i.status)).length;
+          const pending = entry.items.filter(i => i.status === 'submitted' || i.status === 'under_review').length;
+          const inProg = entry.items.filter(i =>
+            ['approved', 'assigned', 'team_assigned', 'in_progress', 'work_submitted', 'reopened'].includes(i.status)
+          ).length;
+          const resolved = entry.items.filter(i => RESOLVED_STATUSES.has(i.status)).length;
+          const reopened = entry.items.filter(i => i.status === 'reopened').length;
+          const rejected = entry.items.filter(i => i.status === 'rejected').length;
+          const breaches = entry.items.filter(i => i.sla_breached).length;
+          const hrs = entry.items
+            .map(i => i.resolution_hours)
+            .filter((h): h is number => h !== null);
+          const avgHrs = hrs.length > 0 ? Number((hrs.reduce((a, b) => a + b, 0) / hrs.length).toFixed(1)) : 0;
+          const eff = Math.max(0, total - rejected);
+
+          return {
+            category_id: entry.category_id,
+            category_name: entry.category_name,
+            category_name_gu: entry.category_name_gu,
+            icon: entry.icon,
+            max_approval_days: entry.max_approval_days,
+            max_work_days: entry.max_work_days,
+            total,
+            active,
+            pending_approval: pending,
+            in_progress: inProg,
+            resolved,
+            reopened,
+            rejected,
+            sla_breaches: breaches,
+            resolution_rate_pct: eff > 0 ? Math.round((resolved / eff) * 100) : 0,
+            avg_resolution_hours: avgHrs,
+            share_pct: totalComplaints > 0 ? Math.round((total / totalComplaints) * 100) : 0
+          };
+        })
+        .sort((a, b) => b.total - a.total || a.category_name.localeCompare(b.category_name));
+
+      // Status distribution
+      const statusCountsMap: Record<string, number> = {};
+      for (const comp of enrichedComplaints) {
+        statusCountsMap[comp.status] = (statusCountsMap[comp.status] || 0) + 1;
+      }
+      const statusBreakdown = Object.entries(statusCountsMap)
+        .map(([status, count]) => ({
+          status,
+          count,
+          share_pct: totalComplaints > 0 ? Math.round((count / totalComplaints) * 100) : 0
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      // 6-month dynamic trend computed strictly from actual complaint timestamps
+      const monthBuckets: Array<{ key: string; label: string; reported: number; resolved: number }> = [];
+      const refDate = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(refDate.getFullYear(), refDate.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+        monthBuckets.push({ key, label, reported: 0, resolved: 0 });
+      }
+      const bucketMap = new Map(monthBuckets.map(b => [b.key, b]));
+      for (const comp of enrichedComplaints) {
+        const subDate = comp.submitted_at ? new Date(comp.submitted_at) : null;
+        if (subDate && !isNaN(subDate.getTime())) {
+          const k = `${subDate.getFullYear()}-${String(subDate.getMonth() + 1).padStart(2, '0')}`;
+          if (bucketMap.has(k)) bucketMap.get(k)!.reported += 1;
+        }
+        const resDate = comp.resolved_at ? new Date(comp.resolved_at) : null;
+        if (resDate && !isNaN(resDate.getTime())) {
+          const k = `${resDate.getFullYear()}-${String(resDate.getMonth() + 1).padStart(2, '0')}`;
+          if (bucketMap.has(k)) bucketMap.get(k)!.resolved += 1;
+        }
+      }
+
+      // Assigned officers for this ward
+      const assignedOfficers = (store.wardOfficers || [])
+        .filter(
+          o =>
+            o.is_active !== false &&
+            Array.isArray(o.assigned_wards) &&
+            o.assigned_wards.map(Number).includes(wardNumber)
+        )
+        .map(o => {
+          const officerBreaches = wardBreaches.filter((b: any) => b.officer_name === o.full_name);
+          return {
+            id: o.id,
+            full_name: o.full_name,
+            phone: o.phone,
+            email: o.email,
+            designation: o.designation,
+            assigned_wards: o.assigned_wards,
+            flagged: officerBreaches.length > 0,
+            overdue_count: officerBreaches.length
+          };
+        });
+
+      // Workforce & Civic Operations
+      const workers =
+        dbWorkers.length > 0
+          ? dbWorkers
+          : (store.workers || []).filter(
+              (w: any) => w.ward_id === ward.id || Number(w.ward_number) === wardNumber
+            );
+      const availableWorkers = workers.filter(
+        (w: any) => String(w.availability_status || 'available').toLowerCase() === 'available'
+      ).length;
+      const completedDrives = (dbDrives || []).filter(
+        (d: any) =>
+          String(d.event_status || d.status || '').toLowerCase() === 'completed' ||
+          String(d.evidence_status || '').toLowerCase() === 'verified_complete'
+      ).length;
+      const openCommunityProblems = (dbCommunityProblems || []).filter(
+        (p: any) => !['completed', 'resolved', 'closed'].includes(String(p.status || '').toLowerCase())
+      ).length;
+
+      // Dynamic Cleanliness Score Formula (100% real data, zero hardcoded static values)
+      // 0.40 * Resolution Rate + 0.25 * SLA Compliance + 0.20 * Hotspot/Reopen Control + 0.15 * Civic Participation
+      const highRiskHotspots = dynamicHotspots.filter(h => h.frequency_level === 'high').length;
+      const reopenPenalty =
+        effectiveComplaints > 0 ? Math.min(40, Math.round((reopenedComplaints / effectiveComplaints) * 100)) : 0;
+      const hotspotControlScore = Math.max(20, 100 - highRiskHotspots * 12 - reopenPenalty);
+      const participationScore = Math.min(
+        100,
+        50 + (dbCommunities || []).length * 10 + completedDrives * 15 + Math.max(0, (dbCommunityProblems || []).length - openCommunityProblems) * 10
+      );
+      const dynamicCleanlinessScore = Number(
+        Math.min(
+          100,
+          Math.max(
+            0,
+            0.4 * resolutionRatePct +
+              0.25 * slaCompliancePct +
+              0.2 * hotspotControlScore +
+              0.15 * participationScore
+          )
+        ).toFixed(1)
+      );
+      const cleanlinessGrade =
+        dynamicCleanlinessScore >= 90
+          ? 'A+'
+          : dynamicCleanlinessScore >= 80
+          ? 'A'
+          : dynamicCleanlinessScore >= 70
+          ? 'B+'
+          : dynamicCleanlinessScore >= 60
+          ? 'B'
+          : dynamicCleanlinessScore >= 50
+          ? 'C'
+          : 'D';
+
+      // Dynamic AI Executive Insights strictly computed from this ward's real metrics
+      const executiveInsights: Array<{
+        type: 'critical' | 'warning' | 'positive' | 'info';
+        title: string;
+        detail: string;
+        metric?: string;
+      }> = [];
+
+      if (totalSlaBreaches > 0) {
+        executiveInsights.push({
+          type: 'critical',
+          title: 'Active SLA Escalation Required',
+          detail: `Ward ${wardNumber} currently has ${totalSlaBreaches} overdue complaint${totalSlaBreaches === 1 ? '' : 's'} (${approvalSlaBreaches} approval breach${approvalSlaBreaches === 1 ? '' : 'es'}, ${workSlaBreaches} work deadline breach${workSlaBreaches === 1 ? '' : 'es'}). Immediate officer intervention is recommended.`,
+          metric: `${slaCompliancePct}% SLA`
+        });
+      } else {
+        executiveInsights.push({
+          type: 'positive',
+          title: 'Zero Active SLA Breaches',
+          detail: `All ${effectiveComplaints} recorded civic complaints in Ward ${wardNumber} are operating within configured approval and field work SLA deadlines.`,
+          metric: '100% On-Time'
+        });
+      }
+
+      const topCategory = categoryBreakdown.find(c => c.total > 0);
+      if (topCategory) {
+        executiveInsights.push({
+          type: topCategory.active >= 3 ? 'warning' : 'info',
+          title: `Primary Grievance Driver: ${topCategory.category_name}`,
+          detail: `"${topCategory.category_name}" accounts for ${topCategory.share_pct}% of Ward ${wardNumber} reports (${topCategory.total} total, ${topCategory.active} still active, ${topCategory.resolution_rate_pct}% resolved).`,
+          metric: `${topCategory.total} Reports`
+        });
+      }
+
+      if (dynamicHotspots.length > 0 && dynamicHotspots[0].total_complaints >= 2) {
+        const topHs = dynamicHotspots[0];
+        executiveInsights.push({
+          type: topHs.frequency_level === 'high' ? 'critical' : 'warning',
+          title: `Highest-Density Hotspot: ${topHs.locality}`,
+          detail: `${topHs.total_complaints} clustered complaints (${topHs.active_complaints} active, ${topHs.reopened_complaints} reopened) predominantly for "${topHs.dominant_category}". Consider deploying a dedicated pickup schedule or permanent bin installation.`,
+          metric: `Risk ${topHs.risk_score}/100`
+        });
+      }
+
+      if (workers.length > 0) {
+        const loadRatio = Number((activeComplaints / Math.max(1, workers.length)).toFixed(2));
+        executiveInsights.push({
+          type: loadRatio > 2 ? 'warning' : 'positive',
+          title: 'Field Workforce Capacity Balance',
+          detail: `${workers.length} assigned field worker${workers.length === 1 ? '' : 's'} (${availableWorkers} currently available) across ${(dbTeams || []).length} team${(dbTeams || []).length === 1 ? '' : 's'} handling ${activeComplaints} open task${activeComplaints === 1 ? '' : 's'} (~${loadRatio} open complaints per worker).`,
+          metric: `${workers.length} Staff`
+        });
+      } else if (activeComplaints > 0) {
+        executiveInsights.push({
+          type: 'critical',
+          title: 'Unstaffed Active Workload Alert',
+          detail: `Ward ${wardNumber} has ${activeComplaints} active complaint${activeComplaints === 1 ? '' : 's'} but 0 sanitation workers mapped in the directory. Assign field workers from Staff Management.`,
+          metric: '0 Staff'
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          generated_at: new Date().toISOString(),
+          ward: {
+            id: ward.id,
+            ward_number: wardNumber,
+            ward_name: ward.ward_name,
+            ward_name_gu: ward.ward_name_gu,
+            office_address: ward.office_address,
+            officers: assignedOfficers,
+            primary_officer_name: assignedOfficers[0]?.full_name || ward.ward_officer_name || 'Unassigned',
+            primary_officer_phone: assignedOfficers[0]?.phone || ward.contact_phone || 'N/A',
+            cleanliness_score: dynamicCleanlinessScore,
+            cleanliness_grade: cleanlinessGrade,
+            score_breakdown: {
+              resolution_component: Number((0.4 * resolutionRatePct).toFixed(1)),
+              sla_component: Number((0.25 * slaCompliancePct).toFixed(1)),
+              hotspot_control_component: Number((0.2 * hotspotControlScore).toFixed(1)),
+              participation_component: Number((0.15 * participationScore).toFixed(1)),
+              resolution_rate_pct: resolutionRatePct,
+              sla_compliance_pct: slaCompliancePct,
+              hotspot_control_pct: hotspotControlScore,
+              participation_pct: participationScore
+            }
+          },
+          summary: {
+            total_complaints: totalComplaints,
+            active_complaints: activeComplaints,
+            pending_approval: pendingApproval,
+            in_progress: inProgress,
+            resolved_complaints: resolvedComplaints,
+            reopened_complaints: reopenedComplaints,
+            rejected_complaints: rejectedComplaints,
+            urgent_complaints: urgentComplaints,
+            resolution_rate_pct: resolutionRatePct,
+            avg_resolution_hours: avgResolutionHours,
+            sla_compliance_rate_pct: slaCompliancePct,
+            approval_sla_breaches: approvalSlaBreaches,
+            work_sla_breaches: workSlaBreaches,
+            total_sla_breaches: totalSlaBreaches,
+            total_hotspots: dynamicHotspots.length,
+            high_risk_hotspots: highRiskHotspots,
+            total_workers: workers.length,
+            available_workers: availableWorkers,
+            total_teams: (dbTeams || []).length,
+            total_communities: (dbCommunities || []).length,
+            total_drives: (dbDrives || []).length,
+            completed_drives: completedDrives,
+            total_community_problems: (dbCommunityProblems || []).length,
+            open_community_problems: openCommunityProblems
+          },
+          map_data: {
+            ward_boundary: leafletPolygon,
+            centroid,
+            hotspots: dynamicHotspots,
+            complaint_markers: enrichedComplaints.map(c => ({
+              id: c.id,
+              complaint_number: c.complaint_number,
+              category_name: c.category_name,
+              status: c.status,
+              is_urgent: c.is_urgent,
+              sla_breached: c.sla_breached,
+              latitude: c.latitude,
+              longitude: c.longitude,
+              address: c.address,
+              landmark: c.landmark,
+              submitted_at: c.submitted_at
+            }))
+          },
+          category_breakdown: categoryBreakdown,
+          status_breakdown: statusBreakdown,
+          monthly_trend: monthBuckets,
+          complaints: enrichedComplaints,
+          ai_analytics: {
+            executive_insights: executiveInsights,
+            seasonal: aiSeasonal,
+            performers: aiPerformers,
+            chronic: aiChronic
+          },
+          operations: {
+            sla_breaches: wardBreaches,
+            workers,
+            teams: dbTeams || [],
+            communities: dbCommunities || [],
+            drives: dbDrives || [],
+            community_problems: dbCommunityProblems || []
+          }
+        }
+      });
+    } catch (err: any) {
+      console.error('[AdminController.getWardAnalysis ERROR]:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to generate ward analysis' });
+    }
+  }
+
+  /**
+   * GET /api/admin/complaints/:id/tracking
+   * Deep complaint status-tracking audit (timeline, worker assignments, attendance, evidence, SLA)
+   */
+  public static async getComplaintTrackingDetails(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const dbComplaint = await DbRepository.getComplaintById(id).catch(() => null);
+      const complaint: any = dbComplaint || (store.complaints || []).find(c => c.id === id);
+
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      const attempts = await DbRepository.getAssignmentsAndEvidenceForComplaint(
+        complaint.id,
+        complaint.complaint_number
+      ).catch(() => []);
+
+      const category = (store.categories || []).find(
+        cat =>
+          cat.id === complaint.category_id ||
+          cat.category_name.toLowerCase() === String(complaint.category_name || '').toLowerCase()
+      );
+
+      const rawTimeline: any[] = Array.isArray(complaint.timeline) ? complaint.timeline : [];
+      const builtTimeline =
+        rawTimeline.length > 0
+          ? rawTimeline
+          : [
+              {
+                status: 'submitted',
+                timestamp: complaint.submitted_at || complaint.created_at,
+                actor_name: complaint.citizen_name || 'Citizen',
+                actor_role: 'citizen',
+                note: 'Complaint submitted with geo-tagged evidence.'
+              },
+              ...(complaint.approved_at
+                ? [
+                    {
+                      status: 'approved',
+                      timestamp: complaint.approved_at,
+                      actor_name: 'Ward Officer',
+                      actor_role: 'ward_officer',
+                      note: 'Complaint verified and approved for field action.'
+                    }
+                  ]
+                : []),
+              ...attempts.map((a: any) => ({
+                status: a.status || 'assigned',
+                timestamp: a.assigned_at || a.created_at || complaint.updated_at,
+                actor_name: a.team_leader_name || 'Ward Officer',
+                actor_role: 'ward_officer',
+                note: `Assigned to ${a.team_name || 'Field Squad'}${
+                  Array.isArray(a.members) && a.members.length > 0 ? ` (${a.members.length} workers)` : ''
+                }`
+              })),
+              ...(complaint.resolved_at
+                ? [
+                    {
+                      status: complaint.status || 'resolved',
+                      timestamp: complaint.resolved_at,
+                      actor_name: 'Ward Officer',
+                      actor_role: 'ward_officer',
+                      note: 'Work verified and complaint resolved.'
+                    }
+                  ]
+                : []),
+              ...(complaint.status === 'rejected'
+                ? [
+                    {
+                      status: 'rejected',
+                      timestamp: complaint.updated_at || complaint.submitted_at,
+                      actor_name: 'Ward Officer',
+                      actor_role: 'ward_officer',
+                      note: complaint.rejection_reason || 'Complaint rejected during ward review.'
+                    }
+                  ]
+                : [])
+            ];
+
+      res.status(200).json({
+        success: true,
+        data: {
+          complaint,
+          category_sla: {
+            max_approval_days: category?.max_approval_days ?? 2,
+            max_work_days: category?.max_work_days ?? 3
+          },
+          assignments: attempts,
+          timeline: builtTimeline
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to load complaint tracking details' });
     }
   }
 }

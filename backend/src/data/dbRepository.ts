@@ -506,6 +506,7 @@ export class DbRepository {
       complaint_number: data.complaint_number,
       citizen_id: data.citizen_id,
       citizen_name: data.citizen_name,
+      citizen_phone: data.citizen_phone,
       category_id: data.category_id,
       category_name: data.category_name,
       location: {
@@ -550,21 +551,46 @@ export class DbRepository {
 
   public static async getComplaints(params: {
     citizen_id?: string;
+    citizen_phone?: string;
+    citizen_name?: string;
     status?: string;
     category_id?: string;
     search?: string;
   } = {}): Promise<Complaint[]> {
+    let dbMapped: Complaint[] = [];
+
     if (isDbConnected()) {
       try {
         let query = 'SELECT * FROM complaints WHERE 1=1';
         const values: any[] = [];
         let idx = 1;
 
-        if (params.citizen_id) {
-          const validCitizenId = this.isValidUUID(params.citizen_id) ? params.citizen_id : 'c0000000-0000-0000-0000-000000000001';
-          query += ` AND citizen_id = $${idx++}`;
-          values.push(validCitizenId);
+        if (params.citizen_id || params.citizen_phone) {
+          const conditions: string[] = [];
+          if (params.citizen_id) {
+            const validCitizenId = this.isValidUUID(params.citizen_id) ? params.citizen_id : 'c0000000-0000-0000-0000-000000000001';
+            conditions.push(`citizen_id = $${idx++}`);
+            values.push(validCitizenId);
+
+            // Also match alias/demo IDs if demo citizen
+            if (params.citizen_id === 'c0000000-0000-0000-0000-000000000001' || params.citizen_id === 'citizen-01') {
+              conditions.push(`citizen_id = '4faa7a52-a5fc-4377-bbf1-46237299384a'`);
+            }
+          }
+          if (params.citizen_phone) {
+            conditions.push(`citizen_phone = $${idx++}`);
+            values.push(params.citizen_phone);
+
+            const cleanDigits = params.citizen_phone.replace(/\D/g, '');
+            if (cleanDigits.length >= 10) {
+              const last10 = cleanDigits.slice(-10);
+              conditions.push(`RIGHT(REGEXP_REPLACE(citizen_phone, '\\D', '', 'g'), 10) = $${idx++}`);
+              values.push(last10);
+            }
+          }
+          query += ` AND (${conditions.join(' OR ')})`;
         }
+
         if (params.status && params.status !== 'all') {
           query += ` AND status = $${idx++}`;
           values.push(params.status);
@@ -581,32 +607,66 @@ export class DbRepository {
 
         query += ' ORDER BY created_at DESC';
         const res = await pool.query(query, values);
-        const mapped = res.rows.map(r => this.mapComplaintRow(r));
-        if (!params.citizen_id) {
-          return mapped.map(c => ({ ...c, citizen_name: 'Anonymous Citizen' }));
-        }
-        return mapped;
+        dbMapped = res.rows.map(r => this.mapComplaintRow(r));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getComplaints]:', err.message);
       }
     }
 
-    // Fallback to store
-    return store.complaints.filter(c => {
-      if (params.citizen_id && c.citizen_id !== params.citizen_id) return false;
+    // Always merge in-memory store complaints so citizen newly submitted or offline-synced complaints are never missed
+    const cleanUserPhone = params.citizen_phone ? params.citizen_phone.replace(/\D/g, '') : '';
+    const userLast10 = cleanUserPhone.length >= 10 ? cleanUserPhone.slice(-10) : '';
+
+    const matchingStore = (store.complaints || []).filter(c => {
+      if (params.citizen_id || params.citizen_phone) {
+        let matches = false;
+        if (params.citizen_id) {
+          if (c.citizen_id === params.citizen_id) matches = true;
+          if (
+            (params.citizen_id === 'c0000000-0000-0000-0000-000000000001' || params.citizen_id === 'citizen-01') &&
+            (c.citizen_id === 'c0000000-0000-0000-0000-000000000001' || c.citizen_id === 'citizen-01' || c.citizen_id === '4faa7a52-a5fc-4377-bbf1-46237299384a')
+          ) {
+            matches = true;
+          }
+        }
+        if (!matches && params.citizen_phone && (c as any).citizen_phone) {
+          const scDigits = (c as any).citizen_phone.replace(/\D/g, '');
+          if ((c as any).citizen_phone === params.citizen_phone || (userLast10 && scDigits.endsWith(userLast10))) {
+            matches = true;
+          }
+        }
+        if (!matches) return false;
+      }
+
       if (params.status && params.status !== 'all' && c.status !== params.status) return false;
       if (params.category_id && params.category_id !== 'all' && c.category_id !== params.category_id) return false;
       if (params.search) {
         const q = params.search.toLowerCase();
-        return c.complaint_number.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || c.location.address.toLowerCase().includes(q);
+        return (
+          (c.complaint_number || '').toLowerCase().includes(q) ||
+          (c.description || '').toLowerCase().includes(q) ||
+          (c.location?.address || '').toLowerCase().includes(q)
+        );
       }
       return true;
-    }).map(c => {
-      if (!params.citizen_id) {
-        return { ...c, citizen_name: 'Anonymous Citizen' };
-      }
-      return c;
     });
+
+    const mergedMap = new Map<string, Complaint>();
+    for (const sc of matchingStore) {
+      mergedMap.set(sc.complaint_number || sc.id, sc);
+    }
+    for (const dc of dbMapped) {
+      mergedMap.set(dc.complaint_number || dc.id, dc);
+    }
+
+    const combined = Array.from(mergedMap.values()).sort(
+      (a, b) => new Date((b as any).created_at || b.submitted_at || 0).getTime() - new Date((a as any).created_at || a.submitted_at || 0).getTime()
+    );
+
+    if (!params.citizen_id && !params.citizen_phone) {
+      return combined.map(c => ({ ...c, citizen_name: 'Anonymous Citizen' }));
+    }
+    return combined;
   }
 
   public static async getComplaintById(id: string): Promise<Complaint | null> {
@@ -3331,6 +3391,7 @@ export class DbRepository {
       complaint_number: r.complaint_number,
       citizen_id: r.citizen_id,
       citizen_name: r.citizen_name,
+      citizen_phone: r.citizen_phone || undefined,
       category_id: r.category_id,
       category_name: r.category_name,
       location: {

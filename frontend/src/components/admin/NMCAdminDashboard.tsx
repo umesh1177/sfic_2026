@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
+  BarChart3,
   Building2,
   UserCheck,
   Users,
@@ -21,6 +22,7 @@ import { SwachhSetuIcon } from '../SwachhSetuLogo.js';
 
 // Admin Sub-Views
 import { AdminOverview } from './AdminOverview.js';
+import { WardAnalysis } from './WardAnalysis.js';
 import { WardManagement } from './WardManagement.js';
 import { WardOfficerManagement } from './WardOfficerManagement.js';
 import { StaffManagement } from './StaffManagement.js';
@@ -43,24 +45,32 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [targetBoundaryWard, setTargetBoundaryWard] = useState<number | undefined>(undefined);
+  const [targetAnalysisWard, setTargetAnalysisWard] = useState<number | undefined>(undefined);
 
   const t = translations[lang];
 
   const adminName = user?.full_name || 'NMC Municipal Admin';
 
-  // 6 Core Modules as requested by user
+  // Core Modules including dedicated Ward Analysis
   const navItems = [
     { id: 'overview', label: '1. Overview', icon: LayoutDashboard },
-    { id: 'wards', label: '2. Ward Management', icon: Building2 },
-    { id: 'ward_officers', label: '3. Ward Officer Management', icon: UserCheck },
-    { id: 'staff', label: '4. Worker & Officer Management', icon: Users },
-    { id: 'boundaries', label: '5. Set Boundary & Geofencing', icon: Compass },
-    { id: 'categories', label: '6. Manage Categories & SLA', icon: Tags }
+    { id: 'ward_analysis', label: '2. Ward Analysis', icon: BarChart3 },
+    { id: 'wards', label: '3. Ward Management', icon: Building2 },
+    { id: 'ward_officers', label: '4. Ward Officer Management', icon: UserCheck },
+    { id: 'staff', label: '5. Worker & Officer Management', icon: Users },
+    { id: 'boundaries', label: '6. Set Boundary & Geofencing', icon: Compass },
+    { id: 'categories', label: '7. Manage Categories & SLA', icon: Tags }
   ];
 
   const handleNavigateToBoundary = (wardNum?: number) => {
     setTargetBoundaryWard(wardNum);
     setActiveTab('boundaries');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleNavigateToAnalysis = (wardNum?: number) => {
+    setTargetAnalysisWard(wardNum);
+    setActiveTab('ward_analysis');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -279,8 +289,20 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
             <AdminOverview lang={lang} onNavigateTab={handleTabClick} />
           )}
 
+          {activeTab === 'ward_analysis' && (
+            <WardAnalysis
+              lang={lang}
+              initialWardNumber={targetAnalysisWard}
+              onNavigateToBoundary={handleNavigateToBoundary}
+            />
+          )}
+
           {activeTab === 'wards' && (
-            <WardManagement lang={lang} onNavigateToBoundary={handleNavigateToBoundary} />
+            <WardManagement
+              lang={lang}
+              onNavigateToBoundary={handleNavigateToBoundary}
+              onNavigateToAnalysis={handleNavigateToAnalysis}
+            />
           )}
 
           {activeTab === 'ward_officers' && (
@@ -305,9 +327,9 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
           <div className="grid grid-cols-5 gap-0.5 max-w-lg mx-auto">
             {[
               { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+              { id: 'ward_analysis', label: 'Analysis', icon: BarChart3 },
               { id: 'wards', label: 'Wards', icon: Building2 },
-              { id: 'ward_officers', label: 'Officers', icon: UserCheck },
-              { id: 'boundaries', label: 'Bounds', icon: Compass }
+              { id: 'ward_officers', label: 'Officers', icon: UserCheck }
             ].map(item => {
               const Icon = item.icon;
               const isAct = activeTab === item.id;
@@ -330,13 +352,13 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
             <button
               onClick={() => setMobileMenuOpen(true)}
               className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
-                ['staff', 'categories'].includes(activeTab)
+                ['staff', 'boundaries', 'categories'].includes(activeTab)
                   ? 'bg-[#e6f4f1] text-[#095c54]'
                   : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <Menu className="w-5 h-5 shrink-0" />
-              <span className={`text-[10px] mt-0.5 truncate max-w-full ${['staff', 'categories'].includes(activeTab) ? 'font-black' : 'font-semibold'}`}>
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${['staff', 'boundaries', 'categories'].includes(activeTab) ? 'font-black' : 'font-semibold'}`}>
                 More
               </span>
             </button>

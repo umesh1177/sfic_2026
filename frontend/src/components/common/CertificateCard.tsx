@@ -256,6 +256,133 @@ export interface DriveCertificateData {
   issued_at?: string;
 }
 
+export function buildCertificatePrintHtml(certificate: DriveCertificateData, autoPrint: boolean = true): string {
+  const verifyUrl =
+    certificate.verification_url ||
+    (typeof window !== 'undefined'
+      ? `${window.location.origin}/api/certificates/verify/${certificate.certificate_code}`
+      : `https://swachhsetu.navsari.gov.in/api/certificates/verify/${certificate.certificate_code}`);
+
+  const qrSvgMarkup = buildQrSvgMarkup(verifyUrl, 120);
+  const isLeader = certificate.recipient_role === 'community_head';
+  const issuedDateFormatted = certificate.issued_at
+    ? new Date(certificate.issued_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '2026';
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NMC Certificate - ${certificate.certificate_code}</title>
+    <style>
+      @page { size: landscape; margin: 10mm; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; box-sizing: border-box; }
+      body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 24px; }
+      .actions-bar { width: 100%; max-width: 900px; margin-bottom: 16px; display: flex; justify-content: flex-end; gap: 10px; }
+      .btn { background: #095c54; color: #ffffff; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+      .btn:hover { background: #074741; }
+      .cert-wrap { width: 100%; max-width: 900px; background: #ffffff; border: 8px double #095c54; border-radius: 20px; padding: 36px 44px; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+      .top { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #d1fae5; padding-bottom: 14px; }
+      .org { color: #095c54; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
+      .sub { color: #64748b; font-size: 11px; margin-top: 2px; }
+      .title { text-align: center; margin: 24px 0 8px; font-size: 28px; font-weight: 900; color: #0f2925; letter-spacing: 1px; text-transform: uppercase; }
+      .subtitle { text-align: center; font-size: 12px; font-weight: 700; color: #095c54; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 20px; }
+      .present { text-align: center; font-size: 13px; color: #475569; }
+      .name { text-align: center; font-size: 30px; font-weight: 900; color: #095c54; margin: 8px 0 10px; border-bottom: 2px solid #f59e0b; display: inline-block; padding: 0 24px 6px; }
+      .name-wrap { text-align: center; }
+      .body { text-align: center; font-size: 14px; color: #334155; line-height: 1.7; max-width: 720px; margin: 12px auto 24px; }
+      .footer { display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #e2e8f0; padding-top: 18px; gap: 16px; }
+      .sig-line { border-top: 1.5px solid #0f2925; width: 210px; margin-bottom: 6px; }
+      .sig-name { font-weight: 800; font-size: 13px; color: #0f2925; }
+      .sig-role { font-size: 11px; color: #64748b; }
+      .qr-box { text-align: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8faf9; }
+      .code { font-family: monospace; font-size: 11px; font-weight: 800; color: #095c54; margin-top: 6px; }
+      .scan-hint { font-size: 10px; color: #64748b; margin-top: 2px; }
+      @media print {
+        body { background: #ffffff; padding: 0; }
+        .actions-bar { display: none !important; }
+        .cert-wrap { box-shadow: none; border: 8px double #095c54; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="actions-bar">
+      <button class="btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+    </div>
+    <div class="cert-wrap">
+      <div class="top">
+        <div>
+          <div class="org">Navsari Municipal Corporation · SwachhSetu</div>
+          <div class="sub">Official Digital Swachhata Recognition Certificate</div>
+        </div>
+        <div style="text-align:right">
+          <div class="code" style="margin-top:0">${certificate.certificate_code}</div>
+          <div class="sub">Ward ${certificate.ward_number || 3} · Navsari, Gujarat</div>
+        </div>
+      </div>
+      <div class="title">Certificate of ${isLeader ? 'Civic Leadership' : 'Cleanliness Participation'}</div>
+      <div class="subtitle">${isLeader ? 'Community Organization Excellence Award' : 'Swachh Navsari Volunteer Honour'}</div>
+      <div class="present">This official municipal certificate is proudly presented to</div>
+      <div class="name-wrap"><div class="name">${certificate.recipient_name}</div></div>
+      <div class="body">
+        ${isLeader
+          ? `Head of <strong>${certificate.community_name || 'Community Organization'}</strong>, in recognition of outstanding civic leadership in organizing and successfully completing the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong>`
+          : `in grateful appreciation of active volunteer participation with <strong>${certificate.community_name || 'Community Action Team'}</strong> during the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong>`}
+        at <strong>${certificate.location_name || certificate.ward_name || 'Navsari'}</strong> on <strong>${certificate.drive_date || '2026'}</strong>.
+        ${certificate.waste_cleared ? `<br/>Verified Impact: <strong>${certificate.waste_cleared}</strong>` : ''}
+      </div>
+      <div class="footer">
+        <div>
+          <div class="sig-line"></div>
+          <div class="sig-name">${certificate.issued_by_officer || 'Ward Sanitary Officer'}</div>
+          <div class="sig-role">Ward ${certificate.ward_number || 3} Officer · Navsari Municipal Corporation</div>
+          <div class="sub" style="margin-top:4px;">Issued: ${issuedDateFormatted}</div>
+        </div>
+        <div class="qr-box">
+          ${qrSvgMarkup}
+          <div class="code">${certificate.certificate_code}</div>
+          <div class="scan-hint">Scan QR to Verify Authenticity</div>
+        </div>
+      </div>
+    </div>
+    ${autoPrint ? `
+    <script>
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          window.focus();
+          window.print();
+        }, 250);
+      });
+    </script>` : ''}
+  </body>
+</html>`;
+}
+
+export function printCertificate(certificate: DriveCertificateData): void {
+  const html = buildCertificatePrintHtml(certificate, true);
+  const win = window.open('', '_blank', 'width=980,height=740');
+  if (!win) {
+    alert('Please allow popups to print certificate.');
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+export function downloadCertificateHtml(certificate: DriveCertificateData): void {
+  const html = buildCertificatePrintHtml(certificate, false);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `NMC_Certificate_${certificate.certificate_code || 'Drive'}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export const CertificateCard: React.FC<{ certificate: DriveCertificateData; compact?: boolean }> = ({
   certificate,
   compact = false
@@ -276,85 +403,7 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
   };
 
   const handlePrint = () => {
-    const qrSvgMarkup = buildQrSvgMarkup(verifyUrl, 120);
-    const win = window.open('', '_blank', 'width=980,height=740');
-    if (!win) return;
-    win.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>NMC Certificate - ${certificate.certificate_code}</title>
-          <style>
-            @page { size: landscape; margin: 10mm; }
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; box-sizing: border-box; }
-            body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
-            .cert-wrap { width: 100%; max-width: 900px; background: #ffffff; border: 8px double #095c54; border-radius: 20px; padding: 34px 42px; position: relative; }
-            .top { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #d1fae5; padding-bottom: 14px; }
-            .org { color: #095c54; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
-            .sub { color: #64748b; font-size: 11px; margin-top: 2px; }
-            .title { text-align: center; margin: 24px 0 8px; font-size: 28px; font-weight: 900; color: #0f2925; letter-spacing: 1px; text-transform: uppercase; }
-            .subtitle { text-align: center; font-size: 12px; font-weight: 700; color: #095c54; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 20px; }
-            .present { text-align: center; font-size: 13px; color: #475569; }
-            .name { text-align: center; font-size: 30px; font-weight: 900; color: #095c54; margin: 8px 0 10px; border-bottom: 2px solid #f59e0b; display: inline-block; padding: 0 24px 6px; }
-            .name-wrap { text-align: center; }
-            .body { text-align: center; font-size: 14px; color: #334155; line-height: 1.7; max-width: 720px; margin: 12px auto 24px; }
-            .footer { display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #e2e8f0; padding-top: 18px; gap: 16px; }
-            .sig-line { border-top: 1.5px solid #0f2925; width: 210px; margin-bottom: 6px; }
-            .sig-name { font-weight: 800; font-size: 13px; color: #0f2925; }
-            .sig-role { font-size: 11px; color: #64748b; }
-            .qr-box { text-align: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8faf9; }
-            .code { font-family: monospace; font-size: 11px; font-weight: 800; color: #095c54; margin-top: 6px; }
-            .scan-hint { font-size: 10px; color: #64748b; margin-top: 2px; }
-          </style>
-        </head>
-        <body>
-          <div class="cert-wrap">
-            <div class="top">
-              <div>
-                <div class="org">Navsari Municipal Corporation · SwachhSetu</div>
-                <div class="sub">Official Digital Swachhata Recognition Certificate</div>
-              </div>
-              <div style="text-align:right">
-                <div class="code" style="margin-top:0">${certificate.certificate_code}</div>
-                <div class="sub">Ward ${certificate.ward_number || 3} · Navsari, Gujarat</div>
-              </div>
-            </div>
-            <div class="title">Certificate of ${isLeader ? 'Civic Leadership' : 'Cleanliness Participation'}</div>
-            <div class="subtitle">${isLeader ? 'Community Organization Excellence Award' : 'Swachh Navsari Volunteer Honour'}</div>
-            <div class="present">This official municipal certificate is proudly presented to</div>
-            <div class="name-wrap"><div class="name">${certificate.recipient_name}</div></div>
-            <div class="body">
-              ${isLeader
-                ? `Head of <strong>${certificate.community_name || 'Community Organization'}</strong>, in recognition of outstanding civic leadership in organizing and successfully completing the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong>`
-                : `in grateful appreciation of active volunteer participation with <strong>${certificate.community_name || 'Community Action Team'}</strong> during the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong>`}
-              at <strong>${certificate.location_name || certificate.ward_name || 'Navsari'}</strong> on <strong>${certificate.drive_date || '2026'}</strong>.
-              ${certificate.waste_cleared ? `<br/>Verified Impact: <strong>${certificate.waste_cleared}</strong>` : ''}
-            </div>
-            <div class="footer">
-              <div>
-                <div class="sig-line"></div>
-                <div class="sig-name">${certificate.issued_by_officer || 'Ward Sanitary Officer'}</div>
-                <div class="sig-role">Ward ${certificate.ward_number || 3} Officer · Navsari Municipal Corporation</div>
-              </div>
-              <div class="qr-box">
-                ${qrSvgMarkup}
-                <div class="code">${certificate.certificate_code}</div>
-                <div class="scan-hint">Scan QR to Verify Authenticity</div>
-              </div>
-            </div>
-          </div>
-          <script>
-            window.addEventListener('load', function() {
-              setTimeout(function() {
-                window.focus();
-                window.print();
-              }, 250);
-            });
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+    printCertificate(certificate);
   };
 
   return (
@@ -492,7 +541,16 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
           className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition"
         >
           {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copied ? 'Code Copied!' : 'Copy Certificate ID'}</span>
+          <span>{copied ? 'Code Copied!' : 'Copy ID'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => downloadCertificateHtml(certificate)}
+          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition"
+          title="Download standalone HTML certificate"
+        >
+          <Download className="w-3.5 h-3.5 text-[#095c54]" />
+          <span>Download</span>
         </button>
         <button
           type="button"
@@ -500,7 +558,7 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
           className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
         >
           <Printer className="w-3.5 h-3.5" />
-          <span>Print / Save PDF Certificate</span>
+          <span>Print / Save PDF</span>
         </button>
       </div>
     </div>

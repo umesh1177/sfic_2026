@@ -11,6 +11,7 @@ const crypto_1 = require("crypto");
 const store_js_1 = require("../data/store.js");
 const dbRepository_js_1 = require("../data/dbRepository.js");
 const auth_js_1 = require("../middleware/auth.js");
+const smsService_js_1 = require("../services/smsService.js");
 // Normalise Indian mobile numbers to +91XXXXXXXXXX
 function normalizeIndianPhone(input) {
     const digitsOnly = input.replace(/\D/g, '');
@@ -54,11 +55,10 @@ class AuthController {
                 res.status(400).json({ success: false, error: 'Please enter a valid 10-digit Indian mobile number' });
                 return;
             }
-            // Check if already registered
-            const existing = store_js_1.store.profiles.find(p => p.phone === normalizedPhone);
+            // Check if already registered (PostgreSQL + in-memory)
+            const existingDb = await dbRepository_js_1.DbRepository.findUserByPhone(normalizedPhone).catch(() => null);
+            const existing = existingDb?.profile || store_js_1.store.profiles.find(p => p.phone === normalizedPhone);
             if (existing) {
-                // As per security requirement: "Do not expose whether a mobile number belongs to an existing account through public error messages"
-                // But for development and user clarity we provide a secure message
                 res.status(400).json({
                     success: false,
                     error: 'An account with this mobile number already exists or is unavailable. Please log in or use Forgot Password.'
@@ -67,7 +67,7 @@ class AuthController {
             }
             // Rate limit resend requests for this phone
             const activeSession = store_js_1.store.otpSessions.find(s => s.mobile_number === normalizedPhone && s.purpose === 'signup' && !s.consumed_at);
-            if (activeSession && activeSession.resend_count >= 3) {
+            if (activeSession && activeSession.resend_count >= 5) {
                 res.status(429).json({
                     success: false,
                     error: 'Too many OTP requests for this mobile number. Please wait 15 minutes before trying again.'
@@ -78,11 +78,25 @@ class AuthController {
             const plainOtp = Math.floor(100000 + Math.random() * 900000).toString();
             const otpHash = await bcryptjs_1.default.hash(plainOtp, 8);
             const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+            // Dispatch real SMS to the entered mobile number via configured SMS gateway
+            const smsResult = await smsService_js_1.SmsService.sendOtp(normalizedPhone, plainOtp, 'signup');
+            const isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
+            if (!smsResult.delivered && !isOnScreenFallback) {
+                res.status(smsResult.requiresConfiguration ? 503 : 502).json({
+                    success: false,
+                    error: smsResult.error || 'Unable to deliver SMS OTP to your mobile number. Please try again later.',
+                    sms_provider: smsResult.provider,
+                    requires_sms_config: Boolean(smsResult.requiresConfiguration)
+                });
+                return;
+            }
             const newSession = {
                 id: `otp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
                 mobile_number: normalizedPhone,
                 otp_hash: otpHash,
                 purpose: 'signup',
+                delivery_mode: !isOnScreenFallback && smsResult.verifyMode ? 'twilio_verify' : 'local_hash',
+                verify_service_sid: !isOnScreenFallback ? smsResult.verifyServiceSid : undefined,
                 expires_at: expiresAt,
                 attempts_count: 0,
                 max_attempts: 5,
@@ -90,18 +104,19 @@ class AuthController {
                 created_at: new Date().toISOString()
             };
             store_js_1.store.otpSessions.push(newSession);
-            // In production an SMS gateway (e.g. CDAC / Twilio / MSG91) sends the SMS.
-            // We log to server console and also return in dev mode header/response for smooth judging!
-            console.log(`[SMS GATEWAY] Sent OTP ${plainOtp} to ${normalizedPhone}`);
             res.status(200).json({
                 success: true,
-                message: 'OTP has been dispatched to your mobile number via SMS',
+                message: isOnScreenFallback
+                    ? 'Your 6-digit verification OTP has been generated below.'
+                    : 'A 6-digit OTP has been sent via SMS to your mobile number.',
                 data: {
                     session_id: newSession.id,
                     mobile_masked: `${normalizedPhone.slice(0, 3)} XXXXX-${normalizedPhone.slice(-4)}`,
                     expires_in_seconds: 300,
-                    // Development convenience for SIH evaluators
-                    _dev_otp_code: plainOtp
+                    sms_delivered: !isOnScreenFallback,
+                    sms_fallback: isOnScreenFallback,
+                    sms_provider: smsResult.provider,
+                    ...(isOnScreenFallback ? { _dev_otp_code: plainOtp } : {})
                 }
             });
         }
@@ -136,7 +151,9 @@ class AuthController {
                 res.status(429).json({ success: false, error: 'Maximum incorrect verification attempts reached. Please request a new OTP.' });
                 return;
             }
-            const isValid = await bcryptjs_1.default.compare(otp_code.trim(), session.otp_hash);
+            const isValid = session.delivery_mode === 'twilio_verify'
+                ? await smsService_js_1.SmsService.verifyTwilioCode(session.mobile_number, otp_code.trim(), session.verify_service_sid)
+                : await bcryptjs_1.default.compare(otp_code.trim(), session.otp_hash);
             if (!isValid) {
                 session.attempts_count += 1;
                 const remaining = session.max_attempts - session.attempts_count;
@@ -537,15 +554,37 @@ class AuthController {
                 res.status(400).json({ success: false, error: 'Please enter a valid 10-digit Indian mobile number' });
                 return;
             }
-            const profile = store_js_1.store.profiles.find(p => p.phone === normalizedPhone);
-            // For security, do not expose if phone doesn't exist, but send simulated response
+            const dbUser = await dbRepository_js_1.DbRepository.findUserByPhone(normalizedPhone).catch(() => null);
+            const profile = dbUser?.profile || store_js_1.store.profiles.find(p => p.phone === normalizedPhone);
             const plainOtp = Math.floor(100000 + Math.random() * 900000).toString();
             const otpHash = await bcryptjs_1.default.hash(plainOtp, 8);
+            let deliveryMode = 'local_hash';
+            let verifyServiceSid;
+            let isOnScreenFallback = false;
+            if (profile) {
+                const smsResult = await smsService_js_1.SmsService.sendOtp(normalizedPhone, plainOtp, 'password_reset');
+                isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
+                if (!smsResult.delivered && !isOnScreenFallback) {
+                    res.status(smsResult.requiresConfiguration ? 503 : 502).json({
+                        success: false,
+                        error: smsResult.error || 'Unable to deliver password reset SMS OTP.',
+                        sms_provider: smsResult.provider,
+                        requires_sms_config: Boolean(smsResult.requiresConfiguration)
+                    });
+                    return;
+                }
+                if (!isOnScreenFallback && smsResult.verifyMode) {
+                    deliveryMode = 'twilio_verify';
+                    verifyServiceSid = smsResult.verifyServiceSid;
+                }
+            }
             const newSession = {
                 id: `otp-fp-${Date.now()}`,
                 mobile_number: normalizedPhone,
                 otp_hash: otpHash,
                 purpose: 'password_reset',
+                delivery_mode: deliveryMode,
+                verify_service_sid: verifyServiceSid,
                 expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
                 attempts_count: 0,
                 max_attempts: 5,
@@ -553,14 +592,17 @@ class AuthController {
                 created_at: new Date().toISOString()
             };
             store_js_1.store.otpSessions.push(newSession);
-            console.log(`[PASSWORD RESET SMS] OTP for ${normalizedPhone}: ${plainOtp}`);
             res.status(200).json({
                 success: true,
-                message: 'If the mobile number is registered, a password reset OTP has been dispatched.',
+                message: isOnScreenFallback
+                    ? 'Your 6-digit password reset OTP has been generated below.'
+                    : 'If this mobile number is registered, a 6-digit password reset OTP has been sent via SMS.',
                 data: {
                     session_id: newSession.id,
                     mobile_masked: `${normalizedPhone.slice(0, 3)} XXXXX-${normalizedPhone.slice(-4)}`,
-                    _dev_otp_code: profile ? plainOtp : undefined
+                    sms_delivered: Boolean(profile) && !isOnScreenFallback,
+                    sms_fallback: isOnScreenFallback,
+                    ...(isOnScreenFallback ? { _dev_otp_code: plainOtp } : {})
                 }
             });
         }
@@ -579,7 +621,9 @@ class AuthController {
                 res.status(400).json({ success: false, error: 'Invalid or expired reset session' });
                 return;
             }
-            const isValid = await bcryptjs_1.default.compare(otp_code.trim(), session.otp_hash);
+            const isValid = session.delivery_mode === 'twilio_verify'
+                ? await smsService_js_1.SmsService.verifyTwilioCode(session.mobile_number, otp_code.trim(), session.verify_service_sid)
+                : await bcryptjs_1.default.compare(otp_code.trim(), session.otp_hash);
             if (!isValid) {
                 res.status(400).json({ success: false, error: 'Invalid OTP code' });
                 return;

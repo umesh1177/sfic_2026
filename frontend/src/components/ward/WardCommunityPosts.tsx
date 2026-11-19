@@ -201,15 +201,29 @@ export const WardCommunityPosts: React.FC = () => {
             <Megaphone className="w-5 h-5 text-[#095c54]" />
             <span>Community &amp; Citizen Posts</span>
           </h2>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Verified cleanliness completion updates, civic recognitions &amp; announcements
+          </p>
         </div>
 
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-emerald-800 transition flex items-center gap-1.5 shadow-xs self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Post</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={fetchPosts}
+            disabled={loading}
+            className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition"
+            title="Refresh Feed"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#095c54]' : ''}`} />
+          </button>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-extrabold hover:bg-emerald-800 transition flex items-center gap-1.5 shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Post</span>
+          </button>
+        </div>
       </div>
 
       {/* Post Composer Card (LinkedIn-style quick draft prompt) */}
@@ -262,7 +276,7 @@ export const WardCommunityPosts: React.FC = () => {
                       />
                     ) : (
                       <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-[#095c54] font-black text-sm flex items-center justify-center border border-emerald-200">
-                        {post.author_name.slice(0, 2).toUpperCase()}
+                        {(post.author_name || 'NMC').slice(0, 2).toUpperCase()}
                       </div>
                     )}
                     <div className="min-w-0">

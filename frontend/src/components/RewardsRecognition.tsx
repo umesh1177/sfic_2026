@@ -26,6 +26,7 @@ import { api } from '../services/api.js';
 import { CommunityRecognitionPost, RecognitionComment } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
 import { CertificateCard, DriveCertificateData } from './common/CertificateCard.js';
+import { CertificatesTableView } from './common/CertificatesTableView.js';
 
 interface RewardsRecognitionProps {
   lang: Language;
@@ -289,49 +290,23 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
       </div>
 
       {/* ======================================================== */}
-      {/* 2B. MY DRIVE CERTIFICATES VIEW (QR VERIFIED NMC CERTS)   */}
+      {/* 2B. MY DRIVE CERTIFICATES VIEW (TABLE WITH VIEW, PRINT, DOWNLOAD) */}
       {/* ======================================================== */}
       {activeFilter === 'certificates' ? (
-        <div className="space-y-4">
-          <div className="bg-gradient-to-r from-[#095c54] to-[#0f766e] rounded-3xl p-5 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-[10px] font-extrabold uppercase tracking-wider mb-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                NMC QR-Verified Civic Honors
-              </div>
-              <h2 className="text-lg font-black tracking-tight">My Issued Cleanliness Drive Certificates</h2>
-              <p className="text-xs text-emerald-100 mt-0.5">
-                Every certificate carries a unique verification ID and scannable QR code issued by your Navsari Municipal Ward Officer.
-              </p>
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-2xl font-black text-amber-300">{certificates.length}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Certificates Earned</p>
-            </div>
-          </div>
-
-          {loadingCerts ? (
-            <div className="bg-white rounded-3xl p-10 border border-[#e2e8f0] text-center text-xs font-bold text-slate-500">
-              Loading your issued certificates...
-            </div>
-          ) : certificates.length === 0 ? (
-            <div className="bg-white rounded-3xl p-10 border border-[#e2e8f0] text-center space-y-3">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#095c54]">
-                <Award className="w-7 h-7" />
-              </div>
-              <h3 className="text-base font-extrabold text-[#095c54]">No Certificates Issued Yet</h3>
-              <p className="text-xs text-[#64748b] max-w-md mx-auto">
-                Participate in NMC-approved community cleanliness drives! Once the Ward Officer verifies the drive and issues certificates, your personalized QR-verified certificate will appear right here for download & printing.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {certificates.map(cert => (
-                <CertificateCard key={cert.id || cert.certificate_code} certificate={cert} compact />
-              ))}
-            </div>
-          )}
-        </div>
+        <CertificatesTableView
+          certificates={certificates}
+          loading={loadingCerts}
+          onRefresh={fetchCertificates}
+          role="citizen"
+          title={lang === 'gu' ? 'મારા પ્રમાણપત્રો' : lang === 'hi' ? 'मेरे स्वच्छता अभियान प्रमाणपत्र' : 'My Cleanliness Drive Certificates'}
+          subtitle={
+            lang === 'gu'
+              ? 'નવસારી મહાનગરપાલિકા દ્વારા જારી કરાયેલ સત્તાવાર ડિજિટલ ક્યૂઆર પ્રમાણપત્રો.'
+              : lang === 'hi'
+              ? 'नवसारी नगर निगम द्वारा जारी आधिकारिक डिजिटल क्यूआर-सत्यापित प्रमाणपत्र।'
+              : 'Every certificate carries an official unique verification ID and scannable QR code issued by your Navsari Municipal Corporation Ward Officer.'
+          }
+        />
       ) : loading ? (
         <div className="space-y-4">
           {[1, 2].map(n => (

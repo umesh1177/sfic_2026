@@ -12,6 +12,7 @@ const api_js_1 = require("./routes/api.js");
 const db_js_1 = require("./data/db.js");
 const bootstrapDb_js_1 = require("./data/bootstrapDb.js");
 const dbRepository_js_1 = require("./data/dbRepository.js");
+const pushService_js_1 = require("./services/pushService.js");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const envPaths = [
@@ -102,4 +103,5 @@ app.listen(PORT, '0.0.0.0', async () => {
     await (0, db_js_1.checkDatabaseConnection)();
     await (0, bootstrapDb_js_1.ensureDatabaseInitialized)();
     await dbRepository_js_1.DbRepository.initializeWorkerAndTeamTables();
+    await pushService_js_1.PushService.initialize();
 });

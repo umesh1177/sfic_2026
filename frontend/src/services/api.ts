@@ -1137,6 +1137,43 @@ class ApiService {
     });
   }
 
+  async bulkAddWardCommunities(
+    communities: Array<{
+      community_name: string;
+      organisation_type?: string;
+      head_name: string;
+      phone: string;
+      email?: string;
+      username?: string;
+      password?: string;
+      locality?: string;
+      address?: string;
+      description?: string;
+    }>
+  ) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      data: {
+        ward_number: number;
+        created_count: number;
+        failed_count: number;
+        created: Array<{
+          row: number;
+          id: string;
+          community_name: string;
+          head_name: string;
+          phone: string;
+          username: string;
+        }>;
+        errors: Array<{ row: number; community_name: string; error: string }>;
+      };
+    }>('/ward/communities/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ communities })
+    });
+  }
+
   async registerCommunity(data: {
     community_name: string;
     head_name: string;
@@ -1577,6 +1614,14 @@ class ApiService {
       officer: import('../types/index.js').WardOfficerRecord;
       overdue_complaints: any[];
     }> }>('/admin/flagged-officers');
+  }
+
+  async getAdminWardAnalysis(wardNumber: number) {
+    return this.request<{ success: boolean; data: any }>(`/admin/ward-analysis/${wardNumber}`);
+  }
+
+  async getAdminComplaintTracking(complaintId: string) {
+    return this.request<{ success: boolean; data: any }>(`/admin/complaints/${complaintId}/tracking`);
   }
 
   // --- PWA WEB PUSH NOTIFICATIONS ---

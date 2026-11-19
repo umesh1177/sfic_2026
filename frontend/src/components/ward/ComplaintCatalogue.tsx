@@ -36,9 +36,10 @@ interface ComplaintCatalogueProps {
     additional_flags?: string;
     ward_number?: number | string;
   };
+  onNavigateTab?: (tab: string) => void;
 }
 
-export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialFilter }) => {
+export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialFilter, onNavigateTab }) => {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [trackingComplaintId, setTrackingComplaintId] = useState<string | null>(null);
@@ -213,6 +214,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
         complaintId={inspectingComplaintId}
         onBack={() => setInspectingComplaintId(null)}
         onComplaintUpdated={fetchComplaints}
+        onNavigateTab={onNavigateTab}
       />
     );
   }

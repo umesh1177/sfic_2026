@@ -223,6 +223,7 @@ apiRouter.delete('/ward/teams/:id', softAuthenticate, WardOfficerController.dele
 
 apiRouter.get('/ward/communities', softAuthenticate, WardOfficerController.getCommunities);
 apiRouter.post('/ward/communities', softAuthenticate, WardOfficerController.addCommunity);
+apiRouter.post('/ward/communities/bulk', softAuthenticate, WardOfficerController.bulkAddCommunities);
 apiRouter.put('/ward/communities/:id', softAuthenticate, WardOfficerController.updateCommunity);
 apiRouter.delete('/ward/communities/:id', softAuthenticate, WardOfficerController.deleteCommunity);
 apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getApprovals);
@@ -272,6 +273,8 @@ apiRouter.put('/admin/categories/:id', softAuthenticate, AdminController.updateC
 apiRouter.delete('/admin/categories/:id', softAuthenticate, AdminController.deleteCategory);
 
 apiRouter.get('/admin/flagged-officers', softAuthenticate, AdminController.getFlaggedOfficers);
+apiRouter.get('/admin/ward-analysis/:wardNumber', softAuthenticate, AdminController.getWardAnalysis);
+apiRouter.get('/admin/complaints/:id/tracking', softAuthenticate, AdminController.getComplaintTrackingDetails);
 
 
 

@@ -56,12 +56,14 @@ interface ComplaintInspectViewProps {
   complaintId: string;
   onBack: () => void;
   onComplaintUpdated?: () => void;
+  onNavigateTab?: (tab: string) => void;
 }
 
 export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
   complaintId,
   onBack,
-  onComplaintUpdated
+  onComplaintUpdated,
+  onNavigateTab
 }) => {
   const [activeTab, setActiveTab] = useState<
     'info' | 'team' | 'attendance' | 'evidence' | 'history'
@@ -353,10 +355,15 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
       setIsPublished(true);
       setShowPublishModal(false);
-      setActionSuccess('Complaint verified complete, completion post uploaded to Public Posts feed, and Citizen notified!');
+      setActionSuccess('Complaint verified complete, post uploaded to Public Posts section, and Citizen notified!');
       confetti({ particleCount: 65, spread: 75, origin: { y: 0.65 } });
       await fetchDetails();
       if (onComplaintUpdated) onComplaintUpdated();
+      if (onNavigateTab) {
+        setTimeout(() => {
+          onNavigateTab('posts');
+        }, 1000);
+      }
     } catch (err: any) {
       setActionError(err.message || 'Failed to verify & upload completion post.');
     } finally {
@@ -492,9 +499,20 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
         {/* Feedback Alert Banners */}
         {actionSuccess && (
-          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{actionSuccess}</span>
+          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{actionSuccess}</span>
+            </div>
+            {onNavigateTab && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('posts')}
+                className="px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 transition ml-auto"
+              >
+                <span>View in Posts Section →</span>
+              </button>
+            )}
           </div>
         )}
         {actionError && (
@@ -1975,39 +1993,47 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 bg-[#f7f9f8] border-t border-slate-200 flex items-center justify-between gap-2 flex-wrap shrink-0">
-              <div>
-                {!isResolved && (
+            <div className="px-6 py-4 bg-[#f7f9f8] border-t border-slate-200 flex flex-col gap-2 shrink-0">
+              {actionError && (
+                <div className="w-full text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{actionError}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  {!isResolved && (
+                    <button
+                      type="button"
+                      onClick={handleVerifyCompleteOnly}
+                      disabled={verifying || publishing}
+                      className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition disabled:opacity-50"
+                    >
+                      {verifying ? 'Verifying...' : 'Verify Only (Without Post)'}
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
                   <button
                     type="button"
-                    onClick={handleVerifyCompleteOnly}
-                    disabled={verifying || publishing}
-                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition disabled:opacity-50"
+                    onClick={() => {
+                      stopVoiceInput();
+                      setShowPublishModal(false);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
                   >
-                    {verifying ? 'Verifying...' : 'Verify Only (Without Post)'}
+                    Cancel
                   </button>
-                )}
-              </div>
-              <div className="flex items-center gap-2 ml-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    stopVoiceInput();
-                    setShowPublishModal(false);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePublishToCommunity}
-                  disabled={publishing || verifying || !postTitle.trim() || !postDescription.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
-                >
-                  {publishing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  <span>{isResolved ? 'Upload Post' : 'Verify Complete & Upload Post'}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={handlePublishToCommunity}
+                    disabled={publishing || verifying || !postTitle.trim() || !postDescription.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
+                  >
+                    {publishing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>{isResolved ? 'Post Update' : 'Post'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

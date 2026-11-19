@@ -22,8 +22,11 @@ import {
   Phone,
   Mail,
   Search,
-  ShieldCheck
+  ShieldCheck,
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { api } from '../../services/api.js';
 import { DriveInspectView } from './DriveInspectView.js';
 import { TablePagination } from '../common/TablePagination.js';
@@ -59,8 +62,9 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
   const [savingOrgEdit, setSavingOrgEdit] = useState<boolean>(false);
   const [deletingOrgId, setDeletingOrgId] = useState<string | null>(null);
 
-  // Add Community / Organization Modal State (includes Verification Certificate upload!)
+  // Add Community / Organization Modal State (Single + Bulk Excel Upload)
   const [showAddCommunityModal, setShowAddCommunityModal] = useState<boolean>(false);
+  const [addCommunityTab, setAddCommunityTab] = useState<'single' | 'bulk'>('single');
   const [communityName, setCommunityName] = useState<string>('');
   const [headName, setHeadName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
@@ -75,6 +79,224 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
   const [docName, setDocName] = useState<string>('');
   const [submittingCommunity, setSubmittingCommunity] = useState<boolean>(false);
   const [communityError, setCommunityError] = useState<string>('');
+
+  // Bulk Excel Upload State
+  interface BulkCommunityRow {
+    excelRow: number;
+    community_name: string;
+    organisation_type: string;
+    head_name: string;
+    phone: string;
+    email: string;
+    username: string;
+    password: string;
+    locality: string;
+    address: string;
+    description: string;
+    validationError?: string;
+  }
+  const [bulkFileName, setBulkFileName] = useState<string>('');
+  const [bulkRows, setBulkRows] = useState<BulkCommunityRow[]>([]);
+  const [bulkUploading, setBulkUploading] = useState<boolean>(false);
+  const [bulkResult, setBulkResult] = useState<{
+    created_count: number;
+    failed_count: number;
+    errors: Array<{ row: number; community_name: string; error: string }>;
+  } | null>(null);
+
+  const BULK_EXCEL_HEADERS = [
+    'Organization Name',
+    'Organization Type',
+    'Community Head Name',
+    'Mobile Number',
+    'Email',
+    'Login Username',
+    'Password',
+    'Locality',
+    'Address',
+    'Description'
+  ];
+
+  const handleDownloadCommunityExcelFormat = () => {
+    // Only column headers — no dummy rows — so Ward Officer knows exact fields to fill
+    const worksheet = XLSX.utils.aoa_to_sheet([BULK_EXCEL_HEADERS]);
+    worksheet['!cols'] = [
+      { wch: 28 },
+      { wch: 26 },
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 24 },
+      { wch: 20 },
+      { wch: 16 },
+      { wch: 20 },
+      { wch: 30 },
+      { wch: 32 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Communities');
+    XLSX.writeFile(workbook, `Ward_${wardNumber || 3}_Community_Bulk_Format.xlsx`);
+  };
+
+  const normalizeHeaderKey = (k: string) =>
+    String(k || '')
+      .toLowerCase()
+      .replace(/[*()\-_/\s]+/g, '');
+
+  const handleBulkExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCommunityError('');
+    setBulkResult(null);
+    setBulkFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) {
+          setCommunityError('The uploaded Excel file does not contain any worksheet.');
+          setBulkRows([]);
+          return;
+        }
+        const sheet = workbook.Sheets[firstSheetName];
+        const rawObjects = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+
+        const parsed: BulkCommunityRow[] = [];
+        rawObjects.forEach((rawRow, idx) => {
+          const mapped: Record<string, string> = {};
+          for (const [k, v] of Object.entries(rawRow)) {
+            mapped[normalizeHeaderKey(k)] = String(v ?? '').trim();
+          }
+
+          const community_name =
+            mapped['organizationname'] ||
+            mapped['organisationname'] ||
+            mapped['communityname'] ||
+            mapped['name'] ||
+            '';
+          const organisation_type =
+            mapped['organizationtype'] ||
+            mapped['organisationtype'] ||
+            mapped['type'] ||
+            'Resident Welfare Association';
+          const head_name =
+            mapped['communityheadname'] ||
+            mapped['headname'] ||
+            mapped['coordinatorname'] ||
+            mapped['head'] ||
+            '';
+          const phoneVal =
+            mapped['mobilenumber'] ||
+            mapped['phone'] ||
+            mapped['phonenumber'] ||
+            mapped['mobile'] ||
+            mapped['contact'] ||
+            '';
+          const emailVal = mapped['email'] || mapped['officialemail'] || '';
+          const usernameVal = mapped['loginusername'] || mapped['username'] || '';
+          const passwordVal = mapped['password'] || '';
+          const localityVal = mapped['locality'] || mapped['area'] || '';
+          const addressVal = mapped['address'] || mapped['officeaddress'] || '';
+          const descriptionVal = mapped['description'] || mapped['about'] || '';
+
+          // Skip completely empty rows
+          if (!community_name && !head_name && !phoneVal && !emailVal) return;
+
+          const digits = phoneVal.replace(/\D/g, '');
+          const clean10 =
+            digits.length === 12 && digits.startsWith('91')
+              ? digits.slice(2)
+              : digits.length === 11 && digits.startsWith('0')
+              ? digits.slice(1)
+              : digits;
+
+          let validationError: string | undefined;
+          if (!community_name) {
+            validationError = 'Missing Organization Name';
+          } else if (!head_name) {
+            validationError = 'Missing Community Head Name';
+          } else if (!/^[6-9]\d{9}$/.test(clean10)) {
+            validationError = 'Invalid 10-digit Mobile Number';
+          } else if (usernameVal && /\s/.test(usernameVal)) {
+            validationError = 'Username cannot contain spaces';
+          }
+
+          parsed.push({
+            excelRow: idx + 2,
+            community_name,
+            organisation_type,
+            head_name,
+            phone: clean10 || phoneVal,
+            email: emailVal,
+            username: usernameVal,
+            password: passwordVal,
+            locality: localityVal,
+            address: addressVal,
+            description: descriptionVal,
+            validationError
+          });
+        });
+
+        if (parsed.length === 0) {
+          setCommunityError(
+            'No data rows found in the uploaded Excel file. Fill rows below the header row and re-upload.'
+          );
+        }
+        setBulkRows(parsed);
+      } catch (err: any) {
+        setCommunityError(err?.message || 'Unable to parse Excel file. Please use the downloaded .xlsx format.');
+        setBulkRows([]);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    // Allow re-selecting same file after edits
+    e.target.value = '';
+  };
+
+  const handleBulkRegisterSubmit = async () => {
+    const validRows = bulkRows.filter(r => !r.validationError);
+    if (validRows.length === 0) {
+      setCommunityError('There are no valid rows ready to register. Please fix the highlighted rows in Excel.');
+      return;
+    }
+    setBulkUploading(true);
+    setCommunityError('');
+    setBulkResult(null);
+    try {
+      const res = await api.bulkAddWardCommunities(
+        validRows.map(r => ({
+          community_name: r.community_name,
+          organisation_type: r.organisation_type || 'Resident Welfare Association',
+          head_name: r.head_name,
+          phone: r.phone,
+          email: r.email || undefined,
+          username: r.username || undefined,
+          password: r.password || undefined,
+          locality: r.locality || undefined,
+          address: r.address || undefined,
+          description: r.description || undefined
+        }))
+      );
+      setBulkResult({
+        created_count: res.data?.created_count || 0,
+        failed_count: res.data?.failed_count || 0,
+        errors: res.data?.errors || []
+      });
+      if ((res.data?.created_count || 0) > 0) {
+        setActionMessage(
+          res.message || `${res.data.created_count} communities registered in Ward ${wardNumber || 3}.`
+        );
+        await fetchOrganizations();
+        setTimeout(() => setActionMessage(''), 6000);
+      }
+    } catch (err: any) {
+      setCommunityError(err.message || 'Bulk community registration failed.');
+    } finally {
+      setBulkUploading(false);
+    }
+  };
 
   const fetchOrganizations = async () => {
     setLoadingOrgs(true);
@@ -247,17 +469,31 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
           </h2>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <button
             type="button"
             onClick={() => {
               setCommunityError('');
+              setAddCommunityTab('single');
               setShowAddCommunityModal(true);
             }}
             className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
           >
             <Plus className="w-4 h-4" />
             <span>Add Community</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCommunityError('');
+              setBulkResult(null);
+              setAddCommunityTab('bulk');
+              setShowAddCommunityModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#095c54] border border-emerald-200 text-xs font-extrabold flex items-center gap-1.5 transition"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Bulk Upload Excel</span>
           </button>
           <button
             type="button"
@@ -661,25 +897,59 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
         </div>
       )}
 
-      {/* ADD COMMUNITY / ORGANIZATION MODAL (WITH VERIFICATION DOCUMENT UPLOAD) */}
+      {/* ADD COMMUNITY / ORGANIZATION MODAL (SINGLE + BULK EXCEL UPLOAD) */}
       {showAddCommunityModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-base font-black text-[#0f2925]">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-4 sm:my-6">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3 gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-black text-[#0f2925]">
                   Register Community / Organization (Ward {wardNumber || 3})
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Add a verified organization directly to Ward {wardNumber || 3} with their registration document.
+                <p className="text-[11px] sm:text-xs text-slate-500">
+                  Register a single community or bulk-register multiple communities using Excel.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddCommunityModal(false)}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500"
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 shrink-0"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Single vs Bulk Excel Mode Switcher */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddCommunityTab('single');
+                  setCommunityError('');
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                  addCommunityTab === 'single'
+                    ? 'bg-[#095c54] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Single Registration</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddCommunityTab('bulk');
+                  setCommunityError('');
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                  addCommunityTab === 'bulk'
+                    ? 'bg-[#095c54] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Bulk Upload (Excel)</span>
               </button>
             </div>
 
@@ -690,6 +960,197 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
               </div>
             )}
 
+            {addCommunityTab === 'bulk' ? (
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-0.5">
+                {/* Step 1: Download Header-Only Excel Format */}
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-[#f0faf8] border border-teal-200 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-[#095c54] block">
+                        Step 1 · Template Format
+                      </span>
+                      <h4 className="text-xs sm:text-sm font-black text-[#0f2925]">
+                        Download Excel Column Format (.xlsx)
+                      </h4>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        Contains only the required column headers so you can fill in your ward&apos;s community details cleanly.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadCommunityExcelFormat}
+                      className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs shrink-0 transition"
+                    >
+                      <Download className="w-4 h-4 shrink-0" />
+                      <span>Download Excel Format</span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1 border-t border-teal-200/70">
+                    {BULK_EXCEL_HEADERS.map(col => {
+                      const isReq =
+                        col === 'Organization Name' ||
+                        col === 'Community Head Name' ||
+                        col === 'Mobile Number';
+                      return (
+                        <span
+                          key={col}
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                            isReq
+                              ? 'bg-white text-[#095c54] border-teal-300'
+                              : 'bg-white/70 text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {col}
+                          {isReq ? ' *' : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Step 2: Upload Filled Excel File */}
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-dashed border-[#095c54]/40 space-y-2">
+                  <span className="text-[10px] font-black uppercase text-slate-500 block">
+                    Step 2 · Upload Filled Excel Sheet
+                  </span>
+                  <label className="flex flex-col sm:flex-row items-center justify-center gap-2 py-3.5 px-4 rounded-xl bg-white border border-slate-200 hover:border-[#095c54] text-xs font-extrabold text-[#095c54] cursor-pointer transition text-center">
+                    {bulkFileName ? (
+                      <FileCheck2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Upload className="w-5 h-5 shrink-0" />
+                    )}
+                    <span className="truncate max-w-full">
+                      {bulkFileName
+                        ? `Selected: ${bulkFileName} (${bulkRows.length} rows parsed)`
+                        : 'Click to Upload Excel File (.xlsx, .xls, or .csv)'}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      className="hidden"
+                      onChange={handleBulkExcelFileChange}
+                    />
+                  </label>
+                </div>
+
+                {/* Live Parsed Preview Table */}
+                {bulkRows.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-black text-[#0f2925]">
+                        Preview ({bulkRows.filter(r => !r.validationError).length} Valid ·{' '}
+                        {bulkRows.filter(r => r.validationError).length} Invalid)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkRows([]);
+                          setBulkFileName('');
+                          setBulkResult(null);
+                        }}
+                        className="text-[11px] font-bold text-rose-600 hover:underline"
+                      >
+                        Clear File
+                      </button>
+                    </div>
+
+                    <div className="max-h-52 overflow-auto rounded-2xl border border-slate-200 bg-white">
+                      <table className="w-full text-left border-collapse text-[11px]">
+                        <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
+                          <tr>
+                            <th className="py-2 px-2.5">Row</th>
+                            <th className="py-2 px-2.5">Organization</th>
+                            <th className="py-2 px-2.5">Head &amp; Mobile</th>
+                            <th className="py-2 px-2.5">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {bulkRows.map(r => (
+                            <tr key={r.excelRow} className={r.validationError ? 'bg-rose-50/60' : ''}>
+                              <td className="py-2 px-2.5 font-bold text-slate-500">#{r.excelRow}</td>
+                              <td className="py-2 px-2.5">
+                                <div className="font-black text-[#0f2925] truncate max-w-[160px]">
+                                  {r.community_name || '—'}
+                                </div>
+                                <div className="text-[10px] text-slate-500 truncate max-w-[160px]">
+                                  {r.organisation_type}
+                                </div>
+                              </td>
+                              <td className="py-2 px-2.5">
+                                <div className="font-bold text-[#0f2925] truncate max-w-[140px]">
+                                  {r.head_name || '—'}
+                                </div>
+                                <div className="text-[10px] text-slate-500">{r.phone || '—'}</div>
+                              </td>
+                              <td className="py-2 px-2.5">
+                                {r.validationError ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-black text-[10px] inline-block">
+                                    {r.validationError}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-black text-[10px] inline-block">
+                                    Ready
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bulk Upload Server Results */}
+                {bulkResult && (
+                  <div className="p-3.5 rounded-2xl border bg-emerald-50/70 border-emerald-200 space-y-2 text-xs">
+                    <div className="font-black text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Registered {bulkResult.created_count} communit
+                        {bulkResult.created_count === 1 ? 'y' : 'ies'} in Ward {wardNumber || 3}
+                        {bulkResult.failed_count > 0 ? ` · ${bulkResult.failed_count} skipped` : ''}
+                      </span>
+                    </div>
+                    {bulkResult.errors.length > 0 && (
+                      <div className="space-y-1 pt-1 border-t border-emerald-200/70 max-h-28 overflow-y-auto">
+                        {bulkResult.errors.map((er, idx) => (
+                          <div key={idx} className="text-[11px] font-bold text-rose-700">
+                            Row #{er.row} ({er.community_name}): {er.error}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCommunityModal(false)}
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkRegisterSubmit}
+                    disabled={
+                      bulkUploading || bulkRows.filter(r => !r.validationError).length === 0
+                    }
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>
+                      {bulkUploading
+                        ? 'Registering Communities...'
+                        : `Register ${bulkRows.filter(r => !r.validationError).length} Communities`}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleAddCommunitySubmit} className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -833,6 +1294,7 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

@@ -16,4 +16,5 @@ database/pgdata/
 .gemini/
 analyzeproject.md
 **/vapid_keys.json
-backend/data/
+*.mp4
+data/
