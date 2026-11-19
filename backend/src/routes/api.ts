@@ -255,6 +255,9 @@ apiRouter.get('/admin/wards', softAuthenticate, AdminController.getWards);
 apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, AdminController.updateWardBoundary);
 apiRouter.get('/admin/city-boundary', softAuthenticate, AdminController.getCityBoundary);
 apiRouter.put('/admin/city-boundary', softAuthenticate, AdminController.updateCityBoundary);
+apiRouter.get('/admin/boundary-settings', softAuthenticate, AdminController.getBoundarySettings);
+apiRouter.put('/admin/boundary-settings', softAuthenticate, AdminController.updateBoundarySettings);
+apiRouter.post('/admin/boundary/reset-official', softAuthenticate, AdminController.resetToOfficialBoundaries);
 apiRouter.get('/admin/boundary-history', softAuthenticate, AdminController.getBoundaryHistory);
 apiRouter.post('/admin/boundary-history/:id/restore', softAuthenticate, AdminController.restoreBoundaryHistory);
 

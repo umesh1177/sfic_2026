@@ -367,6 +367,7 @@ export class AdminController {
             city_name: 'Navsari Municipal Corporation',
             city_boundary: history[0].coordinates,
             ward_boundary_overrides: {},
+            allow_outside_complaints: false,
             last_updated: history[0].created_at
           };
         } else {
@@ -380,7 +381,183 @@ export class AdminController {
         data: {
           city_name: store.adminBoundarySettings?.city_name || 'Navsari Municipal Corporation',
           city_boundary: boundary,
+          allow_outside_complaints: Boolean(store.adminBoundarySettings?.allow_outside_complaints),
           last_updated: store.adminBoundarySettings?.last_updated || new Date().toISOString()
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/admin/boundary-settings
+   */
+  public static async getBoundarySettings(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!store.adminBoundarySettings) {
+        store.adminBoundarySettings = {
+          city_name: 'Navsari Municipal Corporation',
+          city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
+          ward_boundary_overrides: {},
+          allow_outside_complaints: false,
+          last_updated: new Date().toISOString()
+        };
+      }
+      res.status(200).json({
+        success: true,
+        data: {
+          city_name: store.adminBoundarySettings.city_name,
+          city_boundary: store.adminBoundarySettings.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY,
+          allow_outside_complaints: Boolean(store.adminBoundarySettings.allow_outside_complaints),
+          ward_boundary_overrides: store.adminBoundarySettings.ward_boundary_overrides || {},
+          last_updated: store.adminBoundarySettings.last_updated
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * PUT /api/admin/boundary-settings
+   * Allows updating allow_outside_complaints toggle, city boundary, or both
+   */
+  public static async updateBoundarySettings(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { allow_outside_complaints, city_boundary, location_summary } = req.body;
+
+      if (!store.adminBoundarySettings) {
+        store.adminBoundarySettings = {
+          city_name: 'Navsari Municipal Corporation',
+          city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
+          ward_boundary_overrides: {},
+          allow_outside_complaints: false,
+          last_updated: new Date().toISOString()
+        };
+      }
+
+      if (allow_outside_complaints !== undefined) {
+        store.adminBoundarySettings.allow_outside_complaints = Boolean(allow_outside_complaints);
+      }
+
+      let savedRecord = null;
+      if (city_boundary && Array.isArray(city_boundary) && city_boundary.length >= 3) {
+        store.adminBoundarySettings.city_boundary = city_boundary;
+        savedRecord = await DbRepository.recordBoundaryHistory({
+          boundary_type: 'city',
+          ward_id: null,
+          ward_number: null,
+          ward_name: 'Navsari City',
+          coordinates: city_boundary,
+          location_summary: location_summary?.trim() || `Navsari City Geofence — ${city_boundary.length} vertices`,
+          saved_by: req.user?.full_name || 'Super Admin'
+        });
+      }
+
+      store.adminBoundarySettings.last_updated = new Date().toISOString();
+
+      res.status(200).json({
+        success: true,
+        message: allow_outside_complaints !== undefined
+          ? `Boundary settings updated. Citizen complaints from outside Navsari boundary are now ${store.adminBoundarySettings.allow_outside_complaints ? 'ENABLED (Open Mode)' : 'DISABLED (Strict Geo-Fencing Enforced)'}.`
+          : 'Boundary settings updated successfully.',
+        data: {
+          ...store.adminBoundarySettings,
+          history_record: savedRecord
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * POST /api/admin/boundary/reset-official
+   * 1-click restore to official Survey of India / Gujarat GIS administrative boundaries
+   */
+  public static async resetToOfficialBoundaries(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { target, ward_number } = req.body || {};
+
+      if (target === 'ward' && ward_number !== undefined) {
+        const defaultWard = NAVSARI_WARDS.find(w => w.ward_number === Number(ward_number));
+        if (!defaultWard) {
+          res.status(404).json({ success: false, error: `Official boundary not found for Ward ${ward_number}` });
+          return;
+        }
+
+        const liveWard = store.wards.find(w => w.ward_number === Number(ward_number));
+        if (liveWard) {
+          liveWard.boundary_coordinates = [...defaultWard.boundary_coordinates];
+        }
+
+        if (!store.adminBoundarySettings) {
+          store.adminBoundarySettings = {
+            city_name: 'Navsari Municipal Corporation',
+            city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
+            ward_boundary_overrides: {},
+            allow_outside_complaints: false,
+            last_updated: new Date().toISOString()
+          };
+        }
+        if (store.adminBoundarySettings.ward_boundary_overrides) {
+          delete store.adminBoundarySettings.ward_boundary_overrides[defaultWard.id];
+        }
+
+        const savedRecord = await DbRepository.recordBoundaryHistory({
+          boundary_type: 'ward',
+          ward_id: defaultWard.id,
+          ward_number: defaultWard.ward_number,
+          ward_name: defaultWard.ward_name,
+          coordinates: defaultWard.boundary_coordinates,
+          location_summary: `Official Survey of India GIS Boundary Reset — Ward ${defaultWard.ward_number} (${defaultWard.ward_name})`,
+          saved_by: req.user?.full_name || 'Super Admin'
+        });
+
+        res.status(200).json({
+          success: true,
+          message: `Ward ${defaultWard.ward_number} (${defaultWard.ward_name}) reset to official Government GIS boundary successfully.`,
+          data: {
+            ward_number: defaultWard.ward_number,
+            boundary_coordinates: defaultWard.boundary_coordinates,
+            history_record: savedRecord
+          }
+        });
+        return;
+      }
+
+      // Default: Reset outer city boundary to official Survey of India boundary
+      if (!store.adminBoundarySettings) {
+        store.adminBoundarySettings = {
+          city_name: 'Navsari Municipal Corporation',
+          city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
+          ward_boundary_overrides: {},
+          allow_outside_complaints: false,
+          last_updated: new Date().toISOString()
+        };
+      } else {
+        store.adminBoundarySettings.city_boundary = DEFAULT_NAVSARI_CITY_BOUNDARY;
+        store.adminBoundarySettings.last_updated = new Date().toISOString();
+      }
+
+      const savedRecord = await DbRepository.recordBoundaryHistory({
+        boundary_type: 'city',
+        ward_id: null,
+        ward_number: null,
+        ward_name: 'Navsari City',
+        coordinates: DEFAULT_NAVSARI_CITY_BOUNDARY,
+        location_summary: `Official Survey of India / Gujarat Urban Development GIS Boundary Reset (25 vertices)`,
+        saved_by: req.user?.full_name || 'Super Admin'
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Navsari Municipal Corporation boundary reset to official Government GIS boundary successfully.',
+        data: {
+          city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
+          allow_outside_complaints: Boolean(store.adminBoundarySettings.allow_outside_complaints),
+          history_record: savedRecord
         }
       });
     } catch (err: any) {
@@ -393,7 +570,7 @@ export class AdminController {
    */
   public static async updateCityBoundary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { city_boundary, location_summary } = req.body;
+      const { city_boundary, location_summary, allow_outside_complaints } = req.body;
       if (!city_boundary || !Array.isArray(city_boundary) || city_boundary.length < 3) {
         res.status(400).json({ success: false, error: 'A valid polygon of at least 3 [longitude, latitude] coordinates is required.' });
         return;
@@ -419,10 +596,14 @@ export class AdminController {
           city_name: 'Navsari Municipal Corporation',
           city_boundary: city_boundary,
           ward_boundary_overrides: {},
+          allow_outside_complaints: allow_outside_complaints !== undefined ? Boolean(allow_outside_complaints) : false,
           last_updated: new Date().toISOString()
         };
       } else {
         store.adminBoundarySettings.city_boundary = city_boundary;
+        if (allow_outside_complaints !== undefined) {
+          store.adminBoundarySettings.allow_outside_complaints = Boolean(allow_outside_complaints);
+        }
         store.adminBoundarySettings.last_updated = new Date().toISOString();
       }
 

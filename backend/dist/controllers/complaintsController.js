@@ -66,24 +66,28 @@ class ComplaintsController {
                 res.status(400).json({ success: false, error: 'Valid numeric latitude and longitude are required' });
                 return;
             }
-            // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
-            /*
-            const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
-            const isInside = isPointInPolygon([lng, lat], cityBoundary);
-      
-            if (!isInside) {
-              res.status(422).json({
-                success: false,
-                error: 'Location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
-              });
-              return;
+            // Enforce Navsari City Geofence if outside complaints are disabled by Super Admin
+            const cityBoundary = store_js_1.store.adminBoundarySettings?.city_boundary || postgis_js_1.DEFAULT_NAVSARI_CITY_BOUNDARY;
+            const isInside = (0, postgis_js_1.isPointInPolygon)([lng, lat], cityBoundary);
+            const allowOutside = Boolean(store_js_1.store.adminBoundarySettings?.allow_outside_complaints);
+            if (!allowOutside && !isInside) {
+                res.status(422).json({
+                    success: false,
+                    error: 'Location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within official NMC boundaries.',
+                    data: {
+                        is_inside_nmc: false,
+                        allow_outside_complaints: false
+                    }
+                });
+                return;
             }
-            */
-            const ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng);
+            const allWards = (store_js_1.store.wards && store_js_1.store.wards.length > 0) ? store_js_1.store.wards : postgis_js_1.NAVSARI_WARDS;
+            const ward = (0, postgis_js_1.findWardByCoordinates)(lat, lng, allWards);
             res.status(200).json({
                 success: true,
                 data: {
-                    is_inside_nmc: true,
+                    is_inside_nmc: isInside,
+                    allow_outside_complaints: allowOutside,
                     ward_id: ward.id,
                     ward_number: ward.ward_number,
                     ward_name: ward.ward_name,
@@ -185,16 +189,27 @@ class ComplaintsController {
                     return;
                 }
             }
-            // 2. Ward Resolution (prefer live store.wards so admin officer updates apply)
+            // 2. Navsari Outer Boundary Geofence Enforcement (Configurable by Super Admin)
+            let lat = Number(latitude);
+            let lng = Number(longitude);
+            const allowOutside = Boolean(store_js_1.store.adminBoundarySettings?.allow_outside_complaints);
+            const cityBoundary = store_js_1.store.adminBoundarySettings?.city_boundary || postgis_js_1.DEFAULT_NAVSARI_CITY_BOUNDARY;
+            const isInsideCity = !isNaN(lat) && !isNaN(lng) ? (0, postgis_js_1.isPointInPolygon)([lng, lat], cityBoundary) : true;
+            if (!allowOutside && !isInsideCity) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Submission rejected: Selected location is outside official Navsari Municipal Corporation boundaries. Outside complaint submissions are currently disabled by NMC Administration.'
+                });
+                return;
+            }
+            // 3. Dynamic Ward Resolution (uses live updated ward polygons from store & overrides)
             const allWards = (store_js_1.store.wards && store_js_1.store.wards.length > 0) ? store_js_1.store.wards : postgis_js_1.NAVSARI_WARDS;
             let ward = (ward_number !== undefined && ward_number !== null && ward_number !== ''
                 ? allWards.find(w => w.ward_number === Number(ward_number))
                 : null)
                 || (ward_id ? allWards.find(w => w.id === ward_id) : null);
-            let lat = Number(latitude);
-            let lng = Number(longitude);
             if (!ward) {
-                const geoWard = (0, postgis_js_1.findWardByCoordinates)(isNaN(lat) ? 20.9325 : lat, isNaN(lng) ? 72.9275 : lng);
+                const geoWard = (0, postgis_js_1.findWardByCoordinates)(isNaN(lat) ? 20.9325 : lat, isNaN(lng) ? 72.9275 : lng, allWards);
                 ward = allWards.find(w => w.ward_number === geoWard.ward_number) || geoWard;
             }
             else if (ward && (isNaN(lat) || isNaN(lng) || !lat || !lng || (Math.abs(lat - 20.9325) < 0.001 && Math.abs(lng - 72.9280) < 0.001))) {

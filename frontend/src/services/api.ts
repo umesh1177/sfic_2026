@@ -1436,15 +1436,47 @@ class ApiService {
       data: {
         city_name: string;
         city_boundary: [number, number][];
+        allow_outside_complaints?: boolean;
         last_updated: string;
       };
     }>('/admin/city-boundary');
   }
 
-  async updateCityBoundary(city_boundary: [number, number][], location_summary?: string) {
+  async updateCityBoundary(city_boundary: [number, number][], location_summary?: string, allow_outside_complaints?: boolean) {
     return this.request<{ success: boolean; message: string; data: any }>('/admin/city-boundary', {
       method: 'PUT',
-      body: JSON.stringify({ city_boundary, location_summary })
+      body: JSON.stringify({ city_boundary, location_summary, allow_outside_complaints })
+    });
+  }
+
+  async getBoundarySettings() {
+    return this.request<{
+      success: boolean;
+      data: {
+        city_name: string;
+        city_boundary: [number, number][];
+        allow_outside_complaints: boolean;
+        ward_boundary_overrides: Record<string, [number, number][]>;
+        last_updated: string;
+      };
+    }>('/admin/boundary-settings');
+  }
+
+  async updateBoundarySettings(payload: {
+    allow_outside_complaints?: boolean;
+    city_boundary?: [number, number][];
+    location_summary?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/admin/boundary-settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async resetOfficialBoundary(target: 'city' | 'ward' = 'city', wardNumber?: number) {
+    return this.request<{ success: boolean; message: string; data: any }>('/admin/boundary/reset-official', {
+      method: 'POST',
+      body: JSON.stringify({ target, ward_number: wardNumber })
     });
   }
 

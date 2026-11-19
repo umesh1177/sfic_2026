@@ -84,26 +84,31 @@ export class ComplaintsController {
         return;
       }
 
-      // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
-      /*
+      // Enforce Navsari City Geofence if outside complaints are disabled by Super Admin
       const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
       const isInside = isPointInPolygon([lng, lat], cityBoundary);
+      const allowOutside = Boolean(store.adminBoundarySettings?.allow_outside_complaints);
 
-      if (!isInside) {
+      if (!allowOutside && !isInside) {
         res.status(422).json({
           success: false,
-          error: 'Location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
+          error: 'Location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within official NMC boundaries.',
+          data: {
+            is_inside_nmc: false,
+            allow_outside_complaints: false
+          }
         });
         return;
       }
-      */
 
-      const ward = findWardByCoordinates(lat, lng);
+      const allWards = (store.wards && store.wards.length > 0) ? store.wards : NAVSARI_WARDS;
+      const ward = findWardByCoordinates(lat, lng, allWards);
 
       res.status(200).json({
         success: true,
         data: {
-          is_inside_nmc: true,
+          is_inside_nmc: isInside,
+          allow_outside_complaints: allowOutside,
           ward_id: ward.id,
           ward_number: ward.ward_number,
           ward_name: ward.ward_name,
@@ -225,18 +230,31 @@ export class ComplaintsController {
         }
       }
 
-      // 2. Ward Resolution (prefer live store.wards so admin officer updates apply)
+      // 2. Navsari Outer Boundary Geofence Enforcement (Configurable by Super Admin)
+      let lat = Number(latitude);
+      let lng = Number(longitude);
+
+      const allowOutside = Boolean(store.adminBoundarySettings?.allow_outside_complaints);
+      const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
+      const isInsideCity = !isNaN(lat) && !isNaN(lng) ? isPointInPolygon([lng, lat], cityBoundary) : true;
+
+      if (!allowOutside && !isInsideCity) {
+        res.status(400).json({
+          success: false,
+          error: 'Submission rejected: Selected location is outside official Navsari Municipal Corporation boundaries. Outside complaint submissions are currently disabled by NMC Administration.'
+        });
+        return;
+      }
+
+      // 3. Dynamic Ward Resolution (uses live updated ward polygons from store & overrides)
       const allWards = (store.wards && store.wards.length > 0) ? store.wards : NAVSARI_WARDS;
       let ward = (ward_number !== undefined && ward_number !== null && ward_number !== ''
           ? allWards.find(w => w.ward_number === Number(ward_number))
           : null)
         || (ward_id ? allWards.find(w => w.id === ward_id) : null);
 
-      let lat = Number(latitude);
-      let lng = Number(longitude);
-
       if (!ward) {
-        const geoWard = findWardByCoordinates(isNaN(lat) ? 20.9325 : lat, isNaN(lng) ? 72.9275 : lng);
+        const geoWard = findWardByCoordinates(isNaN(lat) ? 20.9325 : lat, isNaN(lng) ? 72.9275 : lng, allWards);
         ward = allWards.find(w => w.ward_number === geoWard.ward_number) || geoWard;
       } else if (ward && (isNaN(lat) || isNaN(lng) || !lat || !lng || (Math.abs(lat - 20.9325) < 0.001 && Math.abs(lng - 72.9280) < 0.001))) {
         // If user picked a specific ward but coordinates are center of Navsari or missing, adjust to ward center

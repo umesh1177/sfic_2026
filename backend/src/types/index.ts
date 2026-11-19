@@ -105,6 +105,7 @@ export interface AdminBoundarySettings {
   city_name: string;
   city_boundary: [number, number][]; // Outer polygon of Navsari
   ward_boundary_overrides?: Record<string, [number, number][]>;
+  allow_outside_complaints?: boolean; // When true: complaints can be submitted from outside Navsari boundary; when false: strictly geofenced within boundary
   last_updated: string;
 }
 

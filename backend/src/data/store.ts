@@ -1820,6 +1820,7 @@ export const store: DataStore = {
     city_name: 'Navsari Municipal Corporation',
     city_boundary: DEFAULT_NAVSARI_CITY_BOUNDARY,
     ward_boundary_overrides: {},
+    allow_outside_complaints: false,
     last_updated: new Date().toISOString()
   },
   profiles: initialProfiles,
