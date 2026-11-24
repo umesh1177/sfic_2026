@@ -832,15 +832,18 @@ export class DbRepository {
     title: string,
     message: string,
     referenceId?: string,
-    type: string = 'complaint_status'
-  ): Promise<void> {
-    const notifObj = {
+    type: string = 'complaint_status',
+    extra?: { points_awarded?: number; certificate?: any }
+  ): Promise<AppNotification> {
+    const notifObj: AppNotification = {
       id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       user_id: userId,
       title,
       message,
       notification_type: type as any,
       reference_id: referenceId,
+      points_awarded: extra?.points_awarded,
+      certificate: extra?.certificate,
       is_read: false,
       created_at: new Date().toISOString()
     };
@@ -869,6 +872,8 @@ export class DbRepository {
       referenceId,
       tag: `swachhsetu-${type}-${referenceId || Date.now()}`
     }).catch(() => {});
+
+    return notifObj;
   }
 
   public static async submitFeedback(complaintId: string, citizenId: string, rating: number, feedbackText: string, satisfactory: boolean) {
@@ -1548,6 +1553,7 @@ export class DbRepository {
   public static async createRecognitionPost(data: {
     author_name: string;
     author_role: string;
+    is_verified_nmc?: boolean;
     ward_number: number;
     ward_name: string;
     hero_name: string;
@@ -1560,21 +1566,28 @@ export class DbRepository {
     before_image_url?: string;
     after_image_url?: string;
     after_photos?: string[];
+    participating_communities?: string[];
+    drive_id?: string;
+    volunteers_count?: number;
+    points_awarded_citizen?: number;
+    points_awarded_community?: number;
   }): Promise<CommunityRecognitionPost | null> {
     if (isDbConnected()) {
       try {
         const afterPhotosJson = data.after_photos ? JSON.stringify(data.after_photos) : null;
+        const verifiedFlag = data.is_verified_nmc !== undefined ? data.is_verified_nmc : true;
         const res = await pool.query(
           `INSERT INTO community_recognition_posts (
             author_name, author_role, is_verified_nmc, ward_number, ward_name,
             hero_name, hero_role, badge_title, title, description,
             achievement_stats, image_url, likes_count, comments_count,
             before_image_url, after_image_url, after_photos
-          ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, 0, $13, $14, $15)
           RETURNING *`,
           [
             data.author_name,
             data.author_role,
+            verifiedFlag,
             data.ward_number,
             data.ward_name,
             data.hero_name,
@@ -1608,6 +1621,11 @@ export class DbRepository {
           before_image_url: r.before_image_url || data.before_image_url,
           after_image_url: r.after_image_url || data.after_image_url,
           after_photos: r.after_photos || data.after_photos,
+          participating_communities: data.participating_communities,
+          drive_id: data.drive_id,
+          volunteers_count: data.volunteers_count,
+          points_awarded_citizen: data.points_awarded_citizen,
+          points_awarded_community: data.points_awarded_community,
           likes_count: r.likes_count,
           comments_count: r.comments_count,
           is_liked: false,
@@ -1627,7 +1645,7 @@ export class DbRepository {
       author_name: data.author_name,
       author_role: data.author_role,
       author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&q=80',
-      is_verified_nmc: true,
+      is_verified_nmc: data.is_verified_nmc !== undefined ? data.is_verified_nmc : true,
       ward_number: data.ward_number,
       ward_name: data.ward_name,
       hero_name: data.hero_name,
@@ -1640,6 +1658,11 @@ export class DbRepository {
       before_image_url: data.before_image_url,
       after_image_url: data.after_image_url,
       after_photos: data.after_photos,
+      participating_communities: data.participating_communities,
+      drive_id: data.drive_id,
+      volunteers_count: data.volunteers_count,
+      points_awarded_citizen: data.points_awarded_citizen,
+      points_awarded_community: data.points_awarded_community,
       likes_count: 1,
       comments_count: 0,
       is_liked: false,

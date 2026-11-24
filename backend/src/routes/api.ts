@@ -228,6 +228,8 @@ apiRouter.put('/ward/communities/:id', softAuthenticate, WardOfficerController.u
 apiRouter.delete('/ward/communities/:id', softAuthenticate, WardOfficerController.deleteCommunity);
 apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getApprovals);
 apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
+apiRouter.get('/ward/completed-drives', softAuthenticate, WardOfficerController.getCompletedDrives);
+apiRouter.post('/ward/drives/:id/publish-completion', softAuthenticate, WardOfficerController.publishDriveCompletion);
 apiRouter.get('/ward/organization-drives', softAuthenticate, WardOfficerController.getOrganizationDrives);
 apiRouter.post('/ward/organization-drives/:id/complete', softAuthenticate, WardOfficerController.completeOrganizationDrive);
 apiRouter.post('/ward/organization-drives/:id/certificates', softAuthenticate, WardOfficerController.issueDriveCertificates);

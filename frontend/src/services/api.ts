@@ -1268,6 +1268,39 @@ class ApiService {
     return this.request<{ success: boolean; valid: boolean; data: any }>(`/certificates/verify/${encodeURIComponent(code)}`);
   }
 
+  async getWardCompletedDrives(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/completed-drives${q}`);
+  }
+
+  async publishDriveCompletion(
+    driveId: string,
+    data: {
+      title?: string;
+      description?: string;
+      achievement_stats?: string;
+      citizen_points?: number;
+      community_points?: number;
+      custom_communities?: string[];
+    }
+  ) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      data: {
+        post: CommunityRecognitionPost;
+        certificates_sent_citizens: number;
+        certificates_sent_communities: number;
+        citizen_points_awarded: number;
+        community_points_awarded: number;
+        participating_communities: string[];
+      };
+    }>(`/ward/drives/${driveId}/publish-completion`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
   async getWardCleanlinessScore() {
     return this.request<{ success: boolean; data: WardCleanlinessScore }>('/ward/cleanliness-score');
   }
