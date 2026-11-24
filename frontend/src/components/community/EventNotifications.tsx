@@ -95,9 +95,6 @@ export const EventNotifications: React.FC<EventNotificationsProps> = ({ activiti
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
           Targeted Event Notifications
         </h1>
-        <p className="text-xs text-slate-500 font-medium">
-          Broadcast announcements exclusively to citizens registered for a specific cleanliness drive (e.g. weather updates, gate changes, equipment reminders).
-        </p>
       </div>
 
       {successMessage && (

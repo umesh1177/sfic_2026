@@ -8,21 +8,11 @@ import {
   ArrowRight,
   TrendingUp,
   Briefcase,
-  Camera,
   ShieldCheck,
-  AlertTriangle,
-  Truck,
-  Sparkles,
-  PhoneCall,
   Volume2,
   ChevronRight,
-  Target,
-  Award,
-  Zap,
   Activity,
-  Check,
-  Shield,
-  Radio
+  PhoneCall
 } from 'lucide-react';
 import { WorkerProfile, WorkerDashboardSummary, WorkAssignment } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
@@ -35,39 +25,19 @@ interface WorkerOverviewProps {
   lang: Language;
 }
 
-const priorityConfig: Record<string, { label: string; badgeClass: string; dotClass: string }> = {
-  emergency: {
-    label: 'Emergency',
-    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
-    dotClass: 'bg-rose-500 animate-ping'
-  },
-  urgent: {
-    label: 'Urgent',
-    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
-    dotClass: 'bg-rose-500 animate-ping'
-  },
-  high: {
-    label: 'High Priority',
-    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
-    dotClass: 'bg-amber-500'
-  },
-  medium: {
-    label: 'Medium Priority',
-    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-    dotClass: 'bg-emerald-500'
-  },
-  low: {
-    label: 'Routine',
-    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
-    dotClass: 'bg-slate-400'
-  }
+const priorityLabel: Record<string, { label: string; badgeClass: string }> = {
+  emergency: { label: 'Emergency', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  urgent: { label: 'Urgent', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  high: { label: 'High', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' },
+  medium: { label: 'Medium', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' },
+  low: { label: 'Routine', badgeClass: 'bg-slate-50 text-slate-600 border-slate-200' }
 };
 
-const statusConfig: Record<string, { label: string; badgeClass: string }> = {
-  in_progress: { label: 'In Progress', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  assigned: { label: 'Assigned', badgeClass: 'bg-blue-50 text-blue-800 border-blue-200' },
+const statusLabel: Record<string, { label: string; badgeClass: string }> = {
+  in_progress: { label: 'In Progress', badgeClass: 'bg-[#f0f7f5] text-[#095c54] border-[#cde6df]' },
+  assigned: { label: 'Assigned', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' },
   completion_submitted: { label: 'Under Review', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' },
-  verified_complete: { label: 'Verified Complete', badgeClass: 'bg-teal-50 text-teal-800 border-teal-200' },
+  verified_complete: { label: 'Verified Complete', badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
   closed: { label: 'Closed', badgeClass: 'bg-slate-100 text-slate-600 border-slate-200' }
 };
 
@@ -78,30 +48,29 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
   onNavigateTab,
   lang
 }) => {
-  const isLeaderOnAnyTask = assignments.some(a => a.is_temporary_leader);
-  const activeLeaderTasks = assignments.filter(a => a.is_temporary_leader);
-  const todayAssignments = assignments.filter(
-    a => a.status === 'in_progress' || a.status === 'assigned' || a.scheduled_date === new Date().toISOString().split('T')[0]
+  const activeAssignments = assignments.filter(
+    a => a.status !== 'verified_complete' && a.status !== 'closed'
   );
+  const activeLeaderTasks = activeAssignments.filter(a => a.is_temporary_leader);
+  const isLeaderOnAnyTask = activeLeaderTasks.length > 0;
 
+  const todayCount = summary?.metrics?.today_tasks ?? activeAssignments.length;
+  const inProgressCount = summary?.metrics?.in_progress_tasks ?? assignments.filter(a => a.status === 'in_progress').length;
   const completedCount =
     summary?.metrics?.completed_tasks ??
-    assignments.filter(
-      a => a.status === 'verified_complete' || a.status === 'closed' || a.status === 'completion_submitted'
-    ).length;
-  const inProgressCount =
-    summary?.metrics?.in_progress_tasks ?? assignments.filter(a => a.status === 'in_progress').length;
-  const attendanceRate = summary?.metrics?.on_time_attendance_rate ?? 94;
-  const todayCount = summary?.metrics?.today_tasks ?? todayAssignments.length;
+    assignments.filter(a => a.status === 'verified_complete' || a.status === 'closed' || a.status === 'completion_submitted').length;
+  const attendanceRate = summary?.metrics?.on_time_attendance_rate ?? 0;
 
-  const initials = profile?.full_name
-    ? profile.full_name
-        .split(' ')
-        .map(n => n[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-    : 'FW';
+  const displayName = profile?.full_name || 'Field Worker';
+  const firstName = displayName.split(' ')[0] || 'Worker';
+  const wardNumber = profile?.ward_number || 3;
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map(n => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'FW';
 
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
@@ -122,84 +91,61 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
     year: 'numeric'
   });
 
+  const formatShortTime = (isoOrStr?: string) => {
+    if (!isoOrStr) return null;
+    const d = new Date(isoOrStr);
+    if (isNaN(d.getTime())) return isoOrStr;
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
-    <div className="space-y-6">
-      {/* ── 1. MODERN EXECUTIVE HERO BANNER ───────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#063a32] via-[#095c54] to-[#0c7066] text-white shadow-lg p-5 sm:p-7">
-        {/* Soft background radial accents */}
-        <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-emerald-400/10 blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-16 -left-16 w-64 h-64 rounded-full bg-teal-300/10 blur-2xl pointer-events-none" />
-
-        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          {/* Left: Avatar & Identity Details */}
-          <div className="flex items-start sm:items-center gap-4 min-w-0">
-            <div className="relative shrink-0">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/15 backdrop-blur-md border border-white/30 flex items-center justify-center font-black text-white text-xl sm:text-2xl shadow-md">
-                {initials}
-              </div>
-              <span
-                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-[#095c54] shadow-xs"
-                title="Active on Duty"
-              />
+    <div className="space-y-5">
+      {/* 1. CLEAN EXECUTIVE HEADER CARD */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_1px_2px_rgba(15,41,37,0.03)] p-4 sm:p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-5">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#095c54] text-white flex items-center justify-center font-bold text-base sm:text-lg shrink-0">
+              {initials}
             </div>
-
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 text-[11px] font-bold border border-emerald-300/30">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Active On Duty · Ward {profile?.ward_number || 3}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#f0f7f5] text-[#095c54] text-[10px] sm:text-[11px] font-semibold border border-[#cde6df]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#095c54]" />
+                  Ward {wardNumber} · {todayFormatted}
                 </span>
-                <span className="text-[11px] text-white/70 font-medium">{todayFormatted}</span>
+                {profile?.worker_code && (
+                  <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                    {profile.worker_code}
+                  </span>
+                )}
               </div>
-
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-white tracking-tight truncate">
-                {greeting}, {profile?.full_name ? profile.full_name.split(' ')[0] : 'Kanti'}!
+              <h1 className="text-lg sm:text-2xl font-bold text-[#0f2925] tracking-tight mt-1.5 truncate">
+                {greeting}, {firstName}
               </h1>
-
-              <div className="flex items-center gap-3 mt-1.5 flex-wrap text-xs text-emerald-100 font-medium">
-                <span className="flex items-center gap-1">
-                  <Briefcase className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>{profile?.designation_name || 'Sanitation Worker'}</span>
-                </span>
-                <span className="w-1 h-1 rounded-full bg-emerald-300/40" />
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>Navsari Municipal Corporation · Ward {profile?.ward_number || 3}</span>
-                </span>
-                <span className="w-1 h-1 rounded-full bg-emerald-300/40" />
-                <span className="font-mono text-[11px] text-white/80 bg-white/10 px-2 py-0.5 rounded-md">
-                  {profile?.worker_code || 'NMC-WRK-001'}
-                </span>
-              </div>
+              <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span>{profile?.designation_name || 'Sanitation Worker'}</span>
+                <span className="text-slate-300">•</span>
+                <span>Navsari Municipal Corporation</span>
+              </p>
             </div>
           </div>
 
-          {/* Right: Quick Action Controls */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 self-start lg:self-auto shrink-0">
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
             <button
               onClick={() => onNavigateTab('assign_work')}
-              className="px-4 py-2.5 rounded-xl bg-white text-[#095c54] font-black text-xs sm:text-sm shadow-md hover:bg-emerald-50 transition active:scale-95 flex items-center gap-2"
+              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-semibold text-xs transition flex items-center justify-center gap-2"
             >
-              <Clock className="w-4 h-4 text-[#095c54]" />
-              <span>Mark Attendance</span>
+              <Briefcase className="w-3.5 h-3.5" />
+              <span>View Today's Work</span>
             </button>
-
-            <button
-              onClick={() => onNavigateTab('assign_work')}
-              className="px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/25 font-bold text-xs sm:text-sm transition active:scale-95 flex items-center gap-2"
-            >
-              <Calendar className="w-4 h-4 text-emerald-200" />
-              <span>Today's Tasks</span>
-            </button>
-
             <button
               onClick={() =>
                 speakText(
-                  `નમસ્તે ${profile?.full_name || 'સાથી'}. તમારા આજના ${todayCount} કાર્યો તૈયાર છે. અટેન્ડન્સ માર્ક કરો.`
+                  `નમસ્તે ${displayName}. તમારા આજના ${todayCount} કાર્યો ઉપલબ્ધ છે.`
                 )
               }
-              className="p-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/25 transition active:scale-95"
-              title="Regional voice assistant (Gujarati / Hindi)"
+              className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition shrink-0"
+              title="Voice Summary (Gujarati / Hindi)"
             >
               <Volume2 className="w-4 h-4" />
             </button>
@@ -207,284 +153,207 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
         </div>
       </div>
 
-      {/* ── 2. TEMPORARY TEAM LEADER CALLOUT (if assigned) ─────────────────── */}
+      {/* 2. SUBTLE TEMPORARY TEAM LEADER NOTICE (ONLY WHEN ACTUALLY ASSIGNED AS LEADER) */}
       {isLeaderOnAnyTask && (
-        <div className="bg-gradient-to-r from-amber-50 to-amber-100/60 rounded-3xl border border-amber-300/80 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 bg-amber-200/80 border border-amber-400 rounded-2xl flex items-center justify-center text-amber-900 shrink-0 shadow-xs">
-              <Crown className="w-6 h-6 text-amber-700" />
+        <div className="bg-white rounded-2xl border border-slate-200/80 border-l-4 border-l-amber-500 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0 mt-0.5">
+              <Crown className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-black text-amber-950">Temporary Squad Team Leader</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-200 border border-amber-300 text-[10px] font-black text-amber-900 uppercase tracking-wide">
-                  Task Delegated Authority
+                <h3 className="text-sm font-bold text-[#0f2925]">Temporary Squad Team Leader</h3>
+                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold uppercase">
+                  Task Delegated
                 </span>
               </div>
-              <p className="text-xs text-amber-800 font-medium mt-0.5">
-                Authorized by Ward Officer to coordinate squad attendance, upload before/after photos, and submit the completion report for{' '}
-                <span className="font-bold underline">{activeLeaderTasks.map(t => t.title).join(', ')}</span>.
+              <p className="text-xs text-slate-600 mt-0.5">
+                You are designated to coordinate attendance and upload field evidence for{' '}
+                <span className="font-semibold text-[#0f2925]">
+                  {activeLeaderTasks.map(t => t.task_code).join(', ')}
+                </span>.
               </p>
             </div>
           </div>
-
           <button
             onClick={() => onNavigateTab('assign_work', activeLeaderTasks[0]?.id)}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-sm transition flex items-center justify-center gap-2 shrink-0 active:scale-95"
+            className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold transition flex items-center gap-1.5 shrink-0"
           >
-            <CheckCircle2 className="w-4 h-4 text-white" />
-            <span>Open Squad Task</span>
+            <span>Open Task</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* ── 3. FOUR KPI METRICS (Modern Cards with Clean Typography) ────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-        {/* Metric 1: Today's Tasks */}
-        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between">
+      {/* 3. FOUR UNIFIED METRIC CARDS (CLEAN MONOCHROME + TEAL SYSTEM) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Tasks</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <Calendar className="w-4 h-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Assigned Tasks</span>
+            <Calendar className="w-4 h-4 text-[#095c54]" />
           </div>
-          <div className="mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-black text-[#0f2925]">{todayCount}</span>
-              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                Assigned
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">Ward {profile?.ward_number || 3} Daily Schedule</p>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#0f2925]">{todayCount}</span>
+            <span className="text-[11px] font-medium text-slate-500">Active</span>
           </div>
+          <p className="text-[11px] text-slate-400 mt-1">Ward {wardNumber} schedule</p>
         </div>
 
-        {/* Metric 2: Active / In Progress */}
-        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">In Progress</span>
-            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-              <Activity className="w-4 h-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">In Progress</span>
+            <Activity className="w-4 h-4 text-[#095c54]" />
           </div>
-          <div className="mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-black text-[#0f2925]">{inProgressCount}</span>
-              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full">
-                Active
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">Field Squad Operating Now</p>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#0f2925]">{inProgressCount}</span>
+            <span className="text-[11px] font-medium text-slate-500">Ongoing</span>
           </div>
+          <p className="text-[11px] text-slate-400 mt-1">Field work active</p>
         </div>
 
-        {/* Metric 3: Verified Completed */}
-        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Completed</span>
-            <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#095c54] flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Completed</span>
+            <CheckCircle2 className="w-4 h-4 text-[#095c54]" />
           </div>
-          <div className="mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-black text-[#0f2925]">{completedCount}</span>
-              <span className="text-[11px] font-bold text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-full">
-                Lifetime
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">Officer Verified & Signed</p>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#0f2925]">{completedCount}</span>
+            <span className="text-[11px] font-medium text-slate-500">Total</span>
           </div>
+          <p className="text-[11px] text-slate-400 mt-1">Verified & submitted</p>
         </div>
 
-        {/* Metric 4: GPS Attendance */}
-        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance Rate</span>
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Attendance</span>
+            <TrendingUp className="w-4 h-4 text-[#095c54]" />
           </div>
-          <div className="mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-black text-[#0f2925]">{attendanceRate}%</span>
-              <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-                Verified GPS
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">Geofence Compliance Score</p>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#0f2925]">{attendanceRate}%</span>
+            <span className="text-[11px] font-medium text-slate-500">GPS Verified</span>
           </div>
+          <p className="text-[11px] text-slate-400 mt-1">Geofence compliance</p>
         </div>
       </div>
 
-      {/* ── 4. TODAY'S FIELD OPERATIONS (Clean, Modern Cards) ───────────────── */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#e6f4f1] text-[#095c54] flex items-center justify-center shrink-0">
-              <Target className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-[#0f2925]">Today's Field Tasks</h2>
-              <p className="text-xs text-slate-500">
-                Ward {profile?.ward_number || 3} Scheduled Operations · Navsari Municipal Corporation
-              </p>
-            </div>
+      {/* 4. TODAY'S FIELD ASSIGNMENTS LIST */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-[#0f2925]">Today's Field Operations</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Active tasks dispatched to your squad by the Ward {wardNumber} Officer
+            </p>
           </div>
-
-          <button
-            onClick={() => onNavigateTab('assign_work')}
-            className="text-xs font-bold text-[#095c54] hover:text-[#074741] flex items-center gap-1 self-start sm:self-auto group"
-          >
-            <span>View All Operations</span>
-            <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-          </button>
+          {activeAssignments.length > 0 && (
+            <button
+              onClick={() => onNavigateTab('assign_work')}
+              className="text-xs font-semibold text-[#095c54] hover:underline flex items-center gap-1"
+            >
+              <span>Open Workspace</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Task Cards List */}
-        <div className="space-y-3">
-          {todayAssignments.length === 0 ? (
-            <div className="p-8 text-center bg-[#f8faf9] rounded-2xl border border-dashed border-slate-200">
-              <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-emerald-500 opacity-80" />
-              <p className="font-extrabold text-sm text-[#0f2925]">No Pending Tasks for Today</p>
-              <p className="text-xs text-slate-500 mt-0.5 max-w-sm mx-auto">
-                All daily operations are currently up to date. New sanitation requests or emergency tickets dispatched by your Ward Officer will appear here.
-              </p>
-            </div>
-          ) : (
-            todayAssignments.map(task => {
-              const priority = priorityConfig[task.priority] || priorityConfig.low;
-              const status = statusConfig[task.status] || {
-                label: task.status.replace('_', ' '),
+        {activeAssignments.length === 0 ? (
+          <div className="py-10 px-6 text-center bg-slate-50/70 rounded-xl border border-dashed border-slate-200">
+            <Briefcase className="w-8 h-8 mx-auto mb-2.5 text-slate-300" />
+            <p className="font-semibold text-sm text-[#0f2925]">No Tasks Assigned Yet</p>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto leading-relaxed">
+              You currently have no pending assignments. When your Ward Officer assigns work to your team, it will appear here immediately.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {activeAssignments.map(task => {
+              const priority = priorityLabel[task.priority] || priorityLabel.medium;
+              const status = statusLabel[task.status] || {
+                label: task.status.replace(/_/g, ' '),
                 badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
               };
+              const deadlineStr = formatShortTime(task.deadline || task.expected_end_time);
 
               return (
                 <div
                   key={task.id}
-                  className="p-4 sm:p-5 rounded-2xl border border-slate-200 hover:border-[#095c54]/50 bg-white hover:bg-[#f8faf9] transition duration-150 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs"
+                  className="py-4 first:pt-1 last:pb-1 flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
-                  <div className="space-y-2 flex-1 min-w-0">
-                    {/* Header Chips */}
+                  <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-[11px] font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-md border border-[#a7f3d0]">
+                      <span className="font-mono text-[11px] font-semibold text-[#095c54] bg-[#f0f7f5] px-2 py-0.5 rounded-md border border-[#cde6df]">
                         {task.task_code}
                       </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border flex items-center gap-1 ${priority.badgeClass}`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${priority.dotClass}`} />
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase border ${priority.badgeClass}`}>
                         {priority.label}
                       </span>
-                      {task.is_temporary_leader && (
-                        <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Crown className="w-3 h-3 text-amber-700" />
-                          Squad Leader
-                        </span>
-                      )}
-                      <span
-                        className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${status.badgeClass}`}
-                      >
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase border ${status.badgeClass}`}>
                         {status.label}
                       </span>
-                    </div>
-
-                    {/* Title & Description */}
-                    <div>
-                      <h3 className="font-black text-sm text-[#0f2925] truncate">{task.title}</h3>
-                      <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{task.description}</p>
-                    </div>
-
-                    {/* Meta Chips */}
-                    <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap pt-1">
-                      <span className="flex items-center gap-1 text-slate-700 font-medium">
-                        <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                        <span className="truncate max-w-[200px]">{task.location_name || task.address}</span>
-                      </span>
-
-                      <span className="flex items-center gap-1 text-slate-600">
-                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>
-                          {task.scheduled_start_time || '08:00 AM'} - {task.expected_end_time || '04:00 PM'}
+                      {task.is_temporary_leader && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
+                          <Crown className="w-3 h-3" />
+                          Leader
                         </span>
-                      </span>
+                      )}
+                    </div>
 
-                      <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-200">
-                        <Radio className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span>Geofence: {task.attendance_radius_meters || 150}m</span>
+                    <h3 className="font-semibold text-sm text-[#0f2925] leading-snug break-words">{task.title}</h3>
+
+                    <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                      <span className="flex items-center gap-1 min-w-0">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate max-w-[220px] sm:max-w-[300px]">{task.location_name || task.address}</span>
                       </span>
+                      {deadlineStr && (
+                        <span className="flex items-center gap-1 shrink-0">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>Due {deadlineStr}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Open Work Details Button */}
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                    <button
-                      onClick={() => onNavigateTab('assign_work', task.id)}
-                      className="px-4 py-2.5 bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black rounded-xl flex items-center gap-2 transition shadow-xs active:scale-95"
-                    >
-                      <Briefcase className="w-3.5 h-3.5 text-emerald-300" />
-                      <span>Open Task</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => onNavigateTab('assign_work', task.id)}
+                    className="w-full md:w-auto px-4 py-2.5 md:py-2 bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition shrink-0"
+                  >
+                    <span>Open Task</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
-      {/* ── 5. MUNICIPAL HOTLINE & SAFETY PROTOCOL (2 Cards) ──────────────── */}
+      {/* 5. SAFETY & HELPLINE FOOTER STRIP */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Safety & PPE Standard Card */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-5 h-5" />
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#f0f7f5] text-[#095c54] flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-sm font-black text-[#0f2925]">Municipal Field Safety Protocols</h4>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Reflective safety jacket, protective rubber gloves, and rubber boots are compulsory on site. Report hazardous chemical waste or open drain hazards immediately.
+            <h4 className="text-xs font-bold text-[#0f2925]">Field Safety Guidelines</h4>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Wear reflective vest, rubber gloves, and safety boots at all times. Report hazardous waste to your Ward Officer before handling.
             </p>
-            <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-              <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                ✓ PPE Mandatory
-              </span>
-              <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                ✓ GPS Geotagged
-              </span>
-              <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                ✓ Zero-Harm Protocol
-              </span>
-            </div>
           </div>
         </div>
 
-        {/* Ward Sanitary Inspector Hotline */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between gap-3">
-          <div className="flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-              <PhoneCall className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-black text-[#0f2925]">
-                Ward {profile?.ward_number || 3} Sanitary Inspector Hotline
-              </h4>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Need vehicle assistance, road safety barricades, or emergency waste clearance squad reinforcement?
-              </p>
-            </div>
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+            <PhoneCall className="w-4 h-4" />
           </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-            <span className="text-xs font-bold text-slate-700 font-mono">+91 98251 00003</span>
-            <a
-              href="tel:+919825100003"
-              className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-            >
-              <PhoneCall className="w-3 h-3 text-emerald-400" />
-              <span>Call Inspector</span>
-            </a>
+          <div>
+            <h4 className="text-xs font-bold text-[#0f2925]">NMC Sanitation Control Room</h4>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Need equipment support or emergency escalation on site? Contact Ward {wardNumber} Control Desk at{' '}
+              <a href="tel:18002332026" className="font-semibold text-[#095c54] hover:underline">
+                1800-233-2026
+              </a>.
+            </p>
           </div>
         </div>
       </div>

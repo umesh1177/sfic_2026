@@ -95,11 +95,8 @@ export const ApprovalTracking: React.FC<ApprovalTrackingProps> = ({
     <div className="space-y-6">
       <div>
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-          Official Approval & Verification Timeline
+          Official Approval &amp; Verification Timeline
         </h1>
-        <p className="text-xs text-slate-500 font-medium">
-          Track the complete 11-step official municipal approval workflow with Navsari Ward Officers and NMC Administration.
-        </p>
       </div>
 
       {/* Activity Selector */}

@@ -31,9 +31,22 @@ class PredictRequest(BaseModel):
     description: Optional[str] = ""
     image_base64: Optional[str] = None
 
+class TrainSampleRequest(BaseModel):
+    category_name: str
+    image_base64: Optional[str] = None
+    description: Optional[str] = ""
+
 class ModerateRequest(BaseModel):
     text: str
     image_base64: Optional[str] = None
+
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "service": "My Clean Navsari AI Engine",
+        "health": "/health"
+    }
 
 @app.get("/health")
 def health():
@@ -52,6 +65,14 @@ def predict(req: PredictRequest):
         file_size=req.file_size or 500000,
         description=req.description or "",
         image_base64=req.image_base64
+    )
+
+@app.post("/train-sample")
+def train_sample(req: TrainSampleRequest):
+    return classifier.train_sample(
+        category_name=req.category_name,
+        image_base64=req.image_base64,
+        description=req.description or ""
     )
 
 @app.post("/moderate")

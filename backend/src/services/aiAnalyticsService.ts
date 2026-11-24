@@ -14,7 +14,7 @@ export interface SeasonalPrediction {
   latitude: number;
   longitude: number;
   risk_level: 'CRITICAL' | 'HIGH' | 'MODERATE';
-  probability_score: number; // e.g. 94%
+  probability_score: number;
   predicted_window: string;
   historical_incidents_count: number;
   ai_root_cause: string;
@@ -37,7 +37,7 @@ export interface WorkerPerformerSuggestion {
   avg_truth_score_pct: number;
   attendance_days: number;
   geofence_match_pct: number;
-  composite_score: number; // 0-100
+  composite_score: number;
   ai_accolade: string;
   ai_reason: string;
 }
@@ -51,7 +51,7 @@ export interface CommunityPerformerSuggestion {
   total_volunteers_attended: number;
   ward_problems_resolved: number;
   avg_satisfaction_rating: number;
-  composite_score: number; // 0-100
+  composite_score: number;
   ai_accolade: string;
   ai_reason: string;
 }
@@ -62,7 +62,7 @@ export interface CitizenPerformerSuggestion {
   ward_number: number;
   events_attended_count: number;
   valid_complaints_count: number;
-  composite_score: number; // 0-100
+  composite_score: number;
   ai_badge: string;
   ai_reason: string;
 }
@@ -87,18 +87,43 @@ export interface ChronicHotspotSuggestion {
   last_reported_date: string;
 }
 
+function normalizeWards(wardInput?: number | number[]): number[] {
+  if (Array.isArray(wardInput)) {
+    return wardInput.map(Number).filter(n => Number.isFinite(n) && n > 0);
+  }
+  if (wardInput !== undefined && Number.isFinite(Number(wardInput)) && Number(wardInput) > 0) {
+    return [Number(wardInput)];
+  }
+  return [];
+}
+
+function getWardName(wardNumber: number): string {
+  const found = (store.wards || []).find(w => Number(w.ward_number) === Number(wardNumber));
+  return found ? `Ward ${found.ward_number} - ${found.ward_name}` : `Ward ${wardNumber}`;
+}
+
+function initialsFromName(name: string): string {
+  const parts = String(name || 'Citizen').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'C.V.';
+  if (parts.length === 1) return `${parts[0][0].toUpperCase()}.`;
+  return `${parts[0][0].toUpperCase()}.${parts[parts.length - 1][0].toUpperCase()}.`;
+}
+
 export class AIAnalyticsService {
   /**
-   * 1. PREDICTIVE RECURRING SEASONAL CIVIC PROBLEMS
+   * 1. PREDICTIVE RECURRING SEASONAL CIVIC PROBLEMS (STRICTLY ASSIGNED WARD(S) ONLY)
    */
-  public static async getSeasonalPredictions(wardNumber?: number): Promise<{
+  public static async getSeasonalPredictions(wardInput?: number | number[]): Promise<{
     current_season: string;
     forecast_month: string;
     total_predictions: number;
+    ward_numbers: number[];
     predictions: SeasonalPrediction[];
   }> {
-    // Determine active season in Gujarat
-    const currentMonth = new Date().getMonth() + 1; // 1 to 12
+    const wardNumbers = normalizeWards(wardInput);
+    const primaryWard = wardNumbers[0] || 3;
+
+    const currentMonth = new Date().getMonth() + 1;
     let activeSeasonCode: 'monsoon' | 'post_monsoon_festive' | 'winter_uttarayan' | 'summer_pre_monsoon' = 'post_monsoon_festive';
     let currentSeasonTitle = 'Post-Monsoon & Festive Cleanliness Window';
 
@@ -116,293 +141,297 @@ export class AIAnalyticsService {
       currentSeasonTitle = 'Summer & Pre-Monsoon Drainage Preparedness';
     }
 
-    // Dynamic historical complaint extraction from PostgreSQL
+    // Fetch REAL complaints strictly for assigned ward(s)
     let complaintsHistory: any[] = [];
     if (isDbConnected()) {
       try {
-        const query = `
-          SELECT 
-            id, category_name, ward_number, address, landmark, latitude, longitude,
-            status, is_urgent, created_at, EXTRACT(MONTH FROM created_at) as created_month
-          FROM complaints
-          ${wardNumber ? `WHERE ward_number = $1` : ''}
-          ORDER BY created_at DESC
-        `;
-        const res = wardNumber ? await pool.query(query, [wardNumber]) : await pool.query(query);
+        const res = wardNumbers.length > 0
+          ? await pool.query(
+              `SELECT id, category_name, ward_number, address, landmark, latitude, longitude, status, is_urgent, created_at
+               FROM complaints
+               WHERE ward_number = ANY($1::int[])
+               ORDER BY created_at DESC`,
+              [wardNumbers]
+            )
+          : await pool.query(
+              `SELECT id, category_name, ward_number, address, landmark, latitude, longitude, status, is_urgent, created_at
+               FROM complaints
+               ORDER BY created_at DESC`
+            );
         complaintsHistory = res.rows || [];
       } catch (err) {
-        console.warn('[AIAnalyticsService] Error reading complaints history from DB, falling back to memory store:', err);
+        console.warn('[AIAnalyticsService] Error reading complaints history from DB:', err);
       }
     }
 
     if (complaintsHistory.length === 0) {
-      complaintsHistory = (store.complaints || []).filter(c => !wardNumber || (c as any).ward_number === wardNumber || (c as any).ward_id === wardNumber);
+      complaintsHistory = (store.complaints || []).filter(c => {
+        const wn = Number(c.location?.ward_number || (c as any).ward_number || 0);
+        return wardNumbers.length === 0 || wardNumbers.includes(wn);
+      });
     }
 
-    // High-accuracy environmental risk profiles calibrated for Navsari's terrain and civic infrastructure
-    const baseProfiles: SeasonalPrediction[] = [
-      {
-        id: 'pred-monsoon-lunsikui',
-        season_code: 'monsoon',
-        season_name: 'Monsoon Lowland Waterlogging & Silt Choke',
-        season_label_gu: 'ચોમાસામાં લુણસીકુઈ નીચાણવાળા વિસ્તારમાં જળબંબાકાર',
-        season_label_hi: 'मानसून में लुनसिकुई निचले इलाके में जलभराव',
-        category: 'Drainage / Waste Accumulation',
-        primary_location: 'Lunsikui Lowlands & Stormwater Culvert #3',
-        landmark: 'Near Lunsikui Bus Stand, Dudhiya Talao Basin',
-        ward_number: 3,
-        latitude: 20.9312,
-        longitude: 72.9284,
-        risk_level: 'CRITICAL',
-        probability_score: 95,
-        predicted_window: 'Heavy Inundation Window (June - Sept)',
-        historical_incidents_count: Math.max(7, complaintsHistory.filter(c => (c.address || '').toLowerCase().includes('lunsikui') || (c.category_name || '').toLowerCase().includes('drain')).length),
-        ai_root_cause: 'Natural topographical basin depression receiving stormwater runoff from 4 elevated sectors; single-use plastics and construction debris silt the arterial culvert grill causing 1.5ft surface overflow within 45 minutes of heavy rain.',
-        preventive_actions: [
-          'Pre-position high-capacity 50HP mobile suction dewatering pump before onset of monsoon storm.',
-          'Deploy specialized Drainage squad to desilt and clean intake screens at Culvert #3.',
-          'Issue proactive waste disposal advisory to local commercial vendors along Lunsikui perimeter.'
-        ],
-        recommended_squad_type: 'Drainage & Sewage Cleaning',
-        urgency: 'high'
-      },
-      {
-        id: 'pred-monsoon-station-road',
-        season_code: 'monsoon',
-        season_name: 'Railway Underpass Inundation & Debris Drift',
-        season_label_gu: 'રેલ્વે અંડરપાસમાં પાણી ભરાવું અને કાદવ જમાવટ',
-        season_label_hi: 'रेलवे अंडरपास में जलजमाव एवं कीचड़ जमाव',
-        category: 'Road Overtopped / Waterlogging',
-        primary_location: 'Station Road Railway Underpass',
-        landmark: 'Opposite Navsari Railway Station East Gate',
-        ward_number: 4,
-        latitude: 20.9421,
-        longitude: 72.9356,
-        risk_level: 'CRITICAL',
-        probability_score: 92,
-        predicted_window: 'Continuous Monsoon Ingress Risk',
-        historical_incidents_count: Math.max(5, complaintsHistory.filter(c => (c.address || '').toLowerCase().includes('station')).length),
-        ai_root_cause: 'Subsurface gradient collects high runoff from station yard; commercial packaging from tea stalls and parcel offices chokes the two sump intake chambers.',
-        preventive_actions: [
-          'Inspect and service the dual automatic submersible sump pumps at Station Road underpass.',
-          'Install high-density stainless steel debris catch baskets at curb inlets.',
-          'Establish 24x7 monitoring sensor with immediate SMS alert to Ward 4 Sanitary Inspector.'
-        ],
-        recommended_squad_type: 'Drainage & Sewage Cleaning',
-        urgency: 'high'
-      },
-      {
-        id: 'pred-festive-dudhiya-talao',
-        season_code: 'post_monsoon_festive',
-        season_name: 'Post-Festival Sacred Floral & Plastic Surges',
-        season_label_gu: 'દુધિયા તળાવ કાંઠે તહેવાર પછીનો કચરો અને પ્લાસ્ટિક',
-        season_label_hi: 'दुधिया तालाब तट पर त्योहार बाद कचरा और प्लास्टिक',
-        category: 'Open Garbage Dumping',
-        primary_location: 'Dudhiya Talao Lake Promenade & North Ghat',
-        landmark: 'Near Gandhi Smriti Hall & Swimming Pool Corner',
-        ward_number: 3,
-        latitude: 20.9287,
-        longitude: 72.9251,
-        risk_level: 'HIGH',
-        probability_score: 89,
-        predicted_window: 'Active Festive Season (Oct - Nov)',
-        historical_incidents_count: Math.max(9, complaintsHistory.filter(c => (c.address || '').toLowerCase().includes('dudhiya')).length),
-        ai_root_cause: 'Heavy festive footfall, pooja samagri immersion, and street food stalls lead to concentrated plastic wrappers, thermocol, and biodegradable flower accumulation along lake edges.',
-        preventive_actions: [
-          'Erect dedicated Nirmalya Kalash (flower collection bins) every 50 meters along the promenade.',
-          'Partner with Community Heads and volunteer groups for morning lake cleanup plogging drives.',
-          'Schedule secondary 9:00 PM mechanical sweeping route to prevent overnight litter blowing into the lake.'
-        ],
-        recommended_squad_type: 'Waste Collection & Dumping Clearance',
-        urgency: 'medium'
-      },
-      {
-        id: 'pred-summer-fuwara-market',
-        season_code: 'summer_pre_monsoon',
-        season_name: 'High Temperature Organic Fermentation & Stench',
-        season_label_gu: 'ઉનાળામાં કૂવારા શાકમાર્કેટમાં સડો અને દુર્ગંધ',
-        season_label_hi: 'गर्मी में फुआरा सब्जी मंडी में सड़ांध व दुर्गंध',
-        category: 'Overflowing Dustbin',
-        primary_location: 'Fuwara Circle Vegetable & Fruit Corridor',
-        landmark: 'Old City Center, Near Tower Road junction',
-        ward_number: 1,
-        latitude: 20.9498,
-        longitude: 72.9189,
-        risk_level: 'HIGH',
-        probability_score: 88,
-        predicted_window: 'Peak Summer Window (March - May)',
-        historical_incidents_count: Math.max(6, complaintsHistory.filter(c => (c.address || '').toLowerCase().includes('fuwara')).length),
-        ai_root_cause: 'High ambient temperature (>38°C) rapidly accelerates biological putrefaction of discarded cabbage, tomatoes, and organic waste; standard once-a-day collection proves insufficient.',
-        preventive_actions: [
-          'Introduce mandatory twice-daily dumper pickup (at 2:00 PM and 9:30 PM).',
-          'Deploy specialized biocide odor-neutralizing spray and bleaching powder along pavement kerbs.',
-          'Supply green 240L wheelie bins to wholesale vegetable vendors with QR code tracking.'
-        ],
-        recommended_squad_type: 'Waste Collection & Dumping Clearance',
-        urgency: 'medium'
-      },
-      {
-        id: 'pred-winter-eru-char-rasta',
-        season_code: 'winter_uttarayan',
-        season_name: 'Makar Sankranti Kite Thread & Foliage Hazards',
-        season_label_gu: 'ઉત્તરાયણમાં પતંગ દોરી અને ઝાડની ડાળીઓનો કચરો',
-        season_label_hi: 'उत्तरायण में पतंग मांझा एवं वृक्ष कचरा',
-        category: 'Fallen Tree / Blockage',
-        primary_location: 'Eru Char Rasta to Jalalpore Highway',
-        landmark: 'Near Agricultural University Overbridge',
-        ward_number: 5,
-        latitude: 20.9174,
-        longitude: 72.9082,
-        risk_level: 'MODERATE',
-        probability_score: 79,
-        predicted_window: 'Winter / Uttarayan Season (Dec - Feb)',
-        historical_incidents_count: Math.max(4, complaintsHistory.filter(c => (c.address || '').toLowerCase().includes('eru') || (c.address || '').toLowerCase().includes('jalalpore')).length),
-        ai_root_cause: 'Seasonal deciduous dry leaf shedding combined with entangling discarded glass-coated nylon kite threads poses severe hazards to pedestrians, sanitation staff, and urban wildlife.',
-        preventive_actions: [
-          'Deploy tree-pruning hydraulics team to trim dry branches near power lines prior to kite festival.',
-          'Issue municipal safety tongs to sanitation workers for safe glass-coated manja extraction.',
-          'Set up safe recycling collection boxes for discarded kite threads at ward offices.'
-        ],
-        recommended_squad_type: 'Tree Trimming & Obstruction Removal',
-        urgency: 'medium'
+    // Build dynamic ward-specific seasonal predictions strictly from assigned ward(s) complaints
+    const grouped = new Map<string, {
+      ward_number: number;
+      category: string;
+      location: string;
+      landmark: string;
+      lat: number;
+      lng: number;
+      count: number;
+      urgentCount: number;
+    }>();
+
+    for (const c of complaintsHistory) {
+      const wn = Number(c.ward_number || c.location?.ward_number || primaryWard);
+      if (wardNumbers.length > 0 && !wardNumbers.includes(wn)) continue;
+
+      const cat = String(c.category_name || 'Civic Cleanliness Issue').trim();
+      const loc = String(c.landmark || c.address || c.location?.landmark || c.location?.address || getWardName(wn)).trim();
+      const key = `${wn}::${cat.toLowerCase()}`;
+      const lat = Number(c.latitude || c.location?.latitude) || (20.9250 + wn * 0.0022);
+      const lng = Number(c.longitude || c.location?.longitude) || (72.9220 + wn * 0.0018);
+
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.count += 1;
+        if (c.is_urgent) existing.urgentCount += 1;
+      } else {
+        grouped.set(key, {
+          ward_number: wn,
+          category: cat,
+          location: loc,
+          landmark: String(c.address || c.location?.address || getWardName(wn)),
+          lat,
+          lng,
+          count: 1,
+          urgentCount: c.is_urgent ? 1 : 0
+        });
       }
-    ];
-
-    // Filter by ward if requested, but maintain whole-ward awareness
-    let results = baseProfiles;
-    if (wardNumber) {
-      const wardSpecific = baseProfiles.filter(p => p.ward_number === wardNumber);
-      results = wardSpecific.length > 0 ? wardSpecific : baseProfiles;
     }
 
-    // Dynamic adjustment based on real complaints history
-    results = results.map(pred => {
-      const matchingCount = complaintsHistory.filter(c => {
-        const catMatch = (c.category_name || '').toLowerCase() === pred.category.toLowerCase();
-        const wardMatch = !wardNumber || c.ward_number === pred.ward_number;
-        return catMatch && wardMatch;
-      }).length;
+    const predictions: SeasonalPrediction[] = [];
+    const entries = Array.from(grouped.values()).sort((a, b) => b.count - a.count).slice(0, 6);
 
-      const dynamicScore = Math.min(98, Math.max(76, pred.probability_score + (matchingCount > 3 ? 3 : -2)));
+    const seasonMeta = (catLower: string): {
+      code: SeasonalPrediction['season_code'];
+      window: string;
+      squad: string;
+      titlePrefix: string;
+      gu: string;
+      hi: string;
+      actions: string[];
+    } => {
+      if (catLower.includes('drain') || catLower.includes('water') || catLower.includes('sewage') || catLower.includes('overtop')) {
+        return {
+          code: 'monsoon',
+          window: 'Monsoon & Drainage Risk Window (June - Sept)',
+          squad: 'Drainage & Sewage Cleaning',
+          titlePrefix: 'Stormwater & Drainage Accumulation Risk',
+          gu: 'ચોમાસામાં ગટર અને પાણી ભરાવાની આગાહી',
+          hi: 'मानसून में जलभराव और नाला अवरोध जोखिम',
+          actions: [
+            'Schedule preventive silt clearance and culvert desilting before heavy rainfall.',
+            'Deploy high-pressure jetting and inspect kerbside stormwater inlets.',
+            'Alert assigned ward sanitation squad for rapid waterlogging response.'
+          ]
+        };
+      }
+      if (catLower.includes('tree') || catLower.includes('block') || catLower.includes('pothole') || catLower.includes('road')) {
+        return {
+          code: 'winter_uttarayan',
+          window: 'Winter & Public Corridor Clearance Window (Dec - Feb)',
+          squad: 'Tree Trimming & Obstruction Removal',
+          titlePrefix: 'Corridor Obstruction & Debris Surge',
+          gu: 'માર્ગ અવરોધ અને કચરાની આગાહી',
+          hi: 'मार्ग अवरोध एवं कचरा जोखिम पूर्वानुमान',
+          actions: [
+            'Prune overhanging dry branches and clear roadside debris before peak wind/festive days.',
+            'Inspect street corridors for pavement hazards and blockages.',
+            'Coordinate rapid clearance crew for arterial ward roads.'
+          ]
+        };
+      }
+      if (catLower.includes('dustbin') || catLower.includes('overflow')) {
+        return {
+          code: 'summer_pre_monsoon',
+          window: 'Peak Summer Organic Load Window (March - May)',
+          squad: 'Waste Collection & Dumping Clearance',
+          titlePrefix: 'High-Volume Dustbin Overflow & Odor Risk',
+          gu: 'કચરાપેટી ઓવરફ્લો અને દુર્ગંધનું જોખમ',
+          hi: 'कूड़ादान ओवरफ्लो एवं दुर्गंध जोखिम',
+          actions: [
+            'Increase door-to-door and bin clearance frequency to twice daily.',
+            'Apply disinfectant and odor-neutralizing spray around bin pads.',
+            'Audit bin capacity and place supplementary segregated wet/dry bins.'
+          ]
+        };
+      }
       return {
-        ...pred,
-        probability_score: dynamicScore,
-        historical_incidents_count: Math.max(pred.historical_incidents_count, matchingCount)
+        code: activeSeasonCode,
+        window: 'Active Seasonal Cleanliness Window',
+        squad: 'Waste Collection & Dumping Clearance',
+        titlePrefix: 'Recurring Waste & Litter Accumulation Forecast',
+        gu: 'વોર્ડમાં કચરા અને સ્વચ્છતા જોખમની આગાહી',
+        hi: 'वार्ड में कचरा एवं स्वच्छता जोखिम पूर्वानुमान',
+        actions: [
+          'Schedule focused morning & evening sweeping cycles at recurring pinpoints.',
+          'Engage local registered community organizations for awareness & plogging drives.',
+          'Monitor repeat dumping spots with daily ward supervisor verification.'
+        ]
       };
+    };
+
+    entries.forEach((g, idx) => {
+      const meta = seasonMeta(g.category.toLowerCase());
+      const riskLevel: 'CRITICAL' | 'HIGH' | 'MODERATE' =
+        g.count >= 4 || g.urgentCount >= 2 ? 'CRITICAL' : g.count >= 2 ? 'HIGH' : 'MODERATE';
+      const prob = Math.min(97, 68 + g.count * 6 + g.urgentCount * 4);
+
+      predictions.push({
+        id: `pred-w${g.ward_number}-${idx + 1}`,
+        season_code: meta.code,
+        season_name: `${meta.titlePrefix} — ${g.category}`,
+        season_label_gu: `${meta.gu} (વોર્ડ ${g.ward_number})`,
+        season_label_hi: `${meta.hi} (वार्ड ${g.ward_number})`,
+        category: g.category,
+        primary_location: g.location,
+        landmark: `${g.landmark} · ${getWardName(g.ward_number)}`,
+        ward_number: g.ward_number,
+        latitude: Number(g.lat.toFixed(5)),
+        longitude: Number(g.lng.toFixed(5)),
+        risk_level: riskLevel,
+        probability_score: prob,
+        predicted_window: meta.window,
+        historical_incidents_count: g.count,
+        ai_root_cause: `Ward ${g.ward_number} historical log shows ${g.count} recorded "${g.category}" complaint${g.count === 1 ? '' : 's'} concentrated near ${g.location}. Seasonal footfall and collection intervals elevate recurrence risk.`,
+        preventive_actions: meta.actions,
+        recommended_squad_type: meta.squad,
+        urgency: riskLevel === 'CRITICAL' || riskLevel === 'HIGH' ? 'high' : 'medium'
+      });
     });
+
+    // If assigned ward(s) have zero historical complaints yet, return a clean ward-scoped baseline readiness forecast (NEVER other wards!)
+    if (predictions.length === 0) {
+      const targetWards = wardNumbers.length > 0 ? wardNumbers : [primaryWard];
+      for (const wn of targetWards) {
+        const wName = getWardName(wn);
+        predictions.push({
+          id: `pred-w${wn}-baseline`,
+          season_code: activeSeasonCode,
+          season_name: `Seasonal Preventive Cleanliness Readiness (${wName})`,
+          season_label_gu: `વોર્ડ ${wn} માટે મોસમી સ્વચ્છતા તૈયારી`,
+          season_label_hi: `वार्ड ${wn} के लिए मौसमी स्वच्छता तैयारी`,
+          category: 'Preventive Ward Sanitation',
+          primary_location: `${wName} Primary Sector`,
+          landmark: `${wName}, Navsari`,
+          ward_number: wn,
+          latitude: Number((20.9250 + wn * 0.0022).toFixed(5)),
+          longitude: Number((72.9220 + wn * 0.0018).toFixed(5)),
+          risk_level: 'MODERATE',
+          probability_score: 72,
+          predicted_window: currentSeasonTitle,
+          historical_incidents_count: 0,
+          ai_root_cause: `No high-volume recurring complaints recorded yet in ${wName}. Proactive seasonal inspection of primary dustbins, markets, and stormwater drains is recommended to maintain a clean ward baseline.`,
+          preventive_actions: [
+            `Inspect and clear all main dustbin stations across ${wName}.`,
+            'Verify drainage grate flow ahead of seasonal weather shifts.',
+            'Coordinate preventive awareness drive with ward community organizations.'
+          ],
+          recommended_squad_type: 'General Public Sanitation & Sweeping',
+          urgency: 'medium'
+        });
+      }
+    }
 
     return {
       current_season: currentSeasonTitle,
       forecast_month: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
-      total_predictions: results.length,
-      predictions: results
+      total_predictions: predictions.length,
+      ward_numbers: wardNumbers.length > 0 ? wardNumbers : [primaryWard],
+      predictions
     };
   }
 
   /**
-   * 2. AI STAR PERFORMERS & RECOGNITION (Workers, Communities, Citizens)
+   * 2. AI STAR PERFORMERS & RECOGNITION (STRICTLY ASSIGNED WARD(S) ONLY — REAL DB DATA)
    */
-  public static async getPerformersSuggestions(wardNumber?: number): Promise<{
+  public static async getPerformersSuggestions(wardInput?: number | number[]): Promise<{
+    ward_numbers: number[];
     top_workers: WorkerPerformerSuggestion[];
     top_communities: CommunityPerformerSuggestion[];
     top_citizens: CitizenPerformerSuggestion[];
   }> {
-    // A. WORKERS
+    const wardNumbers = normalizeWards(wardInput);
+
+    // A. REAL WORKERS IN ASSIGNED WARD(S)
     let workersList: any[] = [];
     if (isDbConnected()) {
       try {
-        const res = await pool.query(`
-          SELECT 
-            wp.id as worker_id, wp.worker_code, p.full_name, p.avatar_url,
-            COALESCE(wd.designation_name, 'Sanitation Specialist') as designation,
-            wp.ward_number,
-            (SELECT COUNT(*) FROM work_assignments wa WHERE wa.worker_id = wp.id) as tasks_assigned,
-            (SELECT COUNT(*) FROM work_assignments wa WHERE wa.worker_id = wp.id AND wa.status = 'completed') as tasks_completed,
-            (SELECT COUNT(*) FROM worker_attendance att WHERE att.worker_id = wp.id) as attendance_days
+        const sql = `
+          SELECT
+            wp.id as worker_id,
+            COALESCE(wp.worker_code, 'WRK-NMC') as worker_code,
+            COALESCE(p.full_name, 'Field Worker') as full_name,
+            p.avatar_url,
+            COALESCE(wp.designation, 'Sanitation Worker') as designation,
+            COALESCE(wp.ward_number, p.ward_number, 3) as ward_number,
+            (
+              SELECT COUNT(DISTINCT wa.id)
+              FROM work_assignments wa
+              JOIN work_assignment_members wam ON wam.assignment_id = wa.id
+              WHERE wam.worker_id = wp.id
+            ) as tasks_assigned,
+            (
+              SELECT COUNT(DISTINCT wa.id)
+              FROM work_assignments wa
+              JOIN work_assignment_members wam ON wam.assignment_id = wa.id
+              WHERE wam.worker_id = wp.id
+                AND wa.status IN ('verified_complete', 'closed', 'completed', 'resolved')
+            ) as tasks_completed,
+            (
+              SELECT COUNT(*)
+              FROM worker_attendance att
+              WHERE att.worker_id = wp.id
+                AND att.validation_status IN ('verified_match', 'verified', 'present', 'manual_approved')
+            ) as attendance_days
           FROM worker_profiles wp
-          JOIN profiles p ON wp.profile_id = p.id
-          LEFT JOIN worker_designations wd ON wp.designation_id = wd.id
-          ${wardNumber ? `WHERE wp.ward_number = $1` : ''}
-          ORDER BY tasks_completed DESC
-        `);
+          JOIN profiles p ON wp.user_id = p.id
+          ${wardNumbers.length > 0 ? `WHERE COALESCE(wp.ward_number, p.ward_number) = ANY($1::int[])` : ''}
+          ORDER BY tasks_completed DESC, attendance_days DESC, p.full_name ASC
+          LIMIT 10
+        `;
+        const res = wardNumbers.length > 0 ? await pool.query(sql, [wardNumbers]) : await pool.query(sql);
         workersList = res.rows || [];
       } catch (err) {
-        console.warn('[AIAnalyticsService] DB worker query failed, using fallback:', err);
+        console.warn('[AIAnalyticsService] DB worker query failed:', err);
       }
     }
 
-    // Default dynamic seed fallback if DB rows are sparse
-    if (workersList.length === 0) {
-      workersList = [
-        {
-          worker_id: 'f2000000-0000-0000-0000-000000000001',
-          worker_code: 'WRK-2026-001',
-          full_name: 'Kanti Solanki',
-          designation: 'Senior Sanitation Specialist',
-          ward_number: wardNumber || 3,
-          avatar_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
-          tasks_assigned: 18,
-          tasks_completed: 17,
-          attendance_days: 26
-        },
-        {
-          worker_id: 'f2000000-0000-0000-0000-000000000002',
-          worker_code: 'WRK-2026-002',
-          full_name: 'Suresh Vaghela',
-          designation: 'Waste Collection Worker',
-          ward_number: wardNumber || 3,
-          avatar_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80',
-          tasks_assigned: 15,
-          tasks_completed: 14,
-          attendance_days: 25
-        },
-        {
-          worker_id: 'f2000000-0000-0000-0000-000000000003',
-          worker_code: 'WRK-2026-003',
-          full_name: 'Dinesh Rathod',
-          designation: 'Drainage & Culvert Specialist',
-          ward_number: wardNumber || 3,
-          avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=80',
-          tasks_assigned: 14,
-          tasks_completed: 13,
-          attendance_days: 24
-        },
-        {
-          worker_id: 'f2000000-0000-0000-0000-000000000004',
-          worker_code: 'WRK-2026-004',
-          full_name: 'Pravin Parmar',
-          designation: 'Emergency Response Worker',
-          ward_number: wardNumber || 3,
-          avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&q=80',
-          tasks_assigned: 12,
-          tasks_completed: 11,
-          attendance_days: 23
-        }
-      ];
-    }
-
     const topWorkers: WorkerPerformerSuggestion[] = workersList.map((w, idx) => {
-      const assigned = Number(w.tasks_assigned) || (15 - idx * 2);
-      const completed = Number(w.tasks_completed) || (assigned - 1);
-      const completionRate = assigned > 0 ? Math.round((completed / assigned) * 100) : 95;
-      const turnaroundHours = Number((2.8 + idx * 0.7).toFixed(1));
-      const truthScore = Math.max(90, 98 - idx * 2);
-      const attendance = Number(w.attendance_days) || (26 - idx);
-      const geofenceMatch = Math.max(92, 99 - idx * 2);
+      const assigned = Number(w.tasks_assigned) || 0;
+      const completed = Number(w.tasks_completed) || 0;
+      const completionRate = assigned > 0 ? Math.round((completed / assigned) * 100) : 0;
+      const attendance = Number(w.attendance_days) || 0;
+      const geofenceMatch = assigned > 0 ? Math.min(100, Math.round((attendance / assigned) * 100)) : (attendance > 0 ? 100 : 0);
+      const truthScore = completed > 0 ? Math.min(99, 90 + Math.min(9, completed * 2)) : 0;
+      const turnaroundHours = completed > 0 ? Number(Math.max(1.5, 4.5 - Math.min(2.5, completed * 0.3)).toFixed(1)) : 0;
 
-      // Composite scoring formula: 35% completion + 25% speed + 25% truth + 15% attendance
-      const composite = Math.min(99, Math.round(
-        0.35 * completionRate +
-        0.25 * Math.max(50, 100 - (turnaroundHours - 2) * 10) +
-        0.25 * truthScore +
-        0.15 * geofenceMatch
-      ));
+      const composite = assigned === 0 && attendance === 0
+        ? 50
+        : Math.min(99, Math.round(
+            0.40 * completionRate +
+            0.25 * geofenceMatch +
+            0.20 * (truthScore || 75) +
+            0.15 * Math.min(100, completed * 20)
+          ));
 
       const accolades = [
-        'Rapid Turnaround Specialist & Quality Leader',
-        'Top Geofence Punctuality & Clean Verification',
-        'Drainage & Emergency Task Force Anchor',
-        'Consistently High Volunteer Partnership Rating'
+        'Ward Sanitation Star Performer',
+        'High Geofence Compliance & Punctuality',
+        'Rapid Field Resolution Specialist',
+        'Consistent Ward Cleanliness Contributor'
       ];
 
       return {
@@ -410,8 +439,8 @@ export class AIAnalyticsService {
         worker_code: w.worker_code,
         full_name: w.full_name,
         designation: w.designation,
-        ward_number: w.ward_number || 3,
-        avatar_url: w.avatar_url,
+        ward_number: Number(w.ward_number),
+        avatar_url: w.avatar_url || undefined,
         tasks_assigned: assigned,
         tasks_completed: completed,
         completion_rate_pct: completionRate,
@@ -421,133 +450,152 @@ export class AIAnalyticsService {
         geofence_match_pct: geofenceMatch,
         composite_score: composite,
         ai_accolade: accolades[idx % accolades.length],
-        ai_reason: `Resolved ${completed} tasks with an exceptional ${completionRate}% turnaround rate within ${turnaroundHours}h avg response time and ${truthScore}% AI verified before/after evidence authenticity.`
+        ai_reason:
+          assigned > 0
+            ? `Ward ${w.ward_number}: Completed ${completed} of ${assigned} assigned field tasks (${completionRate}% completion rate) with ${attendance} GPS-verified duty attendance record${attendance === 1 ? '' : 's'}.`
+            : `Registered active sanitation staff in Ward ${w.ward_number}, ready for field deployment.`
       };
     });
 
-    // B. COMMUNITY GROUPS / HEADS
+    // B. REAL COMMUNITIES / ORGANIZATIONS IN ASSIGNED WARD(S)
     let communitiesList: any[] = [];
     if (isDbConnected()) {
       try {
-        const res = await pool.query(`
-          SELECT 
-            c.id as community_id, c.name as community_name,
-            p.full_name as head_name, c.ward_number,
-            (SELECT COUNT(*) FROM community_activities ca WHERE ca.community_id = c.id AND ca.status = 'completed') as drives_completed,
-            (SELECT COUNT(*) FROM activity_registrations ar JOIN community_activities ca ON ar.activity_id = ca.id WHERE ca.community_id = c.id AND ar.attended = TRUE) as total_volunteers_attended,
-            (SELECT COUNT(*) FROM community_problems cp WHERE cp.claimed_by_community_id = c.id AND cp.status = 'completed') as problems_resolved
+        const sql = `
+          SELECT
+            c.id as community_id,
+            c.community_name,
+            COALESCE(c.head_name, p.full_name, 'Community Leader') as head_name,
+            COALESCE(c.ward_number, 3) as ward_number,
+            (
+              SELECT COUNT(*) FROM community_activities ca
+              WHERE ca.community_id = c.id
+                AND (ca.event_status = 'completed' OR ca.evidence_status = 'verified_complete')
+            ) as drives_completed,
+            (
+              SELECT COUNT(*) FROM activity_registrations ar
+              JOIN community_activities ca ON ar.activity_id = ca.id
+              WHERE ca.community_id = c.id
+                AND ar.attendance_status = 'present'
+            ) as total_volunteers_attended,
+            (
+              SELECT COUNT(*) FROM community_problems cp
+              WHERE cp.claimed_by_community_id::text = c.id::text
+                AND cp.status IN ('completed', 'resolved')
+            ) as problems_resolved
           FROM communities c
           LEFT JOIN profiles p ON c.created_by = p.id
-          ${wardNumber ? `WHERE c.ward_number = $1` : ''}
-          ORDER BY drives_completed DESC
-        `);
+          WHERE COALESCE(c.approval_status, 'approved') = 'approved'
+          ${wardNumbers.length > 0 ? `AND c.ward_number = ANY($1::int[])` : ''}
+          ORDER BY drives_completed DESC, total_volunteers_attended DESC, c.community_name ASC
+          LIMIT 10
+        `;
+        const res = wardNumbers.length > 0 ? await pool.query(sql, [wardNumbers]) : await pool.query(sql);
         communitiesList = res.rows || [];
       } catch (err) {
-        console.warn('[AIAnalyticsService] DB community query failed, using fallback:', err);
+        console.warn('[AIAnalyticsService] DB community query failed:', err);
       }
     }
 
-    if (communitiesList.length === 0) {
-      communitiesList = [
-        {
-          community_id: 'comm-nav-001',
-          community_name: 'Dudhiya Talao Resident Welfare Association',
-          head_name: 'Rajesh Varma',
-          ward_number: wardNumber || 3,
-          drives_completed: 4,
-          total_volunteers_attended: 142,
-          problems_resolved: 3,
-          avg_satisfaction_rating: 4.9
-        },
-        {
-          community_id: 'comm-nav-002',
-          community_name: 'Navsari Youth Eco-Club',
-          head_name: 'Mehul Dave',
-          ward_number: wardNumber || 3,
-          drives_completed: 3,
-          total_volunteers_attended: 98,
-          problems_resolved: 2,
-          avg_satisfaction_rating: 4.8
-        },
-        {
-          community_id: 'comm-nav-003',
-          community_name: 'Sayaji Cleanliness Volunteers Coalition',
-          head_name: 'Pratibha Shah',
-          ward_number: 4,
-          drives_completed: 3,
-          total_volunteers_attended: 86,
-          problems_resolved: 2,
-          avg_satisfaction_rating: 4.7
-        }
-      ];
-    }
-
     const topCommunities: CommunityPerformerSuggestion[] = communitiesList.map((c, idx) => {
-      const drives = Number(c.drives_completed) || (4 - idx);
-      const vols = Number(c.total_volunteers_attended) || (140 - idx * 40);
-      const resolved = Number(c.problems_resolved) || (3 - idx);
-      const rating = Number(c.avg_satisfaction_rating) || 4.8;
+      const drives = Number(c.drives_completed) || 0;
+      const vols = Number(c.total_volunteers_attended) || 0;
+      const resolved = Number(c.problems_resolved) || 0;
+      const rating = drives > 0 ? 4.8 : 4.5;
 
-      const composite = Math.min(99, Math.round(
-        drives * 12 + (vols / 3) + resolved * 15 + rating * 4
-      ));
-
+      const composite = Math.min(99, Math.max(55, Math.round(50 + drives * 14 + Math.min(25, vols * 2) + resolved * 10)));
       const accolades = [
-        'Exemplary Civic Mobilizer & Lake Protector',
-        'Pioneering Youth Cleanliness Drive Leader',
-        'Community Problem-Solving Champion'
+        'Ward Civic Mobilizer & Drive Leader',
+        'Active Community Cleanliness Partner',
+        'Neighborhood Problem-Solving Champion'
       ];
 
       return {
         community_id: c.community_id,
         community_name: c.community_name,
         head_name: c.head_name || 'Community Leader',
-        ward_number: c.ward_number || 3,
+        ward_number: Number(c.ward_number),
         drives_completed: drives,
         total_volunteers_attended: vols,
         ward_problems_resolved: resolved,
         avg_satisfaction_rating: rating,
         composite_score: composite,
         ai_accolade: accolades[idx % accolades.length],
-        ai_reason: `Successfully organized ${drives} municipal cleanliness drives mobilizing ${vols} active citizens with ${resolved} adopted civic challenges fully resolved.`
+        ai_reason:
+          drives > 0
+            ? `Ward ${c.ward_number}: Completed ${drives} verified cleanliness drive${drives === 1 ? '' : 's'} with ${vols} verified citizen volunteer${vols === 1 ? '' : 's'} and ${resolved} ward problem${resolved === 1 ? '' : 's'} solved.`
+            : `Verified registered partner organization in Ward ${c.ward_number} led by ${c.head_name}.`
       };
     });
 
-    // C. CITIZENS (Preserving privacy via anonymous civic aliases)
-    const topCitizens: CitizenPerformerSuggestion[] = [
-      {
-        citizen_id: 'c0000000-0000-0000-0000-000000000001',
-        alias_display: 'Citizen Guardian #1 (H.M.)',
-        ward_number: wardNumber || 3,
-        events_attended_count: 5,
-        valid_complaints_count: 8,
-        composite_score: 96,
-        ai_badge: 'Vigilant Swachh Champion & Active Volunteer',
-        ai_reason: 'Attended 5 community cleanup drives with 100% verified attendance records; submitted 8 high-accuracy actionable reports that enabled swift municipal response.'
-      },
-      {
-        citizen_id: 'c0000000-0000-0000-0000-000000000002',
-        alias_display: 'Citizen Volunteer #2 (A.P.)',
-        ward_number: wardNumber || 3,
-        events_attended_count: 4,
-        valid_complaints_count: 6,
-        composite_score: 93,
-        ai_badge: 'Consistent Weekend Civic Guardian',
-        ai_reason: 'Regularly commits 4+ hours per month to ward cleanliness drives; active promoter of wet/dry waste segregation in local residential society.'
-      },
-      {
-        citizen_id: 'c0000000-0000-0000-0000-000000000003',
-        alias_display: 'Civic Steward #3 (V.J.)',
-        ward_number: 4,
-        events_attended_count: 3,
-        valid_complaints_count: 5,
-        composite_score: 89,
-        ai_badge: 'Proactive Neighborhood Cleanliness Advocate',
-        ai_reason: 'Reported 5 chronic roadside dumping blackspots with precise geotagged photos leading to complete eradication of illegal dumping.'
+    // C. REAL CITIZENS IN ASSIGNED WARD(S) (Privacy-preserving initials)
+    let citizenRows: any[] = [];
+    if (isDbConnected()) {
+      try {
+        const sql = `
+          WITH ward_complaints AS (
+            SELECT citizen_id, ward_number, COUNT(*) as complaints_cnt
+            FROM complaints
+            WHERE citizen_id IS NOT NULL
+              AND status <> 'rejected'
+              ${wardNumbers.length > 0 ? `AND ward_number = ANY($1::int[])` : ''}
+            GROUP BY citizen_id, ward_number
+          ),
+          ward_events AS (
+            SELECT ar.citizen_id, ca.ward_number, COUNT(*) as events_cnt
+            FROM activity_registrations ar
+            JOIN community_activities ca ON ca.id = ar.activity_id
+            WHERE ar.registration_status <> 'cancelled'
+              ${wardNumbers.length > 0 ? `AND ca.ward_number = ANY($1::int[])` : ''}
+            GROUP BY ar.citizen_id, ca.ward_number
+          ),
+          combined AS (
+            SELECT
+              COALESCE(wc.citizen_id, we.citizen_id) as citizen_id,
+              COALESCE(wc.ward_number, we.ward_number) as ward_number,
+              COALESCE(wc.complaints_cnt, 0) as valid_complaints_count,
+              COALESCE(we.events_cnt, 0) as events_attended_count
+            FROM ward_complaints wc
+            FULL OUTER JOIN ward_events we
+              ON wc.citizen_id = we.citizen_id AND wc.ward_number = we.ward_number
+          )
+          SELECT cb.*, COALESCE(p.full_name, 'Citizen Volunteer') as full_name
+          FROM combined cb
+          LEFT JOIN profiles p ON p.id = cb.citizen_id
+          ORDER BY (cb.events_attended_count * 3 + cb.valid_complaints_count * 2) DESC
+          LIMIT 10
+        `;
+        const res = wardNumbers.length > 0 ? await pool.query(sql, [wardNumbers]) : await pool.query(sql);
+        citizenRows = res.rows || [];
+      } catch (err) {
+        console.warn('[AIAnalyticsService] DB citizen performers query failed:', err);
       }
-    ];
+    }
+
+    const topCitizens: CitizenPerformerSuggestion[] = citizenRows.map((row, idx) => {
+      const eventsCount = Number(row.events_attended_count) || 0;
+      const complaintsCount = Number(row.valid_complaints_count) || 0;
+      const composite = Math.min(99, Math.max(60, 58 + eventsCount * 9 + complaintsCount * 5));
+      const badges = [
+        'Vigilant Ward Swachh Champion',
+        'Active Neighborhood Civic Steward',
+        'Proactive Cleanliness Watchdog'
+      ];
+
+      return {
+        citizen_id: row.citizen_id,
+        alias_display: `Ward ${row.ward_number} Citizen #${idx + 1} (${initialsFromName(row.full_name)})`,
+        ward_number: Number(row.ward_number),
+        events_attended_count: eventsCount,
+        valid_complaints_count: complaintsCount,
+        composite_score: composite,
+        ai_badge: badges[idx % badges.length],
+        ai_reason: `Participated in ${eventsCount} cleanliness drive${eventsCount === 1 ? '' : 's'} and submitted ${complaintsCount} verified civic cleanliness report${complaintsCount === 1 ? '' : 's'} in Ward ${row.ward_number}.`
+      };
+    });
 
     return {
+      ward_numbers: wardNumbers,
       top_workers: topWorkers,
       top_communities: topCommunities,
       top_citizens: topCitizens
@@ -555,139 +603,163 @@ export class AIAnalyticsService {
   }
 
   /**
-   * 3. CHRONIC HOTSPOTS & RECURRING / REOPENED COMPLAINTS INTELLIGENCE
+   * 3. CHRONIC HOTSPOTS & RECURRING COMPLAINTS INTELLIGENCE (STRICTLY ASSIGNED WARD(S) ONLY)
    */
-  public static async getChronicHotspots(wardNumber?: number): Promise<{
+  public static async getChronicHotspots(wardInput?: number | number[]): Promise<{
+    ward_numbers: number[];
     total_chronic_spots: number;
     high_reopen_spots_count: number;
     chronic_hotspots: ChronicHotspotSuggestion[];
   }> {
+    const wardNumbers = normalizeWards(wardInput);
+
     let complaints: any[] = [];
     if (isDbConnected()) {
       try {
-        const res = await pool.query(`
-          SELECT 
-            id, category_name, ward_number, address, landmark, latitude, longitude,
-            status, is_urgent, created_at, resolved_at
-          FROM complaints
-          ${wardNumber ? `WHERE ward_number = $1` : ''}
-          ORDER BY created_at DESC
-        `);
+        const res = wardNumbers.length > 0
+          ? await pool.query(
+              `SELECT id, category_name, ward_number, address, landmark, latitude, longitude, status, is_urgent, created_at, resolved_at
+               FROM complaints
+               WHERE ward_number = ANY($1::int[])
+               ORDER BY created_at DESC`,
+              [wardNumbers]
+            )
+          : await pool.query(
+              `SELECT id, category_name, ward_number, address, landmark, latitude, longitude, status, is_urgent, created_at, resolved_at
+               FROM complaints
+               ORDER BY created_at DESC`
+            );
         complaints = res.rows || [];
       } catch (err) {
-        console.warn('[AIAnalyticsService] DB complaints read failed, using store:', err);
+        console.warn('[AIAnalyticsService] DB chronic hotspots read failed:', err);
       }
     }
 
     if (complaints.length === 0) {
-      complaints = (store.complaints || []).filter(c => !wardNumber || (c as any).ward_number === wardNumber || (c as any).ward_id === wardNumber);
+      complaints = (store.complaints || []).filter(c => {
+        const wn = Number(c.location?.ward_number || (c as any).ward_number || 0);
+        return wardNumbers.length === 0 || wardNumbers.includes(wn);
+      });
     }
 
-    // High accuracy clusters backed by local Navsari civic data
-    const clusters: ChronicHotspotSuggestion[] = [
-      {
-        id: 'spot-dudhiya-north-gate',
-        location_name: 'Dudhiya Talao North Promenade Corner',
-        landmark: 'Opposite Rotary Garden Entry Gate',
-        ward_number: 3,
-        latitude: 20.9295,
-        longitude: 72.9263,
-        incident_count: Math.max(8, complaints.filter(c => (c.address || '').toLowerCase().includes('dudhiya')).length),
-        reopen_count: 3,
-        reopen_rate_pct: 37.5,
-        severity: 'CRITICAL_CHRONIC',
-        primary_category: 'Open Garbage Dumping',
-        avg_days_between_recurrence: 4.2,
-        ai_root_cause_diagnosis: 'Street food hawkers and evening tourists discard plastic plates and cups after 9:30 PM after standard municipal dustbins reach 100% capacity; lack of overnight containment leads to morning garbage scattering by stray animals.',
-        ai_permanent_remediation: [
-          'Install high-capacity twin 1100L heavy-duty closed compactor bins at the park entrance.',
-          'Schedule an evening 9:15 PM dedicated garbage collection run before night crowds disperse.',
-          'Deploy high-definition solar-powered CCTV surveillance notice with ₹500 spot-fine deterrence.'
-        ],
-        recommended_work_type: 'Waste Collection & Dumping Clearance',
-        last_reported_date: '2026-11-01'
-      },
-      {
-        id: 'spot-lunsikui-culvert',
-        location_name: 'Lunsikui Main Crossroad Culvert',
-        landmark: 'Near Vegetable Wholesale Sub-Market',
-        ward_number: 3,
-        latitude: 20.9324,
-        longitude: 72.9271,
-        incident_count: Math.max(6, complaints.filter(c => (c.address || '').toLowerCase().includes('lunsikui')).length),
-        reopen_count: 2,
-        reopen_rate_pct: 33.3,
-        severity: 'CRITICAL_CHRONIC',
-        primary_category: 'Drainage / Waste Accumulation',
-        avg_days_between_recurrence: 5.8,
-        ai_root_cause_diagnosis: 'Wholesale fruit and vegetable vendors discard decayed produce directly into open stormwater grating; decaying matter solidifies with soil runoff, blocking the 600mm underground drain pipe and causing repetitive sewage backflow.',
-        ai_permanent_remediation: [
-          'Replace horizontal slatted road gratings with curved anti-trash filter grilles.',
-          'Execute comprehensive mechanical vacuum jetting across the entire 120-meter line.',
-          'Organize merchant association meeting to mandate dedicated organic waste buckets for vendors.'
-        ],
-        recommended_work_type: 'Drainage & Sewage Cleaning',
-        urgency: 'high' as any,
-        last_reported_date: '2026-10-29'
-      },
-      {
-        id: 'spot-station-parcel-lane',
-        location_name: 'Station Road Goods Shed Perimeter',
-        landmark: 'Behind Navsari Railway Parcel Office',
-        ward_number: 4,
-        latitude: 20.9435,
-        longitude: 72.9362,
-        incident_count: 5,
-        reopen_count: 2,
-        reopen_rate_pct: 40.0,
-        severity: 'RECURRENT',
-        primary_category: 'Roadside Garbage',
-        avg_days_between_recurrence: 6.5,
-        ai_root_cause_diagnosis: 'Unauthorized midnight commercial transport packaging dumping; logistics agents discard plastic bubble-wrap, wooden pallets, and strapping bands onto the dark municipal road shoulder.',
-        ai_permanent_remediation: [
-          'Coordinate with Western Railway Administration for perimeter boundary wall repair.',
-          'Mount 2 high-intensity LED floodlights to illuminate the dark dumping blind spot.',
-          'Establish weekly nighttime inspection squad by Sanitary Sub-Inspectors.'
-        ],
-        recommended_work_type: 'Waste Collection & Dumping Clearance',
-        last_reported_date: '2026-10-27'
-      },
-      {
-        id: 'spot-sayaji-library-corner',
-        location_name: 'Sayaji Vaibhav Library Perimeter',
-        landmark: 'Tower Road intersection, Ward 1',
-        ward_number: 1,
-        latitude: 20.9482,
-        longitude: 72.9214,
-        incident_count: 4,
-        reopen_count: 1,
-        reopen_rate_pct: 25.0,
-        severity: 'RECURRENT',
-        primary_category: 'Littering',
-        avg_days_between_recurrence: 8.0,
-        ai_root_cause_diagnosis: 'Dense pedestrian shopping traffic without adequate intermediate trash receptacles between Tower Road and the library garden.',
-        ai_permanent_remediation: [
-          'Install 4 twin pole-mounted stainless steel litter bins (Green/Blue).',
-          'Paint Swachh Navsari wall mural with civic awareness messages.',
-          'Assign daily morning sweeper between 7:00 AM and 10:00 AM.'
-        ],
-        recommended_work_type: 'General Public Sanitation & Sweeping',
-        last_reported_date: '2026-10-25'
+    // Cluster real complaints strictly within assigned ward(s)
+    interface ClusterAcc {
+      ward_number: number;
+      lat: number;
+      lng: number;
+      location_name: string;
+      landmark: string;
+      items: any[];
+    }
+    const clusters: ClusterAcc[] = [];
+
+    for (const c of complaints) {
+      const wn = Number(c.ward_number || c.location?.ward_number || wardNumbers[0] || 3);
+      if (wardNumbers.length > 0 && !wardNumbers.includes(wn)) continue;
+
+      const rawLat = Number(c.latitude || c.location?.latitude);
+      const rawLng = Number(c.longitude || c.location?.longitude);
+      const lat = Number.isFinite(rawLat) && rawLat !== 0 ? rawLat : (20.9250 + wn * 0.0022);
+      const lng = Number.isFinite(rawLng) && rawLng !== 0 ? rawLng : (72.9220 + wn * 0.0018);
+      const loc = String(c.landmark || c.address || c.location?.landmark || c.location?.address || getWardName(wn)).trim();
+      const addr = String(c.address || c.location?.address || getWardName(wn)).trim();
+
+      const match = clusters.find(cl => {
+        if (cl.ward_number !== wn) return false;
+        const dist = Math.hypot(cl.lat - lat, cl.lng - lng);
+        const sameName = cl.location_name.toLowerCase() === loc.toLowerCase();
+        return dist < 0.003 || sameName;
+      });
+
+      if (match) {
+        match.items.push(c);
+        match.lat = (match.lat + lat) / 2;
+        match.lng = (match.lng + lng) / 2;
+      } else {
+        clusters.push({
+          ward_number: wn,
+          lat,
+          lng,
+          location_name: loc,
+          landmark: addr,
+          items: [c]
+        });
       }
-    ];
-
-    let filtered = clusters;
-    if (wardNumber) {
-      const matched = clusters.filter(c => c.ward_number === wardNumber);
-      filtered = matched.length > 0 ? matched : clusters;
     }
 
-    const highReopenCount = filtered.filter(c => c.reopen_count > 0).length;
+    const chronicHotspots: ChronicHotspotSuggestion[] = clusters
+      .sort((a, b) => b.items.length - a.items.length)
+      .slice(0, 8)
+      .map((cl, idx) => {
+        const incidentCount = cl.items.length;
+        const reopenCount = cl.items.filter(i => String(i.status || '').toLowerCase() === 'reopened').length;
+        const reopenRatePct = incidentCount > 0 ? Number(((reopenCount / incidentCount) * 100).toFixed(1)) : 0;
+
+        // Dominant category
+        const catMap: Record<string, number> = {};
+        for (const it of cl.items) {
+          const cat = String(it.category_name || 'Civic Cleanliness');
+          catMap[cat] = (catMap[cat] || 0) + 1;
+        }
+        const primaryCategory = Object.entries(catMap).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Civic Cleanliness';
+
+        const sortedDates = cl.items
+          .map(it => {
+            const d = it.created_at || it.submitted_at;
+            return d ? new Date(d).getTime() : 0;
+          })
+          .filter(t => t > 0)
+          .sort((a, b) => a - b);
+
+        let avgDays = 7.0;
+        if (sortedDates.length >= 2) {
+          const spanDays = (sortedDates[sortedDates.length - 1] - sortedDates[0]) / (1000 * 3600 * 24);
+          avgDays = Number(Math.max(1, spanDays / (sortedDates.length - 1)).toFixed(1));
+        }
+
+        const latestIso = sortedDates.length > 0
+          ? new Date(sortedDates[sortedDates.length - 1]).toISOString().slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+
+        const severity: ChronicHotspotSuggestion['severity'] =
+          incidentCount >= 4 || reopenCount >= 2
+            ? 'CRITICAL_CHRONIC'
+            : incidentCount >= 2
+            ? 'RECURRENT'
+            : 'EMERGING_HOTSPOT';
+
+        return {
+          id: `chronic-w${cl.ward_number}-${idx + 1}`,
+          location_name: cl.location_name,
+          landmark: `${cl.landmark} · Ward ${cl.ward_number}`,
+          ward_number: cl.ward_number,
+          latitude: Number(cl.lat.toFixed(5)),
+          longitude: Number(cl.lng.toFixed(5)),
+          incident_count: incidentCount,
+          reopen_count: reopenCount,
+          reopen_rate_pct: reopenRatePct,
+          severity,
+          primary_category: primaryCategory,
+          avg_days_between_recurrence: avgDays,
+          ai_root_cause_diagnosis: `Ward ${cl.ward_number} geospatial cluster detected ${incidentCount} citizen complaint${incidentCount === 1 ? '' : 's'} (${reopenCount} reopened) centered around ${cl.location_name} with primary issue "${primaryCategory}".`,
+          ai_permanent_remediation: [
+            `Increase sanitation pickup frequency near ${cl.location_name} in Ward ${cl.ward_number}.`,
+            'Place dedicated segregated waste bins and display anti-littering ward signage.',
+            'Assign weekly supervisory inspection and engage local ward volunteers for permanent upkeep.'
+          ],
+          recommended_work_type: primaryCategory.toLowerCase().includes('drain')
+            ? 'Drainage & Sewage Cleaning'
+            : 'Waste Collection & Dumping Clearance',
+          urgency: severity === 'CRITICAL_CHRONIC' ? 'high' : 'medium',
+          last_reported_date: latestIso
+        };
+      });
 
     return {
-      total_chronic_spots: filtered.length,
-      high_reopen_spots_count: highReopenCount,
-      chronic_hotspots: filtered
+      ward_numbers: wardNumbers,
+      total_chronic_spots: chronicHotspots.length,
+      high_reopen_spots_count: chronicHotspots.filter(h => h.reopen_count > 0).length,
+      chronic_hotspots: chronicHotspots
     };
   }
 }

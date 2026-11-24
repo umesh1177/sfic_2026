@@ -9,23 +9,27 @@ import {
   AlertCircle,
   Building,
   ShieldCheck,
-  Wrench,
   Check,
-  X,
-  Sparkles,
-  HelpCircle,
-  Eye,
   Camera,
-  Layers,
   Phone,
   Mail,
-  Send,
-  Navigation
+  Award,
+  RefreshCw,
+  UserCheck,
+  UserX,
+  FileCheck2,
+  Sparkles,
+  Scale,
+  Wrench,
+  X
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
+import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
-import { ActivityRegistration, ActivityEvidence } from '../../types/index.js';
+import { ActivityRegistration } from '../../types/index.js';
+import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -44,21 +48,30 @@ interface DriveInspectViewProps {
 }
 
 export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
-  activity,
+  activity: initialActivity,
   onBack,
   onActionCompleted
 }) => {
-  const [activeTab, setActiveTab] = useState<'info' | 'map' | 'volunteers' | 'evidence' | 'qa'>('info');
+  const [activity, setActivity] = useState<any>(initialActivity);
+  const [activeTab, setActiveTab] = useState<'details' | 'evidence' | 'certificates'>('details');
   const [registrations, setRegistrations] = useState<ActivityRegistration[]>([]);
-  const [evidenceList, setEvidenceList] = useState<ActivityEvidence[]>([]);
-  const [questions, setQuestions] = useState<any[]>([]);
+  const [evidenceList, setEvidenceList] = useState<any[]>([]);
+  const [certificates, setCertificates] = useState<DriveCertificateData[]>([]);
+  const [regPage, setRegPage] = useState<number>(1);
+  const [certPage, setCertPage] = useState<number>(1);
+  const tablePageSize = 6;
+  const [selectedCertId, setSelectedCertId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState<boolean>(true);
 
-  // Decision Modal State
-  const [actionType, setActionType] = useState<'approve' | 'reject' | 'changes_requested' | null>(null);
-  const [actionComment, setActionComment] = useState<string>('');
-  const [processingAction, setProcessingAction] = useState<boolean>(false);
+  const [reviewNotes, setReviewNotes] = useState<string>(
+    'Verified before, during, and after photographic evidence submitted by the organization. Cleanliness drive completed to NMC standards.'
+  );
+  const [completing, setCompleting] = useState<boolean>(false);
+  const [issuingCerts, setIssuingCerts] = useState<boolean>(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const isCompleted =
+    activity.event_status === 'completed' || activity.evidence_status === 'verified_complete';
 
   const coords: [number, number] = [
     parseFloat(activity.latitude) || 20.9470,
@@ -68,26 +81,24 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
   const fetchDriveDetails = async () => {
     setLoadingData(true);
     try {
-      // 1. Fetch Registrations
-      const regRes = await api.getActivityRegistrations(activity.id);
-      if (regRes.success && regRes.data) {
-        const regList = Array.isArray(regRes.data) ? regRes.data : (regRes.data.registrations || []);
+      const [regRes, evRes, certRes] = await Promise.all([
+        api.getActivityRegistrations(activity.id).catch(() => ({ success: false, data: { registrations: [] } })),
+        api.getActivityEvidence(activity.id).catch(() => ({ success: false, data: [] })),
+        api.getDriveCertificates(activity.id).catch(() => ({ success: false, data: [] }))
+      ]);
+
+      if (regRes.success) {
+        const regList = Array.isArray(regRes.data) ? regRes.data : (regRes.data?.registrations || []);
         setRegistrations(regList);
       }
-
-      // 2. Fetch Evidence
-      const evRes = await api.getActivityEvidence(activity.id);
       if (evRes.success && evRes.data) {
         setEvidenceList(evRes.data);
       }
-
-      // 3. Fetch Questions
-      const qRes = await api.getCommunityQuestions({ activity_id: activity.id });
-      if (qRes.success && qRes.data) {
-        setQuestions(qRes.data);
+      if (certRes.success && certRes.data) {
+        setCertificates(certRes.data);
       }
-    } catch (err: any) {
-      console.error('Failed to load drive inspection data:', err);
+    } catch (err) {
+      console.error('Failed to load drive details:', err);
     } finally {
       setLoadingData(false);
     }
@@ -97,92 +108,150 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
     fetchDriveDetails();
   }, [activity.id]);
 
-  const handleExecuteAction = async () => {
-    if (!actionType) return;
-    if ((actionType === 'reject' || actionType === 'changes_requested') && !actionComment.trim()) {
-      alert('Please provide a specific reason or required adjustment for the Community Head.');
-      return;
-    }
-
-    setProcessingAction(true);
+  const handleToggleAttendance = async (regId: string, nextStatus: 'present' | 'absent') => {
     try {
-      const res = await api.reviewWardApproval(activity.id, actionType, actionComment.trim());
-      setActionMsg({
-        type: 'success',
-        text: res.message || `Drive successfully marked as ${actionType}.`
-      });
-      setActionType(null);
-      setActionComment('');
-      setTimeout(() => {
-        onActionCompleted();
-      }, 1500);
+      await api.updateRegistrationAttendance(regId, nextStatus);
+      setRegistrations(prev =>
+        prev.map(r => (r.id === regId ? { ...r, attendance_status: nextStatus } : r))
+      );
     } catch (err: any) {
-      setActionMsg({ type: 'error', text: err.message || 'Failed to review drive' });
-    } finally {
-      setProcessingAction(false);
+      setActionMsg({ type: 'error', text: err.message || 'Failed to update attendance.' });
     }
   };
 
-  const presentVolunteers = registrations.filter(r => r.attendance_status === 'present').length;
-  const beforeEvidence = evidenceList.filter(e => e.stage === 'before');
-  const afterEvidence = evidenceList.filter(e => e.stage === 'after');
+  const handleMarkCompleteAndApprove = async () => {
+    setCompleting(true);
+    setActionMsg(null);
+    try {
+      const res = await api.completeOrganizationDrive(activity.id, reviewNotes.trim());
+      setActivity((prev: any) => ({
+        ...prev,
+        event_status: 'completed',
+        evidence_status: 'verified_complete'
+      }));
+      setActionMsg({
+        type: 'success',
+        text: res.message || 'Drive verified & marked complete! You can now issue QR-verified certificates in Tab 3.'
+      });
+      confetti({ particleCount: 55, spread: 70, origin: { y: 0.65 } });
+      await fetchDriveDetails();
+      onActionCompleted();
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message || 'Failed to mark drive complete.' });
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const handleIssueCertificates = async () => {
+    setIssuingCerts(true);
+    setActionMsg(null);
+    try {
+      const res = await api.issueDriveCertificates(activity.id);
+      if (res.data && res.data.length > 0) {
+        setCertificates(res.data);
+      }
+      setActionMsg({
+        type: 'success',
+        text: res.message || 'Official QR-verified certificates generated and sent to Community Head & all participated citizens!'
+      });
+      confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message || 'Failed to issue certificates.' });
+    } finally {
+      setIssuingCerts(false);
+    }
+  };
+
+  const presentCount = registrations.filter(r => r.attendance_status === 'present').length;
+  const absentCount = registrations.filter(r => r.attendance_status === 'absent').length;
+  const unmarkedCount = Math.max(0, registrations.length - presentCount - absentCount);
+  const activeCert = certificates.find(c => c.id === selectedCertId) || certificates[0] || null;
+
+  const getStageBadge = (stage: string) => {
+    const s = String(stage || '').toLowerCase();
+    if (s === 'after') return 'bg-emerald-100 text-emerald-900 border-emerald-300';
+    if (s === 'during') return 'bg-sky-100 text-sky-900 border-sky-300';
+    return 'bg-amber-100 text-amber-900 border-amber-300';
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn pb-16">
-      {/* Top Breadcrumb & Action Ribbon */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      {/* Top Header */}
+      <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3">
           <button
             onClick={onBack}
-            className="flex items-center gap-2 text-xs font-bold text-[#095c54] bg-[#e6f4f1] hover:bg-[#d0ece6] transition py-2 px-3.5 rounded-2xl"
+            className="flex items-center gap-1.5 text-xs font-extrabold text-[#095c54] bg-[#e6f4f1] hover:bg-[#d0ece6] transition py-2 px-3.5 rounded-xl shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Drives Queue</span>
+            <span>Back</span>
           </button>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[10px] font-black text-[#095c54] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                {activity.activity_category || 'Cleanliness Drive'}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-teal-50 text-[#095c54] border border-teal-200">
+                Ward {activity.ward_number || 3} · Organization Drive
               </span>
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase bg-slate-100 text-slate-800">
-                Ward {activity.ward_number || 3}
+              <span
+                className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                  isCompleted
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : activity.evidence_status === 'submitted'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-sky-50 text-sky-800 border-sky-200'
+                }`}
+              >
+                {isCompleted
+                  ? 'Verified Complete'
+                  : activity.evidence_status === 'submitted'
+                  ? 'Evidence Submitted — Review Ready'
+                  : 'Active / Scheduled'}
               </span>
             </div>
-            <h1 className="text-lg sm:text-xl font-black text-[#0f2925] mt-0.5">
+            <h1 className="text-lg sm:text-xl font-black text-[#0f2925] mt-1">
               {activity.title}
             </h1>
+            <p className="text-xs text-slate-500 font-medium">
+              Organized by <strong className="text-[#0f2925]">{activity.community_name || 'Community Organization'}</strong>
+              {activity.head_name ? ` · Head: ${activity.head_name}` : ''}
+            </p>
           </div>
         </div>
 
-        {/* Quick Review Decisions */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={() => setActionType('approve')}
-            className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-sm transition flex items-center gap-1.5"
+            type="button"
+            onClick={fetchDriveDetails}
+            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+            title="Refresh details"
           >
-            <Check className="w-4 h-4" />
-            <span>Approve Drive</span>
+            <RefreshCw className={`w-4 h-4 ${loadingData ? 'animate-spin' : ''}`} />
           </button>
-
-          <button
-            onClick={() => setActionType('changes_requested')}
-            className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold transition"
-          >
-            Request Changes
-          </button>
-
-          <button
-            onClick={() => setActionType('reject')}
-            className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition"
-          >
-            Reject
-          </button>
+          {!isCompleted ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('evidence')}
+              className="px-4 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+              <span>Review Evidence &amp; Complete</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setActiveTab('certificates')}
+              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+            >
+              <Award className="w-4 h-4" />
+              <span>View / Issue Certificates ({certificates.length})</span>
+            </button>
+          )}
         </div>
       </div>
 
       {actionMsg && (
         <div
-          className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between ${
+          className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between gap-2 ${
             actionMsg.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
               : 'bg-rose-50 border-rose-200 text-rose-900'
@@ -190,379 +259,692 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
         >
           <div className="flex items-center gap-2">
             {actionMsg.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600" />
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             )}
             <span>{actionMsg.text}</span>
           </div>
-          <button onClick={() => setActionMsg(null)} className="text-slate-600 hover:underline">
+          <button onClick={() => setActionMsg(null)} className="text-slate-600 hover:underline shrink-0">
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Horizontal Tabs */}
-      <div className="flex border-b border-slate-200 bg-white rounded-2xl p-1.5 shadow-xs gap-1.5 overflow-x-auto">
+      {/* 3 DEDICATED SUB-TABS */}
+      <div className="mobile-tab-strip sm:grid sm:grid-cols-3 gap-1.5 sm:gap-2 p-1.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
         <button
-          onClick={() => setActiveTab('info')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition ${
-            activeTab === 'info' ? 'bg-[#095c54] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          type="button"
+          onClick={() => setActiveTab('details')}
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center justify-center gap-1.5 sm:gap-2 transition whitespace-nowrap shrink-0 ${
+            activeTab === 'details'
+              ? 'bg-[#095c54] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Building className="w-4 h-4" />
-          <span>Specifications & Kit</span>
+          <Building className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>1. Details &amp; Attendance</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('map')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition ${
-            activeTab === 'map' ? 'bg-[#095c54] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <MapPin className="w-4 h-4" />
-          <span>Location & Geofence Map</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('volunteers')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition ${
-            activeTab === 'volunteers' ? 'bg-[#095c54] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Volunteers ({registrations.length}) & Attendance ({presentVolunteers})</span>
-        </button>
-
-        <button
+          type="button"
           onClick={() => setActiveTab('evidence')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition ${
-            activeTab === 'evidence' ? 'bg-[#095c54] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center justify-center gap-1.5 sm:gap-2 transition whitespace-nowrap shrink-0 ${
+            activeTab === 'evidence'
+              ? 'bg-[#095c54] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Camera className="w-4 h-4" />
-          <span>Field Evidence ({evidenceList.length})</span>
+          <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>2. Evidence ({evidenceList.length})</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('qa')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition ${
-            activeTab === 'qa' ? 'bg-[#095c54] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          type="button"
+          onClick={() => setActiveTab('certificates')}
+          className={`py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center justify-center gap-1.5 sm:gap-2 transition whitespace-nowrap shrink-0 ${
+            activeTab === 'certificates'
+              ? 'bg-[#095c54] text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <HelpCircle className="w-4 h-4" />
-          <span>Citizen Q&A ({questions.length})</span>
+          <Award className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span>3. Certificates ({certificates.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: Specifications & Kit */}
-      {activeTab === 'info' && (
-        <div className="space-y-4">
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-700">
-              Drive Information & Plan
-            </h3>
-            <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              {activity.detailed_description || activity.short_description}
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              <div className="p-4 rounded-2xl bg-[#f8faf9] border border-slate-200 space-y-1.5 text-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Organizing Group</span>
-                <p className="font-extrabold text-[#0f2925]">{activity.community_name || 'Navsari Youth Green Brigade'}</p>
-                <p className="text-slate-500 text-[11px]">{activity.address || 'Navsari Municipal Area'}</p>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-[#f8faf9] border border-slate-200 space-y-1.5 text-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Schedule & Timings</span>
-                <p className="font-bold text-slate-700">
-                  Starts: {new Date(activity.proposed_start_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                </p>
-                <p className="font-bold text-slate-700">
-                  Ends: {new Date(activity.proposed_end_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                </p>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-[#f8faf9] border border-slate-200 space-y-1.5 text-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Volunteer Quota</span>
-                <p className="font-extrabold text-[#095c54]">
-                  Max Capacity: {activity.maximum_participants || 50} Volunteers
-                </p>
-                <p className="text-slate-500 text-[11px]">
-                  Registered So Far: {registrations.length}
-                </p>
-              </div>
+      {/* ================================================================= */}
+      {/* SUB-TAB 1: DRIVE DETAILS & PRESENT / ABSENT ATTENDANCE ROSTER     */}
+      {/* ================================================================= */}
+      {activeTab === 'details' && (
+        <div className="space-y-6">
+          {/* Present / Absent / Total KPI Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+              <span className="text-[10px] font-black uppercase text-slate-400">Total Registered</span>
+              <p className="text-2xl font-black text-[#0f2925] mt-1">{registrations.length}</p>
+              <span className="text-[11px] text-slate-500">Capacity: {activity.maximum_participants || 50}</span>
             </div>
-
-            {/* Equipment Requirements */}
-            <div className="pt-2">
-              <span className="text-xs font-bold text-slate-700 block mb-2">
-                Tools & Safety Equipment:
+            <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+              <span className="text-[10px] font-black uppercase text-emerald-700 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5" />
+                Present Count
               </span>
-              <div className="flex flex-wrap gap-2">
-                {(Array.isArray(activity.equipment_requirements)
-                  ? activity.equipment_requirements
-                  : ['Protective Gloves', 'Biodegradable Trash Bags', 'Heavy Duty Brooms', 'Reflective Vests']
-                ).map((eq: string, idx: number) => (
-                  <span
-                    key={idx}
-                    className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center gap-1.5"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    {eq}
-                  </span>
-                ))}
-              </div>
+              <p className="text-2xl font-black text-emerald-700 mt-1">{presentCount}</p>
+              <span className="text-[11px] text-emerald-600 font-semibold">Verified Participants</span>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: Location & Geofence Map */}
-      {activeTab === 'map' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-black text-[#0f2925]">
-                Geographic Venue & GPS Attendance Geofence
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Volunteers must be within the 150-meter perimeter circle to mark verified attendance on event day.
+            <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
+              <span className="text-[10px] font-black uppercase text-rose-700 flex items-center gap-1">
+                <UserX className="w-3.5 h-3.5" />
+                Absent Count
+              </span>
+              <p className="text-2xl font-black text-rose-600 mt-1">{absentCount}</p>
+              <span className="text-[11px] text-slate-500">{unmarkedCount} not yet marked</span>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+              <span className="text-[10px] font-black uppercase text-slate-400">Attendance Rate</span>
+              <p className="text-2xl font-black text-[#095c54] mt-1">
+                {registrations.length > 0 ? Math.round((presentCount / registrations.length) * 100) : 0}%
               </p>
+              <span className="text-[11px] text-slate-500">Live field check-in</span>
             </div>
-            <span className="font-mono text-xs text-slate-600 bg-slate-100 px-3 py-1 rounded-xl">
-              Lat: {coords[0].toFixed(5)}, Lng: {coords[1].toFixed(5)}
-            </span>
           </div>
 
-          <div className="h-80 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner">
-            <MapContainer center={coords} zoom={16} scrollWheelZoom={false} className="h-full w-full">
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <Marker position={coords} icon={markerIcon}>
-                <Popup>
-                  <div className="p-1">
-                    <p className="font-bold text-xs text-[#095c54]">{activity.title}</p>
-                    <p className="text-[11px] text-slate-600">{activity.location_name || activity.address}</p>
-                  </div>
-                </Popup>
-              </Marker>
-              <Circle
-                center={coords}
-                radius={150}
-                pathOptions={{
-                  color: '#095c54',
-                  fillColor: '#095c54',
-                  fillOpacity: 0.15
-                }}
-              />
-            </MapContainer>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: Volunteers & Attendance */}
-      {activeTab === 'volunteers' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-black text-[#0f2925]">
-                Enrolled Volunteers & Live Attendance Roster
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Drive Information */}
+            <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#0f2925] border-b border-slate-100 pb-3">
+                Cleanliness Drive Specifications
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Real-time volunteer registration and GPS check-in verification records.
-              </p>
-            </div>
-            <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800">
-              {presentVolunteers} Present / {registrations.length} Registered
-            </span>
-          </div>
 
-          {registrations.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-2xl text-xs text-slate-500">
-              No citizen volunteers have registered for this drive yet.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] border-b border-slate-200">
-                  <tr>
-                    <th className="p-3">Volunteer Name</th>
-                    <th className="p-3">Contact</th>
-                    <th className="p-3">Registration ID</th>
-                    <th className="p-3">Registered At</th>
-                    <th className="p-3">Attendance</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {registrations.map(reg => (
-                    <tr key={reg.id} className="hover:bg-slate-50 transition">
-                      <td className="p-3 font-bold text-slate-900">{reg.citizen_name || 'Anonymous Citizen'}</td>
-                      <td className="p-3 text-slate-600">{reg.citizen_phone || 'N/A'}</td>
-                      <td className="p-3 font-mono text-slate-600">{reg.registration_number}</td>
-                      <td className="p-3 text-slate-500">
-                        {new Date(reg.registered_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                      </td>
-                      <td className="p-3">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                            reg.attendance_status === 'present'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {reg.attendance_status || 'Unmarked'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 4: Field Evidence */}
-      {activeTab === 'evidence' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-sm font-black text-[#0f2925]">
-              Field Evidence & Documentation Gallery
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Before, during, and after photographs submitted by the Community Head.
-            </p>
-          </div>
-
-          {evidenceList.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-2xl text-xs text-slate-500">
-              No field evidence has been uploaded by the community head yet.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {evidenceList.map(ev => (
-                <div key={ev.id} className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                  <div className="relative aspect-video bg-slate-100">
-                    <img src={ev.image_url} alt={ev.caption || 'Evidence'} className="w-full h-full object-cover" />
-                    <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#095c54] text-white">
-                      {ev.stage}
-                    </span>
-                  </div>
-                  <div className="p-3 space-y-1">
-                    <p className="text-xs font-semibold text-slate-800">{ev.caption || 'Sanitation documentation'}</p>
-                    <p className="text-[10px] text-slate-400">
-                      Uploaded by {(ev as any).uploaded_by_name || ev.uploaded_by || 'Community Head'} · {new Date(ev.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Schedule</span>
+                  <p className="font-bold text-[#0f2925] flex items-center gap-1.5 mt-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#095c54]" />
+                    {activity.proposed_start_at
+                      ? new Date(activity.proposed_start_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                      : 'Scheduled'}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 5: Citizen Q&A */}
-      {activeTab === 'qa' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-sm font-black text-[#0f2925]">
-              Citizen Questions & Community Inquiries
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Inquiries raised by ward residents regarding event logistics and safety.
-            </p>
-          </div>
-
-          {questions.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-2xl text-xs text-slate-500">
-              No citizen questions have been raised for this drive.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {questions.map(q => (
-                <div key={q.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-900">
-                    <span>Q: {q.question_text}</span>
-                    <span className="text-[10px] text-slate-400">{new Date(q.created_at).toLocaleDateString()}</span>
-                  </div>
-                  {q.answer_text ? (
-                    <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-900 text-xs font-medium">
-                      <strong>Answer:</strong> {q.answer_text}
-                    </div>
-                  ) : (
-                    <span className="text-[11px] text-amber-700 italic">Awaiting response from Community Head</span>
+                <div className="p-3.5 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Location</span>
+                  <p className="font-bold text-[#0f2925] flex items-center gap-1.5 mt-1">
+                    <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                    <span className="truncate">{activity.address || activity.landmark || `Ward ${activity.ward_number || 3}`}</span>
+                  </p>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Organization &amp; Head</span>
+                  <p className="font-bold text-[#0f2925] mt-1">{activity.community_name || 'Community Group'}</p>
+                  <p className="text-[11px] text-slate-500">{activity.head_name || 'Community Head'}</p>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-[#f7f9f8] border border-slate-200/70">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Contact</span>
+                  <p className="font-bold text-[#095c54] flex items-center gap-1.5 mt-1">
+                    <Phone className="w-3.5 h-3.5" />
+                    {activity.community_phone || 'Registered on file'}
+                  </p>
+                  {activity.community_email && (
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate mt-0.5">
+                      <Mail className="w-3 h-3" />
+                      {activity.community_email}
+                    </p>
                   )}
                 </div>
-              ))}
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs space-y-1">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Description &amp; Objectives</span>
+                <p className="text-slate-700 leading-relaxed">
+                  {activity.detailed_description || activity.short_description || 'Civic cleanliness drive.'}
+                </p>
+              </div>
+
+              {activity.linked_problem_title && (
+                <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 text-xs">
+                  <span className="text-[10px] font-black uppercase text-indigo-800 block">Linked Ward Problem</span>
+                  <p className="font-bold text-indigo-950 mt-0.5">{activity.linked_problem_title}</p>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Map Location */}
+            <div className="lg:col-span-5 bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#0f2925]">
+                Drive Site Location
+              </h3>
+              <div className="h-64 rounded-2xl overflow-hidden border border-slate-200 relative z-0">
+                <MapContainer center={coords} zoom={15} scrollWheelZoom={false} className="h-full w-full">
+                  <TileLayer
+                    attribution="&copy; OpenStreetMap contributors"
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <Marker position={coords} icon={markerIcon}>
+                    <Popup>
+                      <strong>{activity.title}</strong>
+                      <br />
+                      {activity.address || `Ward ${activity.ward_number}`}
+                    </Popup>
+                  </Marker>
+                  <Circle center={coords} radius={100} pathOptions={{ color: '#095c54', fillColor: '#095c54', fillOpacity: 0.12 }} />
+                </MapContainer>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                GPS: {coords[0].toFixed(4)}° N, {coords[1].toFixed(4)}° E · Ward {activity.ward_number || 3}
+              </p>
+            </div>
+          </div>
+
+          {/* Volunteer Attendance Roster */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-[#0f2925] uppercase tracking-wider">
+                  Participated Citizens &amp; Attendance Roster
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Present: <strong className="text-emerald-700">{presentCount}</strong> · Absent: <strong className="text-rose-600">{absentCount}</strong> · Total: <strong>{registrations.length}</strong>
+                </p>
+              </div>
+            </div>
+
+            {registrations.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200/70 text-xs text-slate-500">
+                No citizen volunteers have registered for this drive yet.
+              </div>
+            ) : (
+              <>
+                {/* Mobile Volunteer Cards (< md) */}
+                <div className="md:hidden divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  {registrations
+                    .slice((regPage - 1) * tablePageSize, regPage * tablePageSize)
+                    .map(reg => (
+                    <div key={reg.id} className="p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-[#0f2925] truncate">{reg.citizen_name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{reg.citizen_phone || '—'} · {reg.registration_status}</p>
+                      </div>
+                      <div className="inline-flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAttendance(reg.id, 'present')}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                            reg.attendance_status === 'present' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          Present
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAttendance(reg.id, 'absent')}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                            reg.attendance_status === 'absent' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700'
+                          }`}
+                        >
+                          Absent
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table (>= md) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
+                      <th className="py-2.5 px-3">Citizen Volunteer</th>
+                      <th className="py-2.5 px-3">Contact</th>
+                      <th className="py-2.5 px-3">Registration Status</th>
+                      <th className="py-2.5 px-3">Attendance</th>
+                      <th className="py-2.5 px-3 text-right">Mark Attendance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {registrations
+                    .slice((regPage - 1) * tablePageSize, regPage * tablePageSize)
+                    .map(reg => (
+                      <tr key={reg.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-3 font-bold text-[#0f2925]">{reg.citizen_name}</td>
+                        <td className="py-3 px-3 text-slate-600">{reg.citizen_phone || '—'}</td>
+                        <td className="py-3 px-3 capitalize text-slate-600">{reg.registration_status}</td>
+                        <td className="py-3 px-3">
+                          {reg.attendance_status === 'present' ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase">
+                              Present
+                            </span>
+                          ) : reg.attendance_status === 'absent' ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase">
+                              Absent
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                              Unmarked
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAttendance(reg.id, 'present')}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                                reg.attendance_status === 'present'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              }`}
+                            >
+                              Present
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAttendance(reg.id, 'absent')}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                                reg.attendance_status === 'absent'
+                                  ? 'bg-rose-600 text-white'
+                                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                              }`}
+                            >
+                              Absent
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white mt-2">
+                  <TablePagination
+                    currentPage={regPage}
+                    totalItems={registrations.length}
+                    pageSize={tablePageSize}
+                    onPageChange={setRegPage}
+                    itemLabel="volunteers"
+                  />
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Decision Review Modal */}
-      {actionType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeInBackdrop">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-[#0f2925]">
-                {actionType === 'approve'
-                  ? 'Confirm Cleanliness Drive Approval'
-                  : actionType === 'changes_requested'
-                  ? 'Request Changes from Community Head'
-                  : 'Reject Cleanliness Drive Proposal'}
-              </h3>
-              <button onClick={() => setActionType(null)} className="p-1 rounded-full text-slate-400 hover:bg-slate-100">
-                <X className="w-4 h-4" />
-              </button>
+      {/* ================================================================= */}
+      {/* SUB-TAB 2: EVIDENCE SUBMITTED BY COMMUNITY HEAD + APPROVE/COMPLETE */}
+      {/* ================================================================= */}
+      {activeTab === 'evidence' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-[#0f2925] flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-[#095c54]" />
+                  <span>Submitted Evidence History ({evidenceList.length} Upload{evidenceList.length === 1 ? '' : 's'})</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Chronological Before, During, and After photographic proof and impact details submitted by the Community Head.
+                </p>
+              </div>
+              {isCompleted && (
+                <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black flex items-center gap-1.5 self-start sm:self-auto">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Drive Verified &amp; Completed</span>
+                </span>
+              )}
             </div>
 
-            <p className="text-xs text-slate-600">
-              {actionType === 'approve'
-                ? 'Approving this drive publishes it to all Citizen Dashboards across Ward 3 and allows citizen volunteer enrollment.'
-                : 'Please provide feedback to the Community Head explaining why adjustments or rejection are necessary.'}
-            </p>
+            {evidenceList.length === 0 ? (
+              <div className="p-10 text-center bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                <Camera className="w-9 h-9 text-slate-300 mx-auto" />
+                <h4 className="text-sm font-extrabold text-slate-700">No Evidence Uploaded Yet</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  The Community Head has not yet uploaded field evidence photos. Once submitted from their Activity Management dashboard, every photo and review metric will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {evidenceList.map((ev, idx) => {
+                  const stage = ev.evidence_type || ev.stage || 'before';
+                  const meta = ev.review_metadata || {};
+                  const hasMeta = Object.keys(meta).some(k => meta[k] !== undefined && meta[k] !== null && meta[k] !== '');
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700">Official Officer Comments</label>
-              <textarea
-                rows={3}
-                value={actionComment}
-                onChange={e => setActionComment(e.target.value)}
-                placeholder={
-                  actionType === 'approve'
-                    ? 'e.g. Approved. Municipal sanitation truck and bins coordinated for post-drive pickup.'
-                    : 'Specify required adjustments (e.g. Change meeting time to avoid market congestion)...'
-                }
-                className="w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:border-[#095c54]"
-              />
-            </div>
+                  return (
+                    <div
+                      key={ev.id || idx}
+                      className="rounded-2xl border border-slate-200 bg-[#f7f9f8] overflow-hidden flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="px-4 py-3 bg-white border-b border-slate-200/70 flex items-center justify-between gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${getStageBadge(stage)}`}>
+                            {String(stage).toUpperCase()} STAGE
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {ev.created_at
+                              ? new Date(ev.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                              : 'Recorded'}
+                          </span>
+                        </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+                        <div className="aspect-video bg-slate-100 overflow-hidden">
+                          <img
+                            src={ev.storage_path || ev.image_url}
+                            alt={ev.caption || stage}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        <div className="p-4 space-y-3">
+                          <div>
+                            <h4 className="text-xs font-extrabold text-[#0f2925]">{ev.caption || `${stage} Evidence`}</h4>
+                            {ev.description && ev.description !== ev.caption && (
+                              <p className="text-xs text-slate-600 mt-1 leading-relaxed">{ev.description}</p>
+                            )}
+                          </div>
+
+                          {/* Structured After-Stage Review Details for Ward Officer */}
+                          {hasMeta && (
+                            <div className="p-3 rounded-xl bg-white border border-emerald-200/80 space-y-2 text-[11px]">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-[#095c54] flex items-center gap-1">
+                                <FileCheck2 className="w-3.5 h-3.5" />
+                                Ward Officer Review Metrics
+                              </span>
+                              <div className="grid grid-cols-2 gap-2">
+                                {meta.waste_collected_kg && (
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Waste Cleared</span>
+                                    <strong className="text-[#0f2925]">{meta.waste_collected_kg} kg</strong>
+                                  </div>
+                                )}
+                                {meta.actual_participants && (
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Volunteers Present</span>
+                                    <strong className="text-[#0f2925]">{meta.actual_participants} Citizens</strong>
+                                  </div>
+                                )}
+                                {meta.area_covered && (
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Area Covered</span>
+                                    <strong className="text-[#0f2925]">{meta.area_covered}</strong>
+                                  </div>
+                                )}
+                                {meta.disinfection_status && (
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">Site Condition</span>
+                                    <strong className="text-emerald-700">{meta.disinfection_status}</strong>
+                                  </div>
+                                )}
+                              </div>
+                              {meta.waste_disposal_details && (
+                                <p className="text-slate-600 pt-1 border-t border-slate-100">
+                                  <strong className="text-slate-800">Disposal: </strong>{meta.waste_disposal_details}
+                                </p>
+                              )}
+                              {meta.equipment_used && (
+                                <p className="text-slate-600">
+                                  <strong className="text-slate-800">Equipment: </strong>
+                                  {Array.isArray(meta.equipment_used) ? meta.equipment_used.join(', ') : meta.equipment_used}
+                                </p>
+                              )}
+                              {meta.challenges_notes && (
+                                <p className="text-slate-600">
+                                  <strong className="text-slate-800">Notes / Follow-up: </strong>{meta.challenges_notes}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Mark Complete & Approve Section */}
+            {!isCompleted && (
+              <div className="p-5 rounded-2xl bg-[#f0f7f5] border border-[#cde6df] space-y-3">
+                <div className="flex items-center gap-2 text-[#095c54]">
+                  <ShieldCheck className="w-5 h-5" />
+                  <h4 className="text-sm font-black">Ward Officer Final Verification &amp; Completion Approval</h4>
+                </div>
+                <textarea
+                  rows={2}
+                  value={reviewNotes}
+                  onChange={e => setReviewNotes(e.target.value)}
+                  placeholder="Enter official inspection remarks..."
+                  className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 outline-none focus:border-[#095c54]"
+                />
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-[11px] text-slate-600">
+                    Approving will move this drive to <strong>Complete Drive History</strong> and unlock QR Certificate issuance for all participants.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={completing}
+                    onClick={handleMarkCompleteAndApprove}
+                    className="px-5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
+                  >
+                    {completing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 text-emerald-300" />}
+                    <span>Mark as Complete &amp; Approve Drive</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* SUB-TAB 3: ISSUE QR-VERIFIED CERTIFICATES                         */}
+      {/* ================================================================= */}
+      {activeTab === 'certificates' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-[#0f2925] flex items-center gap-2">
+                  <Award className="w-5 h-5 text-amber-500" />
+                  <span>Official NMC QR-Verified Cleanliness Certificates</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Generate unique QR-verified certificates for <strong>{activity.community_name || 'Community Head'}</strong> and all <strong>{presentCount > 0 ? presentCount : registrations.length} participated citizen{registrations.length === 1 ? '' : 's'}</strong>. Issued certificates appear automatically in their dashboards!
+                </p>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setActionType(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                disabled={!isCompleted || issuingCerts}
+                onClick={handleIssueCertificates}
+                className="px-5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-2 shadow-sm transition shrink-0 self-start md:self-auto"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={processingAction}
-                onClick={handleExecuteAction}
-                className={`px-5 py-2 rounded-xl text-xs font-black text-white shadow transition disabled:opacity-50 ${
-                  actionType === 'approve'
-                    ? 'bg-[#095c54] hover:bg-[#074741]'
-                    : actionType === 'changes_requested'
-                    ? 'bg-purple-600 hover:bg-purple-700'
-                    : 'bg-rose-600 hover:bg-rose-700'
-                }`}
-              >
-                {processingAction ? 'Saving Decision...' : `Confirm ${actionType.toUpperCase()}`}
+                {issuingCerts ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                )}
+                <span>
+                  {certificates.length > 0
+                    ? `Sync / Issue Missing Certificates (${certificates.length} Issued)`
+                    : 'Generate & Issue Certificates to All Participants'}
+                </span>
               </button>
             </div>
+
+            {!isCompleted && (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Please verify evidence and mark this drive as Complete in Tab 2 before issuing official certificates.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('evidence')}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-extrabold"
+                >
+                  Go to Evidence Tab
+                </button>
+              </div>
+            )}
+
+            {certificates.length > 0 ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                  {/* Mobile Issued Certificates Cards (< md) */}
+                  <div className="md:hidden divide-y divide-slate-100">
+                    {certificates
+                      .slice((certPage - 1) * tablePageSize, certPage * tablePageSize)
+                      .map((cert, pageIdx) => {
+                        const idx = (certPage - 1) * tablePageSize + pageIdx;
+                        return (
+                      <div key={cert.id || cert.certificate_code} className="p-3 flex items-center justify-between gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="font-extrabold text-xs text-[#0f2925] truncate">{idx + 1}. {cert.recipient_name}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-[10px] font-black text-[#095c54] bg-[#f0f7f5] px-1.5 py-0.5 rounded">
+                              {cert.certificate_code}
+                            </span>
+                            <span className="text-[9px] font-black uppercase text-slate-500">
+                              {cert.recipient_role === 'community_head' ? 'Head' : 'Citizen'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCertId(cert.id)}
+                          className="px-2.5 py-1.5 rounded-xl bg-[#095c54] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0"
+                        >
+                          <Award className="w-3.5 h-3.5 text-amber-300" />
+                          <span>View</span>
+                        </button>
+                      </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Desktop Table (>= md) */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-[#f7f9f8] border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                          <th className="py-3 px-4">#</th>
+                          <th className="py-3 px-4">Certificate Code</th>
+                          <th className="py-3 px-4">Recipient Name</th>
+                          <th className="py-3 px-4">Role</th>
+                          <th className="py-3 px-4">Issued Date</th>
+                          <th className="py-3 px-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {certificates
+                      .slice((certPage - 1) * tablePageSize, certPage * tablePageSize)
+                      .map((cert, pageIdx) => {
+                        const idx = (certPage - 1) * tablePageSize + pageIdx;
+                        return (
+                          <tr key={cert.id || cert.certificate_code} className="hover:bg-slate-50/80 transition">
+                            <td className="py-3 px-4 font-bold text-slate-400">{idx + 1}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-[11px] font-black text-[#095c54] bg-[#f0f7f5] border border-[#cde6df] px-2.5 py-1 rounded-lg">
+                                {cert.certificate_code}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-extrabold text-[#0f2925]">{cert.recipient_name}</p>
+                              {cert.community_name && (
+                                <p className="text-[11px] text-slate-500">{cert.community_name}</p>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                                  cert.recipient_role === 'community_head'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                }`}
+                              >
+                                {cert.recipient_role === 'community_head' ? 'Community Head' : 'Participated Citizen'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-600 font-medium">
+                              {cert.issued_at
+                                ? new Date(cert.issued_at).toLocaleDateString('en-IN', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric'
+                                  })
+                                : 'Today'}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCertId(cert.id)}
+                                className="px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-2xs transition"
+                              >
+                                <Award className="w-3.5 h-3.5 text-amber-300" />
+                                <span>View Certificate</span>
+                              </button>
+                            </td>
+                          </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <TablePagination
+                    currentPage={certPage}
+                    totalItems={certificates.length}
+                    pageSize={tablePageSize}
+                    onPageChange={setCertPage}
+                    itemLabel="certificates"
+                  />
+                </div>
+
+                {/* Certificate Preview & Print Modal */}
+                {selectedCertId && activeCert && (
+                  <div
+                    className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+                    onClick={() => setSelectedCertId(null)}
+                  >
+                    <div
+                      className="bg-white rounded-3xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div>
+                          <h4 className="text-sm sm:text-base font-black text-[#0f2925]">
+                            Certificate Preview — {activeCert.recipient_name}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 font-mono">
+                            {activeCert.certificate_code} · {activeCert.recipient_role === 'community_head' ? 'Community Head' : 'Participated Citizen'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCertId(null)}
+                          className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+                          aria-label="Close certificate preview"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <CertificateCard certificate={activeCert} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              isCompleted && (
+                <div className="p-10 text-center bg-[#f7f9f8] rounded-2xl border border-dashed border-slate-300 space-y-2">
+                  <Award className="w-10 h-10 text-amber-500 mx-auto" />
+                  <h4 className="text-sm font-extrabold text-[#0f2925]">Ready to Generate Certificates</h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Click <strong>"Generate &amp; Issue Certificates to All Participants"</strong> above to generate unique QR-verified NMC certificates for the Community Head and every participated citizen.
+                  </p>
+                </div>
+              )
+            )}
           </div>
         </div>
       )}

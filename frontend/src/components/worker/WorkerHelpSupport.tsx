@@ -23,11 +23,8 @@ export const WorkerHelpSupport: React.FC<WorkerHelpSupportProps> = ({ lang }) =>
         <div>
           <h2 className="text-xl font-black text-[#0f2925] flex items-center gap-2">
             <LifeBuoy className="w-5 h-5 text-[#095c54]" />
-            <span>Worker Field Safety, Support & Emergency Helplines</span>
+            <span>Worker Field Safety, Support &amp; Emergency Helplines</span>
           </h2>
-          <p className="text-xs text-[#64748b] mt-1">
-            Navsari Municipal Corporation Sanitary Safety Protocols · 24/7 Incident Response
-          </p>
         </div>
 
         <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0] flex items-center gap-1.5">

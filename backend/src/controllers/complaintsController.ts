@@ -37,18 +37,25 @@ export class ComplaintsController {
    */
   public static async classifyImage(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { file_name, file_size, description, image_base64 } = req.body;
+      const { file_name, file_size, description, image_base64, visual_features, source } = req.body;
       const classification = await AIService.classifyWasteImage(
         file_name || 'civic_issue.jpg',
         Number(file_size || 500000),
         description,
-        image_base64
+        image_base64,
+        visual_features,
+        source === 'live_camera' ? 'live_camera' : 'upload'
       );
 
-      // Match with category ID from database
-      const matchedCategory = store.categories.find(
-        c => c.category_name.toLowerCase() === classification.predicted_category_name.toLowerCase()
-      );
+      // Match with category ID from database (exact or partial keyword match across all 10 categories)
+      const predLower = classification.predicted_category_name.toLowerCase();
+      const matchedCategory =
+        store.categories.find(c => c.category_name.toLowerCase() === predLower) ||
+        store.categories.find(
+          c =>
+            c.category_name.toLowerCase().includes(predLower.split('/')[0].trim()) ||
+            predLower.includes(c.category_name.toLowerCase().split('/')[0].trim())
+        );
 
       res.status(200).json({
         success: true,
@@ -157,14 +164,9 @@ export class ComplaintsController {
         return;
       }
 
+      const bodyLoc = req.body.location || {};
       const {
         category_id,
-        latitude,
-        longitude,
-        ward_number,
-        ward_id,
-        address,
-        landmark,
         description,
         original_language,
         image_url,
@@ -172,8 +174,17 @@ export class ComplaintsController {
         ai_model_name,
         ai_model_version,
         is_duplicate,
-        parent_complaint_id
+        parent_complaint_id,
+        is_urgent,
+        priority
       } = req.body;
+
+      const latitude = req.body.latitude ?? bodyLoc.latitude;
+      const longitude = req.body.longitude ?? bodyLoc.longitude;
+      const ward_number = req.body.ward_number ?? bodyLoc.ward_number;
+      const ward_id = req.body.ward_id ?? bodyLoc.ward_id;
+      const address = req.body.address ?? bodyLoc.address;
+      const landmark = req.body.landmark ?? bodyLoc.landmark;
 
       // 1. Content Moderation Gate
       const moderation = await AIService.moderateContent(description || '');
@@ -185,33 +196,28 @@ export class ComplaintsController {
         return;
       }
 
-      // 2. Ward Resolution
-      let ward = (ward_number ? NAVSARI_WARDS.find(w => w.ward_number === Number(ward_number)) : null)
-        || (ward_id ? NAVSARI_WARDS.find(w => w.id === ward_id) : null);
+      // 2. Ward Resolution (prefer live store.wards so admin officer updates apply)
+      const allWards = (store.wards && store.wards.length > 0) ? store.wards : NAVSARI_WARDS;
+      let ward = (ward_number !== undefined && ward_number !== null && ward_number !== ''
+          ? allWards.find(w => w.ward_number === Number(ward_number))
+          : null)
+        || (ward_id ? allWards.find(w => w.id === ward_id) : null);
 
       let lat = Number(latitude);
       let lng = Number(longitude);
 
-      // [CONSTRAINT TEMPORARILY DISABLED] Allow submitting complaints from anywhere for testing
-      /*
-      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-        const cityBoundary = store.adminBoundarySettings?.city_boundary || DEFAULT_NAVSARI_CITY_BOUNDARY;
-        if (!isPointInPolygon([lng, lat], cityBoundary)) {
-          res.status(422).json({
-            success: false,
-            error: 'The reported location falls outside Navsari Municipal Corporation jurisdiction. Complaints can only be submitted within Navsari city boundaries.'
-          });
-          return;
-        }
-      }
-      */
-
       if (!ward) {
-        ward = findWardByCoordinates(lat, lng);
-      } else if (ward && (!lat || !lng || (Math.abs(lat - 20.9325) < 0.001 && Math.abs(lng - 72.9280) < 0.001))) {
-        // If user picked a specific ward but coordinates are center of Navsari, adjust to ward center
-        lng = (ward.boundary_coordinates[0][0] + ward.boundary_coordinates[2][0]) / 2;
-        lat = (ward.boundary_coordinates[0][1] + ward.boundary_coordinates[2][1]) / 2;
+        const geoWard = findWardByCoordinates(isNaN(lat) ? 20.9325 : lat, isNaN(lng) ? 72.9275 : lng);
+        ward = allWards.find(w => w.ward_number === geoWard.ward_number) || geoWard;
+      } else if (ward && (isNaN(lat) || isNaN(lng) || !lat || !lng || (Math.abs(lat - 20.9325) < 0.001 && Math.abs(lng - 72.9280) < 0.001))) {
+        // If user picked a specific ward but coordinates are center of Navsari or missing, adjust to ward center
+        if (ward.boundary_coordinates && ward.boundary_coordinates.length >= 3) {
+          lng = (ward.boundary_coordinates[0][0] + ward.boundary_coordinates[2][0]) / 2;
+          lat = (ward.boundary_coordinates[0][1] + ward.boundary_coordinates[2][1]) / 2;
+        } else {
+          lat = 20.9325;
+          lng = 72.9275;
+        }
       }
 
       const category = store.categories.find(c => c.id === category_id);
@@ -224,6 +230,9 @@ export class ComplaintsController {
       const serial = Math.floor(10000 + Math.random() * 90000);
       const complaintNumber = `NMC-2026-${serial}`;
 
+      const resolvedUrgent = Boolean(is_urgent);
+      const resolvedPriority = resolvedUrgent ? 'urgent' : (priority || 'medium');
+
       const newComplaint = await DbRepository.createComplaint({
         complaint_number: complaintNumber,
         citizen_id: req.user.id,
@@ -234,21 +243,30 @@ export class ComplaintsController {
         description: description?.trim() || 'No additional description provided.',
         original_language: original_language || 'en',
         image_url: image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-        latitude: lat,
-        longitude: lng,
+        latitude: isNaN(lat) ? 20.9325 : lat,
+        longitude: isNaN(lng) ? 72.9275 : lng,
         address: address || `${ward.ward_name}, Navsari`,
         landmark: landmark || undefined,
         ward_id: ward.id,
         ward_number: ward.ward_number,
         ward_name: ward.ward_name,
-        assigned_officer_name: ward.ward_officer_name || 'Ramesh Patel (Chief Sanitary Inspector)',
+        assigned_officer_name: ward.ward_officer_name || 'Ward Officer',
         status: 'submitted',
-        priority: 'medium',
-        is_urgent: false,
+        priority: resolvedPriority,
+        is_urgent: resolvedUrgent,
         confidence_score: confidence_score ? Number(confidence_score) : 0.95,
         ai_model_name: ai_model_name || 'NavsariWasteClassifier-PyTorch-ResNet50',
         ai_model_version: ai_model_version || 'v1.3.0'
       });
+
+      // Automatically train AI image model with every newly uploaded complaint photo
+      const trainResult = await AIService.trainOnNewPhoto({
+        categoryId: category.id,
+        categoryName: category.category_name,
+        imageBase64: typeof image_url === 'string' && image_url.startsWith('data:image') ? image_url : undefined,
+        description: description?.trim() || '',
+        visualFeatures: req.body.visual_features
+      }).catch(() => ({ trained: false, total_samples: 0 }));
 
       // Create confirmation notification in database
       await DbRepository.getNotifications(req.user.id).catch(() => {});
@@ -267,7 +285,9 @@ export class ComplaintsController {
         success: true,
         message: 'Complaint lodged successfully and saved to municipal database!',
         data: {
-          complaint: newComplaint
+          complaint: newComplaint,
+          ai_model_trained: trainResult.trained,
+          ai_total_samples: trainResult.total_samples
         }
       });
     } catch (err: any) {
@@ -285,12 +305,14 @@ export class ComplaintsController {
         return;
       }
 
-      const { status, category_id, search, page = '1', limit = '10' } = req.query;
+      const { status, category_id, search, page = '1', limit = '50' } = req.query;
       const pageNum = parseInt(page as string, 10) || 1;
-      const limitNum = parseInt(limit as string, 10) || 10;
+      const limitNum = parseInt(limit as string, 10) || 50;
 
       const complaints = await DbRepository.getComplaints({
         citizen_id: req.user.id,
+        citizen_phone: req.user.phone,
+        citizen_name: req.user.full_name,
         status: status as string,
         category_id: category_id as string,
         search: search as string
@@ -322,14 +344,26 @@ export class ComplaintsController {
   public static async getComplaintById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const complaint = await DbRepository.getComplaintById(id);
+      let complaint: any = await DbRepository.getComplaintById(id);
+      if (!complaint) {
+        complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      }
 
       if (!complaint) {
         res.status(404).json({ success: false, error: 'Complaint not found' });
         return;
       }
 
-      const isOwner = req.user && req.user.id === complaint.citizen_id;
+      const userDigits = req.user?.phone ? req.user.phone.replace(/\D/g, '') : '';
+      const compDigits = (complaint.citizen_phone || '').replace(/\D/g, '');
+      const isOwner = Boolean(
+        req.user && (
+          req.user.id === complaint.citizen_id ||
+          (userDigits && compDigits && (userDigits === compDigits || compDigits.endsWith(userDigits) || userDigits.endsWith(compDigits))) ||
+          (req.user.full_name && complaint.citizen_name && req.user.full_name.toLowerCase() === complaint.citizen_name.toLowerCase())
+        )
+      );
+
       const safeComplaint = {
         ...complaint,
         citizen_name: isOwner ? complaint.citizen_name : 'Anonymous Citizen'
@@ -357,7 +391,13 @@ export class ComplaintsController {
       const { id } = req.params;
       const deleted = await DbRepository.deleteComplaint(id);
 
-      if (!deleted) {
+      // Also clean up from in-memory store
+      const idx = (store.complaints || []).findIndex(c => c.id === id || c.complaint_number === id);
+      if (idx !== -1) {
+        store.complaints.splice(idx, 1);
+      }
+
+      if (!deleted && idx === -1) {
         res.status(404).json({ success: false, error: 'Complaint not found or already deleted' });
         return;
       }
@@ -384,13 +424,24 @@ export class ComplaintsController {
       const { id } = req.params;
       const { rating, feedback_text, resolution_satisfactory } = req.body;
 
-      const complaint = store.complaints.find(c => c.id === id);
+      let complaint: any = await DbRepository.getComplaintById(id);
+      if (!complaint) {
+        complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      }
       if (!complaint) {
         res.status(404).json({ success: false, error: 'Complaint not found' });
         return;
       }
 
-      if (complaint.citizen_id !== req.user.id) {
+      const userDigits = req.user.phone ? req.user.phone.replace(/\D/g, '') : '';
+      const compDigits = (complaint.citizen_phone || '').replace(/\D/g, '');
+      const isOwner = Boolean(
+        complaint.citizen_id === req.user.id ||
+        (userDigits && compDigits && (userDigits === compDigits || compDigits.endsWith(userDigits) || userDigits.endsWith(compDigits))) ||
+        (req.user.full_name && complaint.citizen_name && req.user.full_name.toLowerCase() === complaint.citizen_name.toLowerCase())
+      );
+
+      if (!isOwner) {
         res.status(403).json({ success: false, error: 'Only the complaint author can submit resolution feedback' });
         return;
       }

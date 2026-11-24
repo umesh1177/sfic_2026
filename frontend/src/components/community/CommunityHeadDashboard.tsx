@@ -38,10 +38,13 @@ import { CitizenQuestions } from './CitizenQuestions.js';
 import { EventNotifications } from './EventNotifications.js';
 import { EventGalleryEvidence } from './EventGalleryEvidence.js';
 import { ApprovalTracking } from './ApprovalTracking.js';
-import { CommunityAnalytics } from './CommunityAnalytics.js';
 import { CommunityNotifications } from './CommunityNotifications.js';
 import { CommunitySettings } from './CommunitySettings.js';
 import { RewardsRecognition } from '../RewardsRecognition.js';
+import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
+import { CertificatesTableView } from '../common/CertificatesTableView.js';
+import { LocationMonitor } from '../common/LocationMonitor.js';
+import { OfflineSyncBanner } from '../common/OfflineSyncBanner.js';
 
 const buildDynamicInitialSummary = (user: Profile): CommunityDashboardSummary => ({
   community: {
@@ -113,8 +116,24 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [openCreateWizardDirectly, setOpenCreateWizardDirectly] = useState<boolean>(false);
   const [linkedProblemForDrive, setLinkedProblemForDrive] = useState<CommunityProblem | null>(null);
+  const [myCertificates, setMyCertificates] = useState<DriveCertificateData[]>([]);
+  const [loadingCerts, setLoadingCerts] = useState<boolean>(false);
 
   const t = translations[lang];
+
+  const loadCertificates = async () => {
+    try {
+      setLoadingCerts(true);
+      const res = await api.getMyCertificates();
+      if (res.success && Array.isArray(res.data)) {
+        setMyCertificates(res.data);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingCerts(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -128,12 +147,10 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
       } else if (!dashboardSummary) {
         setDashboardSummary(buildDynamicInitialSummary(user));
       }
-      if (actRes.data && actRes.data.length > 0) {
+      if (Array.isArray(actRes.data)) {
         setActivities(actRes.data);
-        if (!selectedActivityId) {
-          setSelectedActivityId(actRes.data[0].id);
-        }
       }
+      loadCertificates();
     } catch (err) {
       console.error('Failed to load Community Head data:', err);
     } finally {
@@ -145,19 +162,30 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'activities' || activeTab === 'certificates') {
+      loadData();
+    }
+  }, [activeTab]);
+
   const navItems: { id: string; label: string; icon: any; badge?: number }[] = [
     { id: 'overview', label: t.ch_nav_overview, icon: LayoutDashboard },
     { id: 'activities', label: t.ch_nav_activities, icon: Calendar },
     { id: 'ward_problems', label: t.ch_nav_ward_problems, icon: HeartHandshake },
-    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Award },
+    {
+      id: 'certificates',
+      label: lang === 'gu' ? 'પ્રમાણપત્રો' : lang === 'hi' ? 'प्रमाणपत्र' : 'Certificates',
+      icon: Award,
+      badge: myCertificates.length > 0 ? myCertificates.length : undefined
+    },
+    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Sparkles },
     { id: 'community', label: t.ch_nav_community, icon: Building2 },
-    { id: 'analytics', label: t.ch_nav_analytics, icon: TrendingUp },
     { id: 'notifications', label: t.ch_nav_notifications, icon: Bell },
     { id: 'settings', label: t.ch_nav_settings, icon: Settings }
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
+    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
       {/* DESKTOP SIDEBAR (Visible on lg: screens) */}
       <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-[#e2e8f0] h-screen sticky top-0 z-30 select-none">
         {/* Brand Header */}
@@ -189,7 +217,13 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  if (item.id === 'activities') {
+                    setSelectedActivityId(null);
+                    setOpenCreateWizardDirectly(false);
+                  }
+                  setActiveTab(item.id);
+                }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition duration-150 ${
                   isActive
                     ? 'bg-[#095c54] text-white shadow-sm'
@@ -279,6 +313,10 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
                   <button
                     key={item.id}
                     onClick={() => {
+                      if (item.id === 'activities') {
+                        setSelectedActivityId(null);
+                        setOpenCreateWizardDirectly(false);
+                      }
                       setActiveTab(item.id);
                       setMobileDrawerOpen(false);
                     }}
@@ -407,8 +445,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
           </div>
         </header>
 
-        {/* TAB CONTENT CONTAINER (Padded pb-24 for mobile bottom bar) */}
-        <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 lg:pb-8">
+        {/* Continuous Location Monitoring & Offline Evidence Auto-Sync */}
+        <LocationMonitor roleLabel="Community Head" />
+        <OfflineSyncBanner onSynced={loadData} />
+
+        {/* TAB CONTENT CONTAINER (Compact mobile padding + bottom safe area) */}
+        <main className="flex-1 w-full max-w-6xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-6 pb-[max(5.5rem,calc(4.75rem+env(safe-area-inset-bottom,0px)))] lg:pb-8">
           {/* Tab 1: Overview */}
           {activeTab === 'overview' && (
             <CommunityOverview
@@ -441,6 +483,7 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
               initialOpenCreateWizard={openCreateWizardDirectly}
               initialLinkedProblem={linkedProblemForDrive}
               selectedActivityId={selectedActivityId || undefined}
+              onClearSelectedActivity={() => setSelectedActivityId(null)}
               initialSubTab={
                 activeTab === 'questions'
                   ? 'questions'
@@ -464,14 +507,21 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             />
           )}
 
+          {/* Tab: Certificates (QR-Verified NMC Drive Certificates Table with View, Print, Download) */}
+          {activeTab === 'certificates' && (
+            <CertificatesTableView
+              certificates={myCertificates}
+              loading={loadingCerts}
+              onRefresh={loadCertificates}
+              role="community_head"
+              title="Organization & Leadership Certificates"
+              subtitle="Official QR-verified certificates issued by Navsari Municipal Corporation for civic leadership and cleanliness drive execution."
+            />
+          )}
+
           {/* Tab: Posts & Cleanliness Spotlights */}
           {activeTab === 'posts' && (
             <RewardsRecognition lang={lang} />
-          )}
-
-          {/* Tab 4: Reports & Analytics */}
-          {activeTab === 'analytics' && (
-            <CommunityAnalytics summary={dashboardSummary} />
           )}
 
           {/* Tab 5: Notifications */}
@@ -486,17 +536,17 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
         </main>
 
         {/* Mobile Bottom Navigation (Visible on mobile/tablet <lg) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] py-1.5 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-          <div className="flex items-center justify-around max-w-md mx-auto">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] pt-1.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] px-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="grid grid-cols-5 gap-0.5 max-w-lg mx-auto">
             {/* 1. Overview */}
             <button
               onClick={() => setActiveTab('overview')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'overview' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'overview' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <LayoutDashboard className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'overview' ? 'font-black' : 'font-semibold'}`}>
+              <LayoutDashboard className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'overview' ? 'font-black' : 'font-semibold'}`}>
                 {t.ch_nav_overview}
               </span>
             </button>
@@ -504,12 +554,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 2. Activities */}
             <button
               onClick={() => setActiveTab('activities')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
-                activeTab === 'activities' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition relative min-w-0 ${
+                activeTab === 'activities' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Calendar className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'activities' ? 'font-black' : 'font-semibold'}`}>
+              <Calendar className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'activities' ? 'font-black' : 'font-semibold'}`}>
                 {t.ch_nav_activities}
               </span>
             </button>
@@ -517,12 +567,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 3. Ward Problems */}
             <button
               onClick={() => setActiveTab('ward_problems')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'ward_problems' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'ward_problems' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <HeartHandshake className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
+              <HeartHandshake className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'ward_problems' ? 'font-black' : 'font-semibold'}`}>
                 Problems
               </span>
             </button>
@@ -530,12 +580,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 4. Posts */}
             <button
               onClick={() => setActiveTab('posts')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'posts' ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'posts' ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Award className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'posts' ? 'font-black' : 'font-semibold'}`}>
+              <Award className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'posts' ? 'font-black' : 'font-semibold'}`}>
                 Posts
               </span>
             </button>
@@ -543,12 +593,12 @@ export const CommunityHeadDashboard: React.FC<CommunityHeadDashboardProps> = ({
             {/* 5. More (Drawer Trigger) */}
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                !['overview', 'activities', 'ward_problems', 'posts'].includes(activeTab) ? 'bg-emerald-50 text-[#095c54] font-black' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition min-w-0 ${
+                !['overview', 'activities', 'ward_problems', 'posts'].includes(activeTab) ? 'bg-emerald-50 text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Menu className="w-5 h-5" />
-              <span className="text-[10px] mt-0.5 font-semibold">
+              <Menu className="w-5 h-5 shrink-0" />
+              <span className="text-[10px] mt-0.5 truncate max-w-full font-semibold">
                 {t.nav_more}
               </span>
             </button>

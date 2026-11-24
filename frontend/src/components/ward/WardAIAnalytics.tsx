@@ -210,16 +210,9 @@ export const WardAIAnalytics: React.FC<WardAIAnalyticsProps> = ({ wardNumber }) 
       {/* 1. Header (Clean modern header - NO bulky boxes!) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e2e8f0] pb-5">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
-            <BrainCircuit className="w-3.5 h-3.5 text-emerald-600" />
-            AI Civic Intelligence & Dynamic Inference Engine · Ward {wardNumber}
-          </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0f2925] tracking-tight">
-            AI Analytics & Intelligence Hub
+            AI Analytics &amp; Intelligence Hub
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl font-medium">
-            Dynamic seasonal forecasts · Verified star performers recognition · Chronic repeat hotspot remediation
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto shrink-0">
@@ -258,7 +251,7 @@ export const WardAIAnalytics: React.FC<WardAIAnalyticsProps> = ({ wardNumber }) 
       )}
 
       {/* 2. Top Metric KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
         <div className="p-4 rounded-2xl bg-white border border-[#e2e8f0] shadow-2xs space-y-1.5 hover:border-emerald-200 transition">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Seasonal Risk Alerts</span>

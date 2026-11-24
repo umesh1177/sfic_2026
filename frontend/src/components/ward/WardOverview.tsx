@@ -52,7 +52,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
   const fetchSummary = async () => {
     setLoading(true);
     try {
-      const res = await api.getWardDashboardSummary();
+      const res = await api.getWardDashboardSummary(wardNumber);
       setSummary(res.data);
     } catch (err) {
       console.error('Failed to load ward dashboard summary:', err);
@@ -93,7 +93,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
   const criticalSlaCount = (m.overdue_complaints || 0) + (m.reopened_complaints || 0);
   const resolutionRate = m.total_complaints > 0
     ? Math.min(100, Math.round((m.closed_complaints / m.total_complaints) * 100))
-    : 92;
+    : 0;
 
   const keyKpiCards = [
     {
@@ -133,7 +133,7 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
       bg: 'bg-white hover:bg-blue-50/50',
       border: 'border-blue-200',
       badgeBg: 'bg-blue-100 text-blue-900 border-blue-300',
-      badge: `${f?.teams_working || 4} ${lang === 'gu' ? 'ટીમો સક્રિય' : lang === 'hi' ? 'टीमें सक्रिय' : 'Teams Active'}`,
+      badge: `${f?.teams_working ?? 0} ${lang === 'gu' ? 'ટીમો સક્રિય' : lang === 'hi' ? 'टीमें सक्रिय' : 'Teams Active'}`,
       icon: Wrench,
       onClick: () => onNavigateToCatalogue({ status: 'in_progress' })
     },
@@ -228,30 +228,30 @@ export const WardOverview: React.FC<WardOverviewProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
           {keyKpiCards.map(c => {
             const Icon = c.icon;
             return (
               <button
                 key={c.id}
                 onClick={c.onClick}
-                className={`p-4 sm:p-5 rounded-3xl text-left border ${c.bg} ${c.border} shadow-xs hover:shadow-md hover:scale-[1.01] transition duration-200 flex flex-col justify-between group relative overflow-hidden`}
+                className={`p-3 sm:p-5 rounded-2xl sm:rounded-3xl text-left border ${c.bg} ${c.border} shadow-xs hover:shadow-md hover:scale-[1.01] transition duration-200 flex flex-col justify-between group relative overflow-hidden`}
               >
-                <div className="flex items-center justify-between w-full">
-                  <div className={`p-2.5 rounded-2xl ${c.badgeBg}`}>
-                    <Icon className="w-5 h-5" />
+                <div className="flex items-center justify-between gap-1 w-full">
+                  <div className={`p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl ${c.badgeBg} shrink-0`}>
+                    <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
-                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${c.badgeBg}`}>
+                  <span className={`text-[9px] sm:text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border truncate max-w-[95px] sm:max-w-none ${c.badgeBg}`}>
                     {c.badge}
                   </span>
                 </div>
 
-                <div className="mt-3">
-                  <p className={`text-2xl sm:text-3xl font-black ${c.color} tracking-tight`}>{c.value}</p>
-                  <p className="text-xs sm:text-sm font-extrabold text-[#0f2925] mt-0.5">
+                <div className="mt-2 sm:mt-3">
+                  <p className={`text-xl sm:text-3xl font-black ${c.color} tracking-tight`}>{c.value}</p>
+                  <p className="text-[11px] sm:text-sm font-extrabold text-[#0f2925] mt-0.5 line-clamp-1">
                     {c.label}
                   </p>
-                  <p className="text-[11px] text-slate-500 font-medium mt-0.5 line-clamp-1">
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-0.5 line-clamp-1 hidden sm:block">
                     {c.desc}
                   </p>
                 </div>

@@ -68,41 +68,38 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
   const recentComplaints = data?.recent_complaints || [];
 
   return (
-    <div className="space-y-6">
-      {/* 1. Header Banner */}
-      <div className="bg-gradient-to-r from-[#095c54] via-[#0b6e65] to-[#043e39] text-white p-6 sm:p-8 rounded-3xl shadow-sm relative overflow-hidden">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
+      {/* 1. Header Banner (Compact & Mobile-First) */}
+      <div className="bg-gradient-to-r from-[#095c54] via-[#0b6e65] to-[#043e39] text-white p-4 sm:p-7 rounded-2xl sm:rounded-3xl shadow-sm relative overflow-hidden">
         <div className="absolute right-0 top-0 translate-x-12 -translate-y-8 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
         
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-xs font-black tracking-wide border border-emerald-400/30">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 relative z-10">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-[10px] sm:text-xs font-black tracking-wide border border-emerald-400/30">
                 NMC CENTRAL EXECUTIVE
               </span>
-              <span className="text-white/60 text-xs font-semibold">Navsari Municipal Corporation</span>
+              <span className="text-white/70 text-[11px] font-semibold hidden sm:inline">Navsari Municipal Corporation</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              City Administration & Governance Overview
+            <h1 className="text-lg sm:text-3xl font-black tracking-tight leading-snug">
+              City Administration &amp; Governance
             </h1>
-            <p className="text-white/80 text-sm font-medium mt-1 max-w-2xl">
-              Real-time monitoring of all 13 administrative wards, field workforce dispatch, geofence compliance, and SLA grievance resolution.
-            </p>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-center">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto shrink-0">
             <button
               onClick={fetchOverview}
               disabled={loading}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl font-bold text-xs flex items-center gap-2 transition"
+              className="px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh Data</span>
+              <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
             </button>
             <button
               onClick={() => onNavigateTab('boundaries')}
-              className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-[#095c54] font-black rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition"
+              className="px-3 sm:px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-[#095c54] font-black rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
             >
-              <MapPin className="w-3.5 h-3.5" />
+              <MapPin className="w-3.5 h-3.5 shrink-0" />
               <span>Set Geofence</span>
             </button>
           </div>
@@ -111,24 +108,24 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
 
       {/* 2. Flagged Officers SLA Alert Panel */}
       {flaggedOfficers.length > 0 && (
-        <div className="p-5 sm:p-6 bg-red-50 border-2 border-red-200 rounded-3xl shadow-xs">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-red-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <ShieldAlert className="w-5 h-5" />
+        <div className="p-3.5 sm:p-6 bg-red-50 border-2 border-red-200 rounded-2xl sm:rounded-3xl shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-red-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <div>
-                <h3 className="text-base font-black text-red-950">
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-black text-red-950 leading-snug">
                   {flaggedOfficers.length} Ward Officer{flaggedOfficers.length > 1 ? 's' : ''} Flagged for SLA Breach
                 </h3>
-                <p className="text-xs font-semibold text-red-700">
-                  Complaints exceeded maximum approval days without officer action. Urgent intervention required.
+                <p className="text-[11px] sm:text-xs font-semibold text-red-700">
+                  Exceeded Maximum Approval Days or Maximum Work Days limits.
                 </p>
               </div>
             </div>
             <button
               onClick={() => onNavigateTab('ward_officers')}
-              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0"
+              className="w-full sm:w-auto px-3.5 py-2 sm:py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shrink-0"
             >
               <span>Manage Officers</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -150,18 +147,29 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
                   Contact: <span className="text-[#095c54] font-black">{item.officer.phone}</span>
                 </div>
                 <div className="space-y-1.5 border-t border-red-100 pt-2">
-                  {item.overdue_complaints.slice(0, 2).map((oc: any, oIdx: number) => (
+                  {item.overdue_complaints.slice(0, 3).map((oc: any, oIdx: number) => (
                     <div key={oIdx} className="text-[11px] text-red-800 font-medium flex items-start gap-1.5">
                       <Clock className="w-3 h-3 text-red-500 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold">{oc.complaint_number}</span> ({oc.category_name}):{' '}
-                        <span className="font-black text-red-700">{oc.days_pending} days pending</span> (Max SLA: {oc.max_approval_days}d)
+                        <span
+                          className={`inline-block px-1.5 py-0.2 mr-1 rounded text-[9px] font-black uppercase ${
+                            oc.breach_type === 'work_sla'
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-amber-600 text-white'
+                          }`}
+                        >
+                          {oc.breach_type === 'work_sla' ? 'Work Days Breach' : 'Approval Breach'}
+                        </span>
+                        <span className="font-bold">{oc.complaint_number}</span> ({oc.category_name}
+                        {oc.team_leader_name ? ` · Leader: ${oc.team_leader_name}` : ''}):{' '}
+                        <span className="font-black text-red-700">{oc.days_pending} days</span>{' '}
+                        (Max: {oc.breach_type === 'work_sla' ? `${oc.max_work_days ?? 3}d work` : `${oc.max_approval_days ?? 2}d approval`})
                       </div>
                     </div>
                   ))}
-                  {item.overdue_complaints.length > 2 && (
+                  {item.overdue_complaints.length > 3 && (
                     <div className="text-[10px] font-bold text-red-600">
-                      +{item.overdue_complaints.length - 2} more overdue complaints
+                      +{item.overdue_complaints.length - 3} more overdue complaints
                     </div>
                   )}
                 </div>
@@ -298,31 +306,31 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
       </div>
 
       {/* 5. Category SLA & Distribution Preview */}
-      <div className="p-6 bg-white rounded-3xl border border-[#e2e8f0] shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-base font-black text-[#0f2925]">Complaint Categories & Defined SLAs</h3>
-            <p className="text-xs text-slate-500 font-semibold">
+      <div className="p-4 sm:p-6 bg-white rounded-2xl sm:rounded-3xl border border-[#e2e8f0] shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 sm:mb-4">
+          <div className="min-w-0">
+            <h3 className="text-sm sm:text-base font-black text-[#0f2925]">Complaint Categories &amp; SLAs</h3>
+            <p className="text-[11px] sm:text-xs text-slate-500 font-semibold hidden sm:block">
               Configured maximum approval and resolution days for each civic grievance type
             </p>
           </div>
           <button
             onClick={() => onNavigateTab('categories')}
-            className="text-xs font-black text-[#095c54] hover:underline flex items-center gap-1"
+            className="text-xs font-black text-[#095c54] hover:underline flex items-center gap-1 self-start sm:self-auto shrink-0"
           >
-            <span>Manage All Categories</span>
+            <span>Manage All</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
           {categories.slice(0, 5).map((cat: any) => (
-            <div key={cat.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 hover:border-[#095c54] transition">
+            <div key={cat.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:border-[#095c54] transition min-w-0">
               <div className="font-black text-xs text-[#0f2925] truncate">{cat.name}</div>
-              <div className="text-[11px] text-slate-500 font-medium truncate">{cat.name_gu}</div>
-              <div className="mt-3 pt-2 border-t border-slate-200/80 flex items-center justify-between text-[10px] font-bold text-slate-600">
-                <span>Approve: <strong className="text-[#095c54]">{cat.max_approval_days}d</strong></span>
-                <span>Solve: <strong className="text-[#095c54]">{cat.max_work_days}d</strong></span>
+              <div className="text-[10px] text-slate-500 font-medium truncate">{cat.name_gu}</div>
+              <div className="mt-2 pt-1.5 border-t border-slate-200/80 flex items-center justify-between text-[10px] font-bold text-slate-600">
+                <span>Appr: <strong className="text-[#095c54]">{cat.max_approval_days}d</strong></span>
+                <span>Work: <strong className="text-[#095c54]">{cat.max_work_days}d</strong></span>
               </div>
             </div>
           ))}
@@ -330,38 +338,44 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
       </div>
 
       {/* 6. Quick Action Navigation Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
         <div
           onClick={() => onNavigateTab('wards')}
-          className="p-5 rounded-3xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 hover:border-[#095c54] cursor-pointer transition shadow-2xs group"
+          className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 hover:border-[#095c54] cursor-pointer transition shadow-2xs group flex sm:block items-center gap-3"
         >
-          <Building2 className="w-7 h-7 text-[#095c54] mb-3 group-hover:scale-110 transition" />
-          <h4 className="font-black text-sm text-[#0f2925]">Ward Directory & Inspection</h4>
-          <p className="text-xs text-slate-600 font-medium mt-1">
-            View complete information for all 13 wards, locations, officers, and cleanliness ratings.
-          </p>
+          <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-[#095c54] sm:mb-3 shrink-0 group-hover:scale-110 transition" />
+          <div className="min-w-0">
+            <h4 className="font-black text-xs sm:text-sm text-[#0f2925]">Ward Directory &amp; Inspection</h4>
+            <p className="text-[11px] sm:text-xs text-slate-600 font-medium mt-0.5 line-clamp-2">
+              All 13 wards, officers, and cleanliness ratings.
+            </p>
+          </div>
         </div>
 
         <div
           onClick={() => onNavigateTab('boundaries')}
-          className="p-5 rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 hover:border-[#095c54] cursor-pointer transition shadow-2xs group"
+          className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 hover:border-[#095c54] cursor-pointer transition shadow-2xs group flex sm:block items-center gap-3"
         >
-          <MapPin className="w-7 h-7 text-emerald-700 mb-3 group-hover:scale-110 transition" />
-          <h4 className="font-black text-sm text-[#0f2925]">Geofence & Boundary Controls</h4>
-          <p className="text-xs text-slate-600 font-medium mt-1">
-            Draw and adjust outer Navsari city border line and ward zones on interactive map.
-          </p>
+          <MapPin className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-700 sm:mb-3 shrink-0 group-hover:scale-110 transition" />
+          <div className="min-w-0">
+            <h4 className="font-black text-xs sm:text-sm text-[#0f2925]">Geofence &amp; Boundary Controls</h4>
+            <p className="text-[11px] sm:text-xs text-slate-600 font-medium mt-0.5 line-clamp-2">
+              Draw Navsari city border &amp; ward zones on map.
+            </p>
+          </div>
         </div>
 
         <div
           onClick={() => onNavigateTab('staff')}
-          className="p-5 rounded-3xl bg-gradient-to-br from-sky-50 to-indigo-50 border border-sky-200 hover:border-indigo-600 cursor-pointer transition shadow-2xs group"
+          className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-sky-50 to-indigo-50 border border-sky-200 hover:border-indigo-600 cursor-pointer transition shadow-2xs group flex sm:block items-center gap-3"
         >
-          <Users className="w-7 h-7 text-indigo-700 mb-3 group-hover:scale-110 transition" />
-          <h4 className="font-black text-sm text-[#0f2925]">Staff & Personnel Registration</h4>
-          <p className="text-xs text-slate-600 font-medium mt-1">
-            Register new ward officers and field sanitation workers with username and password login.
-          </p>
+          <Users className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-700 sm:mb-3 shrink-0 group-hover:scale-110 transition" />
+          <div className="min-w-0">
+            <h4 className="font-black text-xs sm:text-sm text-[#0f2925]">Staff &amp; Personnel Registration</h4>
+            <p className="text-[11px] sm:text-xs text-slate-600 font-medium mt-0.5 line-clamp-2">
+              Register ward officers and sanitation workers.
+            </p>
+          </div>
         </div>
       </div>
     </div>

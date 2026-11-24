@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { CommunityActivity, ActivityRegistration } from '../../types/index.js';
 import { api } from '../../services/api.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 interface EventRegistrationsProps {
   activities: CommunityActivity[];
@@ -35,6 +36,8 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterAttendance, setFilterAttendance] = useState<string>('all');
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [regPage, setRegPage] = useState<number>(1);
+  const regPageSize = 8;
 
   useEffect(() => {
     if (selectedActivityId && selectedActivityId !== currentActivityId) {
@@ -119,11 +122,8 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-            Event Registrations & Attendance
+            Event Registrations &amp; Attendance
           </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Monitor registered citizens, mark ground attendance, and export official NMC reports.
-          </p>
         </div>
 
         <button
@@ -206,7 +206,7 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
           ))}
         </div>
 
-        <div className="relative min-w-[200px]">
+        <div className="relative w-full sm:w-auto sm:min-w-[200px]">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -237,7 +237,11 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
         <div className="space-y-3">
           {/* Mobile Card List (hidden on lg) */}
           <div className="lg:hidden space-y-3">
-            {filteredRegistrations.map((reg, idx) => (
+            {filteredRegistrations
+              .slice((regPage - 1) * regPageSize, regPage * regPageSize)
+              .map((reg, pageIdx) => {
+                const idx = (regPage - 1) * regPageSize + pageIdx;
+                return (
               <div
                 key={reg.id}
                 className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3"
@@ -297,7 +301,8 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+                );
+              })}
           </div>
 
           {/* Desktop Table View (visible on lg:) */}
@@ -313,7 +318,11 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredRegistrations.map((reg, idx) => (
+                {filteredRegistrations
+              .slice((regPage - 1) * regPageSize, regPage * regPageSize)
+              .map((reg, pageIdx) => {
+                const idx = (regPage - 1) * regPageSize + pageIdx;
+                return (
                   <tr key={reg.id} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-5 font-bold text-slate-900">
                       {reg.citizen_name || `Citizen Volunteer #${idx + 1}`}
@@ -369,9 +378,19 @@ export const EventRegistrations: React.FC<EventRegistrationsProps> = ({
                       </div>
                     </td>
                   </tr>
-                ))}
+                    );
+                  })}
               </tbody>
             </table>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <TablePagination
+              currentPage={regPage}
+              totalItems={filteredRegistrations.length}
+              pageSize={regPageSize}
+              onPageChange={setRegPage}
+              itemLabel="volunteers"
+            />
           </div>
         </div>
       )}

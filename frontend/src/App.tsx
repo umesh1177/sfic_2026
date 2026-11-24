@@ -4,7 +4,6 @@ import { DesktopSidebar } from './components/DesktopSidebar.js';
 import { MobileBottomNavigation } from './components/MobileBottomNavigation.js';
 import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
-import { NavsariMap } from './components/NavsariMap.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
@@ -17,9 +16,14 @@ import { CommunityHeadDashboard } from './components/community/CommunityHeadDash
 import { WorkerDashboard } from './components/worker/WorkerDashboard.js';
 import { WardOfficerDashboard } from './components/ward/WardOfficerDashboard.js';
 import { NMCAdminDashboard } from './components/admin/NMCAdminDashboard.js';
+import { LocationMonitor } from './components/common/LocationMonitor.js';
+import { OfflineSyncBanner } from './components/common/OfflineSyncBanner.js';
+import { PwaNotificationManager } from './components/common/PwaNotificationManager.js';
 import { api } from './services/api.js';
 import { Profile, AppNotification, ComplaintCategory, Complaint } from './types/index.js';
 import { Language, translations } from './i18n/translations.js';
+import { startDomTranslationSync } from './i18n/domTranslator.js';
+import { registerSwachhServiceWorker } from './services/pwaNotifications.js';
 import { Phone, Mail, MapPin, Sparkles, Shield, Heart } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -85,7 +89,14 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadInitialData();
+    registerSwachhServiceWorker();
   }, []);
+
+  // Synchronize full-app UI chrome translation (EN / ગુજરાતી / हिन्दी) while preserving user-submitted content
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    return startDomTranslationSync(lang);
+  }, [lang, viewMode, currentTab, user?.id, isInitializing]);
 
   const handleAuthSuccess = (profile: Profile) => {
     setUser(profile);
@@ -169,66 +180,81 @@ export const App: React.FC = () => {
   // 3. Community Head Dashboard View
   if (viewMode === 'community_head') {
     return (
-      <CommunityHeadDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-        onSwitchToCitizenView={() => {
-          setViewMode('citizen');
-          setCurrentTab('home');
-        }}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <CommunityHeadDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+          onSwitchToCitizenView={() => {
+            setViewMode('citizen');
+            setCurrentTab('home');
+          }}
+        />
+      </>
     );
   }
 
   // 4. Municipal Worker Dashboard View
   if (viewMode === 'worker') {
     return (
-      <WorkerDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-        onSwitchToCitizenView={() => {
-          setViewMode('citizen');
-          setCurrentTab('home');
-        }}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <WorkerDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+          onSwitchToCitizenView={() => {
+            setViewMode('citizen');
+            setCurrentTab('home');
+          }}
+        />
+      </>
     );
   }
 
-  // 5. Ward Officer Dashboard View (Ward 3)
+  // 5. Ward Officer Dashboard View
   if (viewMode === 'ward_officer') {
     return (
-      <WardOfficerDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-        onSwitchToCitizenView={() => {
-          setViewMode('citizen');
-          setCurrentTab('home');
-        }}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <WardOfficerDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+          onSwitchToCitizenView={() => {
+            setViewMode('citizen');
+            setCurrentTab('home');
+          }}
+        />
+      </>
     );
   }
 
   // 6. NMC Central Admin Dashboard View
   if (viewMode === 'nmc_admin') {
     return (
-      <NMCAdminDashboard
-        user={user}
-        lang={lang}
-        setLang={setLang}
-        onLogout={handleLogout}
-      />
+      <>
+        <PwaNotificationManager userId={user?.id} />
+        <NMCAdminDashboard
+          user={user}
+          lang={lang}
+          setLang={setLang}
+          onLogout={handleLogout}
+        />
+      </>
     );
   }
 
   // 4. Authenticated Citizen Application
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
+    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
+      {/* Native Mobile PWA Push Notifications */}
+      <PwaNotificationManager userId={user?.id} onNewNotifications={setNotifications} />
+
       {/* Offline Connectivity Banner */}
       <PwaOfflineBanner />
 
@@ -283,8 +309,12 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* Content Container (Mobile-first padding with safe-area support) */}
-        <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-8 pb-[max(6.5rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))] lg:pb-12">
+        {/* Continuous Location Monitoring & Offline Auto-Sync for Citizens */}
+        <LocationMonitor roleLabel="Citizen" />
+        <OfflineSyncBanner onSynced={loadInitialData} />
+
+        {/* Content Container (Mobile-first compact padding with safe-area support) */}
+        <main className="flex-1 w-full max-w-6xl mx-auto px-2.5 sm:px-6 lg:px-8 py-2.5 sm:py-6 pb-[max(5.5rem,calc(4.75rem+env(safe-area-inset-bottom,0px)))] lg:pb-10">
           {/* Direct Full-Page View: Report an Issue (NO modal) */}
           {currentTab === 'report' && (
             <ReportIssuePage
@@ -311,10 +341,6 @@ export const App: React.FC = () => {
               onOpenReport={() => setCurrentTab('report')}
               lang={lang}
             />
-          )}
-
-          {currentTab === 'map' && (
-            <NavsariMap categories={categories} lang={lang} />
           )}
 
           {currentTab === 'drives' && (

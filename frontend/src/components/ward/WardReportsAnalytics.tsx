@@ -12,11 +12,14 @@ import {
   Sparkles
 } from 'lucide-react';
 import { api } from '../../services/api.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 export const WardReportsAnalytics: React.FC = () => {
   const [reportType, setReportType] = useState<'complaints' | 'workers' | 'teams' | 'community'>('complaints');
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [reportPage, setReportPage] = useState<number>(1);
+  const reportPageSize = 6;
 
   const fetchReport = async () => {
     setLoading(true);
@@ -138,7 +141,9 @@ export const WardReportsAnalytics: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {reportData.breakdowns.map((b: any, idx: number) => (
+                {reportData.breakdowns
+                  .slice((reportPage - 1) * reportPageSize, reportPage * reportPageSize)
+                  .map((b: any, idx: number) => (
                   <tr key={idx} className="hover:bg-slate-50">
                     <td className="py-3 font-bold text-[#0f2925]">{b.category}</td>
                     <td className="py-3">{b.count}</td>
@@ -149,6 +154,13 @@ export const WardReportsAnalytics: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={reportPage}
+            totalItems={reportData.breakdowns.length}
+            pageSize={reportPageSize}
+            onPageChange={setReportPage}
+            itemLabel="categories"
+          />
         </div>
       )}
     </div>

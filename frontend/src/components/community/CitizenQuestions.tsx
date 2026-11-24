@@ -182,11 +182,8 @@ export const CitizenQuestions: React.FC<CitizenQuestionsProps> = ({ activities }
       {/* Header */}
       <div>
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-          Citizen Questions & AI Support Assistant
+          Citizen Questions &amp; AI Support Assistant
         </h1>
-        <p className="text-xs text-slate-500 font-medium">
-          All citizen inquiries regarding cleanliness drives route directly here. AI prepares verified answers for Community Head review.
-        </p>
       </div>
 
       {successBanner && (
@@ -219,7 +216,7 @@ export const CitizenQuestions: React.FC<CitizenQuestionsProps> = ({ activities }
           ))}
         </div>
 
-        <div className="relative min-w-[200px]">
+        <div className="relative w-full sm:w-auto sm:min-w-[200px]">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"

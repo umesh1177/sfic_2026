@@ -18,6 +18,8 @@ import { api } from '../../services/api.js';
 
 export const WorkAssignmentsView: React.FC = () => {
   const [assignments, setAssignments] = useState<any[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -26,15 +28,30 @@ export const WorkAssignmentsView: React.FC = () => {
   const [newCategory, setNewCategory] = useState<string>('street_cleaning');
   const [newLocation, setNewLocation] = useState<string>('North Lake Promenade, Dudhiya Talao');
   const [newPriority, setNewPriority] = useState<string>('medium');
-  const [newLeaderId, setNewLeaderId] = useState<string>('f2000000-0000-0000-0000-000000000001');
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [newLeaderId, setNewLeaderId] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [actionMessage, setActionMessage] = useState<string>('');
 
   const fetchAssignments = async () => {
     setLoading(true);
     try {
-      const res = await api.getWardAssignments();
-      setAssignments(res.data || []);
+      const [assignRes, teamsRes, workersRes] = await Promise.all([
+        api.getWardAssignments(),
+        api.getWardTeams().catch(() => ({ data: [] })),
+        api.getWardWorkers().catch(() => ({ data: [] }))
+      ]);
+      setAssignments(assignRes.data || []);
+      const fetchedTeams = teamsRes.data || [];
+      const fetchedWorkers = workersRes.data || [];
+      setTeams(fetchedTeams);
+      setWorkers(fetchedWorkers);
+      if (fetchedTeams.length > 0 && !selectedTeamId) {
+        setSelectedTeamId(fetchedTeams[0].id);
+        setNewLeaderId(fetchedTeams[0].temporary_leader_id || '');
+      } else if (fetchedWorkers.length > 0 && !newLeaderId) {
+        setNewLeaderId(fetchedWorkers[0].id);
+      }
     } catch (err) {
       console.error('Failed to load assignments:', err);
     } finally {
@@ -48,30 +65,25 @@ export const WorkAssignmentsView: React.FC = () => {
 
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle) return;
+    if (!newTitle.trim()) return;
     setSubmitting(true);
     try {
-      const leaderName = newLeaderId === 'f2000000-0000-0000-0000-000000000001' ? 'Kanti Solanki' : 'Suresh Vaghela';
-      const created = {
-        id: `tsk-nav-2026-${Date.now()}`,
-        task_code: `TSK-NAV-2026-${Math.floor(100 + Math.random() * 900)}`,
-        title: newTitle,
+      const team = teams.find(t => t.id === selectedTeamId);
+      const res = await api.createWardAssignment({
+        title: newTitle.trim(),
         category: newCategory,
+        location_name: newLocation.trim(),
         priority: newPriority,
-        ward_number: 3,
-        location_name: newLocation,
-        team_leader_name: leaderName,
-        team_leader_id: newLeaderId,
-        team_members_count: 2,
-        scheduled_date: new Date().toISOString().split('T')[0],
-        status: 'assigned',
-        attendance_status: 'Awaiting Check-in',
-        evidence_status: 'Not Uploaded'
-      };
-      setAssignments([created, ...assignments]);
+        team_id: team?.id,
+        worker_ids: team ? team.worker_ids : (newLeaderId ? [newLeaderId] : []),
+        temporary_leader_id: newLeaderId || team?.temporary_leader_id
+      });
       setShowCreateModal(false);
       setNewTitle('');
-      setActionMessage('New work assignment successfully created and dispatched to field worker team.');
+      setActionMessage(res.message || 'New work assignment dispatched to field worker team.');
+      await fetchAssignments();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create work assignment');
     } finally {
       setSubmitting(false);
     }
@@ -99,9 +111,6 @@ export const WorkAssignmentsView: React.FC = () => {
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
             Work Assignments Management
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Daily Municipal Field Deployments · Ward 3 Tasks & Schedules
-          </p>
         </div>
 
         <button
@@ -311,6 +320,30 @@ export const WorkAssignmentsView: React.FC = () => {
                 </div>
               </div>
 
+              {teams.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Assign Sanitation Squad / Team
+                  </label>
+                  <select
+                    value={selectedTeamId}
+                    onChange={e => {
+                      setSelectedTeamId(e.target.value);
+                      const t = teams.find(tm => tm.id === e.target.value);
+                      if (t?.temporary_leader_id) setNewLeaderId(t.temporary_leader_id);
+                    }}
+                    className="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="">-- Individual Worker (No Team) --</option>
+                    {teams.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.team_name} ({(t.worker_ids || []).length} members · Leader: {t.temporary_leader_name || 'Assigned'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Designate Temporary Team Leader (Task-Specific Authority)
@@ -320,8 +353,15 @@ export const WorkAssignmentsView: React.FC = () => {
                   onChange={e => setNewLeaderId(e.target.value)}
                   className="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 bg-white"
                 >
-                  <option value="f2000000-0000-0000-0000-000000000001">Kanti Solanki (Sanitation Worker)</option>
-                  <option value="f2000000-0000-0000-0000-000000000002">Suresh Vaghela (Waste Collection Worker)</option>
+                  {workers.length === 0 ? (
+                    <option value="">No workers available in ward</option>
+                  ) : (
+                    workers.map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.full_name} ({w.designation || 'Sanitation Worker'} · {w.worker_code})
+                      </option>
+                    ))
+                  )}
                 </select>
                 <p className="text-[10px] text-slate-500 mt-1 italic">
                   Note: Leadership is temporary for this task only. No permanent leader role exists.

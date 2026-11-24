@@ -33,7 +33,8 @@ import { AssignWorkView } from './AssignWorkView.js';
 import { WorkHistoryView } from './WorkHistoryView.js';
 import { WorkerNotifications } from './WorkerNotifications.js';
 import { WorkerProfileView } from './WorkerProfileView.js';
-import { RewardsRecognition } from '../RewardsRecognition.js';
+import { LocationMonitor } from '../common/LocationMonitor.js';
+import { OfflineSyncBanner } from '../common/OfflineSyncBanner.js';
 
 interface WorkerDashboardProps {
   user: Profile;
@@ -111,41 +112,50 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const isLeader = assignments.some(a => a.is_temporary_leader);
+  const isLeader = assignments.some(a => a.is_temporary_leader && a.status !== 'verified_complete' && a.status !== 'closed');
+  const displayName = workerProfile?.full_name || user.full_name || 'Field Worker';
+  const displayWard = workerProfile?.ward_number || (user as any)?.ward_number || 3;
+  const displayDesignation = workerProfile?.designation_name || 'Sanitation Worker';
+  const displayInitials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .map(n => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'FW';
 
-  // Main Navigation Tabs
+  // Dynamic 5 Tabs in Main Navigation
   const navItems = [
     { id: 'home', label: t.wrk_nav_home, icon: LayoutDashboard },
     {
       id: 'assign_work',
       label: t.wrk_nav_assign_work,
       icon: Briefcase,
-      badge: isLeader ? '👑 Leader' : undefined
+      badge: isLeader ? 'Leader' : undefined
     },
     { id: 'work_history', label: t.wrk_nav_work_history, icon: FileCheck2 },
-    { id: 'posts', label: lang === 'gu' ? 'સ્વચ્છતા પોસ્ટ્સ' : lang === 'hi' ? 'स्वच्छता पोस्ट्स' : 'Posts & Spotlights', icon: Sparkles },
     { id: 'notifications', label: t.wrk_nav_notifications, icon: Bell },
     { id: 'profile_settings', label: t.wrk_nav_profile, icon: User }
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54]">
+    <div className="min-h-screen bg-[#f7f9f8] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
       {/* 1. DESKTOP SIDEBAR */}
-      <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-[#e2e8f0] h-screen sticky top-0 z-30 select-none">
+      <aside className="hidden lg:flex flex-col w-68 bg-white border-r border-slate-200/80 h-screen sticky top-0 z-30 select-none">
         {/* Brand Header */}
-        <div className="p-5 border-b border-[#f1f5f9] flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="shrink-0 transition-transform hover:scale-105 duration-200">
-              <SwachhSetuIcon size={38} />
+            <div className="shrink-0">
+              <SwachhSetuIcon size={36} />
             </div>
             <div className="leading-tight min-w-0">
               <div className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="font-black text-[#095c54] text-base tracking-tight">{t.app_title}</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[#dcfce7] text-[#065f46] border border-[#86efac]">
+                <span className="font-bold text-[#0f2925] text-base tracking-tight">{t.app_title}</span>
+                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-[#f0f7f5] text-[#095c54] border border-[#cde6df]">
                   {t.nmc_label}
                 </span>
               </div>
-              <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5 whitespace-nowrap">
                 {t.field_worker_portal}
               </p>
             </div>
@@ -153,7 +163,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
         </div>
 
         {/* 5 Navigation Tabs List */}
-        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -161,19 +171,19 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               <button
                 key={item.id}
                 onClick={() => handleNavigateTab(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition duration-150 ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-[13px] transition duration-150 ${
                   isActive
-                    ? 'bg-[#095c54] text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    ? 'bg-[#095c54] text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100/80 hover:text-[#0f2925]'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-300' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    isActive ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-900'
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-[#f0f7f5] text-[#095c54] border border-[#cde6df]'
                   }`}>
                     {item.badge}
                   </span>
@@ -184,24 +194,24 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
         </nav>
 
         {/* Sidebar Footer: Identity Box & Logout */}
-        <div className="p-3.5 border-t border-[#f1f5f9] space-y-2.5">
-          <div className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-[#e6f4f1] border border-[#99f6e4] shadow-2xs">
-            <div className="w-10 h-10 rounded-xl bg-[#095c54] text-white flex items-center justify-center shrink-0 shadow-xs">
-              <ShieldCheck className="w-5 h-5 text-emerald-300" />
+        <div className="p-3.5 border-t border-slate-100 space-y-2.5">
+          <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#f0f7f5] border border-[#cde6df]">
+            <div className="w-9 h-9 rounded-lg bg-[#095c54] text-white flex items-center justify-center shrink-0 font-bold text-xs">
+              {displayInitials}
             </div>
             <div className="min-w-0 leading-tight">
-              <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
-                {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
+              <h4 className="text-xs font-bold text-[#0f2925] truncate">
+                {displayName}
               </h4>
-              <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
-                {workerProfile?.designation_name || 'Sanitation Worker'} · Ward {workerProfile?.ward_number || 3}
+              <p className="text-[11px] font-medium text-[#095c54] truncate mt-0.5">
+                {displayDesignation} · Ward {displayWard}
               </p>
             </div>
           </div>
 
           <button
             onClick={onLogout}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 text-xs font-bold transition border border-slate-100"
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-slate-600 hover:text-rose-700 hover:bg-rose-50 text-xs font-semibold transition border border-slate-200/80"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>{t.nav_logout}</span>
@@ -212,37 +222,37 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
       {/* 2. Main Content Container */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-[#e2e8f0] px-3.5 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <header className="min-h-[3.75rem] bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 py-2 flex items-center justify-between gap-2 sticky top-0 z-20">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 shrink-0"
+              className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 active:scale-95 shrink-0 transition"
               aria-label="Open menu"
             >
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <div className="leading-tight truncate">
-                <span className="text-xs sm:text-sm font-black text-[#0f2925] tracking-tight block sm:inline truncate">
-                  NMC · Field Operations
+              <span className="w-2 h-2 rounded-full bg-[#095c54] shrink-0" />
+              <div className="leading-tight min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-[#0f2925] tracking-tight block truncate">
+                  NMC Field Operations
                 </span>
-                <span className="text-[11px] text-slate-500 font-bold hidden md:inline ml-2">
-                  · Ward {workerProfile?.worker_code?.includes('008') ? 8 : 3}
+                <span className="text-[10px] sm:text-xs text-slate-500 font-medium block sm:inline">
+                  Ward {displayWard}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {/* Language Switcher */}
-            <div className="flex items-center bg-slate-100 p-0.5 sm:p-1 rounded-xl text-xs font-bold">
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[10px] sm:text-xs font-semibold">
               {(['en', 'gu', 'hi'] as Language[]).map(l => (
                 <button
                   key={l}
                   onClick={() => setLang(l)}
-                  className={`px-2 py-0.5 sm:py-1 rounded-lg uppercase text-[10px] sm:text-[11px] font-black transition ${
-                    lang === l ? 'bg-[#095c54] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-900'
+                  className={`px-1.5 sm:px-2 py-1 rounded-md uppercase text-[10px] font-bold transition ${
+                    lang === l ? 'bg-white text-[#095c54] shadow-2xs' : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   {l === 'en' ? 'EN' : l === 'gu' ? 'ગુજ' : 'हिं'}
@@ -253,35 +263,38 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             {/* Notification Bell */}
             <button
               onClick={() => handleNavigateTab('notifications')}
-              className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 relative transition"
+              className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 relative transition border border-transparent hover:border-slate-200 shrink-0"
               title="Notifications"
             >
-              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+              <Bell className="w-4 h-4" />
             </button>
 
             {/* Profile Pill */}
             <div
               onClick={() => handleNavigateTab('profile_settings')}
-              className="flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl bg-[#e6f4f1] border border-[#b8e0d7] cursor-pointer hover:border-[#095c54] transition shadow-xs"
+              className="flex items-center gap-2 px-1.5 sm:px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200/80 cursor-pointer hover:border-[#095c54]/40 transition shrink-0"
             >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
-                {workerProfile?.full_name ? workerProfile.full_name.slice(0, 2).toUpperCase() : 'KW'}
+              <div className="w-7 h-7 rounded-lg bg-[#095c54] text-white flex items-center justify-center font-bold text-[11px] shrink-0">
+                {displayInitials}
               </div>
               <div className="text-left leading-tight hidden sm:block">
-                <span className="block text-xs font-black text-[#095c54] truncate max-w-[110px]">
-                  {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
+                <span className="block text-xs font-bold text-[#0f2925] truncate max-w-[120px]">
+                  {displayName}
                 </span>
-                <span className="block text-[10px] font-bold text-[#047857] truncate">
-                  🛠️ {workerProfile?.designation_name || 'Worker'}
+                <span className="block text-[10px] font-medium text-slate-500 truncate">
+                  {displayDesignation}
                 </span>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Dynamic Main Body (Padded pb-24 for mobile bottom bar) */}
-        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24 lg:pb-8 space-y-6">
+        {/* Continuous Location Monitoring & Offline Evidence Auto-Sync */}
+        <LocationMonitor roleLabel="Sanitation Worker" />
+        <OfflineSyncBanner onSynced={loadWorkerData} />
+
+        {/* Dynamic Main Body (Safe-area bottom padding for mobile nav) */}
+        <main className="flex-1 px-3 py-3.5 sm:p-6 lg:p-7 max-w-6xl w-full mx-auto pb-[max(6.25rem,calc(5.25rem+env(safe-area-inset-bottom,0px)))] lg:pb-8 space-y-5 min-w-0">
           {activeTab === 'home' && (
             <WorkerOverview
               profile={workerProfile}
@@ -294,9 +307,12 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
 
           {activeTab === 'assign_work' && (
             <AssignWorkView
-              assignments={assignments}
+              assignments={assignments.filter(
+                a => !['verified_complete', 'closed', 'resolved'].includes(String(a.status || '').toLowerCase())
+              )}
               profile={workerProfile}
               lang={lang}
+              initialTaskId={targetTaskId}
               onRefresh={loadWorkerData}
             />
           )}
@@ -307,10 +323,6 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
               profile={workerProfile}
               lang={lang}
             />
-          )}
-
-          {activeTab === 'posts' && (
-            <RewardsRecognition lang={lang} />
           )}
 
           {activeTab === 'notifications' && (
@@ -330,17 +342,17 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
         </main>
 
         {/* Mobile Bottom Navigation (Visible on mobile/tablet <lg) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] py-1.5 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-          <div className="flex items-center justify-around max-w-md mx-auto">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#e2e8f0] pt-1.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] px-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="grid grid-cols-5 gap-0.5 max-w-lg mx-auto">
             {/* 1. Home */}
             <button
               onClick={() => handleNavigateTab('home')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'home' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'home' ? 'bg-[#f0f7f5] text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <LayoutDashboard className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'home' ? 'font-black' : 'font-semibold'}`}>
+              <LayoutDashboard className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'home' ? 'font-black' : 'font-semibold'}`}>
                 {t.wrk_nav_home}
               </span>
             </button>
@@ -348,19 +360,19 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             {/* 2. Assign Work */}
             <button
               onClick={() => handleNavigateTab('assign_work')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
-                activeTab === 'assign_work' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition relative min-w-0 ${
+                activeTab === 'assign_work' ? 'bg-[#f0f7f5] text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <div className="relative">
-                <Briefcase className="w-5 h-5" />
+                <Briefcase className="w-5 h-5 shrink-0" />
                 {isLeader && (
                   <span className="absolute -top-1 -right-2 text-[8px] bg-amber-400 text-slate-950 font-black px-1 rounded-full">
                     👑
                   </span>
                 )}
               </div>
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'assign_work' ? 'font-black' : 'font-semibold'}`}>
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'assign_work' ? 'font-black' : 'font-semibold'}`}>
                 {t.wrk_nav_assign_work}
               </span>
             </button>
@@ -368,12 +380,12 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             {/* 3. History */}
             <button
               onClick={() => handleNavigateTab('work_history')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'work_history' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'work_history' ? 'bg-[#f0f7f5] text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <FileCheck2 className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'work_history' ? 'font-black' : 'font-semibold'}`}>
+              <FileCheck2 className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'work_history' ? 'font-black' : 'font-semibold'}`}>
                 {t.wrk_nav_work_history}
               </span>
             </button>
@@ -381,12 +393,12 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             {/* 4. Notifications */}
             <button
               onClick={() => handleNavigateTab('notifications')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition relative ${
-                activeTab === 'notifications' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition relative min-w-0 ${
+                activeTab === 'notifications' ? 'bg-[#f0f7f5] text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Bell className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'notifications' ? 'font-black' : 'font-semibold'}`}>
+              <Bell className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'notifications' ? 'font-black' : 'font-semibold'}`}>
                 {t.wrk_nav_notifications}
               </span>
             </button>
@@ -394,12 +406,12 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             {/* 5. Profile */}
             <button
               onClick={() => handleNavigateTab('profile_settings')}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-                activeTab === 'profile_settings' ? 'text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
+              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition min-w-0 ${
+                activeTab === 'profile_settings' ? 'bg-[#f0f7f5] text-[#095c54]' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <User className="w-5 h-5" />
-              <span className={`text-[10px] mt-0.5 ${activeTab === 'profile_settings' ? 'font-black' : 'font-semibold'}`}>
+              <User className="w-5 h-5 shrink-0" />
+              <span className={`text-[10px] mt-0.5 truncate max-w-full ${activeTab === 'profile_settings' ? 'font-black' : 'font-semibold'}`}>
                 {t.wrk_nav_profile}
               </span>
             </button>
@@ -415,7 +427,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
             onClick={() => setMobileDrawerOpen(false)}
           />
 
-          <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-2xl z-50 flex flex-col justify-between p-4 overflow-y-auto animate-fadeIn">
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white shadow-2xl z-50 flex flex-col justify-between p-4 overflow-y-auto animate-fadeIn">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -471,10 +483,10 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 </div>
                 <div className="min-w-0 leading-tight">
                   <h4 className="text-xs sm:text-sm font-black text-[#0f2925] truncate">
-                    {workerProfile?.full_name || user.full_name || 'Kanti Solanki'}
+                    {displayName}
                   </h4>
                   <p className="text-[11px] font-bold text-[#0d9488] truncate mt-0.5">
-                    {workerProfile?.designation_name || 'Sanitation Worker'} · Ward {workerProfile?.ward_number || 3}
+                    {displayDesignation} · Ward {displayWard}
                   </p>
                 </div>
               </div>

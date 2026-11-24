@@ -73,9 +73,6 @@ export const CommunityNotifications: React.FC<CommunityNotificationsProps> = ({ 
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
             Community Head Notifications
           </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Official municipal approvals, citizen question alerts, and registration updates.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

@@ -347,7 +347,7 @@ export const ComplaintDetailsModal: React.FC<ComplaintDetailsModalProps> = ({
           {/* TAB 1: COMPLAINT OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
                 <div className="p-4 rounded-2xl bg-white border border-[#e2e8f0]">
                   <p className="text-[11px] font-bold text-slate-500 uppercase">Category</p>
                   <p className="text-sm font-extrabold text-[#0f2925] mt-1">{overview.category_name}</p>

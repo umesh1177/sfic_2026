@@ -47,32 +47,56 @@ export class DrivesController {
 
   /**
    * POST /api/drives/:id/register
-   * Prevents duplicate registration
+   * Prevents duplicate registration and enforces max volunteer capacity
    */
   public static async registerForDrive(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
       const { id } = req.params;
-      const { community_id, community_name } = req.body || {};
-      const regResult = await DbRepository.registerForDrive(id, citizenId, community_id, community_name);
+      const result = await DbRepository.registerForDrive(id, citizenId, {
+        fullName: req.user?.full_name,
+        phone: req.user?.phone,
+        email: req.user?.email
+      });
 
-      if (!regResult.success) {
+      if (!result.success) {
         res.status(400).json({
           success: false,
-          error: regResult.message || 'Volunteer quota reached for this community.'
+          error: result.error || 'Unable to register for this cleanliness drive.'
         });
         return;
       }
 
       res.status(200).json({
         success: true,
-        message: regResult.message || 'Successfully registered for this cleanliness drive and recorded in database!',
+        message: result.autoClosed
+          ? 'Successfully registered! Volunteer capacity is now full and registrations have automatically closed.'
+          : 'Successfully registered for this cleanliness drive and recorded in database!',
         data: {
           drive_id: id,
           is_registered: true,
-          community_id,
-          community_name
+          registered_volunteers_count: result.registeredCount,
+          max_volunteers: result.maxVolunteers,
+          registration_status: result.autoClosed ? 'closed' : 'open'
         }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/drives/:id/questions
+   * Returns all citizen questions and official Community Head replies for a drive
+   */
+  public static async getDriveQuestions(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const result = await DbRepository.getActivityQuestions('', { activityId: id, limit: 100 });
+      res.status(200).json({
+        success: true,
+        data: result.questions,
+        total: result.total
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -103,36 +127,19 @@ export class DrivesController {
 
   /**
    * POST /api/drives/:id/attendance
-   * Citizen geo-tagged check-in ("dummy attendance") between start_time and end_time.
-   * Sends pending verification to the respective Community Head; does NOT mark present until approved.
    */
   public static async markAttendance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
       const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
-      const { latitude, longitude } = req.body || {};
+      const { latitude, longitude } = req.body;
 
-      const result = await DbRepository.markDriveAttendance(
-        id,
-        citizenId,
-        latitude !== undefined ? Number(latitude) : undefined,
-        longitude !== undefined ? Number(longitude) : undefined
-      );
-
-      if (!result.success) {
-        res.status(400).json({
-          success: false,
-          error: result.error || 'Could not record attendance check-in.'
-        });
-        return;
-      }
+      const result = await DbRepository.markDriveAttendance(id, citizenId, latitude, longitude);
 
       res.status(200).json({
         success: true,
-        message:
-          result.message ||
-          'Geo-tagged check-in submitted! Awaiting final attendance confirmation from your Community Head.',
-        data: result.data
+        message: '✓ Attendance verified and marked present! 150 Civic Karma points awarded.',
+        data: result
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

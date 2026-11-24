@@ -35,29 +35,29 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. Official Municipal ID Card Banner (Citizen Dashboard Style) */}
-      <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#e2e8f0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#095c54] to-[#10b981] flex items-center justify-center font-extrabold text-2xl text-white shadow-md shrink-0">
+      {/* 1. Official Municipal ID Card Banner */}
+      <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#e2e8f0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6">
+        <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 min-w-0">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-[#095c54] to-[#10b981] flex items-center justify-center font-extrabold text-xl sm:text-2xl text-white shadow-md shrink-0">
             {profile?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'WR'}
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black text-[#0f2925] tracking-tight">{profile?.full_name || 'Sanitation Worker'}</h2>
-              <span className="bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0] text-xs px-2.5 py-0.5 rounded-full font-mono font-bold">
+              <h2 className="text-lg sm:text-2xl font-black text-[#0f2925] tracking-tight break-words">{profile?.full_name || 'Sanitation Worker'}</h2>
+              <span className="bg-[#ecfdf5] text-[#047857] border border-[#a7f3d0] text-[11px] sm:text-xs px-2.5 py-0.5 rounded-full font-mono font-bold">
                 {profile?.worker_code || 'NMC-WRK'}
               </span>
             </div>
-            <p className="text-[#64748b] text-sm mt-0.5 font-medium">{profile?.designation_name || 'Sanitation Worker'}</p>
-            <p className="text-xs text-[#047857] mt-1 flex items-center gap-1 font-bold">
-              <ShieldCheck className="w-3.5 h-3.5" />
+            <p className="text-[#64748b] text-xs sm:text-sm mt-0.5 font-medium">{profile?.designation_name || 'Sanitation Worker'}</p>
+            <p className="text-[11px] sm:text-xs text-[#047857] mt-1 flex items-center gap-1 font-bold">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Navsari Municipal Corporation · Verified Field Personnel</span>
             </p>
           </div>
         </div>
 
         {/* Quick ID Badge Chip */}
-        <div className="bg-[#f8faf9] border border-[#e2e8f0] p-3 rounded-2xl flex items-center gap-3 shrink-0">
+        <div className="bg-[#f8faf9] border border-[#e2e8f0] p-3 rounded-2xl flex items-center gap-3 shrink-0 w-full sm:w-auto">
           <QrCode className="w-10 h-10 text-[#095c54]" />
           <div className="text-xs">
             <span className="text-[#64748b] block font-medium">Service ID:</span>
@@ -108,7 +108,8 @@ export const WorkerProfileView: React.FC<WorkerProfileViewProps> = ({
             <div className="p-3.5 bg-[#f8faf9] rounded-2xl border border-[#e2e8f0]">
               <span className="text-[#64748b] block font-medium">Date of Joining:</span>
               <span className="font-black text-[#0f2925] block mt-1 text-sm">
-                {profile?.joining_date || '2026-01-01'} ({profile?.experience_years ? `${profile.experience_years} Years Experience` : 'Active Service'})
+                {profile?.joining_date || new Date().toISOString().split('T')[0]}
+                {profile?.experience_years ? ` (${profile.experience_years} Years Experience)` : ''}
               </span>
             </div>
 

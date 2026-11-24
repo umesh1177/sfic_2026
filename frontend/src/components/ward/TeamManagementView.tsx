@@ -17,10 +17,14 @@ import {
   Trash2
 } from 'lucide-react';
 import { api } from '../../services/api.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 export const TeamManagementView: React.FC = () => {
   const [workers, setWorkers] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
+  const [teamsPage, setTeamsPage] = useState<number>(1);
+  const [rosterPage, setRosterPage] = useState<number>(1);
+  const pageSize = 6;
   const [loading, setLoading] = useState<boolean>(true);
   const [actionSuccess, setActionSuccess] = useState<string>('');
   const [actionError, setActionError] = useState<string>('');
@@ -168,23 +172,32 @@ export const TeamManagementView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
-            Team Management & Temporary Leadership
+            Team Management &amp; Temporary Leadership
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Form Field Units · Select Temporary Team Leaders for Complaint Assignments
-          </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {/* Create New Team Button at top as specifically requested by user */}
           <button
-            onClick={() => {
-              if (workers.length > 0) {
-                setSelectedWorkerIds([workers[0].id]);
-                setTemporaryLeaderId(workers[0].id);
-                setNewTeamName(`Sanitation Squad ${teams.length + 1}`);
-              }
+            onClick={async () => {
+              setActionError('');
               setShowCreateTeamModal(true);
+              try {
+                const res = await api.getWardWorkers();
+                const freshWorkers = res.data || [];
+                setWorkers(freshWorkers);
+                if (freshWorkers.length > 0) {
+                  setSelectedWorkerIds([freshWorkers[0].id]);
+                  setTemporaryLeaderId(freshWorkers[0].id);
+                }
+                setNewTeamName(`Sanitation Squad ${teams.length + 1}`);
+              } catch {
+                if (workers.length > 0) {
+                  setSelectedWorkerIds([workers[0].id]);
+                  setTemporaryLeaderId(workers[0].id);
+                  setNewTeamName(`Sanitation Squad ${teams.length + 1}`);
+                }
+              }
             }}
             className="px-4 py-2 rounded-xl bg-[#095c54] text-white hover:bg-emerald-800 text-xs font-extrabold transition shadow-xs flex items-center gap-1.5"
           >
@@ -232,7 +245,63 @@ export const TeamManagementView: React.FC = () => {
           <span className="text-[11px] font-bold text-slate-400">Available for Complaint Dispatch</span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards for Teams (< md) */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="py-8 text-center text-slate-500 text-xs">
+              <RefreshCw className="w-5 h-5 text-[#095c54] animate-spin mx-auto mb-2" />
+              Loading teams...
+            </div>
+          ) : teams.length === 0 ? (
+            <div className="py-8 px-4 text-center text-slate-500 text-xs">
+              No teams formed yet. Click &quot;Create New Team&quot; above.
+            </div>
+          ) : (
+            teams
+              .slice((teamsPage - 1) * pageSize, teamsPage * pageSize)
+              .map(team => {
+              const memberWorkers = workers.filter(w => (team.worker_ids || []).includes(w.id));
+              return (
+                <div key={team.id} className="p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-extrabold text-[#0f2925] text-xs block truncate">{team.team_name}</span>
+                      <span className="text-[10px] font-bold text-[#095c54] block truncate">{team.work_type || 'General Civic Sanitation Squad'}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleOpenEditTeam(team)}
+                        className="p-1.5 rounded-lg bg-emerald-50 text-[#095c54] border border-emerald-200"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTeam(team.id, team.team_name)}
+                        className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-200"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                      <Crown className="w-3 h-3 text-amber-600" />
+                      {team.temporary_leader_name || 'Leader'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md font-bold bg-slate-100 text-slate-700">
+                      {memberWorkers.length} Members
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      {team.active_tasks_count || 0} Active Tasks
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-[#e2e8f0] text-slate-500 font-black uppercase text-[10px] tracking-wider">
@@ -259,7 +328,9 @@ export const TeamManagementView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                teams.map(team => {
+                teams
+              .slice((teamsPage - 1) * pageSize, teamsPage * pageSize)
+              .map(team => {
                   const memberWorkers = workers.filter(w => (team.worker_ids || []).includes(w.id));
                   return (
                     <tr key={team.id} className="hover:bg-slate-50/70 transition">
@@ -341,21 +412,52 @@ export const TeamManagementView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <TablePagination
+          currentPage={teamsPage}
+          totalItems={teams.length}
+          pageSize={pageSize}
+          onPageChange={setTeamsPage}
+          itemLabel="teams"
+        />
       </div>
 
       {/* TABLE 2: ALL WORKERS DIRECTORY TABLE (Mandated by user prompt) */}
       <div className="rounded-3xl bg-white border border-[#e2e8f0] shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <UserCheck className="w-4 h-4 text-[#095c54]" />
             <h3 className="text-sm font-extrabold text-[#0f2925]">
-              Ward 3 Field Personnel Roster ({workers.length} Workers)
+              Field Personnel Roster ({workers.length} Workers)
             </h3>
           </div>
           <span className="text-[11px] font-bold text-slate-400">Available to form teams & dispatch</span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Roster Cards (< md) */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {workers
+            .slice((rosterPage - 1) * pageSize, rosterPage * pageSize)
+            .map(w => (
+            <div key={w.id} className="p-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <img
+                  src={w.avatar_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80'}
+                  alt={w.full_name}
+                  className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="font-extrabold text-xs text-[#0f2925] truncate">{w.full_name}</p>
+                  <p className="text-[10px] text-[#095c54] font-bold truncate">{w.designation} · {w.phone}</p>
+                </div>
+              </div>
+              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase shrink-0 ${w.availability_status === 'on_duty' ? 'bg-blue-50 text-blue-800' : 'bg-emerald-50 text-emerald-800'}`}>
+                {w.availability_status?.replace('_', ' ')}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-[#e2e8f0] text-slate-500 font-black uppercase text-[10px] tracking-wider">
@@ -367,7 +469,9 @@ export const TeamManagementView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {workers.map(w => (
+              {workers
+                .slice((rosterPage - 1) * pageSize, rosterPage * pageSize)
+                .map(w => (
                 <tr key={w.id} className="hover:bg-slate-50/70 transition">
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2.5">
@@ -409,6 +513,13 @@ export const TeamManagementView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <TablePagination
+          currentPage={rosterPage}
+          totalItems={workers.length}
+          pageSize={pageSize}
+          onPageChange={setRosterPage}
+          itemLabel="workers"
+        />
       </div>
 
       {/* CREATE NEW TEAM MODAL DIALOG (Mandated by user prompt) */}

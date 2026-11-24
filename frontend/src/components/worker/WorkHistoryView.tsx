@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { WorkAssignment, WorkerProfile } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
+import { TablePagination } from '../common/TablePagination.js';
 
 interface WorkHistoryViewProps {
   assignments: WorkAssignment[];
@@ -28,6 +29,8 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
 }) => {
   const [search, setSearch] = useState<string>('');
   const [selectedTask, setSelectedTask] = useState<any | null>(null);
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const historyPageSize = 6;
 
   // Past/Historical assignments (completed or closed tasks only)
   const historyList = assignments.filter(
@@ -47,28 +50,28 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
-            Work History & Log
+            Work History &amp; Log
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Immutable log of completed field assignments, verified attendance, and officer sign-offs.
-          </p>
         </div>
 
-        <div className="relative">
+        <div className="relative w-full sm:w-64">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => {
+              setSearch(e.target.value);
+              setHistoryPage(1);
+            }}
             placeholder="Search past assignments..."
-            className="pl-9 pr-4 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:border-[#095c54] outline-hidden shadow-2xs font-medium"
+            className="w-full pl-9 pr-4 py-2.5 sm:py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:border-[#095c54] outline-hidden shadow-2xs font-medium"
           />
         </div>
       </div>
 
       {/* History Content */}
       {filteredHistory.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-3 shadow-xs">
+        <div className="p-8 sm:p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-3 shadow-xs">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
             <FileCheck2 className="w-6 h-6" />
           </div>
@@ -78,7 +81,79 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
+        <>
+          {/* Mobile Card Layout (< md) */}
+          <div className="md:hidden space-y-3">
+            {filteredHistory
+              .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+              .map(item => (
+              <div
+                key={item.id}
+                className="bg-white rounded-2xl border border-[#e2e8f0] p-4 shadow-xs space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-[11px] font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-md">
+                        {item.task_code}
+                      </span>
+                      <span
+                        className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                          (item.status as string) === 'completed' || item.status === 'verified_complete' || item.status === 'closed'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-blue-50 text-blue-800'
+                        }`}
+                      >
+                        {String(item.status || '').replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-extrabold text-[#0f2925] leading-snug">
+                      {item.title}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-slate-600">
+                  <p className="flex items-start gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0 mt-0.5" />
+                    <span className="leading-snug">{item.address} · Ward {item.ward_number || 3}</span>
+                  </p>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 pt-1">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {item.scheduled_date}
+                    </span>
+                    <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px]">
+                      ✓ Present (GPS)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 text-xs font-bold text-[#095c54] min-w-0 truncate">
+                    {item.is_temporary_leader ? (
+                      <>
+                        <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>You (Leader)</span>
+                      </>
+                    ) : (
+                      <span className="truncate">{item.temporary_leader_name || 'Team Leader'}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setSelectedTask(item)}
+                    className="px-3.5 py-2 rounded-xl bg-[#095c54] text-white text-xs font-bold flex items-center gap-1.5 shrink-0"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View Details</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table Layout (md+) */}
+          <div className="hidden md:block bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -93,7 +168,9 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredHistory.map(item => (
+                {filteredHistory
+              .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+              .map(item => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition">
                     <td className="py-3.5 px-4">
                       <span className="font-mono text-xs font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-md">
@@ -160,6 +237,16 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
             </table>
           </div>
         </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-xs">
+            <TablePagination
+              currentPage={historyPage}
+              totalItems={filteredHistory.length}
+              pageSize={historyPageSize}
+              onPageChange={setHistoryPage}
+              itemLabel="tasks"
+            />
+          </div>
+        </>
       )}
 
       {/* Details Modal */}
@@ -194,9 +281,13 @@ export const WorkHistoryView: React.FC<WorkHistoryViewProps> = ({
                 <p className="font-medium text-slate-800">{selectedTask.description}</p>
               </div>
 
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
-                <p className="text-[10px] font-bold text-emerald-700 uppercase">Municipal Sign-Off</p>
-                <p className="font-bold">Verified & Approved by Ward 3 Officer Ramesh Patel</p>
+              <div className="p-3 rounded-xl bg-[#f0f7f5] border border-[#cde6df] text-[#0f2925] space-y-1">
+                <p className="text-[10px] font-bold text-[#095c54] uppercase">Municipal Sign-Off</p>
+                <p className="font-semibold text-xs">
+                  {selectedTask.status === 'verified_complete' || selectedTask.status === 'closed'
+                    ? `Verified & Approved by Ward ${selectedTask.ward_number || profile?.ward_number || 3} Sanitary Officer`
+                    : 'Completion report submitted — awaiting Ward Officer verification'}
+                </p>
               </div>
             </div>
 

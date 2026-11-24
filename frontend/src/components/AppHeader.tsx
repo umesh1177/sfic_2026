@@ -88,7 +88,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             {[
               { id: 'home', label: t.nav_home },
               { id: 'complaints', label: t.nav_complaints },
-              { id: 'map', label: t.nav_map },
               { id: 'drives', label: t.nav_drives },
               { id: 'rewards', label: t.nav_rewards },
               { id: 'support', label: t.nav_support }
@@ -331,7 +330,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {[
             { id: 'home', label: t.nav_home },
             { id: 'complaints', label: t.nav_complaints },
-            { id: 'map', label: t.nav_map },
             { id: 'drives', label: t.nav_drives },
             { id: 'rewards', label: t.nav_rewards },
             { id: 'support', label: t.nav_support },

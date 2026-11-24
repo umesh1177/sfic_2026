@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { pool, isDbConnected } from './db.js';
 import { store } from './store.js';
+import { PushService } from '../services/pushService.js';
 import {
   Complaint, CleanlinessDrive, AppNotification, Profile, ComplaintCategory,
   CommunityRecognitionPost, RecognitionComment, CitizenAuthProfile,
@@ -11,8 +12,7 @@ import {
   WorkerProfile, WorkerDesignation, WorkerSkill, WorkAssignment,
   WorkAssignmentMember, WorkerAttendance, AttendanceException,
   WorkProgressUpdate, WorkEvidence, WorkCompletionReport,
-  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem,
-  CommunityDriveRequest, AssignedCommunity
+  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem
 } from '../types/index.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,9 +48,7 @@ export class DbRepository {
         await pool.query(
           `INSERT INTO profiles (id, full_name, phone, email, address, locality, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-           ON CONFLICT (id) DO UPDATE SET
-             full_name = EXCLUDED.full_name,
-             phone = EXCLUDED.phone`,
+           ON CONFLICT (id) DO NOTHING`,
           [validId, fullName || 'Citizen User', phone || '+919876543210', email || null, address || null, locality || 'Navsari']
         );
         await pool.query(
@@ -81,8 +79,9 @@ export class DbRepository {
         await pool.query(
           `INSERT INTO profiles (id, full_name, phone, email, username, plain_password, avatar_url, preferred_language, address, locality, ward_number, role, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-           ON CONFLICT (phone) DO UPDATE SET
+           ON CONFLICT (id) DO UPDATE SET
              full_name = EXCLUDED.full_name,
+             phone = EXCLUDED.phone,
              email = COALESCE(EXCLUDED.email, profiles.email),
              username = COALESCE(EXCLUDED.username, profiles.username),
              plain_password = COALESCE(EXCLUDED.plain_password, profiles.plain_password),
@@ -145,48 +144,187 @@ export class DbRepository {
   /**
    * Universal User Lookup: by phone, mobile digits, email, username, or worker_code
    */
+  /**
+   * Global case-insensitive username uniqueness check across ALL user types & formats:
+   * profiles (citizens, ward officers, admins), worker_profiles (workers & worker codes),
+   * communities (NGOs / organizations), and in-memory store.
+   */
+  public static async isUsernameTaken(
+    rawUsername: string,
+    exclude?: {
+      userId?: string;
+      communityId?: string;
+      workerId?: string;
+      officerId?: string;
+    }
+  ): Promise<{ taken: boolean; normalized: string; usedBy?: string }> {
+    const normalized = String(rawUsername || '').trim().toLowerCase();
+    if (!normalized) return { taken: false, normalized: '' };
+
+    const exUserId = exclude?.userId || '';
+    const exCommId = exclude?.communityId || '';
+    const exWorkerId = exclude?.workerId || '';
+    const exOfficerId = exclude?.officerId || '';
+
+    if (isDbConnected()) {
+      try {
+        const profRes = await pool.query(
+          `SELECT id, role FROM profiles
+           WHERE LOWER(TRIM(COALESCE(username, ''))) = $1
+             AND ($2 = '' OR id::text <> $2)
+           LIMIT 1`,
+          [normalized, exUserId]
+        );
+        if (profRes.rows.length > 0) {
+          return { taken: true, normalized, usedBy: profRes.rows[0].role || 'user profile' };
+        }
+
+        const wpRes = await pool.query(
+          `SELECT id, user_id FROM worker_profiles
+           WHERE (LOWER(TRIM(COALESCE(username, ''))) = $1 OR LOWER(TRIM(COALESCE(worker_code, ''))) = $1)
+             AND ($2 = '' OR id::text <> $2)
+             AND ($3 = '' OR user_id::text <> $3)
+           LIMIT 1`,
+          [normalized, exWorkerId, exUserId]
+        );
+        if (wpRes.rows.length > 0) {
+          return { taken: true, normalized, usedBy: 'sanitation worker' };
+        }
+
+        const commRes = await pool.query(
+          `SELECT id, created_by FROM communities
+           WHERE LOWER(TRIM(COALESCE(username, ''))) = $1
+             AND ($2 = '' OR id::text <> $2)
+             AND ($3 = '' OR created_by::text <> $3)
+           LIMIT 1`,
+          [normalized, exCommId, exUserId]
+        );
+        if (commRes.rows.length > 0) {
+          return { taken: true, normalized, usedBy: 'community organization' };
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - isUsernameTaken]:', err.message);
+      }
+    }
+
+    // Check in-memory store across all roles & formats
+    const dupProfile = (store.profiles || []).find(
+      p => p.username && p.username.trim().toLowerCase() === normalized && p.id !== exUserId
+    );
+    if (dupProfile) {
+      return { taken: true, normalized, usedBy: dupProfile.role || 'user profile' };
+    }
+
+    const dupWorker = (store.workers || []).find(
+      w =>
+        ((w.username && w.username.trim().toLowerCase() === normalized) ||
+          (w.worker_code && w.worker_code.trim().toLowerCase() === normalized)) &&
+        w.id !== exWorkerId &&
+        w.user_id !== exUserId
+    );
+    if (dupWorker) {
+      return { taken: true, normalized, usedBy: 'sanitation worker' };
+    }
+
+    const dupComm = (store.communities || []).find(
+      c =>
+        c.username &&
+        c.username.trim().toLowerCase() === normalized &&
+        c.id !== exCommId &&
+        c.user_id !== exUserId
+    );
+    if (dupComm) {
+      return { taken: true, normalized, usedBy: 'community organization' };
+    }
+
+    const dupOfficer = (store.wardOfficers || []).find(
+      (o: any) =>
+        o.username &&
+        String(o.username).trim().toLowerCase() === normalized &&
+        o.id !== exOfficerId &&
+        o.user_id !== exUserId
+    );
+    if (dupOfficer) {
+      return { taken: true, normalized, usedBy: 'ward officer' };
+    }
+
+    return { taken: false, normalized };
+  }
+
   public static async findUserByIdentifier(identifier: string): Promise<{ profile: Profile; authProfile: CitizenAuthProfile } | null> {
     if (!identifier) return null;
     if (isDbConnected()) {
       try {
-        const cleanDigits = identifier.replace(/\D/g, '');
+        const trimmed = identifier.trim();
+        const lowerTrimmed = trimmed.toLowerCase();
+        const cleanDigits = trimmed.replace(/\D/g, '');
         const tenDigits = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
 
         const res = await pool.query(
-          `SELECT p.*, a.password_hash, a.plain_password as auth_plain_password, a.account_status, a.mobile_verified, r.role,
-                  wp.worker_code, wp.username as worker_username, wp.plain_password as worker_plain_password,
-                  c.username as comm_username, c.plain_password as comm_plain_password
+          `SELECT p.*, a.password_hash, a.plain_password as auth_plain_password, a.account_status, a.mobile_verified,
+                  (SELECT r.role FROM user_roles r WHERE r.user_id = p.id ORDER BY r.created_at DESC LIMIT 1) as latest_user_role,
+                  wp.id as worker_profile_id, wp.worker_code, wp.username as worker_username, wp.plain_password as worker_plain_password,
+                  c.id as community_id, c.username as comm_username, c.plain_password as comm_plain_password, c.approval_status as comm_approval_status
            FROM profiles p
            LEFT JOIN citizen_auth_profiles a ON a.user_id = p.id
-           LEFT JOIN user_roles r ON r.user_id = p.id
            LEFT JOIN worker_profiles wp ON wp.user_id = p.id
            LEFT JOIN communities c ON c.created_by = p.id
-           WHERE LOWER(p.phone) = LOWER($1)
-              OR ($2 <> '' AND RIGHT(REGEXP_REPLACE(p.phone, '[^0-9]', '', 'g'), 10) = $2)
-              OR LOWER(COALESCE(p.email, '')) = LOWER($1)
-              OR LOWER(COALESCE(p.username, '')) = LOWER($1)
-              OR LOWER(COALESCE(wp.worker_code, '')) = LOWER($1)
-              OR LOWER(COALESCE(wp.username, '')) = LOWER($1)
-              OR LOWER(COALESCE(c.username, '')) = LOWER($1)
+           WHERE LOWER(TRIM(COALESCE(p.phone, ''))) = LOWER($1)
+              OR ($2 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(p.phone, ''), '[^0-9]', '', 'g'), 10) = $2)
+              OR LOWER(TRIM(COALESCE(p.email, ''))) = LOWER($1)
+              OR LOWER(TRIM(COALESCE(p.username, ''))) = LOWER($1)
+              OR LOWER(TRIM(COALESCE(wp.worker_code, ''))) = LOWER($1)
+              OR LOWER(TRIM(COALESCE(wp.username, ''))) = LOWER($1)
+              OR LOWER(TRIM(COALESCE(c.username, ''))) = LOWER($1)
+           ORDER BY
+              CASE
+                WHEN LOWER(TRIM(COALESCE(c.username, ''))) = LOWER($1) THEN 1
+                WHEN LOWER(TRIM(COALESCE(wp.username, ''))) = LOWER($1) OR LOWER(TRIM(COALESCE(wp.worker_code, ''))) = LOWER($1) THEN 1
+                WHEN LOWER(TRIM(COALESCE(p.username, ''))) = LOWER($1) THEN 1
+                WHEN LOWER(TRIM(COALESCE(p.email, ''))) = LOWER($1) THEN 2
+                ELSE 3
+              END ASC,
+              p.updated_at DESC
            LIMIT 1`,
-          [identifier.trim(), tenDigits]
+          [trimmed, tenDigits]
         );
 
         if (res.rows.length > 0) {
           const row = res.rows[0];
-          const plainPass = row.plain_password || row.auth_plain_password || row.worker_plain_password || row.comm_plain_password;
+          const matchedByCommUsername = row.comm_username && String(row.comm_username).trim().toLowerCase() === lowerTrimmed;
+          const matchedByWorkerUsername =
+            (row.worker_username && String(row.worker_username).trim().toLowerCase() === lowerTrimmed) ||
+            (row.worker_code && String(row.worker_code).trim().toLowerCase() === lowerTrimmed);
+
+          const resolvedRole = matchedByCommUsername
+            ? 'community_head'
+            : matchedByWorkerUsername
+            ? 'worker'
+            : (row.role || row.latest_user_role || 'citizen');
+
+          const plainPass = matchedByCommUsername
+            ? (row.auth_plain_password || row.comm_plain_password || row.plain_password)
+            : matchedByWorkerUsername
+            ? (row.auth_plain_password || row.worker_plain_password || row.plain_password)
+            : (row.auth_plain_password || row.plain_password || row.comm_plain_password || row.worker_plain_password);
+
           const profile: any = {
             id: row.id,
             full_name: row.full_name,
             phone: row.phone,
             email: row.email,
-            username: row.username || row.worker_code || row.worker_username || row.comm_username,
+            username: matchedByCommUsername
+              ? row.comm_username
+              : matchedByWorkerUsername
+              ? (row.worker_username || row.worker_code)
+              : (row.username || row.comm_username || row.worker_username || row.worker_code),
             plain_password: plainPass,
             avatar_url: row.avatar_url,
             preferred_language: row.preferred_language || 'en',
             address: row.address,
             locality: row.locality || 'Navsari',
-            role: row.role || 'citizen',
+            ward_number: row.ward_number || 3,
+            role: resolvedRole,
             is_active: row.is_active,
             created_at: row.created_at,
             updated_at: row.updated_at
@@ -208,204 +346,63 @@ export class DbRepository {
         console.error('[DB REPO ERROR - findUserByIdentifier]:', err.message);
       }
     }
-
-    // In-memory fallback lookup
-    const cleanDigits = identifier.replace(/\D/g, '');
-    const tenDigits = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
-
-    // 1. Check store.profiles
-    let foundProfile = (store.profiles || []).find(p =>
-      (p.phone && (p.phone === identifier || (tenDigits && p.phone.replace(/\D/g, '').endsWith(tenDigits)))) ||
-      (p.email && p.email.toLowerCase() === identifier.toLowerCase()) ||
-      (p.username && p.username.toLowerCase() === identifier.toLowerCase())
-    );
-
-    // 2. Check store.communities
-    if (!foundProfile) {
-      const comm = (store.communities || []).find(c =>
-        (c.phone && (c.phone === identifier || (tenDigits && c.phone.replace(/\D/g, '').endsWith(tenDigits)))) ||
-        (c.email && c.email.toLowerCase() === identifier.toLowerCase()) ||
-        (c.username && c.username.toLowerCase() === identifier.toLowerCase())
-      );
-      if (comm) {
-        foundProfile = {
-          id: comm.user_id || comm.id,
-          full_name: comm.head_name || comm.community_name,
-          phone: comm.phone,
-          email: comm.email,
-          username: comm.username || comm.email,
-          preferred_language: 'en',
-          locality: comm.locality || 'Dudhiya Talao',
-          address: comm.address || 'Navsari',
-          is_active: true,
-          role: 'community_head',
-          created_at: comm.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-      }
-    }
-
-    // 3. Check store.workers
-    if (!foundProfile) {
-      const w = (store.workers || []).find(worker =>
-        (worker.phone && (worker.phone === identifier || (tenDigits && worker.phone.replace(/\D/g, '').endsWith(tenDigits)))) ||
-        (worker.worker_code && worker.worker_code.toLowerCase() === identifier.toLowerCase()) ||
-        (worker.username && worker.username.toLowerCase() === identifier.toLowerCase())
-      );
-      if (w) {
-        foundProfile = {
-          id: w.user_id || w.id,
-          full_name: w.full_name,
-          phone: w.phone,
-          username: w.username || w.worker_code,
-          email: `${w.full_name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@navsarimunicipal.gov.in`,
-          preferred_language: 'gu',
-          locality: w.ward_name || 'Dudhiya Talao Ward 3',
-          address: 'Navsari Municipal Staff Quarters',
-          is_active: true,
-          role: 'worker',
-          created_at: w.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-      }
-    }
-
-    if (foundProfile) {
-      if (!store.profiles) store.profiles = [];
-      if (!store.profiles.some(p => p.id === foundProfile!.id)) {
-        store.profiles.push(foundProfile);
-      }
-
-      const existingAuth = (store.authProfiles || []).find(a => a.user_id === foundProfile!.id || a.mobile_number === foundProfile!.phone);
-      const authProfile: CitizenAuthProfile = existingAuth || {
-        id: `auth-${foundProfile.id}`,
-        user_id: foundProfile.id,
-        mobile_number: foundProfile.phone,
-        password_hash: (foundProfile as any).password_hash || '',
-        plain_password: (foundProfile as any).plain_password || 'Navsari@2026',
-        mobile_verified: true,
-        account_status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      if (!store.authProfiles) store.authProfiles = [];
-      if (!existingAuth) {
-        store.authProfiles.push(authProfile);
-      }
-
-      return { profile: foundProfile, authProfile };
-    }
-
     return null;
   }
 
-  /**
-   * Updates user password across PostgreSQL and store models
-   */
-  public static async updateUserPassword(userId: string, newPassword: string): Promise<boolean> {
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+  public static async findUserById(userId: string): Promise<{ profile: Profile; authProfile: CitizenAuthProfile } | null> {
+    if (!userId || !this.isValidUUID(userId)) return null;
     if (isDbConnected()) {
       try {
-        await pool.query(`
-          UPDATE citizen_auth_profiles
-          SET password_hash = $2, plain_password = $3, updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = $1
-        `, [userId, passwordHash, newPassword]);
-
-        await pool.query(`
-          UPDATE communities
-          SET plain_password = $2
-          WHERE created_by = $1 OR id = $1
-        `, [userId, newPassword]);
-
-        await pool.query(`
-          UPDATE worker_profiles
-          SET plain_password = $2
-          WHERE user_id = $1
-        `, [userId, newPassword]);
+        const res = await pool.query(
+          `SELECT p.*, a.password_hash, a.plain_password as auth_plain_password, a.account_status, a.mobile_verified,
+                  COALESCE(r.role, p.role, 'citizen') as resolved_role,
+                  wp.worker_code, wp.username as worker_username, wp.ward_number as worker_ward_number
+           FROM profiles p
+           LEFT JOIN citizen_auth_profiles a ON a.user_id = p.id
+           LEFT JOIN user_roles r ON r.user_id = p.id
+           LEFT JOIN worker_profiles wp ON wp.user_id = p.id
+           WHERE p.id = $1
+           LIMIT 1`,
+          [userId]
+        );
+        if (res.rows.length > 0) {
+          const row = res.rows[0];
+          const plainPass = row.plain_password || row.auth_plain_password;
+          const profile: any = {
+            id: row.id,
+            full_name: row.full_name,
+            phone: row.phone,
+            email: row.email,
+            username: row.username || row.worker_code || row.worker_username,
+            plain_password: plainPass,
+            avatar_url: row.avatar_url,
+            preferred_language: row.preferred_language || 'en',
+            address: row.address,
+            locality: row.locality || `Ward ${row.worker_ward_number || row.ward_number || 3}`,
+            ward_number: row.worker_ward_number || row.ward_number || 3,
+            role: row.resolved_role || 'citizen',
+            is_active: row.is_active ?? true,
+            created_at: row.created_at,
+            updated_at: row.updated_at
+          };
+          const authProfile: any = {
+            id: `auth-${row.id}`,
+            user_id: row.id,
+            mobile_number: row.phone,
+            password_hash: row.password_hash || '',
+            plain_password: plainPass,
+            mobile_verified: row.mobile_verified ?? true,
+            account_status: row.account_status || 'active',
+            created_at: row.created_at,
+            updated_at: row.updated_at
+          };
+          return { profile, authProfile };
+        }
       } catch (err: any) {
-        console.error('[DB REPO ERROR - updateUserPassword]:', err.message);
+        console.error('[DB REPO ERROR - findUserById]:', err.message);
       }
     }
-
-    // Update memory store
-    let authProfile = (store.authProfiles || []).find(a => a.user_id === userId);
-    if (authProfile) {
-      authProfile.password_hash = passwordHash;
-      authProfile.plain_password = newPassword;
-      authProfile.updated_at = new Date().toISOString();
-    }
-    const profile = (store.profiles || []).find(p => p.id === userId);
-    if (profile) {
-      (profile as any).plain_password = newPassword;
-      (profile as any).password_hash = passwordHash;
-    }
-    const comm = (store.communities || []).find(c => c.user_id === userId || c.id === userId || c.created_by === userId);
-    if (comm) {
-      (comm as any).plain_password = newPassword;
-      (comm as any).password_hash = passwordHash;
-      if (!profile) {
-        const commProfile: Profile = {
-          id: comm.user_id || comm.id,
-          full_name: comm.head_name || comm.community_name,
-          phone: comm.phone,
-          email: comm.email,
-          username: comm.username || comm.email,
-          preferred_language: 'en',
-          locality: comm.locality || 'Dudhiya Talao',
-          address: comm.address || 'Navsari',
-          is_active: true,
-          role: 'community_head',
-          created_at: comm.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        (commProfile as any).plain_password = newPassword;
-        if (!store.profiles) store.profiles = [];
-        store.profiles.push(commProfile);
-      }
-    }
-    const worker = (store.workers || []).find(w => w.user_id === userId || w.id === userId);
-    if (worker) {
-      (worker as any).plain_password = newPassword;
-      (worker as any).password_hash = passwordHash;
-      if (!profile) {
-        const workerProfile: Profile = {
-          id: worker.user_id || worker.id,
-          full_name: worker.full_name,
-          phone: worker.phone,
-          username: worker.username || worker.worker_code,
-          email: `${worker.full_name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@navsarimunicipal.gov.in`,
-          preferred_language: 'gu',
-          locality: worker.ward_name || 'Dudhiya Talao Ward 3',
-          address: 'Navsari Municipal Staff Quarters',
-          is_active: true,
-          role: 'worker',
-          created_at: worker.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        (workerProfile as any).plain_password = newPassword;
-        if (!store.profiles) store.profiles = [];
-        store.profiles.push(workerProfile);
-      }
-    }
-
-    if (!authProfile) {
-      if (!store.authProfiles) store.authProfiles = [];
-      store.authProfiles.push({
-        id: `auth-${userId}`,
-        user_id: userId,
-        mobile_number: profile?.phone || comm?.phone || worker?.phone || '',
-        password_hash: passwordHash,
-        plain_password: newPassword,
-        mobile_verified: true,
-        account_status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-    }
-
-    return true;
+    return null;
   }
 
   // =========================================================================
@@ -509,6 +506,7 @@ export class DbRepository {
       complaint_number: data.complaint_number,
       citizen_id: data.citizen_id,
       citizen_name: data.citizen_name,
+      citizen_phone: data.citizen_phone,
       category_id: data.category_id,
       category_name: data.category_name,
       location: {
@@ -553,21 +551,46 @@ export class DbRepository {
 
   public static async getComplaints(params: {
     citizen_id?: string;
+    citizen_phone?: string;
+    citizen_name?: string;
     status?: string;
     category_id?: string;
     search?: string;
   } = {}): Promise<Complaint[]> {
+    let dbMapped: Complaint[] = [];
+
     if (isDbConnected()) {
       try {
         let query = 'SELECT * FROM complaints WHERE 1=1';
         const values: any[] = [];
         let idx = 1;
 
-        if (params.citizen_id) {
-          const validCitizenId = this.isValidUUID(params.citizen_id) ? params.citizen_id : 'c0000000-0000-0000-0000-000000000001';
-          query += ` AND citizen_id = $${idx++}`;
-          values.push(validCitizenId);
+        if (params.citizen_id || params.citizen_phone) {
+          const conditions: string[] = [];
+          if (params.citizen_id) {
+            const validCitizenId = this.isValidUUID(params.citizen_id) ? params.citizen_id : 'c0000000-0000-0000-0000-000000000001';
+            conditions.push(`citizen_id = $${idx++}`);
+            values.push(validCitizenId);
+
+            // Also match alias/demo IDs if demo citizen
+            if (params.citizen_id === 'c0000000-0000-0000-0000-000000000001' || params.citizen_id === 'citizen-01') {
+              conditions.push(`citizen_id = '4faa7a52-a5fc-4377-bbf1-46237299384a'`);
+            }
+          }
+          if (params.citizen_phone) {
+            conditions.push(`citizen_phone = $${idx++}`);
+            values.push(params.citizen_phone);
+
+            const cleanDigits = params.citizen_phone.replace(/\D/g, '');
+            if (cleanDigits.length >= 10) {
+              const last10 = cleanDigits.slice(-10);
+              conditions.push(`RIGHT(REGEXP_REPLACE(citizen_phone, '\\D', '', 'g'), 10) = $${idx++}`);
+              values.push(last10);
+            }
+          }
+          query += ` AND (${conditions.join(' OR ')})`;
         }
+
         if (params.status && params.status !== 'all') {
           query += ` AND status = $${idx++}`;
           values.push(params.status);
@@ -584,38 +607,74 @@ export class DbRepository {
 
         query += ' ORDER BY created_at DESC';
         const res = await pool.query(query, values);
-        const mapped = res.rows.map(r => this.mapComplaintRow(r));
-        if (!params.citizen_id) {
-          return mapped.map(c => ({ ...c, citizen_name: 'Anonymous Citizen' }));
-        }
-        return mapped;
+        dbMapped = res.rows.map(r => this.mapComplaintRow(r));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getComplaints]:', err.message);
       }
     }
 
-    // Fallback to store
-    return store.complaints.filter(c => {
-      if (params.citizen_id && c.citizen_id !== params.citizen_id) return false;
+    // Always merge in-memory store complaints so citizen newly submitted or offline-synced complaints are never missed
+    const cleanUserPhone = params.citizen_phone ? params.citizen_phone.replace(/\D/g, '') : '';
+    const userLast10 = cleanUserPhone.length >= 10 ? cleanUserPhone.slice(-10) : '';
+
+    const matchingStore = (store.complaints || []).filter(c => {
+      if (params.citizen_id || params.citizen_phone) {
+        let matches = false;
+        if (params.citizen_id) {
+          if (c.citizen_id === params.citizen_id) matches = true;
+          if (
+            (params.citizen_id === 'c0000000-0000-0000-0000-000000000001' || params.citizen_id === 'citizen-01') &&
+            (c.citizen_id === 'c0000000-0000-0000-0000-000000000001' || c.citizen_id === 'citizen-01' || c.citizen_id === '4faa7a52-a5fc-4377-bbf1-46237299384a')
+          ) {
+            matches = true;
+          }
+        }
+        if (!matches && params.citizen_phone && (c as any).citizen_phone) {
+          const scDigits = (c as any).citizen_phone.replace(/\D/g, '');
+          if ((c as any).citizen_phone === params.citizen_phone || (userLast10 && scDigits.endsWith(userLast10))) {
+            matches = true;
+          }
+        }
+        if (!matches) return false;
+      }
+
       if (params.status && params.status !== 'all' && c.status !== params.status) return false;
       if (params.category_id && params.category_id !== 'all' && c.category_id !== params.category_id) return false;
       if (params.search) {
         const q = params.search.toLowerCase();
-        return c.complaint_number.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || c.location.address.toLowerCase().includes(q);
+        return (
+          (c.complaint_number || '').toLowerCase().includes(q) ||
+          (c.description || '').toLowerCase().includes(q) ||
+          (c.location?.address || '').toLowerCase().includes(q)
+        );
       }
       return true;
-    }).map(c => {
-      if (!params.citizen_id) {
-        return { ...c, citizen_name: 'Anonymous Citizen' };
-      }
-      return c;
     });
+
+    const mergedMap = new Map<string, Complaint>();
+    for (const sc of matchingStore) {
+      mergedMap.set(sc.complaint_number || sc.id, sc);
+    }
+    for (const dc of dbMapped) {
+      mergedMap.set(dc.complaint_number || dc.id, dc);
+    }
+
+    const combined = Array.from(mergedMap.values()).sort(
+      (a, b) => new Date((b as any).created_at || b.submitted_at || 0).getTime() - new Date((a as any).created_at || a.submitted_at || 0).getTime()
+    );
+
+    if (!params.citizen_id && !params.citizen_phone) {
+      return combined.map(c => ({ ...c, citizen_name: 'Anonymous Citizen' }));
+    }
+    return combined;
   }
 
   public static async getComplaintById(id: string): Promise<Complaint | null> {
     if (isDbConnected()) {
       try {
-        const res = await pool.query('SELECT * FROM complaints WHERE id = $1 OR complaint_number = $1', [id]);
+        const res = this.isValidUUID(id)
+          ? await pool.query('SELECT * FROM complaints WHERE id = $1 OR complaint_number = $2', [id, id])
+          : await pool.query('SELECT * FROM complaints WHERE complaint_number = $1', [id]);
         if (res.rows.length > 0) {
           const comp = this.mapComplaintRow(res.rows[0]);
           // Fetch activity logs
@@ -629,9 +688,13 @@ export class DbRepository {
             actor_role: l.actor_role,
             created_at: l.created_at
           }));
+          // Also merge any feedback
+          const fbRes = await pool.query('SELECT * FROM complaint_feedback WHERE complaint_id = $1 ORDER BY created_at DESC LIMIT 1', [comp.id]).catch(() => ({ rows: [] as any[] }));
+          if (fbRes.rows.length > 0) {
+            comp.feedback = fbRes.rows[0];
+          }
           return comp;
         }
-        return null;
       } catch (err: any) {
         console.error('[DB REPO ERROR - getComplaintById]:', err.message);
       }
@@ -727,21 +790,35 @@ export class DbRepository {
     // 2. Synchronize to PostgreSQL if connected
     if (isDbConnected()) {
       try {
-        await pool.query(
-          `UPDATE complaints 
-           SET status = $1, updated_at = NOW() 
-           WHERE id = $2 OR complaint_number = $2`,
-          [newStatus, id]
-        );
+        const lookupId = complaint?.id || id;
+        const lookupNum = complaint?.complaint_number || id;
+        const isResolvedStatus = newStatus === 'resolved';
+        const updateRes = this.isValidUUID(lookupId)
+          ? await pool.query(
+              `UPDATE complaints
+               SET status = $1,
+                   resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
+                   updated_at = NOW()
+               WHERE id = $3 OR complaint_number = $4
+               RETURNING id`,
+              [newStatus, isResolvedStatus, lookupId, lookupNum]
+            )
+          : await pool.query(
+              `UPDATE complaints
+               SET status = $1,
+                   resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
+                   updated_at = NOW()
+               WHERE complaint_number = $3
+               RETURNING id`,
+              [newStatus, isResolvedStatus, lookupNum]
+            );
 
-        if (actorInfo) {
+        const dbComplaintId = updateRes.rows[0]?.id;
+        if (actorInfo && dbComplaintId) {
           await pool.query(
             `INSERT INTO complaint_activity_logs (complaint_id, status, note, actor_name, actor_role)
-             VALUES (
-               COALESCE((SELECT id FROM complaints WHERE id = $1 OR complaint_number = $1 LIMIT 1), $1),
-               $2, $3, $4, $5
-             )`,
-            [id, newStatus, actorInfo.note, actorInfo.name, actorInfo.role]
+             VALUES ($1, $2, $3, $4, $5)`,
+            [dbComplaintId, newStatus, actorInfo.note, actorInfo.name, actorInfo.role]
           ).catch(() => {});
         }
       } catch (err: any) {
@@ -755,18 +832,15 @@ export class DbRepository {
     title: string,
     message: string,
     referenceId?: string,
-    type: string = 'complaint_status',
-    extra?: { points_awarded?: number; certificate?: any }
-  ): Promise<AppNotification> {
-    const notifObj: AppNotification = {
+    type: string = 'complaint_status'
+  ): Promise<void> {
+    const notifObj = {
       id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       user_id: userId,
       title,
       message,
       notification_type: type as any,
       reference_id: referenceId,
-      points_awarded: extra?.points_awarded,
-      certificate: extra?.certificate,
       is_read: false,
       created_at: new Date().toISOString()
     };
@@ -780,14 +854,21 @@ export class DbRepository {
         await pool.query(
           `INSERT INTO notifications (user_id, title, message, notification_type, reference_id, is_read, created_at)
            VALUES ($1, $2, $3, $4, $5, FALSE, NOW())`,
-          [validUserId, title, message, type === 'certificate' ? 'reward_earned' : type, referenceId || null]
+          [validUserId, title, message, type, referenceId || null]
         );
       } catch (err: any) {
         console.error('[DB REPO ERROR - createNotification]:', err.message);
       }
     }
 
-    return notifObj;
+    // Fire real Web Push notification to all subscribed PWA mobile/desktop devices of this user
+    PushService.sendToUser(userId, {
+      title,
+      body: message,
+      type,
+      referenceId,
+      tag: `swachhsetu-${type}-${referenceId || Date.now()}`
+    }).catch(() => {});
   }
 
   public static async submitFeedback(complaintId: string, citizenId: string, rating: number, feedbackText: string, satisfactory: boolean) {
@@ -867,60 +948,32 @@ export class DbRepository {
       try {
         const res = await pool.query('SELECT * FROM cleanliness_drives ORDER BY start_time ASC');
         let registeredDriveIds: Set<string> = new Set();
-        const driveRegMap: Record<string, any> = {};
+        let attendedDriveIds: Set<string> = new Set();
         if (citizenId) {
-          const regRes = await pool
-            .query('SELECT drive_id, community_id, community_name, attendance_status FROM drive_registrations WHERE citizen_id = $1', [citizenId])
-            .catch(async () => pool.query('SELECT drive_id FROM drive_registrations WHERE citizen_id = $1', [citizenId]));
-          for (const row of regRes.rows) {
-            registeredDriveIds.add(row.drive_id);
-            driveRegMap[row.drive_id] = row;
-          }
+          const regRes = await pool.query('SELECT drive_id FROM drive_registrations WHERE citizen_id = $1', [citizenId]);
+          registeredDriveIds = new Set(regRes.rows.map(r => r.drive_id));
         }
 
-        const standardDrives: CleanlinessDrive[] = res.rows.map(r => {
-          const memDriveReg = (store.driveRegistrations || []).find(mr => mr.drive_id === r.id && mr.citizen_id === citizenId);
-          const memActReg = (store.activityRegistrations || []).find(mr => mr.activity_id === r.id && mr.citizen_id === citizenId);
-          const dbDriveReg = driveRegMap[r.id];
-          const isReg = registeredDriveIds.has(r.id) || Boolean(memDriveReg) || Boolean(memActReg);
-          const attStatus =
-            memActReg?.attendance_status && memActReg.attendance_status !== 'not_marked'
-              ? memActReg.attendance_status
-              : memDriveReg?.attendance_status && memDriveReg.attendance_status !== 'not_marked'
-              ? memDriveReg.attendance_status
-              : dbDriveReg?.attendance_status && dbDriveReg.attendance_status !== 'not_marked'
-              ? dbDriveReg.attendance_status
-              : isReg
-              ? 'registered'
-              : undefined;
-
-          return {
-            id: r.id,
-            title: r.title,
-            description: r.description,
-            ward_id: r.ward_id,
-            ward_name: r.ward_name,
-            location_name: r.location_name,
-            start_time: r.start_time,
-            end_time: r.end_time,
-            registration_deadline: r.registration_deadline,
-            organiser_name: r.organiser_name,
-            status: r.status,
-            banner_url: r.banner_url || r.banner_path,
-            max_volunteers: r.max_volunteers,
-            registered_volunteers_count: r.registered_volunteers_count || 0,
-            is_registered: isReg,
-            latitude: parseFloat(r.latitude) || 20.9470,
-            longitude: parseFloat(r.longitude) || 72.9280,
-            attendance_status: attStatus,
-            checkin_latitude: memActReg?.checkin_latitude ?? memDriveReg?.checkin_latitude,
-            checkin_longitude: memActReg?.checkin_longitude ?? memDriveReg?.checkin_longitude,
-            checkin_distance_meters: memActReg?.checkin_distance_meters ?? memDriveReg?.checkin_distance_meters,
-            checkin_at: memActReg?.checkin_at ?? memDriveReg?.checkin_at,
-            registered_community_id: dbDriveReg?.community_id || memDriveReg?.community_id,
-            registered_community_name: dbDriveReg?.community_name || memDriveReg?.community_name
-          };
-        });
+        const standardDrives: CleanlinessDrive[] = res.rows.map(r => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          ward_id: r.ward_id,
+          ward_name: r.ward_name,
+          location_name: r.location_name,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          registration_deadline: r.registration_deadline,
+          organiser_name: r.organiser_name,
+          status: r.status,
+          banner_url: r.banner_url || r.banner_path,
+          max_volunteers: r.max_volunteers,
+          registered_volunteers_count: r.registered_volunteers_count || 0,
+          is_registered: registeredDriveIds.has(r.id),
+          latitude: 20.9470,
+          longitude: 72.9280,
+          attendance_status: registeredDriveIds.has(r.id) ? 'registered' : undefined
+        }));
 
         // Also retrieve published & approved community activities so citizens can discover and register
         const actRes = await pool.query(`
@@ -931,20 +984,26 @@ export class DbRepository {
             a.proposed_start_at as start_time, a.proposed_end_at as end_time,
             a.proposed_start_at as registration_deadline,
             COALESCE(c.community_name, 'Community Organization') as organiser_name,
-            CASE WHEN a.event_status = 'completed' THEN 'completed' ELSE 'upcoming' END as status,
+            COALESCE(c.head_name, 'Community Coordinator') as lead_person,
+            COALESCE(c.contact_phone, c.phone, '') as contact_phone,
+            CASE WHEN a.event_status = 'completed' OR a.evidence_status = 'verified_complete' THEN 'completed' ELSE 'upcoming' END as status,
+            COALESCE(a.registration_status, 'open') as registration_status,
             COALESCE(a.cover_image_path, 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80') as banner_url,
             COALESCE(a.maximum_participants, 50) as max_volunteers,
-            COALESCE((SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id), 0) as registered_volunteers_count,
-            (SELECT ar.attendance_status FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.citizen_id = $1 LIMIT 1) as my_attendance_status
+            COALESCE((SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.registration_status <> 'cancelled'), 0) as registered_volunteers_count,
+            (SELECT ar.attendance_status FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.citizen_id = $1 AND ar.registration_status <> 'cancelled' LIMIT 1) as my_attendance_status
           FROM community_activities a
           LEFT JOIN communities c ON c.id = a.community_id
-          WHERE a.approval_status IN ('approved', 'ward_approved') AND a.publication_status IN ('published', 'approved')
-        `, [citizenId || 'c0000000-0000-0000-0000-000000000001']);
+          WHERE a.approval_status IN ('approved', 'ward_approved', 'nmc_admin_approved') AND a.publication_status IN ('published', 'approved')
+        `, [citizenId && this.isValidUUID(citizenId) ? citizenId : '00000000-0000-0000-0000-000000000000']);
 
         let registeredActIds: Set<string> = new Set();
         let presentActIds: Set<string> = new Set();
-        if (citizenId) {
-          const actRegRes = await pool.query('SELECT activity_id, attendance_status FROM activity_registrations WHERE citizen_id = $1', [citizenId]);
+        if (citizenId && this.isValidUUID(citizenId)) {
+          const actRegRes = await pool.query(
+            `SELECT activity_id, attendance_status FROM activity_registrations WHERE citizen_id = $1 AND registration_status <> 'cancelled'`,
+            [citizenId]
+          );
           registeredActIds = new Set(actRegRes.rows.map(r => r.activity_id));
           presentActIds = new Set(actRegRes.rows.filter(r => r.attendance_status === 'present').map(r => r.activity_id));
         }
@@ -962,13 +1021,16 @@ export class DbRepository {
           end_time: r.end_time,
           registration_deadline: r.registration_deadline,
           organiser_name: r.organiser_name,
+          lead_person: r.lead_person,
+          contact_phone: r.contact_phone,
           status: r.status,
+          registration_status: r.registration_status,
           banner_url: r.banner_url,
-          max_volunteers: r.max_volunteers,
-          registered_volunteers_count: parseInt(r.registered_volunteers_count, 10),
+          max_volunteers: parseInt(r.max_volunteers, 10) || 50,
+          registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
           is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
           attendance_status: r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined)
-        }));
+        } as any));
 
         const combined = [...communityDrives];
         for (const sd of standardDrives) {
@@ -976,191 +1038,73 @@ export class DbRepository {
             combined.push(sd);
           }
         }
-
-        // Also query approved community problems from database so citizens can join them
-        const approvedProblemsRes = await pool.query(`
-          SELECT * FROM community_problems
-          WHERE status IN ('claimed', 'in_progress')
-          ORDER BY start_time ASC
-        `).catch(() => ({ rows: [] }));
-
-        for (const pr of approvedProblemsRes.rows) {
-          if (!combined.some(c => c.id === pr.id)) {
-            const assignedComms = Array.isArray(pr.assigned_communities)
-              ? pr.assigned_communities
-              : (typeof pr.assigned_communities === 'string' ? JSON.parse(pr.assigned_communities) : []);
-            const isJoint = assignedComms.length > 1;
-            combined.push({
-              id: pr.id,
-              title: pr.title,
-              description: pr.description,
-              ward_id: `ward-${pr.ward_number < 10 ? '0' + pr.ward_number : pr.ward_number}`,
-              ward_name: pr.ward_name || `Ward ${pr.ward_number}`,
-              location_name: pr.location_name || pr.address || 'Navsari',
-              latitude: parseFloat(pr.latitude) || 20.9470,
-              longitude: parseFloat(pr.longitude) || 72.9280,
-              start_time: pr.start_time ? (pr.start_time instanceof Date ? pr.start_time.toISOString() : String(pr.start_time)) : new Date(Date.now() + 86400000 * 2).toISOString(),
-              end_time: pr.end_time ? (pr.end_time instanceof Date ? pr.end_time.toISOString() : String(pr.end_time)) : new Date(Date.now() + 86400000 * 2 + 14400000).toISOString(),
-              registration_deadline: pr.start_time ? (pr.start_time instanceof Date ? pr.start_time.toISOString() : String(pr.start_time)) : new Date(Date.now() + 86400000 * 2).toISOString(),
-              organiser_name: pr.claimed_by_community_name || 'Community Volunteers',
-              status: 'upcoming',
-              banner_url: pr.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-              max_volunteers: parseInt(pr.estimated_volunteers_needed || '30', 10),
-              registered_volunteers_count: 0,
-              is_registered: registeredDriveIds.has(pr.id),
-              is_joint: isJoint,
-              co_organisers: assignedComms.map((a: any) => a.community_name),
-              drive_type: isJoint ? 'joint' : 'single',
-              action_plan: pr.action_plan,
-              suggested_equipment: Array.isArray(pr.suggested_equipment) ? pr.suggested_equipment : []
-            });
-          }
-        }
-
         return combined;
       } catch (err: any) {
         console.error('[DB REPO ERROR - getDrives]:', err.message);
       }
     }
-
-    // In-memory fallback
-    if (!store.drives) store.drives = [];
-    const validCitizenId = citizenId && this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
-
-    // Synchronize approved community problems into store.drives so citizens see all approved drives
-    const approvedProblems = (store.communityProblems || []).filter(p =>
-      (p.status === 'claimed' || p.status === 'in_progress') &&
-      ((p.assigned_communities && p.assigned_communities.length > 0) || p.claimed_by_community_name)
-    );
-    for (const prob of approvedProblems) {
-      const isJoint = (prob.assigned_communities?.length || 0) > 1;
-      const coOrganisersList = prob.assigned_communities?.map(a => a.community_name) || [];
-      const maxVolsPerComm = prob.max_volunteers_per_community || 25;
-      const totalMaxVols = isJoint ? (prob.assigned_communities?.length || 1) * maxVolsPerComm : (prob.estimated_volunteers_needed || 30);
-
-      const drivePayload: Partial<CleanlinessDrive> = {
-        title: prob.title,
-        description: prob.description,
-        ward_id: `ward-${prob.ward_number < 10 ? '0' + prob.ward_number : prob.ward_number}`,
-        ward_name: prob.ward_name || `Ward ${prob.ward_number}`,
-        location_name: prob.meeting_point || prob.location_name || prob.address || 'Navsari',
-        latitude: prob.latitude || 20.9470,
-        longitude: prob.longitude || 72.9280,
-        start_time: prob.start_time || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T08:00:00Z',
-        end_time: prob.end_time || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T11:30:00Z',
-        registration_deadline: prob.start_time || new Date(Date.now() + 86400000 * 3).toISOString(),
-        organiser_name: prob.claimed_by_community_name || 'Community Volunteers',
-        status: 'upcoming',
-        banner_url: prob.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: totalMaxVols,
-        max_volunteers_per_community: maxVolsPerComm,
-        is_joint: isJoint,
-        co_organisers: coOrganisersList,
-        drive_type: isJoint ? 'joint' : 'single',
-        action_plan: prob.action_plan,
-        suggested_equipment: prob.suggested_equipment,
-        citizen_instructions: prob.citizen_instructions,
-        necessary_gears: prob.necessary_gears && prob.necessary_gears.length > 0 ? prob.necessary_gears : prob.suggested_equipment,
-        meeting_point: prob.meeting_point,
-        emergency_contact: prob.emergency_contact,
-        assigned_communities: prob.assigned_communities
-      };
-
-      const existingDrive = store.drives.find(d => d.id === prob.id);
-      if (!existingDrive) {
-        store.drives.unshift({
-          id: prob.id,
-          registered_volunteers_count: 0,
-          ...drivePayload
-        } as CleanlinessDrive);
-      } else {
-        Object.assign(existingDrive, drivePayload);
-      }
-    }
-
-    return store.drives.map(d => {
-      const userDriveReg = store.driveRegistrations?.find(r => r.drive_id === d.id && r.citizen_id === validCitizenId);
-      const userActReg = store.activityRegistrations?.find(r => r.activity_id === d.id && r.citizen_id === validCitizenId);
-      const isReg = Boolean(userDriveReg || userActReg);
-      const effectiveAttendanceStatus =
-        userActReg?.attendance_status && userActReg.attendance_status !== 'not_marked'
-          ? userActReg.attendance_status
-          : userDriveReg?.attendance_status && userDriveReg.attendance_status !== 'not_marked'
-          ? userDriveReg.attendance_status
-          : isReg
-          ? 'registered'
-          : undefined;
-      const volunteerCounts: Record<string, number> = {};
-      const allRegs = (store.driveRegistrations || []).filter(r => r.drive_id === d.id);
-      for (const r of allRegs) {
-        if (r.community_id) {
-          volunteerCounts[r.community_id] = (volunteerCounts[r.community_id] || 0) + 1;
-        }
-      }
-      return {
-        ...d,
-        is_registered: isReg,
-        attendance_status: effectiveAttendanceStatus,
-        checkin_latitude: userActReg?.checkin_latitude ?? userDriveReg?.checkin_latitude,
-        checkin_longitude: userActReg?.checkin_longitude ?? userDriveReg?.checkin_longitude,
-        checkin_distance_meters: userActReg?.checkin_distance_meters ?? userDriveReg?.checkin_distance_meters,
-        checkin_at: userActReg?.checkin_at ?? userDriveReg?.checkin_at,
-        registered_community_id: userDriveReg?.community_id || userActReg?.community_id,
-        registered_community_name: userDriveReg?.community_name || userActReg?.community_name,
-        community_volunteer_counts: volunteerCounts
-      };
-    });
+    return store.drives;
   }
 
   public static async registerForDrive(
     driveId: string,
     citizenId: string,
-    communityId?: string,
-    communityName?: string
-  ): Promise<{ success: boolean; message?: string }> {
+    citizenInfo?: { fullName?: string; phone?: string; email?: string }
+  ): Promise<{ success: boolean; error?: string; registeredCount?: number; maxVolunteers?: number; autoClosed?: boolean }> {
     const validCitizenId = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
-    await this.ensureProfileExists(validCitizenId, 'Harshil Mehta', '+91 98251 00001');
-
-    const drive = (store.drives || []).find(d => d.id === driveId);
-    const prob = (store.communityProblems || []).find(p => p.id === driveId);
-    const maxVolsPerCommunity = drive?.max_volunteers_per_community || prob?.max_volunteers_per_community || 25;
-
-    // Check quota for selected community
-    if (communityId) {
-      if (isDbConnected()) {
-        try {
-          const countRes = await pool.query(
-            `SELECT COUNT(*) AS total FROM drive_registrations WHERE drive_id = $1 AND community_id = $2`,
-            [driveId, communityId]
-          );
-          const currentCount = parseInt(countRes.rows[0]?.total || '0', 10);
-          if (currentCount >= maxVolsPerCommunity) {
-            return {
-              success: false,
-              message: `Volunteer quota (${maxVolsPerCommunity} volunteers) for ${communityName || 'this community'} is full. Please choose another community or drive.`
-            };
-          }
-        } catch (err: any) {
-          console.error('[DB REPO ERROR - checkQuota]:', err.message);
-        }
-      } else {
-        const currentCount = (store.driveRegistrations || []).filter(
-          r => r.drive_id === driveId && r.community_id === communityId
-        ).length;
-        if (currentCount >= maxVolsPerCommunity) {
-          return {
-            success: false,
-            message: `Volunteer quota (${maxVolsPerCommunity} volunteers) for ${communityName || 'this community'} is full. Please choose another community or drive.`
-          };
-        }
-      }
-    }
+    const profileName = (citizenInfo?.fullName && citizenInfo.fullName.trim()) ? citizenInfo.fullName.trim() : 'Registered Citizen';
+    const profilePhone = (citizenInfo?.phone && citizenInfo.phone.trim()) ? citizenInfo.phone.trim() : '';
+    await this.ensureProfileExists(validCitizenId, profileName, profilePhone || '+91 98251 00000');
 
     if (isDbConnected()) {
       try {
         // 1. Check if driveId matches community_activities
-        const actCheck = await pool.query('SELECT id, community_id, title FROM community_activities WHERE id = $1', [driveId]);
+        const actCheck = await pool.query(
+          `SELECT id, community_id, title, maximum_participants, registration_status, event_status, evidence_status
+           FROM community_activities WHERE id = $1`,
+          [driveId]
+        );
         if (actCheck.rows.length > 0) {
+          const act = actCheck.rows[0];
+          const maxCap = Math.max(1, parseInt(act.maximum_participants || '50', 10));
+
+          if (act.event_status === 'completed' || act.evidence_status === 'verified_complete') {
+            return { success: false, error: 'This cleanliness drive has already been completed.' };
+          }
+
+          // Check if citizen is already actively registered
+          const alreadyRes = await pool.query(
+            `SELECT id FROM activity_registrations WHERE activity_id = $1 AND citizen_id = $2 AND registration_status <> 'cancelled'`,
+            [driveId, validCitizenId]
+          );
+          if (alreadyRes.rows.length > 0) {
+            return { success: true, maxVolunteers: maxCap };
+          }
+
+          if (act.registration_status === 'closed' || act.registration_status === 'not_open') {
+            return { success: false, error: 'Registrations for this cleanliness drive are currently closed by the organizer.' };
+          }
+
+          // Enforce max registration capacity!
+          const countRes = await pool.query(
+            `SELECT COUNT(*) FROM activity_registrations WHERE activity_id = $1 AND registration_status <> 'cancelled'`,
+            [driveId]
+          );
+          const currentCount = parseInt(countRes.rows[0]?.count || '0', 10);
+          if (currentCount >= maxCap) {
+            await pool.query(
+              `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
+              [driveId]
+            ).catch(() => {});
+            return {
+              success: false,
+              error: `Registration limit reached (${currentCount}/${maxCap} volunteers). Registrations are now closed.`,
+              registeredCount: currentCount,
+              maxVolunteers: maxCap,
+              autoClosed: true
+            };
+          }
+
           const regNumber = `REG-NAV-${Math.floor(1000 + Math.random() * 9000)}`;
           await pool.query(`
             INSERT INTO activity_registrations (
@@ -1168,106 +1112,93 @@ export class DbRepository {
             ) VALUES (
               gen_random_uuid(), $1, $2, $3, 'registered', 'registered', NOW()
             )
-            ON CONFLICT (activity_id, citizen_id) DO UPDATE SET registration_status = 'registered', cancelled_at = NULL
+            ON CONFLICT (activity_id, citizen_id) DO UPDATE SET
+              registration_status = 'registered',
+              cancelled_at = NULL,
+              registered_at = NOW()
           `, [driveId, validCitizenId, regNumber]);
 
+          const newCount = currentCount + 1;
+          const reachedLimit = newCount >= maxCap;
+          if (reachedLimit) {
+            await pool.query(
+              `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
+              [driveId]
+            ).catch(() => {});
+          }
+
           await pool.query(
-            `UPDATE cleanliness_drives SET registered_volunteers_count = registered_volunteers_count + 1 WHERE id = $1`,
-            [driveId]
+            `UPDATE cleanliness_drives SET registered_volunteers_count = $1 WHERE id = $2`,
+            [newCount, driveId]
           ).catch(() => {});
-          return { success: true, message: 'Successfully registered for this cleanliness drive!' };
+
+          return {
+            success: true,
+            registeredCount: newCount,
+            maxVolunteers: maxCap,
+            autoClosed: reachedLimit
+          };
         }
 
-        // 2. Otherwise cleanliness_drives
+        // 2. Otherwise standard cleanliness_drives
+        const sdCheck = await pool.query(
+          `SELECT id, max_volunteers, registered_volunteers_count, status FROM cleanliness_drives WHERE id = $1`,
+          [driveId]
+        );
+        if (sdCheck.rows.length > 0) {
+          const sd = sdCheck.rows[0];
+          const maxVol = parseInt(sd.max_volunteers || '100', 10);
+          const curVol = parseInt(sd.registered_volunteers_count || '0', 10);
+          if (sd.status === 'completed') {
+            return { success: false, error: 'This cleanliness drive is already completed.' };
+          }
+          if (curVol >= maxVol) {
+            return { success: false, error: `Registration limit reached (${curVol}/${maxVol} volunteers).` };
+          }
+        }
+
         await pool.query(
-          `INSERT INTO drive_registrations (id, drive_id, citizen_id, community_id, community_name, registration_status, attendance_status, registered_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'registered', 'registered', NOW())
-           ON CONFLICT (drive_id, citizen_id) DO UPDATE SET registration_status = 'registered', community_id = EXCLUDED.community_id, community_name = EXCLUDED.community_name`,
-          [driveId, validCitizenId, communityId || null, communityName || null]
+          `INSERT INTO drive_registrations (drive_id, citizen_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [driveId, validCitizenId]
         );
         await pool.query(
           `UPDATE cleanliness_drives SET registered_volunteers_count = registered_volunteers_count + 1 WHERE id = $1`,
           [driveId]
         );
-        return {
-          success: true,
-          message: communityName ? `Successfully registered to participate with ${communityName}!` : 'Successfully registered for this cleanliness drive!'
-        };
+        return { success: true };
       } catch (err: any) {
         console.error('[DB REPO ERROR - registerForDrive]:', err.message);
+        return { success: false, error: err.message };
       }
     }
 
-    // In-memory sync / fallback
-    const profile = (store.profiles || []).find(p => p.id === validCitizenId || p.id === citizenId);
-    const citizenName = profile?.full_name || 'Harshil Mehta';
-    const citizenPhone = profile?.phone || '+91 98251 00001';
-    const citizenEmail = profile?.email || 'citizen@navsari.gov.in';
-    const regId = `reg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const regNum = `REG-NAV-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    if (!store.driveRegistrations) store.driveRegistrations = [];
-    const existingReg = store.driveRegistrations.find(r => r.drive_id === driveId && r.citizen_id === validCitizenId);
-    if (!existingReg) {
-      store.driveRegistrations.push({
-        id: regId,
-        drive_id: driveId,
-        citizen_id: validCitizenId,
-        citizen_name: citizenName,
-        citizen_phone: citizenPhone,
-        citizen_email: citizenEmail,
-        registration_number: regNum,
-        registration_status: 'registered',
-        attendance_status: 'not_marked',
-        community_id: communityId,
-        community_name: communityName,
-        registered_at: new Date().toISOString()
-      });
-      if (drive) {
-        drive.is_registered = true;
-        drive.registered_volunteers_count = (drive.registered_volunteers_count || 0) + 1;
-        drive.registered_community_id = communityId;
-        drive.registered_community_name = communityName;
+    // In-memory fallback
+    const drive = store.drives.find(d => d.id === driveId);
+    if (drive) {
+      if (drive.registered_volunteers_count >= (drive.max_volunteers || 50)) {
+        return { success: false, error: `Registration limit reached (${drive.max_volunteers} volunteers).` };
       }
-    } else {
-      existingReg.community_id = communityId || existingReg.community_id;
-      existingReg.community_name = communityName || existingReg.community_name;
+      drive.is_registered = true;
+      drive.registered_volunteers_count += 1;
     }
-
     const act = (store.communityActivities || []).find(a => a.id === driveId);
     if (act) {
       (act as any).is_registered = true;
       act.registered_count = (act.registered_count || 0) + 1;
     }
-    if (!store.activityRegistrations) store.activityRegistrations = [];
-    const existingActReg = store.activityRegistrations.find(
-      r => r.activity_id === driveId && r.citizen_id === validCitizenId
-    );
-    if (!existingActReg) {
-      store.activityRegistrations.push({
-        id: existingReg?.id || regId,
-        activity_id: driveId,
-        activity_title: drive?.title || prob?.title || act?.title || 'Cleanliness Drive',
-        citizen_id: validCitizenId,
-        citizen_name: citizenName,
-        citizen_phone: citizenPhone,
-        citizen_email: citizenEmail,
-        community_id: communityId,
-        community_name: communityName,
-        registration_number: existingReg?.registration_number || regNum,
-        registration_status: 'registered',
-        attendance_status: 'not_marked',
-        registered_at: new Date().toISOString()
-      });
-    } else {
-      existingActReg.community_id = communityId || existingActReg.community_id;
-      existingActReg.community_name = communityName || existingActReg.community_name;
-    }
-
-    return {
-      success: true,
-      message: communityName ? `Successfully registered to participate with ${communityName}!` : 'Successfully registered for this cleanliness drive!'
-    };
+    if (!(store as any).activityRegistrations) (store as any).activityRegistrations = [];
+    (store as any).activityRegistrations.push({
+      id: `reg-${Date.now()}`,
+      activity_id: driveId,
+      citizen_id: validCitizenId,
+      citizen_name: profileName,
+      citizen_phone: profilePhone,
+      registration_number: `REG-NAV-${Math.floor(1000 + Math.random() * 9000)}`,
+      registration_status: 'registered',
+      attendance_status: 'registered',
+      registered_at: new Date().toISOString()
+    });
+    return { success: true };
   }
 
   public static async cancelDriveRegistration(driveId: string, citizenId: string): Promise<boolean> {
@@ -1286,15 +1217,10 @@ export class DbRepository {
       }
     }
 
-    if (store.driveRegistrations) {
-      store.driveRegistrations = store.driveRegistrations.filter(
-        r => !(r.drive_id === driveId && r.citizen_id === validCitizenId)
-      );
-    }
     const drive = store.drives.find(d => d.id === driveId);
     if (drive) {
       drive.is_registered = false;
-      drive.registered_volunteers_count = Math.max(0, (drive.registered_volunteers_count || 1) - 1);
+      drive.registered_volunteers_count = Math.max(0, drive.registered_volunteers_count - 1);
     }
     const act = (store.communityActivities || []).find(a => a.id === driveId);
     if (act) {
@@ -1309,235 +1235,34 @@ export class DbRepository {
     return true;
   }
 
-  private static calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371000;
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  /**
-   * Citizen Geo-Tagged Self Check-In ("Dummy Attendance").
-   * 1. Allowed ONLY between drive start_time and end_time.
-   * 2. Requires live geo-tagged GPS coordinates within 150 meters of the cleanliness drive spot.
-   * 3. Does NOT mark 'present' in DB — sets 'pending_verification' and routes to the respective Community Head
-   *    for final attendance confirmation.
-   */
-  public static async markDriveAttendance(
-    driveId: string,
-    citizenId: string,
-    latitude?: number,
-    longitude?: number
-  ): Promise<{ success: boolean; error?: string; message?: string; data?: any }> {
+  public static async markDriveAttendance(driveId: string, citizenId: string, latitude?: number, longitude?: number): Promise<any> {
     const validCitizenId = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
-    const MAX_ATTENDANCE_RADIUS_METERS = 150;
-
-    // 1. Locate drive metadata (from store.drives, communityProblems, communityActivities, or DB)
-    const memDrive = (store.drives || []).find(d => d.id === driveId);
-    const memProb = (store.communityProblems || []).find(p => p.id === driveId);
-    const memAct = (store.communityActivities || []).find(a => a.id === driveId);
-    let dbAct: any = null;
-    if (!memDrive && !memProb && !memAct && isDbConnected() && this.isValidUUID(driveId)) {
-      dbAct = await this.getActivityById(driveId);
-    }
-
-    const driveTitle = memDrive?.title || memProb?.title || memAct?.title || dbAct?.title || 'Cleanliness Drive';
-    const startTimeStr = memDrive?.start_time || memProb?.start_time || memAct?.proposed_start_at || dbAct?.proposed_start_at;
-    const endTimeStr = memDrive?.end_time || memProb?.end_time || memAct?.proposed_end_at || dbAct?.proposed_end_at;
-    const driveLat = Number(memDrive?.latitude ?? memProb?.latitude ?? memAct?.latitude ?? dbAct?.latitude ?? 20.9470);
-    const driveLng = Number(memDrive?.longitude ?? memProb?.longitude ?? memAct?.longitude ?? dbAct?.longitude ?? 72.9280);
-
-    // 2. Verify citizen is registered for this drive
-    const memDriveReg = (store.driveRegistrations || []).find(r => r.drive_id === driveId && r.citizen_id === validCitizenId);
-    const memActReg = (store.activityRegistrations || []).find(r => r.activity_id === driveId && r.citizen_id === validCitizenId);
-    let dbReg: any = null;
-    if (!memDriveReg && !memActReg && isDbConnected() && this.isValidUUID(driveId)) {
-      const r1 = await pool
-        .query(`SELECT * FROM activity_registrations WHERE activity_id = $1 AND citizen_id = $2 LIMIT 1`, [driveId, validCitizenId])
-        .catch(() => ({ rows: [] as any[] }));
-      if (r1.rows.length > 0) {
-        dbReg = r1.rows[0];
-      } else {
-        const r2 = await pool
-          .query(`SELECT * FROM drive_registrations WHERE drive_id = $1 AND citizen_id = $2 LIMIT 1`, [driveId, validCitizenId])
-          .catch(() => ({ rows: [] as any[] }));
-        if (r2.rows.length > 0) dbReg = r2.rows[0];
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          UPDATE activity_registrations
+          SET attendance_status = 'present', checked_in_at = NOW()
+          WHERE activity_id = $1 AND citizen_id = $2
+        `, [driveId, validCitizenId]).catch(() => {});
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - markDriveAttendance]:', err.message);
       }
     }
 
-    if (!memDriveReg && !memActReg && !dbReg) {
-      return {
-        success: false,
-        error: 'You must register for this cleanliness drive before marking your attendance.'
-      };
-    }
-
-    // If Community Head already marked this citizen as finally PRESENT, keep it confirmed
-    const currentStatus = memActReg?.attendance_status || memDriveReg?.attendance_status || dbReg?.attendance_status;
-    if (currentStatus === 'present') {
-      return {
-        success: true,
-        message: 'Your final attendance has already been confirmed as PRESENT by your Community Head.',
-        data: {
-          drive_id: driveId,
-          citizen_id: validCitizenId,
-          attendance_status: 'present'
-        }
-      };
-    }
-
-    // 3. Enforce strict start_time <= now <= end_time window
-    const nowMs = Date.now();
-    if (startTimeStr) {
-      const startMs = new Date(startTimeStr).getTime();
-      if (!isNaN(startMs) && nowMs < startMs) {
-        return {
-          success: false,
-          error: `Attendance is locked until the drive begins at ${new Date(startMs).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.`
-        };
+    if ((store as any).activityRegistrations) {
+      const reg = (store as any).activityRegistrations.find((r: any) => r.activity_id === driveId && r.citizen_id === validCitizenId);
+      if (reg) {
+        reg.attendance_status = 'present';
+        reg.checked_in_at = new Date().toISOString();
       }
     }
-    if (endTimeStr) {
-      const endMs = new Date(endTimeStr).getTime();
-      if (!isNaN(endMs) && nowMs > endMs) {
-        return {
-          success: false,
-          error: `Attendance window has closed. This drive ended at ${new Date(endMs).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.`
-        };
-      }
-    }
-
-    // 4. Enforce Geo-Tagged Location Check (within 150m of the cleanliness drive spot)
-    if (typeof latitude !== 'number' || typeof longitude !== 'number' || isNaN(latitude) || isNaN(longitude)) {
-      return {
-        success: false,
-        error: 'Live geo-tagged GPS coordinates are required to submit your check-in.'
-      };
-    }
-
-    const distanceMeters = Math.round(this.calculateDistanceMeters(latitude, longitude, driveLat, driveLng));
-    if (distanceMeters > MAX_ATTENDANCE_RADIUS_METERS) {
-      return {
-        success: false,
-        error: `Location verification failed: you are ${distanceMeters}m away from the cleanliness drive spot. You must be within ${MAX_ATTENDANCE_RADIUS_METERS}m to submit attendance.`
-      };
-    }
-
-    const nowIso = new Date().toISOString();
-
-    // 5. Save DUMMY / PENDING attendance ('pending_verification') — NOT marked 'present' yet!
-    if (isDbConnected() && this.isValidUUID(driveId)) {
-      await pool.query(
-        `UPDATE activity_registrations SET attendance_status = 'pending_verification', updated_at = NOW() WHERE activity_id = $1 AND citizen_id = $2`,
-        [driveId, validCitizenId]
-      ).catch(() => {});
-      await pool.query(
-        `UPDATE drive_registrations SET attendance_status = 'pending_verification' WHERE drive_id = $1 AND citizen_id = $2`,
-        [driveId, validCitizenId]
-      ).catch(() => {});
-    }
-
-    if (memDriveReg) {
-      memDriveReg.attendance_status = 'pending_verification';
-      memDriveReg.checkin_latitude = latitude;
-      memDriveReg.checkin_longitude = longitude;
-      memDriveReg.checkin_distance_meters = distanceMeters;
-      memDriveReg.checkin_at = nowIso;
-    }
-
-    if (memActReg) {
-      memActReg.attendance_status = 'pending_verification';
-      memActReg.checkin_latitude = latitude;
-      memActReg.checkin_longitude = longitude;
-      memActReg.checkin_distance_meters = distanceMeters;
-      memActReg.checkin_at = nowIso;
-    } else if (memDriveReg || dbReg) {
-      // Ensure mirror record exists in memory so geo-tag coordinates are preserved cleanly
-      const profile = (store.profiles || []).find(p => p.id === validCitizenId || p.id === citizenId);
-      if (!store.activityRegistrations) store.activityRegistrations = [];
-      store.activityRegistrations.push({
-        id: memDriveReg?.id || dbReg?.id || `reg-${Date.now()}`,
-        activity_id: driveId,
-        activity_title: driveTitle,
-        citizen_id: validCitizenId,
-        citizen_name: memDriveReg?.citizen_name || profile?.full_name || 'Citizen Volunteer',
-        citizen_phone: memDriveReg?.citizen_phone || profile?.phone,
-        citizen_email: memDriveReg?.citizen_email || profile?.email,
-        community_id: memDriveReg?.community_id || dbReg?.community_id,
-        community_name: memDriveReg?.community_name || dbReg?.community_name,
-        registration_number: memDriveReg?.registration_number || dbReg?.registration_number || `REG-NAV-${Math.floor(1000 + Math.random() * 9000)}`,
-        registration_status: 'registered',
-        attendance_status: 'pending_verification',
-        checkin_latitude: latitude,
-        checkin_longitude: longitude,
-        checkin_distance_meters: distanceMeters,
-        checkin_at: nowIso,
-        registered_at: memDriveReg?.registered_at || dbReg?.registered_at || nowIso
-      });
-    }
-
-    // 6. Route dummy check-in notification to the RESPECTIVE Community Head through which the citizen participated
-    const targetCommunityId =
-      memDriveReg?.community_id ||
-      memActReg?.community_id ||
-      dbReg?.community_id ||
-      memProb?.assigned_communities?.[0]?.community_id ||
-      memAct?.community_id ||
-      dbAct?.community_id;
-
-    const targetCommunity = targetCommunityId
-      ? (store.communities || []).find(c => c.id === targetCommunityId)
-      : undefined;
-    const targetCommunityName =
-      memDriveReg?.community_name ||
-      memActReg?.community_name ||
-      targetCommunity?.community_name ||
-      memProb?.claimed_by_community_name ||
-      'your Community';
-
-    // Resolve the respective Community Head's user_id
-    let targetHeadUserId = targetCommunity?.created_by || memAct?.created_by || dbAct?.created_by;
-    if (!targetHeadUserId && targetCommunity) {
-      const cDigits = (targetCommunity.phone || targetCommunity.contact_phone || '').replace(/\D/g, '').slice(-10);
-      if (cDigits.length === 10) {
-        const headProf = (store.profiles || []).find(
-          p => p.role === 'community_head' && (p.phone || '').replace(/\D/g, '').slice(-10) === cDigits
-        );
-        if (headProf) targetHeadUserId = headProf.id;
-      }
-    }
-    const finalNotifRecipient = targetHeadUserId || targetCommunityId || 'c0000000-0000-0000-0000-000000000099';
-
-    const citizenProfile = (store.profiles || []).find(p => p.id === validCitizenId || p.id === citizenId);
-    const citizenName = memActReg?.citizen_name || memDriveReg?.citizen_name || citizenProfile?.full_name || 'Citizen Volunteer';
-
-    await this.createNotification(
-      finalNotifRecipient,
-      `📍 Geo-Tagged Check-In Pending Approval: ${driveTitle}`,
-      `${citizenName} checked in on-site (${distanceMeters}m from drive spot, GPS ${latitude.toFixed(4)}, ${longitude.toFixed(4)}) under ${targetCommunityName}. Please verify and mark their final attendance as Present in the Attendance tab.`,
-      driveId,
-      'system_alert'
-    );
 
     return {
-      success: true,
-      message: `Geo-tagged check-in recorded (${distanceMeters}m from drive spot)! Sent to ${targetCommunityName}'s Community Head for final attendance verification.`,
-      data: {
-        drive_id: driveId,
-        citizen_id: validCitizenId,
-        attendance_status: 'pending_verification',
-        checkin_latitude: latitude,
-        checkin_longitude: longitude,
-        checkin_distance_meters: distanceMeters,
-        checkin_at: nowIso,
-        community_id: targetCommunityId,
-        community_name: targetCommunityName
-      }
+      drive_id: driveId,
+      citizen_id: validCitizenId,
+      attendance_status: 'present',
+      checked_in_at: new Date().toISOString(),
+      karma_awarded: 150
     };
   }
 
@@ -1545,142 +1270,53 @@ export class DbRepository {
   // 3. NOTIFICATIONS: FETCH & UPDATE
   // =========================================================================
 
-  /**
-   * Resolves the Ward Officer's profile user_id for a given ward number.
-   */
-  public static findWardOfficerUserId(wardNumber?: number): string {
-    const targetWard = Number(wardNumber || 3);
-    const profiles = store.profiles || [];
-    const officer = profiles.find(p => {
-      if (p.role !== 'ward_officer') return false;
-      if (p.ward_number && Number(p.ward_number) === targetWard) return true;
-      const locMatch = `${p.locality || ''} ${p.address || ''}`.match(/Ward\s*(\d+)/i);
-      if (locMatch && Number(locMatch[1]) === targetWard) return true;
-      return false;
-    });
-    if (officer) return officer.id;
-    const anyOfficer = profiles.find(p => p.role === 'ward_officer');
-    return anyOfficer?.id || `w0000000-0000-0000-0000-00000000000${targetWard < 10 ? targetWard : 3}`;
-  }
-
-  /**
-   * Builds the set of notification user_id aliases belonging to a user
-   * (user's own ID, owned community IDs for community heads, and ward officer IDs for same ward).
-   */
-  private static getNotificationAliasesForUser(userId: string): Set<string> {
-    const validUserId = this.isValidUUID(userId) ? userId : 'c0000000-0000-0000-0000-000000000001';
-    const aliases = new Set<string>([userId, validUserId]);
-
-    const userProfile = (store.profiles || []).find(p => p.id === userId || p.id === validUserId);
-    const userPhoneDigits = (userProfile?.phone || '').replace(/\D/g, '').slice(-10);
-
-    // 1. If Community Head (or owns a community), match notifications sent to their community ID(s)
-    for (const c of (store.communities || [])) {
-      const cDigits = (c.phone || c.contact_phone || '').replace(/\D/g, '').slice(-10);
-      if (
-        c.created_by === userId ||
-        c.created_by === validUserId ||
-        c.id === userId ||
-        (userPhoneDigits.length === 10 && cDigits === userPhoneDigits)
-      ) {
-        aliases.add(c.id);
-        if (c.created_by) aliases.add(c.created_by);
-      }
-    }
-
-    // 2. If Ward Officer, also match legacy Ward Officer IDs for the same ward
-    if (userProfile?.role === 'ward_officer') {
-      let wardNum = userProfile.ward_number;
-      if (!wardNum) {
-        const m = `${userProfile.locality || ''} ${userProfile.address || ''}`.match(/Ward\s*(\d+)/i);
-        if (m) wardNum = Number(m[1]);
-      }
-      if (wardNum) {
-        const padded = wardNum < 10 ? `0${wardNum}` : `${wardNum}`;
-        aliases.add(`w0000000-0000-0000-0000-0000000000${padded}`);
-        aliases.add(`d0000000-0000-0000-0000-0000000000${padded}`);
-        aliases.add(`ward-officer-ward-${wardNum}`);
-      }
-    }
-
-    return aliases;
-  }
-
   public static async getNotifications(userId: string): Promise<AppNotification[]> {
     const validUserId = this.isValidUUID(userId) ? userId : 'c0000000-0000-0000-0000-000000000001';
-    const matchingUserIds = this.getNotificationAliasesForUser(userId);
-    const memNotifs = (store.notifications || []).filter(n => matchingUserIds.has(n.user_id));
-
     if (isDbConnected()) {
       try {
-        const uuidAliases = Array.from(matchingUserIds).filter(id => this.isValidUUID(id));
-        const res = await pool.query(
-          'SELECT * FROM notifications WHERE user_id = ANY($1::uuid[]) ORDER BY created_at DESC',
-          [uuidAliases.length > 0 ? uuidAliases : [validUserId]]
-        );
-        const dbNotifs: AppNotification[] = res.rows.map(r => {
-          const memMatch = memNotifs.find(
-            m => m.id === r.id || (m.title === r.title && m.reference_id === r.reference_id)
-          );
-          return {
-            id: r.id,
-            user_id: r.user_id,
-            title: r.title,
-            message: r.message,
-            notification_type: memMatch?.certificate ? 'certificate' : r.notification_type,
-            reference_id: r.reference_id,
-            points_awarded: memMatch?.points_awarded,
-            certificate: memMatch?.certificate,
-            is_read: memMatch?.is_read !== undefined ? (r.is_read || memMatch.is_read) : r.is_read,
-            created_at: r.created_at
-          };
-        });
-
-        const dbKeys = new Set(dbNotifs.map(n => `${n.title}::${n.reference_id || ''}`));
-        const extraMem = memNotifs.filter(m => !dbKeys.has(`${m.title}::${m.reference_id || ''}`));
-        return [...extraMem, ...dbNotifs].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
+        const res = await pool.query('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC', [validUserId]);
+        return res.rows.map(r => ({
+          id: r.id,
+          user_id: r.user_id,
+          title: r.title,
+          message: r.message,
+          notification_type: r.notification_type,
+          reference_id: r.reference_id,
+          is_read: r.is_read,
+          created_at: r.created_at
+        }));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getNotifications]:', err.message);
       }
     }
-    return memNotifs.sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    return store.notifications.filter(n => n.user_id === userId);
   }
 
   public static async markNotificationRead(id: string): Promise<boolean> {
-    if (isDbConnected() && this.isValidUUID(id)) {
+    if (isDbConnected()) {
       try {
         await pool.query('UPDATE notifications SET is_read = TRUE WHERE id = $1', [id]);
+        return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - markNotificationRead]:', err.message);
       }
     }
-    const n = (store.notifications || []).find(notif => notif.id === id);
+    const n = store.notifications.find(notif => notif.id === id);
     if (n) n.is_read = true;
     return true;
   }
 
   public static async markAllNotificationsRead(userId: string): Promise<boolean> {
     const validUserId = this.isValidUUID(userId) ? userId : 'c0000000-0000-0000-0000-000000000001';
-    const matchingUserIds = this.getNotificationAliasesForUser(userId);
-
     if (isDbConnected()) {
       try {
-        const uuidAliases = Array.from(matchingUserIds).filter(id => this.isValidUUID(id));
-        await pool.query(
-          'UPDATE notifications SET is_read = TRUE WHERE user_id = ANY($1::uuid[])',
-          [uuidAliases.length > 0 ? uuidAliases : [validUserId]]
-        );
+        await pool.query('UPDATE notifications SET is_read = TRUE WHERE user_id = $1', [validUserId]);
+        return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - markAllNotificationsRead]:', err.message);
       }
     }
-    (store.notifications || [])
-      .filter(n => matchingUserIds.has(n.user_id))
-      .forEach(n => { n.is_read = true; });
+    store.notifications.filter(n => n.user_id === userId).forEach(n => { n.is_read = true; });
     return true;
   }
 
@@ -1789,51 +1425,30 @@ export class DbRepository {
           });
         }
 
-        const dbPosts: CommunityRecognitionPost[] = postsRes.rows.map(r => {
-          const memMatch = (store.recognitionPosts || []).find(
-            m => m.id === r.id || (m.title === r.title && m.ward_number === r.ward_number)
-          );
-          return {
-            id: r.id,
-            author_name: r.author_name,
-            author_role: r.author_role,
-            author_avatar: r.author_avatar,
-            is_verified_nmc: r.is_verified_nmc,
-            ward_number: r.ward_number,
-            ward_name: r.ward_name,
-            hero_name: r.hero_name,
-            hero_role: r.hero_role,
-            badge_title: r.badge_title,
-            title: r.title,
-            description: r.description,
-            achievement_stats: r.achievement_stats,
-            image_url: r.image_url,
-            before_image_url: r.before_image_url || memMatch?.before_image_url || undefined,
-            after_image_url: r.after_image_url || memMatch?.after_image_url || undefined,
-            after_photos: r.after_photos ? (typeof r.after_photos === 'string' ? JSON.parse(r.after_photos) : r.after_photos) : memMatch?.after_photos,
-            participating_communities: memMatch?.participating_communities,
-            drive_id: memMatch?.drive_id,
-            volunteers_count: memMatch?.volunteers_count,
-            points_awarded_citizen: memMatch?.points_awarded_citizen,
-            points_awarded_community: memMatch?.points_awarded_community,
-            likes_count: r.likes_count,
-            comments_count: r.comments_count,
-            is_liked: likedPostIds.has(r.id),
-            created_at: r.created_at,
-            comments: commentsByPost[r.id] || []
-          };
-        });
-
-        // Prepend ALL in-memory posts (from any user: Citizen, Community Head, Ward Officer, Worker, Admin)
-        // that aren't already in DB results so every post is universally viewable by every other user
-        const dbIds = new Set(dbPosts.map(p => p.id));
-        const dbTitleKeys = new Set(dbPosts.map(p => `${p.title}::${p.ward_number}::${p.author_name}`));
-        const memOnly = (store.recognitionPosts || []).filter(
-          p => !dbIds.has(p.id) && !dbTitleKeys.has(`${p.title}::${p.ward_number}::${p.author_name}`)
-        );
-        return [...memOnly, ...dbPosts].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
+        return postsRes.rows.map(r => ({
+          id: r.id,
+          author_name: r.author_name,
+          author_role: r.author_role,
+          author_avatar: r.author_avatar,
+          is_verified_nmc: r.is_verified_nmc,
+          ward_number: r.ward_number,
+          ward_name: r.ward_name,
+          hero_name: r.hero_name,
+          hero_role: r.hero_role,
+          badge_title: r.badge_title,
+          title: r.title,
+          description: r.description,
+          achievement_stats: r.achievement_stats,
+          image_url: r.image_url,
+          before_image_url: r.before_image_url || undefined,
+          after_image_url: r.after_image_url || undefined,
+          after_photos: r.after_photos ? (typeof r.after_photos === 'string' ? JSON.parse(r.after_photos) : r.after_photos) : undefined,
+          likes_count: r.likes_count,
+          comments_count: r.comments_count,
+          is_liked: likedPostIds.has(r.id),
+          created_at: r.created_at,
+          comments: commentsByPost[r.id] || []
+        }));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getRecognitionPosts]:', err.message);
       }
@@ -1847,7 +1462,7 @@ export class DbRepository {
   }
 
   public static async togglePostLike(postId: string, citizenId: string): Promise<{ is_liked: boolean; likes_count: number }> {
-    if (isDbConnected() && this.isValidUUID(postId) && this.isValidUUID(citizenId)) {
+    if (isDbConnected()) {
       try {
         const check = await pool.query(
           'SELECT id FROM recognition_post_likes WHERE post_id = $1 AND citizen_id = $2',
@@ -1866,13 +1481,7 @@ export class DbRepository {
         }
 
         const countRes = await pool.query('SELECT likes_count FROM community_recognition_posts WHERE id = $1', [postId]);
-        const likesCount = countRes.rows[0]?.likes_count || 0;
-        const memPost = (store.recognitionPosts || []).find(p => p.id === postId);
-        if (memPost) {
-          memPost.is_liked = isLiked;
-          memPost.likes_count = likesCount;
-        }
-        return { is_liked: isLiked, likes_count: likesCount };
+        return { is_liked: isLiked, likes_count: countRes.rows[0]?.likes_count || 0 };
       } catch (err: any) {
         console.error('[DB REPO ERROR - togglePostLike]:', err.message);
       }
@@ -1889,14 +1498,13 @@ export class DbRepository {
   }
 
   public static async addPostComment(postId: string, citizenId: string, citizenName: string, text: string): Promise<RecognitionComment | null> {
-    if (isDbConnected() && this.isValidUUID(postId)) {
+    if (isDbConnected()) {
       try {
-        const validCitizen = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
         const res = await pool.query(
           `INSERT INTO recognition_post_comments (post_id, citizen_id, citizen_name, citizen_role, comment_text)
-           VALUES ($1, $2, $3, 'Verified User', $4)
+           VALUES ($1, $2, $3, 'Verified Citizen', $4)
            RETURNING *`,
-          [postId, validCitizen, citizenName, text]
+          [postId, citizenId, citizenName, text]
         );
         await pool.query(
           `UPDATE community_recognition_posts SET comments_count = comments_count + 1 WHERE id = $1`,
@@ -1904,7 +1512,7 @@ export class DbRepository {
         );
 
         const row = res.rows[0];
-        const createdComment: RecognitionComment = {
+        return {
           id: row.id,
           post_id: row.post_id,
           citizen_id: row.citizen_id,
@@ -1913,13 +1521,6 @@ export class DbRepository {
           comment_text: row.comment_text,
           created_at: row.created_at
         };
-        const memPost = (store.recognitionPosts || []).find(p => p.id === postId);
-        if (memPost) {
-          if (!memPost.comments) memPost.comments = [];
-          memPost.comments.push(createdComment);
-          memPost.comments_count = memPost.comments.length;
-        }
-        return createdComment;
       } catch (err: any) {
         console.error('[DB REPO ERROR - addPostComment]:', err.message);
       }
@@ -1947,7 +1548,6 @@ export class DbRepository {
   public static async createRecognitionPost(data: {
     author_name: string;
     author_role: string;
-    is_verified_nmc?: boolean;
     ward_number: number;
     ward_name: string;
     hero_name: string;
@@ -1960,70 +1560,35 @@ export class DbRepository {
     before_image_url?: string;
     after_image_url?: string;
     after_photos?: string[];
-    participating_communities?: string[];
-    drive_id?: string;
-    volunteers_count?: number;
-    points_awarded_citizen?: number;
-    points_awarded_community?: number;
   }): Promise<CommunityRecognitionPost | null> {
-    const isVerified = data.is_verified_nmc !== undefined ? data.is_verified_nmc : true;
-
     if (isDbConnected()) {
       try {
         const afterPhotosJson = data.after_photos ? JSON.stringify(data.after_photos) : null;
-        let res: any;
-        try {
-          res = await pool.query(
-            `INSERT INTO community_recognition_posts (
-              author_name, author_role, is_verified_nmc, ward_number, ward_name,
-              hero_name, hero_role, badge_title, title, description,
-              achievement_stats, image_url, likes_count, comments_count,
-              before_image_url, after_image_url, after_photos
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, 0, $13, $14, $15)
-            RETURNING *`,
-            [
-              data.author_name,
-              data.author_role,
-              isVerified,
-              data.ward_number,
-              data.ward_name,
-              data.hero_name,
-              data.hero_role,
-              data.badge_title,
-              data.title,
-              data.description,
-              data.achievement_stats,
-              data.image_url,
-              data.before_image_url || null,
-              data.after_image_url || null,
-              afterPhotosJson
-            ]
-          );
-        } catch {
-          // Fallback to base schema columns if optional photo columns haven't been migrated in DB
-          res = await pool.query(
-            `INSERT INTO community_recognition_posts (
-              author_name, author_role, is_verified_nmc, ward_number, ward_name,
-              hero_name, hero_role, badge_title, title, description,
-              achievement_stats, image_url, likes_count, comments_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, 0)
-            RETURNING *`,
-            [
-              data.author_name,
-              data.author_role,
-              isVerified,
-              data.ward_number,
-              data.ward_name,
-              data.hero_name,
-              data.hero_role,
-              data.badge_title,
-              data.title,
-              data.description,
-              data.achievement_stats,
-              data.image_url
-            ]
-          );
-        }
+        const res = await pool.query(
+          `INSERT INTO community_recognition_posts (
+            author_name, author_role, is_verified_nmc, ward_number, ward_name,
+            hero_name, hero_role, badge_title, title, description,
+            achievement_stats, image_url, likes_count, comments_count,
+            before_image_url, after_image_url, after_photos
+          ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14)
+          RETURNING *`,
+          [
+            data.author_name,
+            data.author_role,
+            data.ward_number,
+            data.ward_name,
+            data.hero_name,
+            data.hero_role,
+            data.badge_title,
+            data.title,
+            data.description,
+            data.achievement_stats,
+            data.image_url,
+            data.before_image_url || null,
+            data.after_image_url || null,
+            afterPhotosJson
+          ]
+        );
         const r = res.rows[0];
         const postObj: any = {
           id: r.id,
@@ -2043,18 +1608,12 @@ export class DbRepository {
           before_image_url: r.before_image_url || data.before_image_url,
           after_image_url: r.after_image_url || data.after_image_url,
           after_photos: r.after_photos || data.after_photos,
-          participating_communities: data.participating_communities,
-          drive_id: data.drive_id,
-          volunteers_count: data.volunteers_count,
-          points_awarded_citizen: data.points_awarded_citizen,
-          points_awarded_community: data.points_awarded_community,
           likes_count: r.likes_count,
           comments_count: r.comments_count,
           is_liked: false,
           created_at: r.created_at,
           comments: []
         };
-        if (!store.recognitionPosts) store.recognitionPosts = [];
         store.recognitionPosts.unshift(postObj);
         return postObj;
       } catch (err: any) {
@@ -2064,11 +1623,11 @@ export class DbRepository {
 
     // Fallback store
     const newPost: CommunityRecognitionPost = {
-      id: `post-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `post-${Date.now()}`,
       author_name: data.author_name,
       author_role: data.author_role,
       author_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&q=80',
-      is_verified_nmc: isVerified,
+      is_verified_nmc: true,
       ward_number: data.ward_number,
       ward_name: data.ward_name,
       hero_name: data.hero_name,
@@ -2081,11 +1640,6 @@ export class DbRepository {
       before_image_url: data.before_image_url,
       after_image_url: data.after_image_url,
       after_photos: data.after_photos,
-      participating_communities: data.participating_communities,
-      drive_id: data.drive_id,
-      volunteers_count: data.volunteers_count,
-      points_awarded_citizen: data.points_awarded_citizen,
-      points_awarded_community: data.points_awarded_community,
       likes_count: 1,
       comments_count: 0,
       is_liked: false,
@@ -2249,7 +1803,7 @@ export class DbRepository {
     limit?: number;
   } = {}): Promise<{ activities: CommunityActivity[]; total: number }> {
     const page = Math.max(1, params.page || 1);
-    const limit = Math.max(1, Math.min(100, params.limit || 15));
+    const limit = Math.max(1, Math.min(100, params.limit || 50));
     const offset = (page - 1) * limit;
 
     if (isDbConnected()) {
@@ -2345,7 +1899,7 @@ export class DbRepository {
             registration_open_at, registration_close_at,
             maximum_participants, minimum_participants, waiting_list_enabled,
             registration_requires_approval, publication_status, approval_status,
-            registration_status, event_status, evidence_status, created_by
+            registration_status, event_status, evidence_status, created_by, linked_problem_id
           ) VALUES (
             $1, $2, $3, $4,
             $5, $6, $7, $8,
@@ -2355,35 +1909,38 @@ export class DbRepository {
             $22, $23,
             $24, $25, $26,
             $27, $28, $29,
-            $30, $31, $32, $33
+            $30, $31, $32, $33, $34
           ) RETURNING *
         `;
+
+        const linkedProbRaw = (data as any).linked_problem_id;
+        const linkedProblemId = this.isValidUUID(linkedProbRaw) ? linkedProbRaw : null;
 
         const values = [
           data.community_id || 'b0000000-0000-0000-0000-000000000001',
           data.title || 'Untitled Community Activity',
           data.short_description || 'Cleanliness drive in Navsari',
           data.detailed_description || 'Comprehensive cleanliness activity with volunteer participation.',
-          data.activity_category || 'Public Area Cleaning',
+          data.activity_category || (data as any).activity_type || 'Public Area Cleaning',
           JSON.stringify(data.objectives || []),
           JSON.stringify(data.expected_outcomes || []),
-          data.instructions || 'Report on time with safety gloves.',
-          JSON.stringify(data.equipment_requirements || []),
+          data.instructions || (data as any).volunteer_instructions || 'Report on time with safety gloves.',
+          JSON.stringify(data.equipment_requirements || (data as any).equipment_needed || []),
           data.safety_guidelines || 'Follow team supervisor instructions.',
           JSON.stringify(data.faq || []),
           data.cover_image_path || 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=1200&q=80',
-          data.ward_id || 'ward-03',
+          data.ward_id || `ward-${String(data.ward_number || 3).padStart(2, '0')}`,
           data.ward_number || 3,
-          data.ward_name || 'Ward 3 - Dudhiya Talao',
+          data.ward_name || `Ward ${data.ward_number || 3}`,
           data.latitude || 20.9470,
           data.longitude || 72.9280,
-          data.address || 'Navsari Municipal Area',
-          data.landmark || null,
+          data.address || (data as any).target_area || 'Navsari Municipal Area',
+          data.landmark || (data as any).meeting_point || null,
           data.proposed_start_at || new Date(Date.now() + 86400000).toISOString(),
           data.proposed_end_at || new Date(Date.now() + 86400000 + 10800000).toISOString(),
           data.registration_open_at || new Date().toISOString(),
           data.registration_close_at || new Date(Date.now() + 86400000).toISOString(),
-          data.maximum_participants || 50,
+          data.maximum_participants || (data as any).max_capacity || 50,
           data.minimum_participants || 10,
           data.waiting_list_enabled ?? true,
           data.registration_requires_approval ?? false,
@@ -2392,7 +1949,8 @@ export class DbRepository {
           data.registration_status || 'not_open',
           data.event_status || 'upcoming',
           data.evidence_status || 'not_submitted',
-          this.isValidUUID(data.created_by) ? data.created_by : 'c0000000-0000-0000-0000-000000000099'
+          this.isValidUUID(data.created_by) ? data.created_by : 'c0000000-0000-0000-0000-000000000099',
+          linkedProblemId
         ];
 
         const res = await pool.query(query, values);
@@ -2472,13 +2030,18 @@ export class DbRepository {
     return newAct;
   }
 
-  public static async updateCommunityActivity(id: string, data: Partial<CommunityActivity>): Promise<CommunityActivity | null> {
+  public static async updateCommunityActivity(id: string, data: Partial<CommunityActivity> & { max_capacity?: number }): Promise<CommunityActivity | null> {
     if (isDbConnected() && this.isValidUUID(id)) {
       try {
         const existing = await this.getActivityById(id);
         if (!existing) return null;
 
-        const res = await pool.query(`
+        const rawMax = data.maximum_participants ?? data.max_capacity;
+        const parsedMax = rawMax !== undefined && rawMax !== null && !isNaN(Number(rawMax))
+          ? Math.max(1, parseInt(String(rawMax), 10))
+          : null;
+
+        await pool.query(`
           UPDATE community_activities SET
             title = COALESCE($1, title),
             short_description = COALESCE($2, short_description),
@@ -2509,13 +2072,40 @@ export class DbRepository {
           data.equipment_requirements ? JSON.stringify(data.equipment_requirements) : null,
           data.safety_guidelines || null,
           data.cover_image_path || null,
-          data.maximum_participants || null,
+          parsedMax,
           data.proposed_start_at || null,
           data.proposed_end_at || null,
           data.address || null,
           data.landmark || null,
           id
         ]);
+
+        // Sync max_volunteers & auto-close/reopen registration_status based on current count
+        if (parsedMax !== null) {
+          await pool.query(
+            `UPDATE cleanliness_drives SET max_volunteers = $1 WHERE id = $2`,
+            [parsedMax, id]
+          ).catch(() => {});
+
+          const cntRes = await pool.query(
+            `SELECT COUNT(*) FROM activity_registrations WHERE activity_id = $1 AND registration_status <> 'cancelled'`,
+            [id]
+          ).catch(() => ({ rows: [{ count: '0' }] }));
+          const activeCount = parseInt(cntRes.rows[0]?.count || '0', 10);
+
+          if (activeCount >= parsedMax) {
+            await pool.query(
+              `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
+              [id]
+            ).catch(() => {});
+          } else if (existing.registration_status === 'closed' && existing.event_status !== 'completed') {
+            // Reopen automatically if organizer raised the limit above current enrollment
+            await pool.query(
+              `UPDATE community_activities SET registration_status = 'open', updated_at = NOW() WHERE id = $1`,
+              [id]
+            ).catch(() => {});
+          }
+        }
 
         return this.getActivityById(id);
       } catch (err: any) {
@@ -2716,21 +2306,18 @@ export class DbRepository {
     const limit = Math.max(1, Math.min(200, params.limit || 20));
     const offset = (page - 1) * limit;
 
-    const mergedMap = new Map<string, ActivityRegistration>();
-
     if (isDbConnected()) {
       try {
-        // 1. Check activity_registrations
         let query = `
           SELECT r.*,
-                 COALESCE(p.full_name, 'Citizen Volunteer') as citizen_name,
-                 COALESCE(p.phone, '+91 98251 00001') as citizen_phone,
-                 COALESCE(p.email, 'citizen@navsari.gov.in') as citizen_email,
+                 COALESCE(NULLIF(TRIM(p.full_name), ''), 'Registered Citizen') as citizen_name,
+                 COALESCE(p.phone, '') as citizen_phone,
+                 COALESCE(p.email, '') as citizen_email,
                  COALESCE(a.title, 'Cleanliness Drive') as activity_title
           FROM activity_registrations r
           LEFT JOIN profiles p ON p.id = r.citizen_id
           LEFT JOIN community_activities a ON a.id = r.activity_id
-          WHERE 1=1
+          WHERE r.registration_status <> 'cancelled'
         `;
         const values: any[] = [];
         let idx = 1;
@@ -2740,186 +2327,77 @@ export class DbRepository {
           values.push(activityId);
         }
 
-        const res = await pool.query(`${query} ORDER BY r.registered_at DESC`, values);
-        for (const r of res.rows) {
-          mergedMap.set(`${r.activity_id}_${r.citizen_id}`, {
-            id: r.id,
-            activity_id: r.activity_id,
-            activity_title: r.activity_title,
-            citizen_id: r.citizen_id,
-            citizen_name: r.citizen_name,
-            citizen_phone: r.citizen_phone,
-            citizen_email: r.citizen_email,
-            registration_number: r.registration_number,
-            registration_status: r.registration_status,
-            attendance_status: r.attendance_status || 'not_marked',
-            registered_at: r.registered_at,
-            cancelled_at: r.cancelled_at
-          });
+        if (params.status && params.status !== 'all') {
+          query += ` AND r.registration_status = $${idx++}`;
+          values.push(params.status);
         }
 
-        // 2. Also check drive_registrations (covers Ward Officer-created drives!)
-        if (activityId && this.isValidUUID(activityId)) {
-          const driveRegRes = await pool.query(`
-            SELECT dr.*,
-                   COALESCE(p.full_name, 'Citizen Volunteer') as citizen_name,
-                   COALESCE(p.phone, '+91 98251 00001') as citizen_phone,
-                   COALESCE(p.email, 'citizen@navsari.gov.in') as citizen_email,
-                   COALESCE(cd.title, 'Cleanliness Drive') as activity_title
-            FROM drive_registrations dr
-            LEFT JOIN profiles p ON p.id = dr.citizen_id
-            LEFT JOIN cleanliness_drives cd ON cd.id = dr.drive_id
-            WHERE dr.drive_id = $1
-            ORDER BY dr.registered_at DESC
-          `, [activityId]).catch(() => ({ rows: [] as any[] }));
+        if (params.attendance && params.attendance !== 'all') {
+          query += ` AND r.attendance_status = $${idx++}`;
+          values.push(params.attendance);
+        }
 
-          for (const r of driveRegRes.rows) {
-            const key = `${r.drive_id}_${r.citizen_id}`;
-            if (!mergedMap.has(key)) {
-              mergedMap.set(key, {
-                id: r.id,
-                activity_id: r.drive_id,
-                activity_title: r.activity_title,
-                citizen_id: r.citizen_id,
-                citizen_name: r.citizen_name,
-                citizen_phone: r.citizen_phone,
-                citizen_email: r.citizen_email,
-                community_id: r.community_id || undefined,
-                community_name: r.community_name || undefined,
-                registration_number: r.registration_number || `REG-DRV-${String(r.id).slice(0, 6).toUpperCase()}`,
-                registration_status: r.registration_status || 'registered',
-                attendance_status: r.attendance_status || 'not_marked',
-                registered_at: r.registered_at
-              });
-            }
-          }
+        if (params.search && params.search.trim()) {
+          query += ` AND (COALESCE(p.full_name, '') ILIKE $${idx} OR r.registration_number ILIKE $${idx} OR COALESCE(p.phone, '') ILIKE $${idx})`;
+          values.push(`%${params.search.trim()}%`);
+          idx++;
+        }
+
+        const countRes = await pool.query(`SELECT COUNT(*) FROM (${query}) q`, values);
+        const total = parseInt(countRes.rows[0]?.count || '0');
+
+        query += ` ORDER BY r.registered_at DESC LIMIT $${idx++} OFFSET $${idx++}`;
+        values.push(limit, offset);
+
+        const res = await pool.query(query, values);
+        const registrations = res.rows.map(r => ({
+          id: r.id,
+          activity_id: r.activity_id,
+          activity_title: r.activity_title,
+          citizen_id: r.citizen_id,
+          citizen_name: r.citizen_name,
+          citizen_phone: r.citizen_phone,
+          citizen_email: r.citizen_email,
+          registration_number: r.registration_number,
+          registration_status: r.registration_status,
+          attendance_status: r.attendance_status,
+          registered_at: r.registered_at,
+          cancelled_at: r.cancelled_at
+        }));
+
+        if (registrations.length > 0 || total > 0) {
+          return { registrations, total };
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - getActivityRegistrations]:', err.message);
       }
     }
 
-    // 3. Merge in-memory activityRegistrations & driveRegistrations (also enriching DB rows with geo-tag check-in metadata!)
-    const memActRegs = (store.activityRegistrations || []).filter(r => !activityId || r.activity_id === activityId);
-    for (const r of memActRegs) {
-      const key = `${r.activity_id}_${r.citizen_id}`;
-      const existing = mergedMap.get(key);
-      if (existing) {
-        existing.checkin_latitude = existing.checkin_latitude ?? r.checkin_latitude;
-        existing.checkin_longitude = existing.checkin_longitude ?? r.checkin_longitude;
-        existing.checkin_distance_meters = existing.checkin_distance_meters ?? r.checkin_distance_meters;
-        existing.checkin_at = existing.checkin_at ?? r.checkin_at;
-        existing.community_id = existing.community_id || r.community_id;
-        existing.community_name = existing.community_name || r.community_name;
-        if (r.attendance_status === 'pending_verification' && existing.attendance_status === 'not_marked') {
-          existing.attendance_status = 'pending_verification';
-        }
-      } else {
-        const profile = (store.profiles || []).find(p => p.id === r.citizen_id);
-        mergedMap.set(key, {
-          ...r,
-          citizen_name: r.citizen_name || profile?.full_name || 'Citizen Volunteer',
-          citizen_phone: r.citizen_phone || profile?.phone || '+91 98251 00001',
-          citizen_email: r.citizen_email || profile?.email || 'citizen@navsari.gov.in',
-          registration_status: r.registration_status || 'registered',
-          attendance_status: (r.attendance_status as any) || 'not_marked'
-        });
-      }
+    let memRegs = (store as any).activityRegistrations || [];
+    if (activityId) {
+      memRegs = memRegs.filter((r: any) => r.activity_id === activityId);
     }
-
-    const memDriveRegs = (store.driveRegistrations || []).filter(r => !activityId || r.drive_id === activityId);
-    for (const r of memDriveRegs) {
-      const key = `${r.drive_id}_${r.citizen_id}`;
-      const existing = mergedMap.get(key);
-      if (existing) {
-        existing.checkin_latitude = existing.checkin_latitude ?? r.checkin_latitude;
-        existing.checkin_longitude = existing.checkin_longitude ?? r.checkin_longitude;
-        existing.checkin_distance_meters = existing.checkin_distance_meters ?? r.checkin_distance_meters;
-        existing.checkin_at = existing.checkin_at ?? r.checkin_at;
-        existing.community_id = existing.community_id || r.community_id;
-        existing.community_name = existing.community_name || r.community_name;
-        if (r.attendance_status === 'pending_verification' && existing.attendance_status === 'not_marked') {
-          existing.attendance_status = 'pending_verification';
-        }
-      } else {
-        const profile = (store.profiles || []).find(p => p.id === r.citizen_id);
-        const drive = (store.drives || []).find(d => d.id === r.drive_id);
-        const prob = (store.communityProblems || []).find(p => p.id === r.drive_id);
-        mergedMap.set(key, {
-          id: r.id || `reg-drv-${r.drive_id.slice(0, 6)}-${r.citizen_id.slice(0, 6)}`,
-          activity_id: r.drive_id,
-          activity_title: drive?.title || prob?.title || 'Cleanliness Drive',
-          citizen_id: r.citizen_id,
-          citizen_name: r.citizen_name || profile?.full_name || 'Citizen Volunteer',
-          citizen_phone: r.citizen_phone || profile?.phone || '+91 98251 00001',
-          citizen_email: r.citizen_email || profile?.email || 'citizen@navsari.gov.in',
-          community_id: r.community_id,
-          community_name: r.community_name,
-          registration_number: r.registration_number || `REG-NAV-${r.citizen_id.slice(-4).toUpperCase()}`,
-          registration_status: r.registration_status || 'registered',
-          attendance_status: r.attendance_status || 'not_marked',
-          checkin_latitude: r.checkin_latitude,
-          checkin_longitude: r.checkin_longitude,
-          checkin_distance_meters: r.checkin_distance_meters,
-          checkin_at: r.checkin_at,
-          registered_at: r.registered_at
-        });
-      }
-    }
-
-    let allRegs = Array.from(mergedMap.values());
     if (params.status && params.status !== 'all') {
-      allRegs = allRegs.filter(r => r.registration_status === params.status);
+      memRegs = memRegs.filter((r: any) => r.registration_status === params.status);
     }
     if (params.attendance && params.attendance !== 'all') {
-      allRegs = allRegs.filter(r => r.attendance_status === params.attendance);
+      memRegs = memRegs.filter((r: any) => r.attendance_status === params.attendance);
     }
     if (params.search && params.search.trim()) {
       const q = params.search.trim().toLowerCase();
-      allRegs = allRegs.filter(r =>
-        (r.citizen_name || '').toLowerCase().includes(q) ||
-        (r.registration_number || '').toLowerCase().includes(q) ||
-        (r.citizen_phone || '').toLowerCase().includes(q) ||
-        (r.community_name || '').toLowerCase().includes(q)
-      );
+      memRegs = memRegs.filter((r: any) => (r.citizen_name || '').toLowerCase().includes(q) || (r.registration_number || '').toLowerCase().includes(q));
     }
-
-    // Prioritize pending geo-tagged check-ins at top so Community Heads see them immediately!
-    allRegs.sort((a, b) => {
-      const aPending = a.attendance_status === 'pending_verification' ? 1 : 0;
-      const bPending = b.attendance_status === 'pending_verification' ? 1 : 0;
-      if (aPending !== bPending) return bPending - aPending;
-      return new Date(b.registered_at).getTime() - new Date(a.registered_at).getTime();
-    });
-
     return {
-      registrations: allRegs.slice(offset, offset + limit),
-      total: allRegs.length
+      registrations: memRegs.slice(offset, offset + limit),
+      total: memRegs.length
     };
   }
 
   public static async updateRegistrationAttendance(
     registrationId: string,
     attendanceStatus: string,
-    registrationStatus?: string,
-    actingCommunityId?: string
-  ): Promise<{ success: boolean; error?: string; data?: ActivityRegistration | null }> {
-    // Check community ownership if actingCommunityId is supplied (ensures in Joint Drives only the respective Community Head approves their citizens!)
-    const memActRegCheck = (store.activityRegistrations || []).find(r => r.id === registrationId);
-    const memDriveRegCheck = (store.driveRegistrations || []).find(
-      r => r.id === registrationId || `reg-drv-${r.drive_id.slice(0, 6)}-${r.citizen_id.slice(0, 6)}` === registrationId
-    );
-    const regCommId = memActRegCheck?.community_id || memDriveRegCheck?.community_id;
-    const regCommName = memActRegCheck?.community_name || memDriveRegCheck?.community_name;
-    if (actingCommunityId && regCommId && regCommId !== actingCommunityId) {
-      return {
-        success: false,
-        error: `Only the respective Community Head for "${regCommName || 'that community'}" can verify and mark final attendance for this volunteer.`
-      };
-    }
-
-    let updatedRecord: ActivityRegistration | null = null;
-
+    registrationStatus?: string
+  ): Promise<ActivityRegistration | null> {
     if (isDbConnected() && this.isValidUUID(registrationId)) {
       try {
         const sets: string[] = ['attendance_status = $1', 'updated_at = NOW()'];
@@ -2939,7 +2417,7 @@ export class DbRepository {
 
         if (res.rows.length > 0) {
           const r = res.rows[0];
-          updatedRecord = {
+          return {
             id: r.id,
             activity_id: r.activity_id,
             citizen_id: r.citizen_id,
@@ -2949,91 +2427,12 @@ export class DbRepository {
             registered_at: r.registered_at,
             cancelled_at: r.cancelled_at
           };
-        } else {
-          const dRes = await pool.query(`
-            UPDATE drive_registrations
-            SET attendance_status = $1
-            WHERE id = $2
-            RETURNING *
-          `, [attendanceStatus, registrationId]).catch(() => ({ rows: [] as any[] }));
-
-          if (dRes.rows.length > 0) {
-            const r = dRes.rows[0];
-            updatedRecord = {
-              id: r.id,
-              activity_id: r.drive_id,
-              citizen_id: r.citizen_id,
-              community_id: r.community_id,
-              community_name: r.community_name,
-              registration_number: r.registration_number || `REG-DRV-${String(r.id).slice(0, 6).toUpperCase()}`,
-              registration_status: r.registration_status || 'registered',
-              attendance_status: r.attendance_status,
-              registered_at: r.registered_at
-            };
-          }
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - updateRegistrationAttendance]:', err.message);
       }
     }
-
-    // Sync / update in-memory store (activityRegistrations + driveRegistrations)
-    if (memActRegCheck) {
-      memActRegCheck.attendance_status = attendanceStatus as any;
-      if (registrationStatus) memActRegCheck.registration_status = registrationStatus as any;
-      updatedRecord = updatedRecord || { ...memActRegCheck };
-    }
-
-    if (memDriveRegCheck) {
-      memDriveRegCheck.attendance_status = attendanceStatus as any;
-      if (registrationStatus) memDriveRegCheck.registration_status = registrationStatus as any;
-      if (!updatedRecord) {
-        const profile = (store.profiles || []).find(p => p.id === memDriveRegCheck.citizen_id);
-        updatedRecord = {
-          id: memDriveRegCheck.id || registrationId,
-          activity_id: memDriveRegCheck.drive_id,
-          citizen_id: memDriveRegCheck.citizen_id,
-          citizen_name: memDriveRegCheck.citizen_name || profile?.full_name || 'Citizen Volunteer',
-          citizen_phone: memDriveRegCheck.citizen_phone || profile?.phone,
-          community_id: memDriveRegCheck.community_id,
-          community_name: memDriveRegCheck.community_name,
-          registration_number: memDriveRegCheck.registration_number || 'REG-NAV-0001',
-          registration_status: memDriveRegCheck.registration_status || 'registered',
-          attendance_status: memDriveRegCheck.attendance_status || (attendanceStatus as any),
-          registered_at: memDriveRegCheck.registered_at
-        };
-      }
-    }
-
-    // Notify citizen about their final attendance confirmation
-    if (updatedRecord?.citizen_id) {
-      const targetDriveId = updatedRecord.activity_id;
-      const driveTitle =
-        (store.drives || []).find(d => d.id === targetDriveId)?.title ||
-        (store.communityProblems || []).find(p => p.id === targetDriveId)?.title ||
-        (store.communityActivities || []).find(a => a.id === targetDriveId)?.title ||
-        'Cleanliness Drive';
-
-      if (attendanceStatus === 'present') {
-        await this.createNotification(
-          updatedRecord.citizen_id,
-          `✓ Final Attendance Confirmed: ${driveTitle}`,
-          `Your Community Head has verified your participation and marked you PRESENT for "${driveTitle}". You will receive your Official NMC Completion Certificate & Civic Points once the Ward Officer approves the drive completion!`,
-          targetDriveId,
-          'drive_reminder'
-        );
-      } else if (attendanceStatus === 'absent') {
-        await this.createNotification(
-          updatedRecord.citizen_id,
-          `Attendance Updated (Absent): ${driveTitle}`,
-          `Your Community Head marked your attendance as ABSENT for "${driveTitle}". If this is an error, please contact your community coordinator.`,
-          targetDriveId,
-          'drive_reminder'
-        );
-      }
-    }
-
-    return { success: true, data: updatedRecord };
+    return null;
   }
 
   // =========================================================================
@@ -3045,19 +2444,17 @@ export class DbRepository {
     communityId: string,
     citizenId: string,
     questionText: string,
-    lang: string = 'en'
+    lang: string = 'en',
+    citizenInfo?: { fullName?: string; phone?: string }
   ): Promise<ActivityQuestion> {
     const validCitizen = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
-    await this.ensureProfileExists(validCitizen, 'Citizen Volunteer', '+919876543210');
+    await this.ensureProfileExists(
+      validCitizen,
+      citizenInfo?.fullName?.trim() || 'Citizen Volunteer',
+      citizenInfo?.phone?.trim() || '+919876543210'
+    );
 
-    const profile = (store.profiles || []).find(p => p.id === validCitizen || p.id === citizenId);
-    const citizenName = profile?.full_name || 'Citizen Volunteer';
-    const act = (store.communityActivities || []).find(a => a.id === activityId);
-    const prob = (store.communityProblems || []).find(p => p.id === activityId);
-    const drv = (store.drives || []).find(d => d.id === activityId);
-    const activityTitle = act?.title || prob?.title || drv?.title || 'Cleanliness Drive';
-
-    if (isDbConnected() && this.isValidUUID(activityId) && this.isValidUUID(communityId)) {
+    if (isDbConnected()) {
       try {
         const res = await pool.query(`
           INSERT INTO activity_questions (activity_id, community_id, citizen_id, question_text, question_language, status)
@@ -3066,43 +2463,33 @@ export class DbRepository {
         `, [activityId, communityId, validCitizen, questionText.trim(), lang]);
 
         const r = res.rows[0];
-        const created: ActivityQuestion = {
+        return {
           id: r.id,
           activity_id: r.activity_id,
-          activity_title: activityTitle,
           community_id: r.community_id,
           citizen_id: r.citizen_id,
-          citizen_name: citizenName,
           question_text: r.question_text,
           question_language: r.question_language,
           status: r.status,
           created_at: r.created_at,
           updated_at: r.updated_at
         };
-        if (!store.activityQuestions) store.activityQuestions = [];
-        store.activityQuestions.unshift(created);
-        return created;
       } catch (err: any) {
         console.error('[DB REPO ERROR - createActivityQuestion]:', err.message);
       }
     }
 
-    const memQuestion: ActivityQuestion = {
-      id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    return {
+      id: `q-${Date.now()}`,
       activity_id: activityId,
-      activity_title: activityTitle,
-      community_id: communityId || 'comm-lead',
+      community_id: communityId,
       citizen_id: validCitizen,
-      citizen_name: citizenName,
-      question_text: questionText.trim(),
-      question_language: (lang as any) || 'en',
+      question_text: questionText,
+      question_language: lang as any,
       status: 'ai_suggestion_pending',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    if (!store.activityQuestions) store.activityQuestions = [];
-    store.activityQuestions.unshift(memQuestion);
-    return memQuestion;
   }
 
   public static async getActivityQuestions(communityId: string, params: {
@@ -3113,21 +2500,18 @@ export class DbRepository {
     limit?: number;
   } = {}): Promise<{ questions: ActivityQuestion[]; total: number }> {
     const page = Math.max(1, params.page || 1);
-    const limit = Math.max(1, Math.min(100, params.limit || 25));
+    const limit = Math.max(1, Math.min(100, params.limit || 50));
     const offset = (page - 1) * limit;
-
-    const mergedMap = new Map<string, ActivityQuestion>();
 
     if (isDbConnected()) {
       try {
         let query = `
-          SELECT q.*, COALESCE(p.full_name, 'Citizen Volunteer') as citizen_name,
-            COALESCE(a.title, 'Cleanliness Drive') as activity_title,
+          SELECT q.*, COALESCE(NULLIF(TRIM(p.full_name), ''), 'Citizen Volunteer') as citizen_name, a.title as activity_title,
             s.id as s_id, s.suggested_answer, s.answerability_status, s.supporting_information, s.missing_information,
-            resp.id as r_id, resp.response_text, resp.created_at as answered_at, rp.full_name as responder_name
+            resp.id as r_id, resp.response_text, resp.created_at as answered_at, COALESCE(NULLIF(TRIM(rp.full_name), ''), 'Community Head') as responder_name
           FROM activity_questions q
           LEFT JOIN profiles p ON p.id = q.citizen_id
-          LEFT JOIN community_activities a ON a.id = q.activity_id
+          JOIN community_activities a ON a.id = q.activity_id
           LEFT JOIN activity_ai_answer_suggestions s ON s.question_id = q.id
           LEFT JOIN activity_question_responses resp ON resp.question_id = q.id
           LEFT JOIN profiles rp ON rp.id = resp.responder_id
@@ -3136,106 +2520,91 @@ export class DbRepository {
         const values: any[] = [];
         let idx = 1;
 
-        if (params.activityId && this.isValidUUID(params.activityId)) {
-          query += ` AND q.activity_id = $${idx++}`;
-          values.push(params.activityId);
-        } else if (communityId && this.isValidUUID(communityId)) {
+        if (communityId && this.isValidUUID(communityId)) {
           query += ` AND q.community_id = $${idx++}`;
           values.push(communityId);
         }
 
-        query += ` ORDER BY q.created_at DESC`;
+        if (params.activityId && this.isValidUUID(params.activityId)) {
+          query += ` AND q.activity_id = $${idx++}`;
+          values.push(params.activityId);
+        }
+
+        if (params.status && params.status !== 'all') {
+          query += ` AND q.status = $${idx++}`;
+          values.push(params.status);
+        }
+
+        if (params.search && params.search.trim()) {
+          query += ` AND (q.question_text ILIKE $${idx} OR a.title ILIKE $${idx} OR p.full_name ILIKE $${idx})`;
+          values.push(`%${params.search.trim()}%`);
+          idx++;
+        }
+
+        const countRes = await pool.query(`SELECT COUNT(*) FROM (${query}) c_q`, values);
+        const total = parseInt(countRes.rows[0]?.count || '0');
+
+        query += ` ORDER BY q.created_at DESC LIMIT $${idx++} OFFSET $${idx++}`;
+        values.push(limit, offset);
 
         const res = await pool.query(query, values);
-        for (const r of res.rows) {
-          mergedMap.set(r.id, {
-            id: r.id,
-            activity_id: r.activity_id,
-            activity_title: r.activity_title,
-            community_id: r.community_id,
-            citizen_id: r.citizen_id,
-            citizen_name: r.citizen_name,
-            question_text: r.question_text,
-            question_language: r.question_language,
-            status: r.status,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            ...(r.r_id ? { response_text: r.response_text, answered_at: r.answered_at } : {}),
-            ai_suggestion: r.s_id ? {
-              id: r.s_id,
-              question_id: r.id,
-              suggested_answer: r.suggested_answer,
-              answer_language: r.question_language,
-              answerability_status: r.answerability_status || 'high_confidence',
-              supporting_information: r.supporting_information || [],
-              missing_information: r.missing_information || [],
-              generation_status: 'ready',
-              created_at: r.created_at
-            } : undefined,
-            response: r.r_id ? {
-              id: r.r_id,
-              question_id: r.id,
-              suggestion_id: r.s_id,
-              responder_id: r.citizen_id,
-              responder_name: r.responder_name || 'Community Head',
-              response_text: r.response_text,
-              ai_assisted: true,
-              created_at: r.answered_at
-            } : undefined
-          } as any);
-        }
+        const questions: ActivityQuestion[] = res.rows.map(r => ({
+          id: r.id,
+          activity_id: r.activity_id,
+          activity_title: r.activity_title,
+          community_id: r.community_id,
+          citizen_id: r.citizen_id,
+          citizen_name: r.citizen_name,
+          question_text: r.question_text,
+          question_language: r.question_language,
+          status: r.status,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          ai_suggestion: r.s_id ? {
+            id: r.s_id,
+            question_id: r.id,
+            suggested_answer: r.suggested_answer,
+            answer_language: r.question_language,
+            answerability_status: r.answerability_status || 'high_confidence',
+            supporting_information: r.supporting_information || [],
+            missing_information: r.missing_information || [],
+            generation_status: 'ready',
+            created_at: r.created_at
+          } : undefined,
+          response_text: r.response_text || undefined,
+          answered_at: r.answered_at || undefined,
+          responder_name: r.r_id ? (r.responder_name || 'Community Head') : undefined,
+          response: r.r_id ? {
+            id: r.r_id,
+            question_id: r.id,
+            suggestion_id: r.s_id,
+            responder_id: r.responder_id || r.citizen_id,
+            responder_name: r.responder_name || 'Community Head',
+            response_text: r.response_text,
+            ai_assisted: true,
+            created_at: r.answered_at
+          } : undefined
+        } as any));
+
+        return { questions, total };
       } catch (err: any) {
         console.error('[DB REPO ERROR - getActivityQuestions]:', err.message);
       }
     }
 
-    // Merge in-memory questions (covers Ward Officer drives & in-memory mode)
-    for (const q of (store.activityQuestions || [])) {
-      if (params.activityId) {
-        if (q.activity_id !== params.activityId) continue;
-      } else if (communityId && q.community_id && q.community_id !== communityId) {
-        // Also allow if this community is assigned to the problem/drive
-        const prob = (store.communityProblems || []).find(p => p.id === q.activity_id);
-        const isAssigned = prob?.assigned_communities?.some(ac => ac.community_id === communityId);
-        if (!isAssigned) continue;
-      }
-      if (!mergedMap.has(q.id)) {
-        mergedMap.set(q.id, q);
-      }
-    }
-
-    let allQuestions = Array.from(mergedMap.values());
-    if (params.status && params.status !== 'all') {
-      allQuestions = allQuestions.filter(q => q.status === params.status);
-    }
-    if (params.search && params.search.trim()) {
-      const s = params.search.trim().toLowerCase();
-      allQuestions = allQuestions.filter(q =>
-        (q.question_text || '').toLowerCase().includes(s) ||
-        (q.activity_title || '').toLowerCase().includes(s) ||
-        (q.citizen_name || '').toLowerCase().includes(s)
-      );
-    }
-
-    allQuestions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    return {
-      questions: allQuestions.slice(offset, offset + limit),
-      total: allQuestions.length
-    };
+    return { questions: [], total: 0 };
   }
 
   public static async getQuestionById(questionId: string): Promise<ActivityQuestion | null> {
     if (isDbConnected() && this.isValidUUID(questionId)) {
       try {
         const res = await pool.query(`
-          SELECT q.*, COALESCE(p.full_name, 'Citizen Volunteer') as citizen_name,
-            COALESCE(a.title, 'Cleanliness Drive') as activity_title,
+          SELECT q.*, p.full_name as citizen_name, a.title as activity_title,
             s.id as s_id, s.suggested_answer, s.answerability_status, s.supporting_information, s.missing_information,
             resp.id as r_id, resp.response_text, resp.created_at as answered_at, rp.full_name as responder_name
           FROM activity_questions q
-          LEFT JOIN profiles p ON p.id = q.citizen_id
-          LEFT JOIN community_activities a ON a.id = q.activity_id
+          JOIN profiles p ON p.id = q.citizen_id
+          JOIN community_activities a ON a.id = q.activity_id
           LEFT JOIN activity_ai_answer_suggestions s ON s.question_id = q.id
           LEFT JOIN activity_question_responses resp ON resp.question_id = q.id
           LEFT JOIN profiles rp ON rp.id = resp.responder_id
@@ -3283,9 +2652,7 @@ export class DbRepository {
         console.error('[DB REPO ERROR - getQuestionById]:', err.message);
       }
     }
-
-    const memQ = (store.activityQuestions || []).find(q => q.id === questionId);
-    return memQ || null;
+    return null;
   }
 
   public static async saveAiAnswerSuggestion(
@@ -3298,8 +2665,6 @@ export class DbRepository {
       missing_information?: string[];
     }
   ): Promise<ActivityAiSuggestion> {
-    let savedSug: ActivityAiSuggestion | null = null;
-
     if (isDbConnected() && this.isValidUUID(questionId)) {
       try {
         await pool.query(`DELETE FROM activity_ai_answer_suggestions WHERE question_id = $1`, [questionId]);
@@ -3323,7 +2688,7 @@ export class DbRepository {
         `, [questionId]);
 
         const r = res.rows[0];
-        savedSug = {
+        return {
           id: r.id,
           question_id: r.question_id,
           suggested_answer: r.suggested_answer,
@@ -3339,28 +2704,17 @@ export class DbRepository {
       }
     }
 
-    if (!savedSug) {
-      savedSug = {
-        id: `sug-${Date.now()}`,
-        question_id: questionId,
-        suggested_answer: suggestion.suggested_answer,
-        answer_language: suggestion.answer_language || 'en',
-        answerability_status: (suggestion.answerability_status || 'high_confidence') as any,
-        supporting_information: suggestion.supporting_information || [],
-        missing_information: suggestion.missing_information || [],
-        generation_status: 'ready',
-        created_at: new Date().toISOString()
-      };
-    }
-
-    const memQ = (store.activityQuestions || []).find(q => q.id === questionId);
-    if (memQ) {
-      memQ.ai_suggestion = savedSug;
-      memQ.status = 'ai_suggestion_ready';
-      memQ.updated_at = new Date().toISOString();
-    }
-
-    return savedSug;
+    return {
+      id: `sug-${Date.now()}`,
+      question_id: questionId,
+      suggested_answer: suggestion.suggested_answer,
+      answer_language: suggestion.answer_language || 'en',
+      answerability_status: (suggestion.answerability_status || 'high_confidence') as any,
+      supporting_information: suggestion.supporting_information || [],
+      missing_information: suggestion.missing_information || [],
+      generation_status: 'ready',
+      created_at: new Date().toISOString()
+    };
   }
 
   public static async respondToQuestion(
@@ -3370,14 +2724,13 @@ export class DbRepository {
     suggestionId?: string
   ): Promise<ActivityQuestionResponse> {
     const validResponder = this.isValidUUID(responderId) ? responderId : 'c0000000-0000-0000-0000-000000000099';
-    let savedResp: ActivityQuestionResponse | null = null;
 
     if (isDbConnected() && this.isValidUUID(questionId)) {
       try {
         const qRes = await pool.query(`
-          SELECT q.*, COALESCE(a.title, 'Cleanliness Drive') as activity_title, COALESCE(p.full_name, 'Citizen') as citizen_name
+          SELECT q.*, a.title as activity_title, COALESCE(p.full_name, 'Citizen Volunteer') as citizen_name
           FROM activity_questions q
-          LEFT JOIN community_activities a ON a.id = q.activity_id
+          JOIN community_activities a ON a.id = q.activity_id
           LEFT JOIN profiles p ON p.id = q.citizen_id
           WHERE q.id = $1
         `, [questionId]);
@@ -3398,10 +2751,12 @@ export class DbRepository {
             Boolean(suggestionId)
           ]);
 
+          // Mark question as answered
           await pool.query(`
             UPDATE activity_questions SET status = 'answered', updated_at = NOW() WHERE id = $1
           `, [questionId]);
 
+          // Create in-app notification for the citizen!
           await pool.query(`
             INSERT INTO notifications (user_id, title, message, notification_type, reference_id, is_read)
             VALUES ($1, $2, $3, 'system_alert', $4, FALSE)
@@ -3413,7 +2768,7 @@ export class DbRepository {
           ]).catch(() => {});
 
           const r = res.rows[0];
-          savedResp = {
+          return {
             id: r.id,
             question_id: r.question_id,
             suggestion_id: r.suggestion_id,
@@ -3428,58 +2783,27 @@ export class DbRepository {
       }
     }
 
-    if (!savedResp) {
-      savedResp = {
-        id: `resp-${Date.now()}`,
-        question_id: questionId,
-        suggestion_id: suggestionId,
-        responder_id: validResponder,
-        responder_name: 'Community Head',
-        response_text: responseText.trim(),
-        ai_assisted: Boolean(suggestionId),
-        created_at: new Date().toISOString()
-      };
-    }
-
-    // Update in-memory store question & notify citizen
-    const memQ = (store.activityQuestions || []).find(q => q.id === questionId);
-    if (memQ) {
-      memQ.status = 'answered';
-      memQ.response = savedResp;
-      (memQ as any).response_text = savedResp.response_text;
-      (memQ as any).answered_at = savedResp.created_at;
-      memQ.updated_at = new Date().toISOString();
-
-      if (!store.notifications) store.notifications = [];
-      store.notifications.unshift({
-        id: `notif-qa-${Date.now()}`,
-        user_id: memQ.citizen_id,
-        title: `Question Answered: ${memQ.activity_title || 'Cleanliness Drive'}`,
-        message: `Community Head answered your question: "${savedResp.response_text.slice(0, 120)}"`,
-        notification_type: 'system_alert',
-        is_read: false,
-        created_at: new Date().toISOString()
-      });
-    }
-
-    return savedResp;
+    return {
+      id: `resp-${Date.now()}`,
+      question_id: questionId,
+      suggestion_id: suggestionId,
+      responder_id: validResponder,
+      response_text: responseText,
+      ai_assisted: Boolean(suggestionId),
+      created_at: new Date().toISOString()
+    };
   }
 
   public static async updateQuestionStatus(questionId: string, status: string): Promise<boolean> {
     if (isDbConnected() && this.isValidUUID(questionId)) {
       try {
         await pool.query('UPDATE activity_questions SET status = $1, updated_at = NOW() WHERE id = $2', [status, questionId]);
+        return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - updateQuestionStatus]:', err.message);
       }
     }
-    const memQ = (store.activityQuestions || []).find(q => q.id === questionId);
-    if (memQ) {
-      memQ.status = status as any;
-      memQ.updated_at = new Date().toISOString();
-      return true;
-    }
-    return true;
+    return false;
   }
 
   // =========================================================================
@@ -3647,53 +2971,36 @@ export class DbRepository {
   // =========================================================================
 
   public static async getActivityEvidence(activityId: string): Promise<ActivityEvidence[]> {
-    const mergedMap = new Map<string, ActivityEvidence>();
-
     if (isDbConnected() && this.isValidUUID(activityId)) {
       try {
         const res = await pool.query(`
           SELECT * FROM activity_evidence
           WHERE activity_id = $1
-          ORDER BY created_at DESC
+          ORDER BY created_at ASC
         `, [activityId]);
 
-        for (const r of res.rows) {
-          mergedMap.set(r.id, {
-            id: r.id,
-            activity_id: r.activity_id,
-            uploaded_by: r.uploaded_by,
-            evidence_type: r.evidence_type,
-            stage: r.evidence_type,
-            storage_path: r.storage_path,
-            image_url: r.storage_path,
-            caption: r.caption,
-            description: r.description,
-            latitude: r.latitude ? parseFloat(r.latitude) : undefined,
-            longitude: r.longitude ? parseFloat(r.longitude) : undefined,
-            image_hash: r.image_hash,
-            evidence_version: r.evidence_version || 1,
-            submission_status: r.submission_status,
-            created_at: r.created_at
-          });
-        }
+        return res.rows.map(r => ({
+          id: r.id,
+          activity_id: r.activity_id,
+          uploaded_by: r.uploaded_by,
+          evidence_type: r.evidence_type,
+          stage: r.evidence_type,
+          storage_path: r.storage_path,
+          caption: r.caption,
+          description: r.description,
+          latitude: r.latitude ? parseFloat(r.latitude) : undefined,
+          longitude: r.longitude ? parseFloat(r.longitude) : undefined,
+          image_hash: r.image_hash,
+          review_metadata: r.review_metadata || {},
+          evidence_version: r.evidence_version || 1,
+          submission_status: r.submission_status,
+          created_at: r.created_at
+        }));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getActivityEvidence]:', err.message);
       }
     }
-
-    for (const ev of (store.activityEvidence || [])) {
-      if (ev.activity_id === activityId && !mergedMap.has(ev.id)) {
-        mergedMap.set(ev.id, {
-          ...ev,
-          stage: ev.stage || ev.evidence_type,
-          image_url: ev.image_url || ev.storage_path
-        });
-      }
-    }
-
-    return Array.from(mergedMap.values()).sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    return [];
   }
 
   public static async createActivityEvidence(data: {
@@ -3706,16 +3013,17 @@ export class DbRepository {
     latitude?: number;
     longitude?: number;
     image_hash?: string;
+    review_metadata?: Record<string, any>;
   }): Promise<ActivityEvidence> {
     const validUploader = this.isValidUUID(data.uploaded_by) ? data.uploaded_by : 'c0000000-0000-0000-0000-000000000099';
-    let createdEv: ActivityEvidence | null = null;
+    const meta = data.review_metadata || {};
 
-    if (isDbConnected() && this.isValidUUID(data.activity_id)) {
+    if (isDbConnected()) {
       try {
         const res = await pool.query(`
           INSERT INTO activity_evidence (
-            activity_id, uploaded_by, evidence_type, storage_path, caption, description, latitude, longitude, image_hash, submission_status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')
+            activity_id, uploaded_by, evidence_type, storage_path, caption, description, latitude, longitude, image_hash, review_metadata, submission_status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'submitted')
           RETURNING *
         `, [
           data.activity_id,
@@ -3726,125 +3034,94 @@ export class DbRepository {
           data.description || null,
           data.latitude || null,
           data.longitude || null,
-          data.image_hash || null
+          data.image_hash || null,
+          JSON.stringify(meta)
         ]);
 
+        // Automatically sync activity status when evidence is uploaded
+        if (this.isValidUUID(data.activity_id)) {
+          if (data.evidence_type === 'after') {
+            await pool.query(
+              `UPDATE community_activities SET evidence_status = 'submitted', updated_at = NOW() WHERE id = $1 AND COALESCE(evidence_status, '') <> 'verified_complete'`,
+              [data.activity_id]
+            ).catch(() => {});
+          } else {
+            await pool.query(
+              `UPDATE community_activities SET event_status = CASE WHEN event_status = 'upcoming' THEN 'ongoing' ELSE event_status END, updated_at = NOW() WHERE id = $1`,
+              [data.activity_id]
+            ).catch(() => {});
+          }
+        }
+
         const r = res.rows[0];
-        createdEv = {
+        return {
           id: r.id,
           activity_id: r.activity_id,
           uploaded_by: r.uploaded_by,
           evidence_type: r.evidence_type,
           stage: r.evidence_type,
           storage_path: r.storage_path,
-          image_url: r.storage_path,
           caption: r.caption,
           description: r.description,
           latitude: r.latitude ? parseFloat(r.latitude) : undefined,
           longitude: r.longitude ? parseFloat(r.longitude) : undefined,
           image_hash: r.image_hash,
+          review_metadata: r.review_metadata || meta,
           evidence_version: r.evidence_version || 1,
           submission_status: r.submission_status,
           created_at: r.created_at
-        };
+        } as any;
       } catch (err: any) {
         console.error('[DB REPO ERROR - createActivityEvidence]:', err.message);
       }
     }
 
-    if (!createdEv) {
-      createdEv = {
-        id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        activity_id: data.activity_id,
-        uploaded_by: validUploader,
-        evidence_type: data.evidence_type,
-        stage: data.evidence_type,
-        storage_path: data.storage_path,
-        image_url: data.storage_path,
-        caption: data.caption.trim(),
-        description: data.description,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        image_hash: data.image_hash,
-        evidence_version: 1,
-        submission_status: 'draft',
-        created_at: new Date().toISOString()
-      };
-    }
-
-    if (!store.activityEvidence) store.activityEvidence = [];
-    store.activityEvidence.unshift(createdEv);
-    return createdEv;
+    return {
+      id: `ev-${Date.now()}`,
+      activity_id: data.activity_id,
+      uploaded_by: validUploader,
+      evidence_type: data.evidence_type,
+      stage: data.evidence_type,
+      storage_path: data.storage_path,
+      caption: data.caption,
+      description: data.description,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      image_hash: data.image_hash,
+      review_metadata: meta,
+      evidence_version: 1,
+      submission_status: 'submitted',
+      created_at: new Date().toISOString()
+    } as any;
   }
 
-  public static async submitActivityEvidence(activityId: string, submittedBy: string, notes?: string): Promise<boolean> {
+  public static async submitActivityEvidence(activityId: string, submittedBy: string): Promise<boolean> {
     const validSubmitter = this.isValidUUID(submittedBy) ? submittedBy : 'c0000000-0000-0000-0000-000000000099';
 
     if (isDbConnected() && this.isValidUUID(activityId)) {
       try {
         await pool.query(`
           UPDATE activity_evidence SET submission_status = 'submitted' WHERE activity_id = $1
-        `, [activityId]).catch(() => {});
+        `, [activityId]);
 
-        const actCheck = await pool.query(`SELECT id FROM community_activities WHERE id = $1`, [activityId]);
-        if (actCheck.rows.length > 0) {
-          await pool.query(`
-            INSERT INTO activity_evidence_submissions (activity_id, submitted_by, submission_status)
-            VALUES ($1, $2, 'under_ward_review')
-          `, [activityId, validSubmitter]).catch(() => {});
+        await pool.query(`
+          INSERT INTO activity_evidence_submissions (activity_id, submitted_by, submission_status)
+          VALUES ($1, $2, 'under_ward_review')
+        `, [activityId, validSubmitter]);
 
-          await this.changeActivityStatus(
-            activityId,
-            { evidence_status: 'submitted', event_status: 'completed' },
-            validSubmitter,
-            notes || 'Evidence submitted for official Ward Officer & NMC Admin verification'
-          );
-        }
+        await this.changeActivityStatus(
+          activityId,
+          { evidence_status: 'submitted', event_status: 'completed' },
+          validSubmitter,
+          'Evidence submitted for official Ward Officer & NMC Admin verification'
+        );
+
+        return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - submitActivityEvidence]:', err.message);
       }
     }
-
-    // Update in-memory evidence items
-    for (const ev of (store.activityEvidence || [])) {
-      if (ev.activity_id === activityId) {
-        ev.submission_status = 'submitted';
-      }
-    }
-
-    // Update community_activities in memory if matching
-    const memAct = (store.communityActivities || []).find(a => a.id === activityId);
-    if (memAct) {
-      memAct.evidence_status = 'submitted' as any;
-      memAct.event_status = 'completed' as any;
-      memAct.updated_at = new Date().toISOString();
-    }
-
-    // Update community_problems in memory if matching (Ward Officer-created drive!)
-    const memProb = (store.communityProblems || []).find(p => p.id === activityId);
-    if (memProb) {
-      memProb.evidence_status = 'submitted';
-      memProb.evidence_submitted_at = new Date().toISOString();
-      memProb.status = 'in_progress';
-      memProb.updated_at = new Date().toISOString();
-      if (notes) {
-        memProb.evidence_review_comments = notes;
-      }
-    }
-
-    // Notify Ward Officer about completed work evidence review request
-    const driveTitle = memAct?.title || memProb?.title || 'Cleanliness Drive';
-    const wardNum = memAct?.ward_number || memProb?.ward_number || 3;
-    const targetOfficerId = this.findWardOfficerUserId(wardNum);
-    await this.createNotification(
-      targetOfficerId,
-      `Work Evidence Submitted for Review: ${driveTitle}`,
-      `Community Head has uploaded completion evidence for "${driveTitle}" (Ward ${wardNum}) and requested your verification review.${notes ? ` Notes: ${notes}` : ''}`,
-      activityId,
-      'system_alert'
-    );
-
-    return true;
+    return false;
   }
 
   public static async reviewActivityEvidence(
@@ -3855,90 +3132,49 @@ export class DbRepository {
     comments: string
   ): Promise<boolean> {
     const validReviewer = this.isValidUUID(reviewerId) ? reviewerId : 'w0000000-0000-0000-0000-000000000003';
-    const nextEvidenceStatus =
-      decision === 'approved'
-        ? (reviewerRole === 'nmc_admin' ? 'verified_complete' : 'verified_complete')
-        : decision === 'rejected'
-        ? 'rejected'
-        : 'changes_requested';
 
     if (isDbConnected() && this.isValidUUID(activityId)) {
       try {
-        const actCheck = await pool.query(`SELECT id FROM community_activities WHERE id = $1`, [activityId]);
-        if (actCheck.rows.length > 0) {
-          await pool.query(`
-            INSERT INTO activity_evidence_reviews (activity_id, reviewer_id, reviewer_role, decision, comments)
-            VALUES ($1, $2, $3, $4, $5)
-          `, [activityId, validReviewer, reviewerRole, decision, comments]).catch(() => {});
+        await pool.query(`
+          INSERT INTO activity_evidence_reviews (activity_id, reviewer_id, reviewer_role, decision, comments)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [activityId, validReviewer, reviewerRole, decision, comments]);
 
-          await this.changeActivityStatus(
-            activityId,
-            { evidence_status: nextEvidenceStatus },
-            validReviewer,
-            `Evidence reviewed by ${reviewerRole}: ${decision.toUpperCase()}`
-          );
+        const nextEvidenceStatus =
+          decision === 'approved'
+            ? 'verified_complete'
+            : decision === 'rejected'
+            ? 'rejected'
+            : 'changes_requested';
 
-          if (decision === 'approved') {
-            await pool.query(`
-              UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1
-            `, [activityId]).catch(() => {});
-          }
+        const statusUpdates: Record<string, string> = { evidence_status: nextEvidenceStatus };
+        if (decision === 'approved') {
+          statusUpdates.event_status = 'completed';
+          statusUpdates.registration_status = 'closed';
         }
+
+        await this.changeActivityStatus(
+          activityId,
+          statusUpdates,
+          validReviewer,
+          `Evidence reviewed by ${reviewerRole}: ${decision.toUpperCase()}`
+        );
+
+        if (decision === 'approved') {
+          await pool.query(`
+            UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1
+          `, [activityId]).catch(() => {});
+          await pool.query(`
+            UPDATE cleanliness_drives SET status = 'completed' WHERE id = $1
+          `, [activityId]).catch(() => {});
+        }
+
+        return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - reviewActivityEvidence]:', err.message);
       }
     }
-
-    // Update in-memory evidence items
-    for (const ev of (store.activityEvidence || [])) {
-      if (ev.activity_id === activityId) {
-        ev.submission_status = decision === 'approved' ? 'verified' : decision === 'rejected' ? 'rejected' : 'draft';
-      }
-    }
-
-    // Update community_activities in memory
-    const memAct = (store.communityActivities || []).find(a => a.id === activityId);
-    if (memAct) {
-      memAct.evidence_status = nextEvidenceStatus as any;
-      if (decision === 'approved') {
-        memAct.event_status = 'completed' as any;
-      }
-      memAct.updated_at = new Date().toISOString();
-    }
-
-    // Update community_problems in memory (Ward Officer-created drive)
-    const memProb = (store.communityProblems || []).find(p => p.id === activityId);
-    if (memProb) {
-      memProb.evidence_status = nextEvidenceStatus as any;
-      memProb.evidence_review_comments = comments;
-      if (decision === 'approved') {
-        memProb.status = 'resolved';
-      }
-      memProb.updated_at = new Date().toISOString();
-    }
-
-    // Update CleanlinessDrive status if completed & verified
-    if (decision === 'approved') {
-      const memDrive = (store.drives || []).find(d => d.id === activityId);
-      if (memDrive) {
-        memDrive.status = 'completed';
-      }
-    }
-
-    // Notify Community Head(s)
-    const driveTitle = memAct?.title || memProb?.title || 'Cleanliness Drive';
-    if (!store.notifications) store.notifications = [];
-    store.notifications.unshift({
-      id: `notif-ev-rev-${Date.now()}`,
-      user_id: memAct?.created_by || 'c0000000-0000-0000-0000-000000000099',
-      title: `Work Evidence ${decision === 'approved' ? 'Verified & Approved!' : decision === 'changes_requested' ? 'Changes Requested' : 'Rejected'}`,
-      message: `Ward Officer reviewed completion evidence for "${driveTitle}": ${decision.toUpperCase()}.${comments ? ` Remarks: ${comments}` : ''}`,
-      notification_type: 'system_alert',
-      is_read: false,
-      created_at: new Date().toISOString()
-    });
-
-    return true;
+    return false;
   }
 
   // =========================================================================
@@ -4128,6 +3364,7 @@ export class DbRepository {
       registration_open_at: r.registration_open_at,
       registration_close_at: r.registration_close_at,
       maximum_participants: r.maximum_participants,
+      max_capacity: r.maximum_participants,
       minimum_participants: r.minimum_participants,
       waiting_list_enabled: r.waiting_list_enabled ?? true,
       registration_requires_approval: r.registration_requires_approval ?? false,
@@ -4141,7 +3378,7 @@ export class DbRepository {
       created_by: r.created_by,
       created_at: r.created_at,
       updated_at: r.updated_at
-    };
+    } as any;
   }
 
   // =========================================================================
@@ -4154,6 +3391,7 @@ export class DbRepository {
       complaint_number: r.complaint_number,
       citizen_id: r.citizen_id,
       citizen_name: r.citizen_name,
+      citizen_phone: r.citizen_phone || undefined,
       category_id: r.category_id,
       category_name: r.category_name,
       location: {
@@ -4207,44 +3445,55 @@ export class DbRepository {
       try {
         const res = await pool.query(`
           SELECT wp.*, p.full_name, p.phone, p.email, p.avatar_url, p.address as user_address,
-                 wd.designation_name, wd.designation_code,
+                 COALESCE(wp.designation, wd.designation_name, 'Sanitation Worker') as resolved_designation,
+                 wd.designation_code,
                  COALESCE(
                    (SELECT json_agg(ws.skill_name)
                     FROM worker_profile_skills wps
                     JOIN worker_skills ws ON ws.id = wps.skill_id
                     WHERE wps.worker_id = wp.id),
                    '[]'::json
-                 ) as skills
+                 ) as relation_skills
           FROM worker_profiles wp
-          JOIN profiles p ON p.id = wp.user_id
+          LEFT JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
           WHERE wp.user_id = $1 OR wp.id = $1
+          LIMIT 1
         `, [userId]);
 
         if (res.rows.length > 0) {
           const r = res.rows[0];
+          let parsedSkills: string[] = [];
+          if (Array.isArray(r.skills) && r.skills.length > 0) {
+            parsedSkills = r.skills;
+          } else if (typeof r.skills === 'string' && r.skills.trim() && r.skills !== '[]') {
+            try { parsedSkills = JSON.parse(r.skills); } catch { parsedSkills = []; }
+          } else if (Array.isArray(r.relation_skills) && r.relation_skills.length > 0) {
+            parsedSkills = r.relation_skills;
+          }
+          const createdDate = r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
           return {
             id: r.id,
             user_id: r.user_id,
             worker_code: r.worker_code,
-            full_name: r.full_name,
-            phone: r.phone,
-            email: r.email,
-            avatar_url: r.avatar_url,
+            full_name: r.full_name || r.username || r.worker_code,
+            phone: r.phone || '',
+            email: r.email || undefined,
+            avatar_url: r.avatar_url || undefined,
             primary_designation_id: r.primary_designation_id,
-            designation_name: r.designation_name || 'Sanitation Worker',
+            designation_name: r.resolved_designation || 'Sanitation Worker',
             designation_code: r.designation_code || 'sanitation_worker',
-            ward_id: r.ward_id,
+            ward_id: r.ward_id || `ward-${String(r.ward_number || 3).padStart(2, '0')}`,
             ward_number: r.ward_number || 3,
-            ward_name: r.ward_name || 'Ward 3 - Dudhiya Talao',
+            ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
             employment_status: r.employment_status || 'permanent',
-            joining_date: r.joining_date ? r.joining_date.toISOString().split('T')[0] : '2024-01-15',
-            experience_years: parseFloat(r.experience_years || '3.5'),
+            joining_date: r.joining_date ? new Date(r.joining_date).toISOString().split('T')[0] : createdDate,
+            experience_years: r.experience_years !== null && r.experience_years !== undefined ? parseFloat(r.experience_years) : 0,
             availability_status: r.availability_status || 'available',
-            emergency_contact_name: r.emergency_contact_name,
-            emergency_contact_phone: r.emergency_contact_phone,
+            emergency_contact_name: r.emergency_contact_name || undefined,
+            emergency_contact_phone: r.emergency_contact_phone || undefined,
             language_preference: r.language_preference || 'gu',
-            skills: Array.isArray(r.skills) ? r.skills : ['Drainage Desilting', 'Debris Clearing'],
+            skills: parsedSkills,
             created_at: r.created_at,
             updated_at: r.updated_at
           };
@@ -4260,24 +3509,22 @@ export class DbRepository {
       return {
         id: fromStore.id,
         user_id: fromStore.user_id || userId,
-        worker_code: fromStore.worker_code || 'NMC-WRK-099',
+        worker_code: fromStore.worker_code || 'NMC-WRK',
         full_name: fromStore.full_name,
         phone: fromStore.phone,
-        email: fromStore.email || `${fromStore.full_name.toLowerCase().replace(/\s+/g, '.')}@navsarimunicipal.gov.in`,
-        avatar_url: fromStore.avatar_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
+        email: fromStore.email,
+        avatar_url: fromStore.avatar_url,
         designation_name: fromStore.designation || 'Sanitation Worker',
         designation_code: fromStore.designation?.toLowerCase().replace(/\s+/g, '_') || 'sanitation_worker',
         ward_id: `ward-${String(fromStore.ward_number || 3).padStart(2, '0')}`,
         ward_number: fromStore.ward_number || 3,
         ward_name: fromStore.ward_name || `Ward ${fromStore.ward_number || 3}`,
         employment_status: 'permanent',
-        joining_date: '2024-01-15',
-        experience_years: fromStore.experience_years || 2.0,
+        joining_date: fromStore.created_at ? fromStore.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        experience_years: fromStore.experience_years || 0,
         availability_status: fromStore.availability_status || 'available',
-        emergency_contact_name: 'NMC Staff Operations',
-        emergency_contact_phone: '+919825130003',
         language_preference: 'gu',
-        skills: fromStore.skills || ['Litter Abatement', 'Bin Clearance'],
+        skills: Array.isArray(fromStore.skills) ? fromStore.skills : [],
         created_at: fromStore.created_at || new Date().toISOString(),
         updated_at: fromStore.updated_at || new Date().toISOString()
       };
@@ -4288,12 +3535,12 @@ export class DbRepository {
     if (userProfile && (userProfile.role === 'worker' || (userProfile as any).role === 'sanitation_worker')) {
       const wardNum = (userProfile as any).ward_number || 3;
       return {
-        id: `wrk-${userProfile.id}`,
+        id: userProfile.id,
         user_id: userProfile.id,
-        worker_code: userProfile.username?.startsWith('WRK') ? userProfile.username : `WRK-${userProfile.id.slice(0, 6)}`,
+        worker_code: userProfile.username?.startsWith('WRK') ? userProfile.username : `WRK-${userProfile.id.slice(0, 6).toUpperCase()}`,
         full_name: userProfile.full_name,
         phone: userProfile.phone,
-        email: userProfile.email || `${userProfile.full_name.toLowerCase().replace(/\s+/g, '.')}@navsarimunicipal.gov.in`,
+        email: userProfile.email,
         avatar_url: userProfile.avatar_url,
         designation_name: 'Sanitation Worker',
         designation_code: 'sanitation_worker',
@@ -4302,65 +3549,11 @@ export class DbRepository {
         ward_name: `Ward ${wardNum}`,
         employment_status: 'permanent',
         joining_date: userProfile.created_at ? userProfile.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        experience_years: 1.0,
+        experience_years: 0,
         availability_status: 'available',
-        emergency_contact_name: 'NMC Staff Operations',
-        emergency_contact_phone: '+919825100000',
         language_preference: userProfile.preferred_language || 'gu',
-        skills: ['Municipal Sanitation', 'Solid Waste Collection'],
+        skills: [],
         created_at: userProfile.created_at || new Date().toISOString()
-      };
-    }
-
-    if (!userId || userId === 'f1000000-0000-0000-0000-000000000001') {
-      return {
-        id: 'f2000000-0000-0000-0000-000000000001',
-        user_id: 'f1000000-0000-0000-0000-000000000001',
-        worker_code: 'NMC-WRK-001',
-        full_name: 'Kanti Solanki',
-        phone: '+919825120001',
-        email: 'kanti.solanki@navsarimunicipal.gov.in',
-        avatar_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=256&q=80',
-        designation_name: 'Drainage Cleaning Worker',
-        designation_code: 'drainage_worker',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        employment_status: 'permanent',
-        joining_date: '2023-04-01',
-        experience_years: 4.5,
-        availability_status: 'on_duty',
-        emergency_contact_name: 'Ramilaben Solanki (Wife)',
-        emergency_contact_phone: '+919825199001',
-        language_preference: 'gu',
-        skills: ['Drainage Desilting', 'Equipment Operation', 'Culvert Flush'],
-        created_at: new Date().toISOString()
-      };
-    }
-
-    if (userId === 'f1000000-0000-0000-0000-000000000002') {
-      return {
-        id: 'f2000000-0000-0000-0000-000000000002',
-        user_id: 'f1000000-0000-0000-0000-000000000002',
-        worker_code: 'NMC-WRK-002',
-        full_name: 'Suresh Vaghela',
-        phone: '+919825120002',
-        email: 'suresh.vaghela@navsarimunicipal.gov.in',
-        avatar_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&q=80',
-        designation_name: 'Sanitation Worker',
-        designation_code: 'sanitation_worker',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        employment_status: 'permanent',
-        joining_date: '2023-04-01',
-        experience_years: 2.0,
-        availability_status: 'available',
-        emergency_contact_name: 'Geetaben Vaghela (Wife)',
-        emergency_contact_phone: '+919825199002',
-        language_preference: 'gu',
-        skills: ['Street Sweeping', 'Waste Collection'],
-        created_at: new Date().toISOString()
       };
     }
 
@@ -4369,14 +3562,14 @@ export class DbRepository {
 
   public static async getWorkerAssignments(workerId: string, filterStatus?: string): Promise<WorkAssignment[]> {
     let dbAssignments: WorkAssignment[] = [];
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(workerId)) {
       try {
         let query = `
           SELECT wa.*, wam.temporary_leader, wam.assignment_status as my_attendance_status,
-                 (SELECT p.full_name
+                 (SELECT COALESCE(p.full_name, lp.username, lp.worker_code)
                   FROM work_assignment_members lm
                   JOIN worker_profiles lp ON lp.id = lm.worker_id
-                  JOIN profiles p ON p.id = lp.user_id
+                  LEFT JOIN profiles p ON p.id = lp.user_id
                   WHERE lm.assignment_id = wa.id AND lm.temporary_leader = TRUE
                   LIMIT 1) as temporary_leader_name,
                  (SELECT lm.worker_id
@@ -4387,50 +3580,62 @@ export class DbRepository {
                  EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'after') as has_after_evidence
           FROM work_assignments wa
           JOIN work_assignment_members wam ON wam.assignment_id = wa.id
-          WHERE (wam.worker_id = $1 OR wam.worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1) OR wam.worker_id IN (SELECT user_id FROM worker_profiles WHERE id = $1))
+          WHERE (
+            wam.worker_id = $1
+            OR wam.worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1)
+          )
         `;
         const values: any[] = [workerId];
         if (filterStatus && filterStatus !== 'all') {
           query += ` AND wa.status = $2`;
           values.push(filterStatus);
         }
-        query += ` ORDER BY wa.scheduled_date DESC, wa.scheduled_start_time ASC`;
+        query += ` ORDER BY wa.created_at DESC, wa.scheduled_date DESC`;
 
         const res = await pool.query(query, values);
 
-        dbAssignments = res.rows.map(r => ({
-          id: r.id,
-          task_code: r.task_code,
-          title: r.title,
-          description: r.description,
-          category: r.category,
-          priority: r.priority,
-          ward_id: r.ward_id,
-          ward_number: r.ward_number,
-          ward_name: r.ward_name,
-          location_name: r.location_name,
-          address: r.address,
-          latitude: parseFloat(r.latitude),
-          longitude: parseFloat(r.longitude),
-          scheduled_date: r.scheduled_date ? (r.scheduled_date instanceof Date ? r.scheduled_date.toISOString().split('T')[0] : String(r.scheduled_date)) : '2026-11-01',
-          scheduled_start_time: r.scheduled_start_time ? (r.scheduled_start_time instanceof Date ? r.scheduled_start_time.toISOString() : String(r.scheduled_start_time)) : new Date().toISOString(),
-          expected_end_time: r.expected_end_time ? (r.expected_end_time instanceof Date ? r.expected_end_time.toISOString() : String(r.expected_end_time)) : new Date().toISOString(),
-          attendance_radius_meters: parseInt(r.attendance_radius_meters || '100', 10),
-          evidence_radius_meters: parseInt(r.evidence_radius_meters || '150', 10),
-          work_instructions: r.work_instructions,
-          safety_instructions: r.safety_instructions,
-          required_equipment: Array.isArray(r.required_equipment) ? r.required_equipment : [],
-          emergency_contact_phone: r.emergency_contact_phone || '+919825110003',
-          status: r.status,
-          created_by: r.created_by,
-          created_at: r.created_at,
-          updated_at: r.updated_at,
-          is_temporary_leader: Boolean(r.temporary_leader),
-          temporary_leader_name: r.temporary_leader_name || (Boolean(r.temporary_leader) ? 'You (Temporary Leader)' : 'Kanti Solanki'),
-          temporary_leader_id: r.temporary_leader_id,
-          my_attendance_status: r.my_attendance_status,
-          has_before_evidence: Boolean(r.has_before_evidence),
-          has_after_evidence: Boolean(r.has_after_evidence)
+        dbAssignments = await Promise.all(res.rows.map(async r => {
+          const members = await this.getAssignmentTeamMembers(r.id);
+          return {
+            id: r.id,
+            task_code: r.task_code,
+            title: r.title,
+            description: r.description,
+            category: r.category,
+            priority: r.priority,
+            ward_id: r.ward_id,
+            ward_number: r.ward_number,
+            ward_name: r.ward_name,
+            location_name: r.location_name,
+            address: r.address,
+            latitude: parseFloat(r.latitude),
+            longitude: parseFloat(r.longitude),
+            scheduled_date: r.scheduled_date ? (r.scheduled_date instanceof Date ? r.scheduled_date.toISOString().split('T')[0] : String(r.scheduled_date)) : new Date().toISOString().split('T')[0],
+            scheduled_start_time: r.scheduled_start_time ? (r.scheduled_start_time instanceof Date ? r.scheduled_start_time.toISOString() : String(r.scheduled_start_time)) : new Date().toISOString(),
+            expected_end_time: r.expected_end_time ? (r.expected_end_time instanceof Date ? r.expected_end_time.toISOString() : String(r.expected_end_time)) : new Date().toISOString(),
+            deadline: r.expected_end_time ? (r.expected_end_time instanceof Date ? r.expected_end_time.toISOString() : String(r.expected_end_time)) : undefined,
+            attendance_radius_meters: parseInt(r.attendance_radius_meters || '150', 10),
+            evidence_radius_meters: parseInt(r.evidence_radius_meters || '150', 10),
+            work_instructions: r.work_instructions,
+            safety_instructions: r.safety_instructions,
+            required_equipment: Array.isArray(r.required_equipment) ? r.required_equipment : [],
+            emergency_contact_phone: r.emergency_contact_phone || '+919825110003',
+            status: r.status,
+            created_by: r.created_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            is_temporary_leader: Boolean(r.temporary_leader),
+            temporary_leader_name: r.temporary_leader_name || (Boolean(r.temporary_leader) ? 'You (Team Leader)' : 'Team Leader'),
+            temporary_leader_id: r.temporary_leader_id,
+            my_attendance_status: r.my_attendance_status,
+            has_before_evidence: Boolean(r.has_before_evidence),
+            has_after_evidence: Boolean(r.has_after_evidence),
+            team_members: members,
+            complaint_id: r.complaint_id || undefined,
+            complaint_number: r.complaint_number || undefined,
+            team_id: r.team_id || undefined,
+            team_name: r.team_name || undefined
+          } as any;
         }));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getWorkerAssignments]:', err.message);
@@ -4439,20 +3644,24 @@ export class DbRepository {
 
     // Also merge in-memory store so newly created tasks are never lost
     const allAssignments = store.workAssignments || [];
+    const matchingWorker = (store.workers || []).find(w => w.id === workerId || w.user_id === workerId);
+    const idCandidates = new Set([workerId, matchingWorker?.id, matchingWorker?.user_id].filter(Boolean));
+
     const inMemoryMatches = allAssignments
       .filter(a => {
-        const inTeam = (a.team_members || []).some(m => m.worker_id === workerId);
-        const isLeader = a.temporary_leader_id === workerId;
-        // Demo fallback for initial seed workers only
-        if ((workerId === 'f2000000-0000-0000-0000-000000000001' || workerId === 'f2000000-0000-0000-0000-000000000002') && (a.team_members || []).length === 0) return true;
+        const inTeam = (a.team_members || []).some(m => idCandidates.has(m.worker_id) || idCandidates.has((m as any).user_id));
+        const isLeader = Boolean(a.temporary_leader_id && idCandidates.has(a.temporary_leader_id));
         return inTeam || isLeader;
       })
       .map(a => {
-        const isLeader = a.temporary_leader_id === workerId || (a.team_members || []).some(m => m.worker_id === workerId && m.temporary_leader);
+        const isLeader = Boolean(
+          (a.temporary_leader_id && idCandidates.has(a.temporary_leader_id)) ||
+          (a.team_members || []).some(m => (idCandidates.has(m.worker_id) || idCandidates.has((m as any).user_id)) && m.temporary_leader)
+        );
         return {
           ...a,
           is_temporary_leader: isLeader,
-          temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Temporary Leader)' : 'Team Leader'),
+          temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Team Leader)' : 'Team Leader'),
           my_attendance_status: a.my_attendance_status || 'assigned'
         };
       });
@@ -4481,18 +3690,24 @@ export class DbRepository {
             latitude, longitude, scheduled_date, scheduled_start_time,
             expected_end_time, attendance_radius_meters, evidence_radius_meters,
             work_instructions, safety_instructions, required_equipment,
-            emergency_contact_phone, status, created_at, updated_at
+            emergency_contact_phone, status, complaint_id, complaint_number,
+            team_id, team_name, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
             $12, $13, $14, $15,
             $16, $17, $18,
             $19, $20, $21,
-            $22, $23, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            $22, $23, $24, $25,
+            $26, $27, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
           ON CONFLICT (id) DO UPDATE SET
             status = EXCLUDED.status,
             work_instructions = EXCLUDED.work_instructions,
+            complaint_id = COALESCE(EXCLUDED.complaint_id, work_assignments.complaint_id),
+            complaint_number = COALESCE(EXCLUDED.complaint_number, work_assignments.complaint_number),
+            team_id = COALESCE(EXCLUDED.team_id, work_assignments.team_id),
+            team_name = COALESCE(EXCLUDED.team_name, work_assignments.team_name),
             updated_at = CURRENT_TIMESTAMP
         `, [
           validAssignmentId,
@@ -4511,23 +3726,30 @@ export class DbRepository {
           assignment.scheduled_date || new Date().toISOString().split('T')[0],
           assignment.scheduled_start_time || new Date().toISOString(),
           assignment.expected_end_time || assignment.deadline || new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-          assignment.attendance_radius_meters || 100,
+          assignment.attendance_radius_meters || 150,
           assignment.evidence_radius_meters || 150,
           assignment.work_instructions || 'Clean up assigned civic location.',
           assignment.safety_instructions || 'Wear boots, gloves, and reflective jacket.',
           JSON.stringify(assignment.required_equipment || ['Broom', 'Shovel', 'Gloves']),
           assignment.emergency_contact_phone || '+919825130003',
-          assignment.status || 'assigned'
+          assignment.status || 'assigned',
+          (assignment as any).complaint_id || null,
+          (assignment as any).complaint_number || null,
+          (assignment as any).team_id || null,
+          (assignment as any).team_name || null
         ]);
 
         for (const m of members) {
-          const rawWorkerId = m.id || m.worker_id;
-          if (!rawWorkerId) continue;
-          
+          const rawWorkerId = m.worker_id || m.id;
+          if (!rawWorkerId || !this.isValidUUID(rawWorkerId)) continue;
+
           let resolvedWorkerId = rawWorkerId;
           const checkWp = await pool.query(`SELECT id FROM worker_profiles WHERE id = $1 OR user_id = $1 LIMIT 1`, [rawWorkerId]);
           if (checkWp.rows.length > 0) {
             resolvedWorkerId = checkWp.rows[0].id;
+          } else {
+            // Skip if not present in worker_profiles to avoid FK violation
+            continue;
           }
 
           const memberId = this.isValidUUID(m.member_id) ? m.member_id : randomUUID();
@@ -4542,7 +3764,7 @@ export class DbRepository {
             memberId,
             validAssignmentId,
             resolvedWorkerId,
-            Boolean(m.temporary_leader || m.is_leader || rawWorkerId === assignment.temporary_leader_id)
+            Boolean(m.temporary_leader || m.is_leader || rawWorkerId === assignment.temporary_leader_id || resolvedWorkerId === assignment.temporary_leader_id)
           ]);
         }
 
@@ -4555,29 +3777,83 @@ export class DbRepository {
   }
 
   public static async getAssignmentById(assignmentId: string, workerId?: string): Promise<WorkAssignment | null> {
-    const assignments = await this.getWorkerAssignments(workerId || 'f2000000-0000-0000-0000-000000000001');
-    const match = assignments.find(a => a.id === assignmentId);
-    if (match) {
-      match.team_members = await this.getAssignmentTeamMembers(assignmentId);
-      return match;
+    if (workerId) {
+      const assignments = await this.getWorkerAssignments(workerId);
+      const match = assignments.find(a => a.id === assignmentId);
+      if (match) {
+        match.team_members = await this.getAssignmentTeamMembers(assignmentId);
+        return match;
+      }
     }
-    return null;
+    if (isDbConnected() && this.isValidUUID(assignmentId)) {
+      try {
+        const res = await pool.query(`SELECT * FROM work_assignments WHERE id = $1 LIMIT 1`, [assignmentId]);
+        if (res.rows.length > 0) {
+          const r = res.rows[0];
+          const members = await this.getAssignmentTeamMembers(assignmentId);
+          return {
+            id: r.id,
+            task_code: r.task_code,
+            title: r.title,
+            description: r.description,
+            category: r.category,
+            priority: r.priority,
+            ward_id: r.ward_id,
+            ward_number: r.ward_number,
+            ward_name: r.ward_name,
+            location_name: r.location_name,
+            address: r.address,
+            latitude: parseFloat(r.latitude),
+            longitude: parseFloat(r.longitude),
+            scheduled_date: r.scheduled_date ? String(r.scheduled_date) : new Date().toISOString().split('T')[0],
+            scheduled_start_time: r.scheduled_start_time ? new Date(r.scheduled_start_time).toISOString() : new Date().toISOString(),
+            expected_end_time: r.expected_end_time ? new Date(r.expected_end_time).toISOString() : new Date().toISOString(),
+            attendance_radius_meters: parseInt(r.attendance_radius_meters || '150', 10),
+            evidence_radius_meters: parseInt(r.evidence_radius_meters || '150', 10),
+            work_instructions: r.work_instructions,
+            safety_instructions: r.safety_instructions,
+            required_equipment: Array.isArray(r.required_equipment) ? r.required_equipment : [],
+            emergency_contact_phone: r.emergency_contact_phone || '+919825110003',
+            status: r.status,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            team_members: members,
+            complaint_id: r.complaint_id || undefined,
+            complaint_number: r.complaint_number || undefined,
+            team_id: r.team_id || undefined,
+            team_name: r.team_name || undefined
+          } as any;
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getAssignmentById]:', err.message);
+      }
+    }
+    const mem = (store.workAssignments || []).find(a => a.id === assignmentId);
+    return mem || null;
   }
 
   public static async getAssignmentTeamMembers(assignmentId: string): Promise<WorkAssignmentMember[]> {
     if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
         const res = await pool.query(`
-          SELECT wam.*, wp.worker_code, p.full_name as worker_name, p.phone as worker_phone,
-                 wd.designation_name,
+          SELECT wam.*, wp.worker_code, wp.user_id,
+                 COALESCE(p.full_name, wp.username, wp.worker_code) as worker_name,
+                 COALESCE(p.phone, '') as worker_phone,
+                 COALESCE(wp.designation, wd.designation_name, 'Sanitation Worker') as designation_name,
                  wa_att.attendance_timestamp, wa_att.validation_status, wa_att.distance_from_assignment_meters
           FROM work_assignment_members wam
           JOIN worker_profiles wp ON wp.id = wam.worker_id
-          JOIN profiles p ON p.id = wp.user_id
+          LEFT JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
-          LEFT JOIN worker_attendance wa_att ON wa_att.assignment_id = wam.assignment_id AND wa_att.worker_id = wam.worker_id
+          LEFT JOIN LATERAL (
+            SELECT attendance_timestamp, validation_status, distance_from_assignment_meters
+            FROM worker_attendance
+            WHERE assignment_id = wam.assignment_id AND worker_id = wam.worker_id
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          ) wa_att ON TRUE
           WHERE wam.assignment_id = $1
-          ORDER BY wam.temporary_leader DESC, p.full_name ASC
+          ORDER BY wam.temporary_leader DESC, worker_name ASC
         `, [assignmentId]);
 
         return res.rows.map(r => ({
@@ -4590,7 +3866,7 @@ export class DbRepository {
           designation_name: r.designation_name || 'Sanitation Worker',
           temporary_leader: Boolean(r.temporary_leader),
           assignment_status: r.assignment_status,
-          attendance_timestamp: r.attendance_timestamp ? r.attendance_timestamp.toISOString() : undefined,
+          attendance_timestamp: r.attendance_timestamp ? new Date(r.attendance_timestamp).toISOString() : undefined,
           validation_status: r.validation_status,
           distance_from_assignment_meters: r.distance_from_assignment_meters ? parseFloat(r.distance_from_assignment_meters) : undefined
         }));
@@ -4604,50 +3880,7 @@ export class DbRepository {
       return matchedAssignment.team_members;
     }
 
-    return [
-      {
-        id: 'b1',
-        assignment_id: assignmentId,
-        worker_id: 'f2000000-0000-0000-0000-000000000001',
-        worker_name: 'Kanti Solanki',
-        worker_code: 'NMC-WRK-001',
-        worker_phone: '+919825120001',
-        designation_name: 'Drainage Cleaning Worker',
-        temporary_leader: true,
-        assignment_status: 'present',
-        attendance_timestamp: new Date(Date.now() - 3600000).toISOString(),
-        validation_status: 'verified_match',
-        distance_from_assignment_meters: 17.4
-      },
-      {
-        id: 'b2',
-        assignment_id: assignmentId,
-        worker_id: 'f2000000-0000-0000-0000-000000000002',
-        worker_name: 'Suresh Vaghela',
-        worker_code: 'NMC-WRK-002',
-        worker_phone: '+919825120002',
-        designation_name: 'Sanitation Worker',
-        temporary_leader: false,
-        assignment_status: 'present',
-        attendance_timestamp: new Date(Date.now() - 3400000).toISOString(),
-        validation_status: 'verified_match',
-        distance_from_assignment_meters: 10.2
-      },
-      {
-        id: 'b3',
-        assignment_id: assignmentId,
-        worker_id: 'f2000000-0000-0000-0000-000000000005',
-        worker_name: 'Mahesh Chauhan',
-        worker_code: 'NMC-WRK-005',
-        worker_phone: '+919825120005',
-        designation_name: 'Equipment Operator',
-        temporary_leader: false,
-        assignment_status: 'present',
-        attendance_timestamp: new Date(Date.now() - 3500000).toISOString(),
-        validation_status: 'verified_match',
-        distance_from_assignment_meters: 22.0
-      }
-    ];
+    return [];
   }
 
   public static async acknowledgeAssignment(assignmentId: string, workerId: string): Promise<boolean> {
@@ -4906,17 +4139,16 @@ export class DbRepository {
   }
 
   public static async getWorkEvidence(assignmentId: string): Promise<WorkEvidence[]> {
-    const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : 'a1000000-0000-0000-0000-000000000001';
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
         const res = await pool.query(`
-          SELECT we.*, p.full_name as worker_name
+          SELECT we.*, COALESCE(p.full_name, wp.username, wp.worker_code, 'Field Team Leader') as worker_name
           FROM work_evidence we
-          JOIN worker_profiles wp ON wp.id = we.submitted_by
-          JOIN profiles p ON p.id = wp.user_id
+          LEFT JOIN worker_profiles wp ON wp.id = we.submitted_by
+          LEFT JOIN profiles p ON p.id = wp.user_id
           WHERE we.assignment_id = $1
           ORDER BY we.created_at ASC
-        `, [validAssignment]);
+        `, [assignmentId]);
 
         return res.rows.map(r => ({
           id: r.id,
@@ -4931,39 +4163,21 @@ export class DbRepository {
           gps_accuracy: r.gps_accuracy ? parseFloat(r.gps_accuracy) : undefined,
           distance_from_assignment_meters: r.distance_from_assignment_meters ? parseFloat(r.distance_from_assignment_meters) : undefined,
           location_validation_status: r.location_validation_status,
-          device_capture_timestamp: r.device_capture_timestamp ? r.device_capture_timestamp.toISOString() : new Date().toISOString(),
-          server_upload_timestamp: r.server_upload_timestamp ? r.server_upload_timestamp.toISOString() : new Date().toISOString(),
+          device_capture_timestamp: r.device_capture_timestamp ? new Date(r.device_capture_timestamp).toISOString() : new Date().toISOString(),
+          server_upload_timestamp: r.server_upload_timestamp ? new Date(r.server_upload_timestamp).toISOString() : new Date().toISOString(),
           ai_analysis_status: r.ai_analysis_status,
           ai_analysis_result: r.ai_analysis_result,
           review_status: r.review_status,
           review_comments: r.review_comments,
-          created_at: r.created_at.toISOString()
+          created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
         }));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getWorkEvidence]:', err.message);
       }
     }
 
-    return [
-      {
-        id: 'e2000000-0000-0000-0000-000000000001',
-        assignment_id: validAssignment,
-        submitted_by: 'f2000000-0000-0000-0000-000000000001',
-        worker_name: 'Kanti Solanki',
-        evidence_type: 'before',
-        storage_path: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
-        description: 'Heavy silt and plastic debris clogged across storm drain mouth.',
-        latitude: 20.94852,
-        longitude: 72.92603,
-        gps_accuracy: 6.2,
-        distance_from_assignment_meters: 4.2,
-        location_validation_status: 'location_matched',
-        device_capture_timestamp: new Date(Date.now() - 3600000).toISOString(),
-        server_upload_timestamp: new Date(Date.now() - 3500000).toISOString(),
-        review_status: 'verified',
-        created_at: new Date(Date.now() - 3500000).toISOString()
-      }
-    ];
+    const memEvidences = ((store as any).workEvidence || []).filter((e: any) => e.assignment_id === assignmentId);
+    return memEvidences;
   }
 
   public static async addWorkEvidence(
@@ -4976,11 +4190,29 @@ export class DbRepository {
     lon?: number,
     accuracy?: number
   ): Promise<WorkEvidence> {
-    const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : 'a1000000-0000-0000-0000-000000000001';
-    const validWorker = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
+    const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : randomUUID();
+    let validWorker = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
+    let workerName = 'Team Leader';
 
     let distanceMeters: number | undefined = undefined;
     let locationStatus: 'location_matched' | 'location_mismatch' | 'manual_upload' = 'manual_upload';
+
+    if (isDbConnected()) {
+      try {
+        const wpRes = await pool.query(
+          `SELECT wp.id, COALESCE(p.full_name, wp.username, wp.worker_code) as full_name
+           FROM worker_profiles wp
+           LEFT JOIN profiles p ON p.id = wp.user_id
+           WHERE wp.id = $1 OR wp.user_id = $1
+           LIMIT 1`,
+          [validWorker]
+        );
+        if (wpRes.rows.length > 0) {
+          validWorker = wpRes.rows[0].id;
+          workerName = wpRes.rows[0].full_name || workerName;
+        }
+      } catch {}
+    }
 
     if (lat && lon) {
       let taskLat = 20.9485;
@@ -5002,10 +4234,12 @@ export class DbRepository {
       locationStatus = distanceMeters <= evidenceRadius ? 'location_matched' : 'location_mismatch';
     }
 
+    const nowIso = new Date().toISOString();
     const evidence: WorkEvidence = {
       id: `ev-${Date.now()}`,
       assignment_id: validAssignment,
       submitted_by: validWorker,
+      worker_name: workerName,
       evidence_type: evidenceType,
       storage_path: storagePath,
       description: description.trim(),
@@ -5014,10 +4248,10 @@ export class DbRepository {
       gps_accuracy: accuracy,
       distance_from_assignment_meters: distanceMeters,
       location_validation_status: locationStatus,
-      device_capture_timestamp: new Date().toISOString(),
-      server_upload_timestamp: new Date().toISOString(),
+      device_capture_timestamp: nowIso,
+      server_upload_timestamp: nowIso,
       review_status: 'submitted',
-      created_at: new Date().toISOString()
+      created_at: nowIso
     };
 
     if (isDbConnected()) {
@@ -5036,11 +4270,17 @@ export class DbRepository {
 
         if (res.rows.length > 0) {
           evidence.id = res.rows[0].id;
+          evidence.created_at = res.rows[0].created_at ? new Date(res.rows[0].created_at).toISOString() : nowIso;
+          evidence.device_capture_timestamp = res.rows[0].device_capture_timestamp ? new Date(res.rows[0].device_capture_timestamp).toISOString() : nowIso;
+          evidence.server_upload_timestamp = res.rows[0].server_upload_timestamp ? new Date(res.rows[0].server_upload_timestamp).toISOString() : nowIso;
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - addWorkEvidence]:', err.message);
       }
     }
+
+    if (!(store as any).workEvidence) (store as any).workEvidence = [];
+    (store as any).workEvidence.push(evidence);
 
     return evidence;
   }
@@ -5186,13 +4426,14 @@ export class DbRepository {
     return { success: true, report };
   }
 
-  public static async verifyCompleteAssignment(assignmentOrComplaintId: string, categoryName?: string): Promise<void> {
+  public static async verifyCompleteAssignment(assignmentOrComplaintId: string, complaintNumber?: string): Promise<void> {
     // 1. Update memory store
     (store.workAssignments || []).forEach(wa => {
       if (
         wa.id === assignmentOrComplaintId ||
         wa.task_code === assignmentOrComplaintId ||
-        (categoryName && wa.title?.toLowerCase().includes(categoryName.toLowerCase()))
+        (wa as any).complaint_id === assignmentOrComplaintId ||
+        (complaintNumber && (wa as any).complaint_number === complaintNumber)
       ) {
         wa.status = 'verified_complete';
         (wa as any).verified_complete = true;
@@ -5203,30 +4444,108 @@ export class DbRepository {
     // 2. Update PostgreSQL database
     if (isDbConnected()) {
       try {
-        await pool.query(`
-          UPDATE work_assignments
-          SET status = 'verified_complete', updated_at = NOW()
-          WHERE id = $1 OR task_code = $1 OR title ILIKE '%' || $2 || '%'
-        `, [assignmentOrComplaintId, categoryName || '']);
+        if (this.isValidUUID(assignmentOrComplaintId)) {
+          await pool.query(`
+            UPDATE work_assignments
+            SET status = 'verified_complete', updated_at = NOW()
+            WHERE id = $1 OR complaint_id = $2 OR ($3 <> '' AND complaint_number = $3)
+          `, [assignmentOrComplaintId, assignmentOrComplaintId, complaintNumber || '']);
+        } else {
+          await pool.query(`
+            UPDATE work_assignments
+            SET status = 'verified_complete', updated_at = NOW()
+            WHERE task_code = $1 OR complaint_id = $1 OR ($2 <> '' AND complaint_number = $2)
+          `, [assignmentOrComplaintId, complaintNumber || '']);
+        }
       } catch (err: any) {
         console.error('[DB REPO ERROR - verifyCompleteAssignment]:', err.message);
       }
     }
   }
 
+  public static async getAssignmentsAndEvidenceForComplaint(complaintId: string, complaintNumber?: string): Promise<any[]> {
+    if (!isDbConnected()) return [];
+    try {
+      const res = await pool.query(`
+        SELECT *
+        FROM work_assignments
+        WHERE complaint_id = $1
+           OR ($2 <> '' AND complaint_number = $2)
+        ORDER BY created_at ASC
+      `, [complaintId, complaintNumber || '']);
+
+      const results: any[] = [];
+      for (let i = 0; i < res.rows.length; i++) {
+        const wa = res.rows[i];
+        const [members, attRes, evidence, completionReport] = await Promise.all([
+          this.getAssignmentTeamMembers(wa.id),
+          pool.query(`SELECT * FROM worker_attendance WHERE assignment_id = $1 ORDER BY attendance_timestamp ASC`, [wa.id]).catch(() => ({ rows: [] as any[] })),
+          this.getWorkEvidence(wa.id),
+          this.getWorkCompletionReport(wa.id)
+        ]);
+
+        const leader = members.find(m => m.temporary_leader) || members[0];
+        results.push({
+          id: `att-db-${wa.id}`,
+          complaint_id: complaintId,
+          attempt_number: i + 1,
+          assignment_id: wa.id,
+          task_code: wa.task_code,
+          team_name: wa.team_name || undefined,
+          assigned_date: wa.created_at ? new Date(wa.created_at).toISOString() : new Date().toISOString(),
+          deadline: wa.expected_end_time ? new Date(wa.expected_end_time).toISOString() : undefined,
+          team_leader_id: leader?.worker_id || null,
+          team_leader_name: leader?.worker_name || 'Assigned Leader',
+          team_members: members.map(m => ({
+            worker_id: m.worker_id,
+            worker_code: m.worker_code,
+            name: m.worker_name,
+            full_name: m.worker_name,
+            worker_name: m.worker_name,
+            phone: m.worker_phone,
+            designation: m.designation_name,
+            is_temporary_leader: m.temporary_leader
+          })),
+          attendance_records: attRes.rows.map(a => ({
+            id: a.id,
+            assignment_id: a.assignment_id,
+            worker_id: a.worker_id,
+            attendance_timestamp: a.attendance_timestamp ? new Date(a.attendance_timestamp).toISOString() : new Date().toISOString(),
+            latitude: parseFloat(a.latitude),
+            longitude: parseFloat(a.longitude),
+            gps_accuracy: parseFloat(a.gps_accuracy || '10'),
+            distance_from_assignment_meters: parseFloat(a.distance_from_assignment_meters || '0'),
+            geofence_radius_meters: parseInt(a.geofence_radius_meters || '150', 10),
+            validation_status: a.validation_status,
+            attendance_method: a.attendance_method || 'gps',
+            created_at: a.created_at ? new Date(a.created_at).toISOString() : new Date().toISOString()
+          })),
+          evidence,
+          completion_report: completionReport || undefined,
+          status: wa.status,
+          created_at: wa.created_at ? new Date(wa.created_at).toISOString() : new Date().toISOString()
+        });
+      }
+      return results;
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - getAssignmentsAndEvidenceForComplaint]:', err.message);
+      return [];
+    }
+  }
+
   public static async getWorkCompletionReport(assignmentId: string): Promise<WorkCompletionReport | null> {
-    const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : 'a1000000-0000-0000-0000-000000000003';
-    if (isDbConnected()) {
+    if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
         const res = await pool.query(`
-          SELECT wcr.*, p.full_name as submitted_by_name, rev_p.full_name as reviewer_name, wa.title as assignment_title
+          SELECT wcr.*, COALESCE(p.full_name, wp.username, wp.worker_code, 'Team Leader') as submitted_by_name,
+                 rev_p.full_name as reviewer_name, wa.title as assignment_title
           FROM work_completion_reports wcr
           JOIN work_assignments wa ON wa.id = wcr.assignment_id
-          JOIN worker_profiles wp ON wp.id = wcr.submitted_by
-          JOIN profiles p ON p.id = wp.user_id
+          LEFT JOIN worker_profiles wp ON wp.id = wcr.submitted_by
+          LEFT JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN profiles rev_p ON rev_p.id = wcr.reviewed_by
           WHERE wcr.assignment_id = $1
-        `, [validAssignment]);
+        `, [assignmentId]);
 
         if (res.rows.length > 0) {
           const r = res.rows[0];
@@ -5237,8 +4556,8 @@ export class DbRepository {
             submitted_by: r.submitted_by,
             submitted_by_name: r.submitted_by_name,
             completion_description: r.completion_description,
-            actual_start_time: r.actual_start_time.toISOString(),
-            actual_end_time: r.actual_end_time.toISOString(),
+            actual_start_time: r.actual_start_time ? new Date(r.actual_start_time).toISOString() : new Date().toISOString(),
+            actual_end_time: r.actual_end_time ? new Date(r.actual_end_time).toISOString() : new Date().toISOString(),
             waste_quantity: r.waste_quantity,
             waste_disposal_destination: r.waste_disposal_destination,
             equipment_used: Array.isArray(r.equipment_used) ? r.equipment_used : [],
@@ -5248,7 +4567,7 @@ export class DbRepository {
             reviewed_by: r.reviewed_by,
             reviewer_name: r.reviewer_name,
             review_comments: r.review_comments,
-            submitted_at: r.submitted_at.toISOString()
+            submitted_at: r.submitted_at ? new Date(r.submitted_at).toISOString() : new Date().toISOString()
           };
         }
       } catch (err: any) {
@@ -5256,23 +4575,7 @@ export class DbRepository {
       }
     }
 
-    return {
-      id: 'r1',
-      assignment_id: validAssignment,
-      assignment_title: 'Ashapuri Temple Market Overflowing Bin Removal & Lime Powder Disinfection',
-      submitted_by: 'f2000000-0000-0000-0000-000000000001',
-      submitted_by_name: 'Kanti Solanki',
-      completion_description: 'Successfully cleared festival waste overspill, washed cement apron with bleaching solution, and applied insecticidal lime boundary powder.',
-      actual_start_time: new Date(Date.now() - 7200000).toISOString(),
-      actual_end_time: new Date(Date.now() - 1800000).toISOString(),
-      waste_quantity: 'Approx 420 kg (1 full dumper bin load)',
-      waste_disposal_destination: 'Navsari Municipal Solid Waste Processing Plant, Junathana',
-      equipment_used: ['1100L Hydraulic Dumper Bin', 'Pressure Wash Jet', '2 Bags Lime Powder', 'Safety Cones'],
-      issues_encountered: 'Initial two-wheeler traffic congestion resolved with traffic police coordination.',
-      pending_work: 'None. Site completely sanitized.',
-      status: 'submitted',
-      submitted_at: new Date(Date.now() - 1800000).toISOString()
-    };
+    return null;
   }
 
   public static async getWorkerDashboardSummary(workerId: string): Promise<WorkerDashboardSummary> {
@@ -5287,13 +4590,33 @@ export class DbRepository {
     const isTemporaryLeaderToday = assignments.some(a => a.is_temporary_leader && a.status !== 'verified_complete' && a.status !== 'closed');
 
     const recentAttendance = await this.getWorkerAttendanceHistory(profile?.id || workerId);
-    const attendanceStatus = recentAttendance.length > 0 && recentAttendance[0].validation_status === 'verified_match'
+    const isVerifiedRec = (a: any) =>
+      ['verified_match', 'present', 'verified', 'manual_approved'].includes(String(a.validation_status || '').toLowerCase());
+
+    const verifiedAssignmentIds = new Set<string>();
+    for (const att of recentAttendance) {
+      if (isVerifiedRec(att) && att.assignment_id) {
+        verifiedAssignmentIds.add(String(att.assignment_id));
+      }
+    }
+    for (const asgn of assignments) {
+      if (['verified', 'present', 'verified_match'].includes(String(asgn.my_attendance_status || '').toLowerCase())) {
+        verifiedAssignmentIds.add(String(asgn.id));
+      }
+    }
+
+    const attendanceStatus = recentAttendance.length > 0 && isVerifiedRec(recentAttendance[0])
       ? 'Checked-in (GPS Verified)'
+      : verifiedAssignmentIds.size > 0
+      ? 'Checked-in (Verified)'
       : 'Attendance Pending';
 
-    const onTimeRate = recentAttendance.length > 0
-      ? Math.round((recentAttendance.filter(a => a.validation_status === 'verified_match').length / recentAttendance.length) * 100)
-      : 0;
+    let onTimeRate = 0;
+    if (assignments.length > 0) {
+      onTimeRate = Math.min(100, Math.round((verifiedAssignmentIds.size / assignments.length) * 100));
+    } else if (recentAttendance.length > 0) {
+      onTimeRate = Math.min(100, Math.round((recentAttendance.filter(isVerifiedRec).length / recentAttendance.length) * 100));
+    }
 
     const totalHistoricalTasks = completedAssignments.length + inProgressAssignments.length;
     const verifiedEvidenceRate = totalHistoricalTasks > 0
@@ -5548,7 +4871,7 @@ export class DbRepository {
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS active_task_code VARCHAR(100);
       `);
 
-      // 2. Ensure worker_teams table exists and has VARCHAR ids
+      // 2. Ensure worker_teams table exists and has VARCHAR ids + work_type
       await pool.query(`
         CREATE TABLE IF NOT EXISTS worker_teams (
           id VARCHAR(100) PRIMARY KEY,
@@ -5558,6 +4881,7 @@ export class DbRepository {
           temporary_leader_id VARCHAR(100),
           temporary_leader_name VARCHAR(150),
           worker_ids JSONB DEFAULT '[]'::jsonb,
+          work_type VARCHAR(150) DEFAULT 'General Civic Sanitation Squad',
           shift VARCHAR(50) DEFAULT 'Morning (06:00 - 14:00)',
           status VARCHAR(50) DEFAULT 'active',
           active_task_code VARCHAR(100),
@@ -5566,7 +4890,40 @@ export class DbRepository {
         );
         ALTER TABLE worker_teams ALTER COLUMN id TYPE VARCHAR(100);
         ALTER TABLE worker_teams ALTER COLUMN temporary_leader_id TYPE VARCHAR(100);
+        ALTER TABLE worker_teams ADD COLUMN IF NOT EXISTS work_type VARCHAR(150) DEFAULT 'General Civic Sanitation Squad';
+        ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS complaint_id VARCHAR(100);
+        ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS complaint_number VARCHAR(60);
+        ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_id VARCHAR(100);
+        ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_name VARCHAR(150);
       `);
+
+      // 2B. Auto-heal any worker profiles whose profiles row exists (role='worker') without a worker_profiles row
+      const missingWorkersRes = await pool.query(`
+        SELECT p.id, p.full_name, p.phone, p.username, p.plain_password, COALESCE(p.ward_number, 3) as ward_number
+        FROM profiles p
+        LEFT JOIN worker_profiles wp ON wp.user_id = p.id
+        WHERE p.role = 'worker' AND COALESCE(p.is_active, TRUE) = TRUE AND wp.id IS NULL
+      `).catch(() => ({ rows: [] as any[] }));
+
+      for (const mw of missingWorkersRes.rows) {
+        const nextCode = await this.generateUniqueWorkerCode();
+        await pool.query(`
+          INSERT INTO worker_profiles (
+            id, user_id, worker_code, username, plain_password, designation,
+            ward_number, ward_name, availability_status, experience_years,
+            skills, attendance_today
+          ) VALUES ($1, $2, $3, $4, $5, 'Sanitation Worker', $6, $7, 'available', 0, '["Litter Abatement","Bin Clearance"]'::jsonb, 'Not Marked')
+          ON CONFLICT (user_id) DO NOTHING
+        `, [
+          randomUUID(),
+          mw.id,
+          nextCode,
+          mw.username || nextCode,
+          mw.plain_password || 'Worker@123',
+          mw.ward_number,
+          `Ward ${mw.ward_number}`
+        ]).catch(() => {});
+      }
 
       // 3. Ensure communities enhancements
       await pool.query(`
@@ -5600,36 +4957,71 @@ export class DbRepository {
           linked_activity_id VARCHAR(100),
           created_by VARCHAR(100),
           officer_name VARCHAR(100),
-          drive_requests JSONB DEFAULT '[]'::jsonb,
-          assigned_communities JSONB DEFAULT '[]'::jsonb,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS drive_requests JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS assigned_communities JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS start_time TIMESTAMPTZ;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS end_time TIMESTAMPTZ;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS max_volunteers_per_community INTEGER DEFAULT 25;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS citizen_instructions TEXT;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS necessary_gears JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS meeting_point VARCHAR(255);
-        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS emergency_contact VARCHAR(100);
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS is_joint BOOLEAN DEFAULT FALSE;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS co_organisers JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS drive_type VARCHAR(20) DEFAULT 'single';
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS action_plan TEXT;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS suggested_equipment JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS max_volunteers_per_community INTEGER DEFAULT 25;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS citizen_instructions TEXT;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS necessary_gears JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS meeting_point VARCHAR(255);
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS emergency_contact VARCHAR(100);
-        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS assigned_communities JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE drive_registrations ADD COLUMN IF NOT EXISTS community_id VARCHAR(100);
-        ALTER TABLE drive_registrations ADD COLUMN IF NOT EXISTS community_name VARCHAR(255);
       `);
 
+      // 3.5 Ward Officer Assignments persistence table (for Admin-created & updated Ward Officers)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS ward_officer_assignments (
+          id VARCHAR(100) PRIMARY KEY,
+          user_id UUID UNIQUE NOT NULL,
+          full_name VARCHAR(200) NOT NULL,
+          phone VARCHAR(30) NOT NULL,
+          email VARCHAR(200),
+          designation VARCHAR(150) DEFAULT 'Ward Officer',
+          assigned_wards JSONB DEFAULT '[1]'::jsonb,
+          is_active BOOLEAN DEFAULT TRUE,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+
+      // 3.6 Schema upgrades for Community Self-Registration, Verification Docs, Multi-Org Problem Policy, Evidence Metadata & Drive Certificates
+      await pool.query(`
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS verification_document_url TEXT;
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS verification_document_name VARCHAR(255);
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS approval_status VARCHAR(50) DEFAULT 'approved';
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS registered_via VARCHAR(50) DEFAULT 'ward_officer';
+        ALTER TABLE communities ADD COLUMN IF NOT EXISTS description TEXT;
+      `).catch(() => {});
+
+      await pool.query(`
+        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS allow_multiple_orgs BOOLEAN DEFAULT TRUE;
+      `).catch(() => {});
+
+      await pool.query(`
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS review_metadata JSONB DEFAULT '{}'::jsonb;
+      `).catch(() => {});
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS drive_certificates (
+          id UUID PRIMARY KEY,
+          certificate_code VARCHAR(80) UNIQUE NOT NULL,
+          activity_id VARCHAR(100) NOT NULL,
+          drive_title VARCHAR(255) NOT NULL,
+          community_id VARCHAR(100),
+          community_name VARCHAR(255),
+          ward_number INT DEFAULT 3,
+          ward_name VARCHAR(255),
+          drive_date VARCHAR(100),
+          location_name VARCHAR(255),
+          waste_cleared VARCHAR(100),
+          recipient_user_id VARCHAR(100),
+          recipient_name VARCHAR(255) NOT NULL,
+          recipient_role VARCHAR(50) NOT NULL,
+          recipient_phone VARCHAR(40),
+          issued_by_officer VARCHAR(200),
+          verification_url TEXT,
+          issued_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `).catch(() => {});
+
       // 4. Synchronize memory store from database on startup so state is 100% unified
+      await this.syncWardOfficersFromDb();
+
       const workersFromDb = await this.getWorkersList();
       if (workersFromDb.length > 0) {
         store.workers = workersFromDb;
@@ -5647,9 +5039,456 @@ export class DbRepository {
         store.communities = commsFromDb;
         console.log(`[DB REPO] Synchronized ${commsFromDb.length} communities from PostgreSQL into memory.`);
       }
+
+      // Sync PostgreSQL complaints into memory store so Ward Officer & Citizen views always share identical state
+      const dbComplaints = await this.getComplaints({});
+      if (dbComplaints.length > 0) {
+        for (const dbComp of dbComplaints) {
+          const idx = store.complaints.findIndex(c => c.id === dbComp.id || c.complaint_number === dbComp.complaint_number);
+          if (idx !== -1) {
+            store.complaints[idx] = { ...store.complaints[idx], ...dbComp };
+          } else {
+            store.complaints.unshift(dbComp);
+          }
+        }
+        console.log(`[DB REPO] Synchronized ${dbComplaints.length} complaints from PostgreSQL into memory.`);
+      }
     } catch (err: any) {
       console.error('[DB REPO ERROR - initializeWorkerAndTeamTables]:', err.message);
     }
+  }
+
+  public static async syncWardOfficersFromDb(): Promise<void> {
+    if (!isDbConnected()) return;
+    try {
+      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => {});
+
+      const res = await pool.query(`
+        SELECT woa.*, a.password_hash, a.plain_password
+        FROM ward_officer_assignments woa
+        LEFT JOIN citizen_auth_profiles a ON a.user_id = woa.user_id
+        ORDER BY woa.updated_at ASC, woa.created_at ASC
+      `);
+      for (const row of res.rows) {
+        const assignedWards: number[] = Array.isArray(row.assigned_wards)
+          ? row.assigned_wards.map(Number).filter((n: number) => !isNaN(n))
+          : [1];
+        const allowedTabs: string[] | undefined =
+          Array.isArray(row.allowed_tabs) && row.allowed_tabs.length > 0
+            ? row.allowed_tabs.map(String)
+            : undefined;
+        const primaryWardNum = assignedWards[0] || 1;
+        const primaryWardObj = store.wards.find(w => w.ward_number === primaryWardNum);
+
+        const rec: any = {
+          id: row.id,
+          user_id: row.user_id,
+          full_name: row.full_name,
+          phone: row.phone,
+          email: row.email || '',
+          designation: row.designation || 'Ward Officer',
+          assigned_wards: assignedWards,
+          allowed_tabs: allowedTabs,
+          is_active: row.is_active !== false,
+          cleanliness_score: 90.0,
+          total_resolved: 0,
+          created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
+        };
+
+        const idx = store.wardOfficers.findIndex(o => o.id === rec.id || o.user_id === rec.user_id || o.phone === rec.phone);
+        if (idx !== -1) store.wardOfficers[idx] = { ...store.wardOfficers[idx], ...rec };
+        else store.wardOfficers.push(rec);
+
+        const pIdx = store.profiles.findIndex(p => p.id === rec.user_id || p.phone === rec.phone);
+        const profilePayload: any = {
+          id: rec.user_id,
+          full_name: rec.full_name,
+          phone: rec.phone,
+          email: rec.email,
+          preferred_language: 'en',
+          address: `NMC Ward ${assignedWards.join(', ')} Office, Navsari`,
+          locality: primaryWardObj ? `Ward ${primaryWardObj.ward_number} - ${primaryWardObj.ward_name}` : `Ward ${primaryWardNum}`,
+          ward_number: primaryWardNum,
+          assigned_wards: assignedWards,
+          allowed_tabs: allowedTabs,
+          is_active: rec.is_active,
+          role: 'ward_officer',
+          created_at: rec.created_at,
+          updated_at: rec.updated_at
+        };
+        if (pIdx !== -1) store.profiles[pIdx] = { ...store.profiles[pIdx], ...profilePayload };
+        else store.profiles.push(profilePayload);
+
+        if (row.password_hash || row.plain_password) {
+          const aIdx = store.authProfiles.findIndex(a => a.user_id === rec.user_id);
+          const authPayload: any = {
+            id: `auth-${rec.user_id.slice(0, 8)}`,
+            user_id: rec.user_id,
+            mobile_number: rec.phone,
+            password_hash: row.password_hash || '',
+            plain_password: row.plain_password || undefined,
+            mobile_verified: true,
+            account_status: rec.is_active ? 'active' : 'suspended',
+            created_at: rec.created_at,
+            updated_at: rec.updated_at
+          };
+          if (aIdx !== -1) store.authProfiles[aIdx] = { ...store.authProfiles[aIdx], ...authPayload };
+          else store.authProfiles.push(authPayload);
+        }
+
+        if (rec.is_active) {
+          for (const wNum of assignedWards) {
+            const w = store.wards.find(w => w.ward_number === wNum);
+            if (w) {
+              w.ward_officer_name = rec.full_name;
+              w.contact_phone = rec.phone;
+            }
+          }
+        }
+      }
+      if (res.rows.length > 0) {
+        console.log(`[DB REPO] Synchronized ${res.rows.length} ward officers from PostgreSQL into memory.`);
+      }
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - syncWardOfficersFromDb]:', err.message);
+    }
+  }
+
+  public static async saveWardOfficerToDb(
+    officer: {
+      id: string;
+      user_id: string;
+      full_name: string;
+      phone: string;
+      email?: string;
+      designation?: string;
+      assigned_wards: number[];
+      allowed_tabs?: string[];
+      is_active?: boolean;
+    },
+    passwordHash?: string,
+    plainPassword?: string
+  ): Promise<void> {
+    if (!isDbConnected()) return;
+    try {
+      const primaryWardNum = officer.assigned_wards[0] || 1;
+      const primaryWardObj = store.wards.find(w => w.ward_number === primaryWardNum);
+      const locality = primaryWardObj ? `Ward ${primaryWardObj.ward_number} - ${primaryWardObj.ward_name}` : `Ward ${primaryWardNum}`;
+      const address = `NMC Ward ${officer.assigned_wards.join(', ')} Office, Navsari`;
+
+      // 1. Upsert into profiles (by id so separate roles never overwrite each other)
+      const profRes = await pool.query(
+        `INSERT INTO profiles (id, full_name, phone, email, username, role, locality, address, ward_number, preferred_language, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'ward_officer', $6, $7, $8, 'en', $9, NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           full_name = EXCLUDED.full_name,
+           phone = EXCLUDED.phone,
+           email = COALESCE(EXCLUDED.email, profiles.email),
+           username = COALESCE(EXCLUDED.username, profiles.username),
+           role = 'ward_officer',
+           locality = EXCLUDED.locality,
+           address = EXCLUDED.address,
+           ward_number = EXCLUDED.ward_number,
+           is_active = EXCLUDED.is_active,
+           updated_at = NOW()
+         RETURNING id`,
+        [
+          officer.user_id,
+          officer.full_name,
+          officer.phone,
+          officer.email || null,
+          (officer as any).username || null,
+          locality,
+          address,
+          primaryWardNum,
+          officer.is_active !== false
+        ]
+      );
+      const resolvedUserId = profRes.rows[0]?.id || officer.user_id;
+
+      // 2. Upsert into user_roles if table exists
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role) VALUES ($1, 'ward_officer') ON CONFLICT (user_id) DO UPDATE SET role = 'ward_officer'`,
+        [resolvedUserId]
+      ).catch(() => {});
+
+      // 3. Upsert password in citizen_auth_profiles if provided
+      if (passwordHash) {
+        await pool.query(
+          `INSERT INTO citizen_auth_profiles (user_id, mobile_number, password_hash, plain_password, mobile_verified, account_status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, true, 'active', NOW(), NOW())
+           ON CONFLICT (user_id) DO UPDATE SET
+             mobile_number = EXCLUDED.mobile_number,
+             password_hash = EXCLUDED.password_hash,
+             plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
+             updated_at = NOW()`,
+          [resolvedUserId, officer.phone, passwordHash, plainPassword || null]
+        ).catch(() => {});
+      }
+
+      // 4. Upsert into ward_officer_assignments (including allowed_tabs RBAC)
+      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => {});
+      const allowedTabsJson =
+        Array.isArray(officer.allowed_tabs) && officer.allowed_tabs.length > 0
+          ? JSON.stringify(officer.allowed_tabs)
+          : null;
+
+      await pool.query(
+        `INSERT INTO ward_officer_assignments (id, user_id, full_name, phone, email, designation, assigned_wards, allowed_tabs, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, NOW(), NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+           full_name = EXCLUDED.full_name,
+           phone = EXCLUDED.phone,
+           email = EXCLUDED.email,
+           designation = EXCLUDED.designation,
+           assigned_wards = EXCLUDED.assigned_wards,
+           allowed_tabs = EXCLUDED.allowed_tabs,
+           is_active = EXCLUDED.is_active,
+           updated_at = NOW()`,
+        [
+          officer.id,
+          resolvedUserId,
+          officer.full_name,
+          officer.phone,
+          officer.email || null,
+          officer.designation || 'Ward Officer',
+          JSON.stringify(officer.assigned_wards),
+          allowedTabsJson,
+          officer.is_active !== false
+        ]
+      );
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - saveWardOfficerToDb]:', err.message);
+    }
+  }
+
+  // =========================================================================
+  // BOUNDARY HISTORY PERSISTENCE (NAVSARI CITY & WARD BOUNDARIES)
+  // =========================================================================
+  private static memBoundaryHistory: Array<{
+    id: string;
+    boundary_type: 'city' | 'ward';
+    ward_id?: string | null;
+    ward_number?: number | null;
+    ward_name?: string | null;
+    coordinates: [number, number][];
+    location_summary?: string;
+    saved_by?: string;
+    created_at: string;
+  }> = [];
+
+  private static async ensureBoundaryHistoryTable(): Promise<void> {
+    if (!isDbConnected()) return;
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS boundary_history (
+        id UUID PRIMARY KEY,
+        boundary_type VARCHAR(20) NOT NULL,
+        ward_id VARCHAR(64),
+        ward_number INT,
+        ward_name VARCHAR(255),
+        coordinates JSONB NOT NULL,
+        location_summary TEXT,
+        saved_by VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(() => {});
+  }
+
+  public static async recordBoundaryHistory(entry: {
+    boundary_type: 'city' | 'ward';
+    ward_id?: string | null;
+    ward_number?: number | null;
+    ward_name?: string | null;
+    coordinates: [number, number][];
+    location_summary?: string;
+    saved_by?: string;
+  }): Promise<any> {
+    const record = {
+      id: randomUUID(),
+      boundary_type: entry.boundary_type,
+      ward_id: entry.ward_id || null,
+      ward_number: entry.ward_number ?? null,
+      ward_name: entry.ward_name || null,
+      coordinates: entry.coordinates,
+      location_summary: entry.location_summary || '',
+      saved_by: entry.saved_by || 'Super Admin',
+      created_at: new Date().toISOString()
+    };
+
+    this.memBoundaryHistory.unshift(record);
+
+    if (isDbConnected()) {
+      try {
+        await this.ensureBoundaryHistoryTable();
+        await pool.query(
+          `INSERT INTO boundary_history (id, boundary_type, ward_id, ward_number, ward_name, coordinates, location_summary, saved_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, NOW())`,
+          [
+            record.id,
+            record.boundary_type,
+            record.ward_id,
+            record.ward_number,
+            record.ward_name,
+            JSON.stringify(record.coordinates),
+            record.location_summary,
+            record.saved_by
+          ]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - recordBoundaryHistory]:', err.message);
+      }
+    }
+    return record;
+  }
+
+  public static async getBoundaryHistory(
+    boundaryType?: 'city' | 'ward',
+    wardNumber?: number
+  ): Promise<any[]> {
+    if (isDbConnected()) {
+      try {
+        await this.ensureBoundaryHistoryTable();
+        const conds: string[] = [];
+        const vals: any[] = [];
+        if (boundaryType) {
+          vals.push(boundaryType);
+          conds.push(`boundary_type = $${vals.length}`);
+        }
+        if (wardNumber !== undefined && !isNaN(wardNumber)) {
+          vals.push(Number(wardNumber));
+          conds.push(`ward_number = $${vals.length}`);
+        }
+        const whereClause = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
+        const res = await pool.query(
+          `SELECT * FROM boundary_history ${whereClause} ORDER BY created_at DESC LIMIT 50`,
+          vals
+        );
+        return res.rows.map((r: any) => ({
+          id: r.id,
+          boundary_type: r.boundary_type,
+          ward_id: r.ward_id,
+          ward_number: r.ward_number,
+          ward_name: r.ward_name,
+          coordinates: Array.isArray(r.coordinates) ? r.coordinates : [],
+          location_summary: r.location_summary || '',
+          saved_by: r.saved_by || 'Super Admin',
+          created_at: r.created_at
+        }));
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getBoundaryHistory]:', err.message);
+      }
+    }
+
+    return this.memBoundaryHistory.filter(h => {
+      if (boundaryType && h.boundary_type !== boundaryType) return false;
+      if (wardNumber !== undefined && !isNaN(wardNumber) && Number(h.ward_number) !== Number(wardNumber)) return false;
+      return true;
+    });
+  }
+
+  public static async getBoundaryHistoryById(id: string): Promise<any | null> {
+    if (isDbConnected() && this.isValidUUID(id)) {
+      try {
+        await this.ensureBoundaryHistoryTable();
+        const res = await pool.query(`SELECT * FROM boundary_history WHERE id = $1 LIMIT 1`, [id]);
+        if (res.rows.length > 0) {
+          const r = res.rows[0];
+          return {
+            id: r.id,
+            boundary_type: r.boundary_type,
+            ward_id: r.ward_id,
+            ward_number: r.ward_number,
+            ward_name: r.ward_name,
+            coordinates: Array.isArray(r.coordinates) ? r.coordinates : [],
+            location_summary: r.location_summary || '',
+            saved_by: r.saved_by || 'Super Admin',
+            created_at: r.created_at
+          };
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getBoundaryHistoryById]:', err.message);
+      }
+    }
+    return this.memBoundaryHistory.find(h => h.id === id) || null;
+  }
+
+  public static async deleteComplaintCascade(id: string): Promise<boolean> {
+    let deleted = false;
+    const compInStore = store.complaints.find(c => c.id === id || c.complaint_number === id);
+    const compId = compInStore?.id || id;
+    const compNum = compInStore?.complaint_number || id;
+
+    if (isDbConnected()) {
+      try {
+        // Delete linked work assignments & evidence
+        const assignRes = await pool.query(
+          `SELECT id FROM work_assignments WHERE complaint_id = $1 OR complaint_number = $2`,
+          [compId, compNum]
+        ).catch(() => ({ rows: [] as any[] }));
+
+        for (const a of assignRes.rows) {
+          await pool.query(`DELETE FROM work_evidence WHERE assignment_id = $1`, [a.id]).catch(() => {});
+          await pool.query(`DELETE FROM work_attendance WHERE assignment_id = $1`, [a.id]).catch(() => {});
+          await pool.query(`DELETE FROM work_completion_reports WHERE assignment_id = $1`, [a.id]).catch(() => {});
+          await pool.query(`DELETE FROM assignment_team_members WHERE assignment_id = $1`, [a.id]).catch(() => {});
+          await pool.query(`DELETE FROM work_assignments WHERE id = $1`, [a.id]).catch(() => {});
+        }
+
+        if (this.isValidUUID(compId)) {
+          await pool.query(`DELETE FROM complaint_activity_logs WHERE complaint_id = $1`, [compId]).catch(() => {});
+          await pool.query(`DELETE FROM complaint_feedback WHERE complaint_id = $1`, [compId]).catch(() => {});
+          await pool.query(`DELETE FROM notifications WHERE related_id = $1`, [compId]).catch(() => {});
+          const delRes = await pool.query(
+            `DELETE FROM complaints WHERE id = $1 OR complaint_number = $2`,
+            [compId, compNum]
+          );
+          if ((delRes.rowCount || 0) > 0) deleted = true;
+        } else {
+          const delRes = await pool.query(
+            `DELETE FROM complaints WHERE complaint_number = $1`,
+            [compNum]
+          );
+          if ((delRes.rowCount || 0) > 0) deleted = true;
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteComplaintCascade]:', err.message);
+      }
+    }
+
+    // Remove from in-memory store
+    const beforeLen = store.complaints.length;
+    store.complaints = store.complaints.filter(c => c.id !== compId && c.complaint_number !== compNum);
+    if (store.complaints.length < beforeLen) deleted = true;
+
+    return deleted;
+  }
+
+  public static async generateUniqueWorkerCode(): Promise<string> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(`SELECT worker_code FROM worker_profiles`);
+        const existing = new Set(res.rows.map(r => String(r.worker_code || '').toUpperCase()));
+        let maxNum = 0;
+        for (const code of existing) {
+          const m = code.match(/(\d+)$/);
+          if (m) {
+            const n = parseInt(m[1], 10);
+            if (n > maxNum) maxNum = n;
+          }
+        }
+        let candidateNum = maxNum + 1;
+        let candidate = `WRK-2026-${String(candidateNum).padStart(3, '0')}`;
+        while (existing.has(candidate.toUpperCase())) {
+          candidateNum++;
+          candidate = `WRK-2026-${String(candidateNum).padStart(3, '0')}`;
+        }
+        return candidate;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - generateUniqueWorkerCode]:', err.message);
+      }
+    }
+    return `WRK-2026-${Math.floor(100 + Math.random() * 900)}`;
   }
 
   public static async getWorkersList(filters?: { ward_number?: number; search?: string; availability?: string }): Promise<any[]> {
@@ -5659,11 +5498,17 @@ export class DbRepository {
           SELECT wp.*, p.full_name, p.phone, p.email, p.avatar_url, p.address, p.locality,
                  COALESCE(wp.designation, wd.designation_name, 'Sanitation Worker') as designation_label,
                  COALESCE(wp.username, p.username, wp.worker_code) as worker_username,
-                 COALESCE(wp.plain_password, p.plain_password, 'Worker@123') as worker_plain_password
+                 COALESCE(wp.plain_password, p.plain_password, 'Worker@123') as worker_plain_password,
+                 (SELECT wa.task_code
+                  FROM work_assignment_members wam
+                  JOIN work_assignments wa ON wa.id = wam.assignment_id
+                  WHERE wam.worker_id = wp.id AND wa.status NOT IN ('verified_complete', 'closed')
+                  ORDER BY wa.created_at DESC
+                  LIMIT 1) as live_active_task_code
           FROM worker_profiles wp
           JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
-          WHERE 1=1
+          WHERE COALESCE(p.is_active, TRUE) = TRUE
         `;
         const values: any[] = [];
 
@@ -5680,7 +5525,7 @@ export class DbRepository {
           sql += ` AND (LOWER(p.full_name) LIKE $${values.length} OR LOWER(wp.worker_code) LIKE $${values.length} OR LOWER(COALESCE(wp.designation, '')) LIKE $${values.length})`;
         }
 
-        sql += ` ORDER BY wp.created_at ASC`;
+        sql += ` ORDER BY wp.created_at DESC`;
         const res = await pool.query(sql, values);
 
         return res.rows.map(r => {
@@ -5707,7 +5552,7 @@ export class DbRepository {
             ward_number: r.ward_number || 3,
             ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
             availability_status: r.availability_status || 'available',
-            active_task_code: r.active_task_code,
+            active_task_code: r.live_active_task_code || r.active_task_code || undefined,
             experience_years: parseFloat(r.experience_years || '0'),
             skills: parsedSkills,
             attendance_today: r.attendance_today || 'Not Marked',
@@ -5737,23 +5582,24 @@ export class DbRepository {
   }
 
   public static async saveWorkerProfile(worker: any, passwordHash?: string): Promise<any> {
-    const validWorkerId = this.isValidUUID(worker.id) ? worker.id : randomUUID();
+    let validWorkerId = this.isValidUUID(worker.id) ? worker.id : randomUUID();
     let validUserId = this.isValidUUID(worker.user_id) ? worker.user_id : randomUUID();
     const workerPassword = worker.plain_password || 'Worker@123';
     const hash = passwordHash || await bcrypt.hash(workerPassword, 10);
-    const workerCode = worker.worker_code || `WRK-2026-${Date.now().toString().slice(-3)}`;
-    const effectiveUsername = worker.username || workerCode;
+    let workerCode = await this.generateUniqueWorkerCode();
+    const effectiveUsername = worker.username && String(worker.username).trim() ? String(worker.username).trim() : workerCode;
 
     if (isDbConnected()) {
       try {
-        // 1. Check if profile exists with this phone
-        const existingProfile = await pool.query(`SELECT id FROM profiles WHERE phone = $1`, [worker.phone]);
-        if (existingProfile.rows.length > 0) {
-          validUserId = existingProfile.rows[0].id;
+        // 1. Only reuse existing worker profile if this exact user_id already has a worker_profile
+        const existingWp = await pool.query(`SELECT id, worker_code FROM worker_profiles WHERE user_id = $1`, [validUserId]);
+        if (existingWp.rows.length > 0) {
+          validWorkerId = existingWp.rows[0].id;
+          workerCode = existingWp.rows[0].worker_code;
         }
 
-        // 2. Upsert profiles
-        await pool.query(
+        // 2. Upsert profiles by id (never hijack another role's profile via phone collision)
+        const profRes = await pool.query(
           `INSERT INTO profiles (id, full_name, phone, username, plain_password, address, locality, ward_number, role, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'worker', TRUE)
            ON CONFLICT (id) DO UPDATE SET
@@ -5762,7 +5608,10 @@ export class DbRepository {
              username = COALESCE(EXCLUDED.username, profiles.username),
              plain_password = COALESCE(EXCLUDED.plain_password, profiles.plain_password),
              ward_number = EXCLUDED.ward_number,
-             updated_at = CURRENT_TIMESTAMP`,
+             role = 'worker',
+             is_active = TRUE,
+             updated_at = CURRENT_TIMESTAMP
+           RETURNING id`,
           [
             validUserId,
             worker.full_name?.trim() || 'Municipal Worker',
@@ -5774,6 +5623,9 @@ export class DbRepository {
             worker.ward_number || 3
           ]
         );
+        if (profRes.rows.length > 0) {
+          validUserId = profRes.rows[0].id;
+        }
 
         // 3. Upsert citizen_auth_profiles
         const authId = randomUUID();
@@ -5784,6 +5636,7 @@ export class DbRepository {
              mobile_number = EXCLUDED.mobile_number,
              password_hash = COALESCE(EXCLUDED.password_hash, citizen_auth_profiles.password_hash),
              plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
+             account_status = 'active',
              updated_at = CURRENT_TIMESTAMP`,
           [
             authId,
@@ -5802,16 +5655,15 @@ export class DbRepository {
           [validUserId]
         ).catch(() => {});
 
-        // 5. Upsert worker_profiles
+        // 5. Upsert worker_profiles with guaranteed unique worker_code and RETURNING actual DB id
         const skillsJson = JSON.stringify(Array.isArray(worker.skills) ? worker.skills : [worker.skills || 'Litter Abatement']);
-        await pool.query(
+        const wpRes = await pool.query(
           `INSERT INTO worker_profiles (
              id, user_id, worker_code, username, plain_password, designation,
              ward_number, ward_name, availability_status, experience_years,
              skills, attendance_today, active_task_code
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
            ON CONFLICT (user_id) DO UPDATE SET
-             worker_code = EXCLUDED.worker_code,
              username = EXCLUDED.username,
              plain_password = EXCLUDED.plain_password,
              designation = EXCLUDED.designation,
@@ -5822,7 +5674,8 @@ export class DbRepository {
              skills = EXCLUDED.skills,
              attendance_today = EXCLUDED.attendance_today,
              active_task_code = EXCLUDED.active_task_code,
-             updated_at = CURRENT_TIMESTAMP`,
+             updated_at = CURRENT_TIMESTAMP
+           RETURNING id, worker_code, created_at`,
           [
             validWorkerId,
             validUserId,
@@ -5839,8 +5692,14 @@ export class DbRepository {
             worker.active_task_code || null
           ]
         );
+
+        if (wpRes.rows.length > 0) {
+          validWorkerId = wpRes.rows[0].id;
+          workerCode = wpRes.rows[0].worker_code;
+        }
       } catch (err: any) {
         console.error('[DB REPO ERROR - saveWorkerProfile]:', err.message);
+        throw err;
       }
     }
 
@@ -6067,16 +5926,23 @@ export class DbRepository {
     return false;
   }
 
-  public static async getCommunitiesList(wardNumber?: number): Promise<any[]> {
+  public static async getCommunitiesList(wardNumbers?: number | number[], includePending: boolean = false): Promise<any[]> {
     if (isDbConnected()) {
       try {
         let sql = `SELECT * FROM communities WHERE 1=1`;
         const values: any[] = [];
-        if (wardNumber) {
-          values.push(wardNumber);
-          sql += ` AND ward_number = $${values.length}`;
+        const wardArr = Array.isArray(wardNumbers)
+          ? wardNumbers.filter(n => !isNaN(Number(n))).map(Number)
+          : (wardNumbers ? [Number(wardNumbers)] : []);
+
+        if (wardArr.length > 0) {
+          values.push(wardArr);
+          sql += ` AND ward_number = ANY($${values.length}::int[])`;
         }
-        sql += ` ORDER BY created_at ASC`;
+        if (!includePending) {
+          sql += ` AND COALESCE(approval_status, 'approved') = 'approved'`;
+        }
+        sql += ` ORDER BY created_at DESC`;
         const res = await pool.query(sql, values);
         return res.rows.map(r => ({
           id: r.id,
@@ -6092,6 +5958,12 @@ export class DbRepository {
           ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
           address: r.address,
           locality: r.locality,
+          description: r.description || '',
+          verification_document_url: r.verification_document_url || null,
+          verification_document_name: r.verification_document_name || null,
+          approval_status: r.approval_status || 'approved',
+          rejection_reason: r.rejection_reason || null,
+          registered_via: r.registered_via || 'ward_officer',
           active_drives_count: r.active_drives_count || 0,
           created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
         }));
@@ -6110,17 +5982,21 @@ export class DbRepository {
     const effectivePhone = community.phone?.trim() || '+919825100000';
     const effectiveEmail = community.email?.trim() || `${(community.head_name || 'leader').toLowerCase().replace(/\s+/g, '.')}@community.org`;
     const effectiveUsername = community.username?.trim() || effectiveEmail;
+    const approvalStatus = community.approval_status || 'approved';
+    const isApproved = approvalStatus === 'approved';
+    const registeredVia = community.registered_via || 'ward_officer';
 
     if (isDbConnected()) {
       try {
-        const existingProfile = await pool.query(`SELECT id FROM profiles WHERE phone = $1`, [effectivePhone]);
-        if (existingProfile.rows.length > 0) {
-          validUserId = existingProfile.rows[0].id;
+        // Only reuse existing profile if it is ALREADY a community_head profile for this community (never hijack worker/citizen/officer profiles)
+        const existingComm = await pool.query(`SELECT created_by FROM communities WHERE id = $1`, [validCommId]);
+        if (existingComm.rows.length > 0 && existingComm.rows[0].created_by) {
+          validUserId = existingComm.rows[0].created_by;
         }
 
         await pool.query(
           `INSERT INTO profiles (id, full_name, phone, email, username, plain_password, address, locality, ward_number, role, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'community_head', TRUE)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'community_head', $10)
            ON CONFLICT (id) DO UPDATE SET
              full_name = EXCLUDED.full_name,
              phone = EXCLUDED.phone,
@@ -6128,6 +6004,8 @@ export class DbRepository {
              username = COALESCE(EXCLUDED.username, profiles.username),
              plain_password = COALESCE(EXCLUDED.plain_password, profiles.plain_password),
              ward_number = EXCLUDED.ward_number,
+             role = 'community_head',
+             is_active = EXCLUDED.is_active,
              updated_at = CURRENT_TIMESTAMP`,
           [
             validUserId,
@@ -6137,26 +6015,29 @@ export class DbRepository {
             effectiveUsername,
             headPassword,
             community.address || 'Navsari',
-            community.locality || 'Dudhiya Talao',
-            community.ward_number || 3
+            community.locality || `Ward ${community.ward_number || 3}`,
+            community.ward_number || 3,
+            isApproved
           ]
         );
 
         const authId = randomUUID();
         await pool.query(
           `INSERT INTO citizen_auth_profiles (id, user_id, mobile_number, password_hash, plain_password, mobile_verified, account_status)
-           VALUES ($1, $2, $3, $4, $5, TRUE, 'active')
+           VALUES ($1, $2, $3, $4, $5, TRUE, $6)
            ON CONFLICT (user_id) DO UPDATE SET
              mobile_number = EXCLUDED.mobile_number,
              password_hash = COALESCE(EXCLUDED.password_hash, citizen_auth_profiles.password_hash),
              plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
+             account_status = EXCLUDED.account_status,
              updated_at = CURRENT_TIMESTAMP`,
           [
             authId,
             validUserId,
             effectivePhone,
             hash,
-            headPassword
+            headPassword,
+            isApproved ? 'active' : 'pending_approval'
           ]
         );
 
@@ -6172,13 +6053,17 @@ export class DbRepository {
              id, community_name, organisation_type, address, locality,
              ward_number, ward_name, contact_email, contact_phone,
              verification_status, created_by, head_name, phone, email,
-             username, plain_password, active_drives_count
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+             username, plain_password, active_drives_count,
+             verification_document_url, verification_document_name,
+             approval_status, registered_via, description
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
            ON CONFLICT (id) DO UPDATE SET
              community_name = EXCLUDED.community_name,
              organisation_type = EXCLUDED.organisation_type,
              address = EXCLUDED.address,
              locality = EXCLUDED.locality,
+             ward_number = EXCLUDED.ward_number,
+             ward_name = EXCLUDED.ward_name,
              contact_email = EXCLUDED.contact_email,
              contact_phone = EXCLUDED.contact_phone,
              head_name = EXCLUDED.head_name,
@@ -6187,25 +6072,35 @@ export class DbRepository {
              username = EXCLUDED.username,
              plain_password = EXCLUDED.plain_password,
              active_drives_count = EXCLUDED.active_drives_count,
+             verification_document_url = COALESCE(EXCLUDED.verification_document_url, communities.verification_document_url),
+             verification_document_name = COALESCE(EXCLUDED.verification_document_name, communities.verification_document_name),
+             approval_status = EXCLUDED.approval_status,
+             registered_via = EXCLUDED.registered_via,
+             description = COALESCE(EXCLUDED.description, communities.description),
              updated_at = CURRENT_TIMESTAMP`,
           [
             validCommId,
             community.community_name?.trim() || 'Community Organization',
             community.organisation_type || 'Resident Welfare Association',
             community.address?.trim() || 'Navsari',
-            community.locality?.trim() || 'Dudhiya Talao',
+            community.locality?.trim() || `Ward ${community.ward_number || 3}`,
             community.ward_number || 3,
             community.ward_name || `Ward ${community.ward_number || 3}`,
             effectiveEmail,
             effectivePhone,
-            'verified',
+            isApproved ? 'verified' : 'pending',
             validUserId,
             community.head_name?.trim() || 'Community Leader',
             effectivePhone,
             effectiveEmail,
             effectiveUsername,
             headPassword,
-            community.active_drives_count || 0
+            community.active_drives_count || 0,
+            community.verification_document_url || null,
+            community.verification_document_name || null,
+            approvalStatus,
+            registeredVia,
+            community.description || null
           ]
         );
 
@@ -6224,6 +6119,8 @@ export class DbRepository {
       ...community,
       id: validCommId,
       user_id: validUserId,
+      approval_status: approvalStatus,
+      registered_via: registeredVia,
       created_at: new Date().toISOString()
     };
   }
@@ -6308,14 +6205,17 @@ export class DbRepository {
   // =========================================================================
   // COMMUNITY PROBLEMS (WARD OFFICER POSTS FOR COMMUNITY ACTION)
   // =========================================================================
-  public static async getCommunityProblems(wardNumber?: number): Promise<CommunityProblem[]> {
+  public static async getCommunityProblems(wardNumber?: number | number[]): Promise<CommunityProblem[]> {
+    const wardList = Array.isArray(wardNumber)
+      ? wardNumber.map(Number).filter(n => !isNaN(n) && n > 0)
+      : (wardNumber ? [Number(wardNumber)] : []);
     if (isDbConnected()) {
       try {
         let sql = `SELECT * FROM community_problems WHERE 1=1`;
         const vals: any[] = [];
-        if (wardNumber) {
-          vals.push(wardNumber);
-          sql += ` AND ward_number = $${vals.length}`;
+        if (wardList.length > 0) {
+          vals.push(wardList);
+          sql += ` AND ward_number = ANY($${vals.length}::int[])`;
         }
         sql += ` ORDER BY created_at DESC`;
         const res = await pool.query(sql, vals);
@@ -6335,38 +6235,31 @@ export class DbRepository {
           suggested_equipment: Array.isArray(r.suggested_equipment) ? r.suggested_equipment : [],
           image_url: r.image_url,
           status: r.status,
+          allow_multiple_orgs: r.allow_multiple_orgs !== false,
           claimed_by_community_id: r.claimed_by_community_id,
           claimed_by_community_name: r.claimed_by_community_name,
-          drive_requests: Array.isArray(r.drive_requests) ? r.drive_requests : (typeof r.drive_requests === 'string' ? JSON.parse(r.drive_requests) : []),
-          assigned_communities: Array.isArray(r.assigned_communities) ? r.assigned_communities : (typeof r.assigned_communities === 'string' ? JSON.parse(r.assigned_communities) : []),
           linked_activity_id: r.linked_activity_id,
           created_by: r.created_by,
           officer_name: r.officer_name,
-          start_time: r.start_time ? (r.start_time instanceof Date ? r.start_time.toISOString() : String(r.start_time)) : undefined,
-          end_time: r.end_time ? (r.end_time instanceof Date ? r.end_time.toISOString() : String(r.end_time)) : undefined,
-          max_volunteers_per_community: r.max_volunteers_per_community ? parseInt(r.max_volunteers_per_community, 10) : 25,
-          citizen_instructions: r.citizen_instructions || undefined,
-          necessary_gears: Array.isArray(r.necessary_gears) ? r.necessary_gears : (typeof r.necessary_gears === 'string' ? JSON.parse(r.necessary_gears) : []),
-          meeting_point: r.meeting_point || undefined,
-          emergency_contact: r.emergency_contact || undefined,
           created_at: r.created_at ? (r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at)) : new Date().toISOString(),
           updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : new Date().toISOString()
-        }));
+        } as any));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getCommunityProblems]:', err.message);
       }
     }
 
     let problems = store.communityProblems || [];
-    if (wardNumber) {
-      problems = problems.filter(p => p.ward_number === wardNumber);
+    if (wardList.length > 0) {
+      problems = problems.filter(p => wardList.includes(Number(p.ward_number)));
     }
     return problems;
   }
 
   public static async saveCommunityProblem(problem: any): Promise<CommunityProblem> {
     const validId = this.isValidUUID(problem.id) ? problem.id : randomUUID();
-    const newProblem: CommunityProblem = {
+    const allowMultipleOrgs = problem.allow_multiple_orgs !== undefined ? Boolean(problem.allow_multiple_orgs) : true;
+    const newProblem: any = {
       id: validId,
       ward_number: problem.ward_number || 3,
       ward_name: problem.ward_name || `Ward ${problem.ward_number || 3}`,
@@ -6382,20 +6275,12 @@ export class DbRepository {
       suggested_equipment: Array.isArray(problem.suggested_equipment) ? problem.suggested_equipment : ['Brooms', 'Gloves', 'Trash Bags'],
       image_url: problem.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
       status: problem.status || 'open',
+      allow_multiple_orgs: allowMultipleOrgs,
       claimed_by_community_id: problem.claimed_by_community_id,
       claimed_by_community_name: problem.claimed_by_community_name,
-      drive_requests: Array.isArray(problem.drive_requests) ? problem.drive_requests : [],
-      assigned_communities: Array.isArray(problem.assigned_communities) ? problem.assigned_communities : [],
       linked_activity_id: problem.linked_activity_id,
       created_by: problem.created_by,
       officer_name: problem.officer_name || 'Ward Officer',
-      start_time: problem.start_time || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T08:00:00Z',
-      end_time: problem.end_time || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T11:30:00Z',
-      max_volunteers_per_community: parseInt(problem.max_volunteers_per_community || '25', 10),
-      citizen_instructions: problem.citizen_instructions || undefined,
-      necessary_gears: Array.isArray(problem.necessary_gears) ? problem.necessary_gears : [],
-      meeting_point: problem.meeting_point || undefined,
-      emergency_contact: problem.emergency_contact || undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -6407,22 +6292,14 @@ export class DbRepository {
             id, ward_number, ward_name, title, description, location_name,
             address, latitude, longitude, action_plan, urgency,
             estimated_volunteers_needed, suggested_equipment, image_url,
-            status, claimed_by_community_id, claimed_by_community_name,
-            drive_requests, assigned_communities,
-            linked_activity_id, created_by, officer_name,
-            start_time, end_time, max_volunteers_per_community,
-            citizen_instructions, necessary_gears, meeting_point, emergency_contact,
-            created_at, updated_at
+            status, allow_multiple_orgs, claimed_by_community_id, claimed_by_community_name,
+            linked_activity_id, created_by, officer_name, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
             $12, $13, $14,
-            $15, $16, $17,
-            $18, $19,
-            $20, $21, $22,
-            $23, $24, $25,
-            $26, $27, $28, $29,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            $15, $16, $17, $18,
+            $19, $20, $21, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
           ON CONFLICT (id) DO UPDATE SET
             title = EXCLUDED.title,
@@ -6433,18 +6310,10 @@ export class DbRepository {
             suggested_equipment = EXCLUDED.suggested_equipment,
             image_url = EXCLUDED.image_url,
             status = EXCLUDED.status,
+            allow_multiple_orgs = EXCLUDED.allow_multiple_orgs,
             claimed_by_community_id = EXCLUDED.claimed_by_community_id,
             claimed_by_community_name = EXCLUDED.claimed_by_community_name,
-            drive_requests = EXCLUDED.drive_requests,
-            assigned_communities = EXCLUDED.assigned_communities,
             linked_activity_id = EXCLUDED.linked_activity_id,
-            start_time = EXCLUDED.start_time,
-            end_time = EXCLUDED.end_time,
-            max_volunteers_per_community = EXCLUDED.max_volunteers_per_community,
-            citizen_instructions = EXCLUDED.citizen_instructions,
-            necessary_gears = EXCLUDED.necessary_gears,
-            meeting_point = EXCLUDED.meeting_point,
-            emergency_contact = EXCLUDED.emergency_contact,
             updated_at = CURRENT_TIMESTAMP
         `, [
           newProblem.id,
@@ -6462,20 +6331,12 @@ export class DbRepository {
           JSON.stringify(newProblem.suggested_equipment),
           newProblem.image_url,
           newProblem.status,
+          allowMultipleOrgs,
           newProblem.claimed_by_community_id || null,
           newProblem.claimed_by_community_name || null,
-          JSON.stringify(newProblem.drive_requests),
-          JSON.stringify(newProblem.assigned_communities),
           newProblem.linked_activity_id || null,
           newProblem.created_by || null,
-          newProblem.officer_name || null,
-          newProblem.start_time,
-          newProblem.end_time,
-          newProblem.max_volunteers_per_community || 25,
-          newProblem.citizen_instructions || null,
-          JSON.stringify(newProblem.necessary_gears || []),
-          newProblem.meeting_point || null,
-          newProblem.emergency_contact || null
+          newProblem.officer_name || null
         ]);
       } catch (err: any) {
         console.error('[DB REPO ERROR - saveCommunityProblem]:', err.message);
@@ -6493,340 +6354,6 @@ export class DbRepository {
     return newProblem;
   }
 
-  public static async submitDriveRequest(
-    problemId: string,
-    requestData: {
-      communityId: string;
-      communityName: string;
-      headName: string;
-      contactPhone: string;
-      proposedVolunteersCount: number;
-      proposedDate: string;
-      equipmentAvailable?: string[];
-      notes?: string;
-    }
-  ): Promise<CommunityDriveRequest | null> {
-    if (!store.communityProblems) store.communityProblems = [];
-    const problem = store.communityProblems.find(p => p.id === problemId);
-    if (!problem) return null;
-
-    if (!problem.drive_requests) {
-      problem.drive_requests = [];
-    }
-
-    const existingIndex = problem.drive_requests.findIndex(r => r.community_id === requestData.communityId);
-    let driveReq: CommunityDriveRequest;
-
-    if (existingIndex !== -1) {
-      driveReq = {
-        ...problem.drive_requests[existingIndex],
-        head_name: requestData.headName || problem.drive_requests[existingIndex].head_name,
-        contact_phone: requestData.contactPhone || problem.drive_requests[existingIndex].contact_phone,
-        proposed_volunteers_count: Number(requestData.proposedVolunteersCount) || problem.drive_requests[existingIndex].proposed_volunteers_count,
-        proposed_date: problem.start_time || requestData.proposedDate || problem.drive_requests[existingIndex].proposed_date,
-        equipment_available: requestData.equipmentAvailable || problem.drive_requests[existingIndex].equipment_available || [],
-        notes: requestData.notes !== undefined ? requestData.notes : problem.drive_requests[existingIndex].notes,
-        status: 'pending',
-        submitted_at: new Date().toISOString()
-      };
-      problem.drive_requests[existingIndex] = driveReq;
-    } else {
-      driveReq = {
-        id: `dreq-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        problem_id: problemId,
-        community_id: requestData.communityId,
-        community_name: requestData.communityName,
-        head_name: requestData.headName,
-        contact_phone: requestData.contactPhone,
-        proposed_volunteers_count: Number(requestData.proposedVolunteersCount) || 15,
-        proposed_date: problem.start_time || requestData.proposedDate || new Date(Date.now() + 86400000 * 3).toISOString(),
-        equipment_available: requestData.equipmentAvailable || [],
-        notes: requestData.notes || '',
-        status: 'pending',
-        submitted_at: new Date().toISOString()
-      };
-      problem.drive_requests.push(driveReq);
-    }
-
-    if (problem.status === 'open') {
-      problem.status = 'requests_received';
-    }
-    problem.updated_at = new Date().toISOString();
-
-    // Create a notification for the Ward Officer of this problem's ward
-    const targetOfficerId = problem.created_by || this.findWardOfficerUserId(problem.ward_number);
-    await this.createNotification(
-      targetOfficerId,
-      'New Community Drive Proposal',
-      `Community "${requestData.communityName}" submitted a proposal to organize a cleanliness drive for "${problem.title}".`,
-      problemId,
-      'system_alert'
-    );
-
-    if (isDbConnected()) {
-      try {
-        await pool.query(`
-          UPDATE community_problems
-          SET drive_requests = $2,
-              status = $3,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `, [problemId, JSON.stringify(problem.drive_requests), problem.status]);
-      } catch (err: any) {
-        console.error('[DB REPO ERROR - submitDriveRequest]:', err.message);
-      }
-    }
-
-    return driveReq;
-  }
-
-  public static async getProblemDriveRequests(problemId: string): Promise<CommunityDriveRequest[]> {
-    if (!store.communityProblems) store.communityProblems = [];
-    const problem = store.communityProblems.find(p => p.id === problemId);
-    return problem?.drive_requests || [];
-  }
-
-  public static async approveProblemCommunities(
-    problemId: string,
-    communityIds: string[],
-    comments?: string,
-    officerName?: string
-  ): Promise<{ success: boolean; problem?: CommunityProblem; approvedCount: number }> {
-    if (!store.communityProblems) store.communityProblems = [];
-    const problem = store.communityProblems.find(p => p.id === problemId);
-    if (!problem) {
-      return { success: false, approvedCount: 0 };
-    }
-
-    if (!Array.isArray(communityIds) || communityIds.length === 0) {
-      return { success: false, approvedCount: 0 };
-    }
-
-    if (!problem.drive_requests) {
-      problem.drive_requests = [];
-    }
-
-    const assignedCommunities: AssignedCommunity[] = [];
-    const approvedNames: string[] = [];
-
-    // Update statuses on drive_requests
-    problem.drive_requests.forEach(req => {
-      if (communityIds.includes(req.community_id)) {
-        req.status = 'approved';
-        req.reviewed_at = new Date().toISOString();
-        assignedCommunities.push({
-          id: `ac-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          community_id: req.community_id,
-          community_name: req.community_name,
-          head_name: req.head_name,
-          contact_phone: req.contact_phone,
-          assigned_at: new Date().toISOString()
-        });
-        approvedNames.push(req.community_name);
-      } else if (req.status === 'pending') {
-        req.status = 'rejected';
-        req.reviewed_at = new Date().toISOString();
-      }
-    });
-
-    // If any community was not in drive_requests but in communityIds (fallback)
-    for (const cId of communityIds) {
-      if (!assignedCommunities.some(ac => ac.community_id === cId)) {
-        const comm = (store.communities || []).find(c => c.id === cId);
-        const cName = comm?.community_name || 'Community';
-        assignedCommunities.push({
-          id: `ac-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          community_id: cId,
-          community_name: cName,
-          head_name: comm?.head_name,
-          contact_phone: comm?.phone || comm?.contact_phone,
-          assigned_at: new Date().toISOString()
-        });
-        if (!approvedNames.includes(cName)) {
-          approvedNames.push(cName);
-        }
-      }
-    }
-
-    problem.status = 'claimed';
-    problem.assigned_communities = assignedCommunities;
-    problem.claimed_by_community_id = communityIds.join(',');
-    problem.claimed_by_community_name = approvedNames.join(' & ') + (approvedNames.length > 1 ? ' (Joint Drive)' : '');
-    problem.updated_at = new Date().toISOString();
-
-    // Create / upsert into Cleanliness Drives so all citizens can discover and take part in this drive!
-    if (!store.drives) store.drives = [];
-    const isJoint = approvedNames.length > 1;
-    const coOrganisersList = assignedCommunities.map(a => a.community_name);
-    const maxVolsPerCommunity = problem.max_volunteers_per_community || 25;
-    const totalMaxVolunteers = isJoint ? assignedCommunities.length * maxVolsPerCommunity : (problem.estimated_volunteers_needed || 30);
-
-    const driveObj: CleanlinessDrive = {
-      id: problem.id,
-      title: problem.title,
-      description: problem.description,
-      ward_id: `ward-${problem.ward_number < 10 ? '0' + problem.ward_number : problem.ward_number}`,
-      ward_name: problem.ward_name || `Ward ${problem.ward_number}`,
-      location_name: problem.meeting_point || problem.location_name || problem.address || 'Navsari',
-      latitude: problem.latitude || 20.9470,
-      longitude: problem.longitude || 72.9280,
-      start_time: problem.start_time || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T08:00:00Z',
-      end_time: problem.end_time || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0] + 'T11:30:00Z',
-      registration_deadline: problem.start_time || new Date(Date.now() + 86400000 * 3).toISOString(),
-      organiser_name: problem.claimed_by_community_name || 'Community Volunteers',
-      status: 'upcoming',
-      banner_url: problem.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-      max_volunteers: totalMaxVolunteers,
-      max_volunteers_per_community: maxVolsPerCommunity,
-      registered_volunteers_count: 0,
-      is_joint: isJoint,
-      co_organisers: coOrganisersList,
-      drive_type: isJoint ? 'joint' : 'single',
-      action_plan: problem.action_plan,
-      suggested_equipment: problem.suggested_equipment,
-      citizen_instructions: problem.citizen_instructions,
-      necessary_gears: problem.necessary_gears && problem.necessary_gears.length > 0 ? problem.necessary_gears : problem.suggested_equipment,
-      meeting_point: problem.meeting_point,
-      emergency_contact: problem.emergency_contact,
-      assigned_communities: assignedCommunities
-    };
-
-    const existingDriveIdx = store.drives.findIndex(d => d.id === problem.id);
-    if (existingDriveIdx >= 0) {
-      store.drives[existingDriveIdx] = {
-        ...store.drives[existingDriveIdx],
-        ...driveObj,
-        registered_volunteers_count: store.drives[existingDriveIdx].registered_volunteers_count || 0,
-        is_registered: store.drives[existingDriveIdx].is_registered || false
-      };
-    } else {
-      store.drives.unshift(driveObj);
-    }
-
-    // Send notifications and SMS to each approved community
-    if (!store.notifications) store.notifications = [];
-    if (!store.smsMessages) store.smsMessages = [];
-
-    for (const comm of assignedCommunities) {
-      const commRecord = (store.communities || []).find(c => c.id === comm.community_id);
-      const recipientPhone = comm.contact_phone || commRecord?.phone || commRecord?.contact_phone || '+919825100099';
-      const recipientName = comm.head_name || commRecord?.head_name || 'Community Leader';
-      const partnersText = isJoint
-        ? ` You are co-organizing this drive jointly with ${approvedNames.filter(n => n !== comm.community_name).join(', ')}.`
-        : '';
-
-      store.notifications.unshift({
-        id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        user_id: commRecord?.created_by || comm.community_id,
-        title: isJoint ? 'Joint Cleanliness Drive Approved!' : 'Cleanliness Drive Proposal Approved!',
-        message: `Ward Officer ${officerName || problem.officer_name || ''} has approved your community "${comm.community_name}" to organize the drive for "${problem.title}".${partnersText}${comments ? ` Officer Note: ${comments}` : ''}`,
-        notification_type: 'system_alert',
-        is_read: false,
-        created_at: new Date().toISOString()
-      });
-
-      store.smsMessages.unshift({
-        id: `sms-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        phone: recipientPhone,
-        sender: 'NMC-CIVIC',
-        senderName: `${problem.officer_name || officerName || 'NMC Ward Officer'}`,
-        body: `Congratulations! Your community "${comm.community_name}" has been approved to organize the cleanliness drive for "${problem.title}".${partnersText}${comments ? ` Note: ${comments}` : ''} Login to your portal to start planning.`,
-        type: 'approval',
-        timestamp: new Date().toISOString(),
-        isRead: false
-      });
-    }
-
-    if (isDbConnected()) {
-      try {
-        await pool.query(`
-          UPDATE community_problems
-          SET status = 'claimed',
-              claimed_by_community_id = $2,
-              claimed_by_community_name = $3,
-              drive_requests = $4,
-              assigned_communities = $5,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `, [
-          problemId,
-          problem.claimed_by_community_id,
-          problem.claimed_by_community_name,
-          JSON.stringify(problem.drive_requests),
-          JSON.stringify(problem.assigned_communities)
-        ]);
-      } catch (err: any) {
-        console.error('[DB REPO ERROR - approveProblemCommunities]:', err.message);
-      }
-    }
-
-    return {
-      success: true,
-      problem,
-      approvedCount: assignedCommunities.length
-    };
-  }
-
-  public static async updateProblemDrivePlan(
-    problemId: string,
-    planData: {
-      communityId?: string;
-      citizenInstructions?: string;
-      necessaryGears?: string[];
-      meetingPoint?: string;
-      emergencyContact?: string;
-    }
-  ): Promise<CommunityProblem | null> {
-    if (!store.communityProblems) store.communityProblems = [];
-    const problem = store.communityProblems.find(p => p.id === problemId);
-    if (!problem) return null;
-
-    if (planData.citizenInstructions !== undefined) {
-      problem.citizen_instructions = planData.citizenInstructions;
-    }
-    if (planData.necessaryGears) {
-      problem.necessary_gears = planData.necessaryGears;
-      problem.suggested_equipment = planData.necessaryGears;
-    }
-    if (planData.meetingPoint) {
-      problem.meeting_point = planData.meetingPoint;
-    }
-    if (planData.emergencyContact) {
-      problem.emergency_contact = planData.emergencyContact;
-    }
-    problem.updated_at = new Date().toISOString();
-
-    // Also update CleanlinessDrive if it exists in store
-    if (!store.drives) store.drives = [];
-    const drive = store.drives.find(d => d.id === problemId);
-    if (drive) {
-      if (planData.citizenInstructions !== undefined) drive.citizen_instructions = planData.citizenInstructions;
-      if (planData.necessaryGears) {
-        drive.necessary_gears = planData.necessaryGears;
-        drive.suggested_equipment = planData.necessaryGears;
-      }
-      if (planData.meetingPoint) drive.meeting_point = planData.meetingPoint;
-      if (planData.emergencyContact) drive.emergency_contact = planData.emergencyContact;
-    }
-
-    if (isDbConnected()) {
-      try {
-        await pool.query(
-          `UPDATE community_problems SET citizen_instructions = $1, necessary_gears = $2, meeting_point = $3, emergency_contact = $4, updated_at = NOW() WHERE id = $5`,
-          [problem.citizen_instructions || null, JSON.stringify(problem.necessary_gears || []), problem.meeting_point || null, problem.emergency_contact || null, problemId]
-        );
-        await pool.query(
-          `UPDATE cleanliness_drives SET citizen_instructions = $1, necessary_gears = $2, meeting_point = $3, emergency_contact = $4, updated_at = NOW() WHERE id = $5`,
-          [problem.citizen_instructions || null, JSON.stringify(problem.necessary_gears || []), problem.meeting_point || null, problem.emergency_contact || null, problemId]
-        );
-      } catch (err: any) {
-        console.error('[DB REPO ERROR - updateProblemDrivePlan]:', err.message);
-      }
-    }
-
-    return problem;
-  }
-
   public static async claimCommunityProblem(
     id: string,
     communityId: string,
@@ -6837,7 +6364,7 @@ export class DbRepository {
       try {
         await pool.query(`
           UPDATE community_problems
-          SET status = 'claimed',
+          SET status = CASE WHEN COALESCE(allow_multiple_orgs, TRUE) = TRUE THEN 'open' ELSE 'claimed' END,
               claimed_by_community_id = $2,
               claimed_by_community_name = $3,
               linked_activity_id = $4,
@@ -6856,14 +6383,6 @@ export class DbRepository {
         match.claimed_by_community_id = communityId;
         match.claimed_by_community_name = communityName;
         match.linked_activity_id = activityId;
-        match.assigned_communities = [
-          {
-            id: `ac-${Date.now()}`,
-            community_id: communityId,
-            community_name: communityName,
-            assigned_at: new Date().toISOString()
-          }
-        ];
         match.updated_at = new Date().toISOString();
       }
     }
@@ -6893,7 +6412,6 @@ export class DbRepository {
               claimed_by_community_id = NULL,
               claimed_by_community_name = NULL,
               linked_activity_id = NULL,
-              assigned_communities = '[]'::jsonb,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `, [id]);
@@ -6908,12 +6426,6 @@ export class DbRepository {
         match.claimed_by_community_id = undefined;
         match.claimed_by_community_name = undefined;
         match.linked_activity_id = undefined;
-        match.assigned_communities = [];
-        if (match.drive_requests) {
-          match.drive_requests.forEach(r => {
-            if (r.status === 'approved') r.status = 'pending';
-          });
-        }
         match.updated_at = new Date().toISOString();
       }
     }
@@ -6921,27 +6433,176 @@ export class DbRepository {
   }
 
   // =========================================================================
-  // APPROVAL QUEUE DECISIONS (WARD OFFICER APPROVES / REJECTS COMMUNITY DRIVES)
+  // APPROVAL QUEUE DECISIONS (1. COMMUNITY REGISTRATIONS  2. CLEANLINESS DRIVES)
   // =========================================================================
-  public static async getPendingActivitiesForOfficer(wardNumber?: number): Promise<WardApprovalItem[]> {
+  public static async getPendingCommunityRegistrations(wardNumbers?: number[]): Promise<any[]> {
+    if (isDbConnected()) {
+      try {
+        let sql = `
+          SELECT * FROM communities
+          WHERE COALESCE(approval_status, 'approved') = 'pending_approval'
+        `;
+        const vals: any[] = [];
+        const wardArr = (wardNumbers || []).map(Number).filter(n => !isNaN(n) && n > 0);
+        if (wardArr.length > 0) {
+          vals.push(wardArr);
+          sql += ` AND ward_number = ANY($${vals.length}::int[])`;
+        }
+        sql += ` ORDER BY created_at DESC`;
+        const res = await pool.query(sql, vals);
+        return res.rows.map(r => ({
+          id: r.id,
+          type: 'community_registration',
+          title: r.community_name,
+          submitted_by_name: r.head_name || 'Community Head',
+          submitted_by_role: r.organisation_type || 'Community Organization',
+          submission_time: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          ward_number: r.ward_number || 3,
+          ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
+          status: 'pending',
+          verification_document_url: r.verification_document_url || null,
+          verification_document_name: r.verification_document_name || 'Verification Certificate',
+          details: {
+            organization_name: r.community_name,
+            organization_type: r.organisation_type || 'Resident Welfare Association',
+            head_name: r.head_name,
+            phone: r.contact_phone || r.phone,
+            email: r.contact_email || r.email,
+            username: r.username,
+            ward: `Ward ${r.ward_number || 3} (${r.ward_name || `Ward ${r.ward_number || 3}`})`,
+            locality: r.locality || '',
+            address: r.address || '',
+            description: r.description || ''
+          }
+        }));
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getPendingCommunityRegistrations]:', err.message);
+      }
+    }
+    return [];
+  }
+
+  public static async reviewCommunityRegistration(
+    communityId: string,
+    action: 'approve' | 'reject',
+    comments: string = ''
+  ): Promise<{ success: boolean; message: string; community?: any }> {
+    const isApprove = action === 'approve';
+    const nextStatus = isApprove ? 'approved' : 'rejected';
+    let commRow: any = null;
+
+    if (isDbConnected() && this.isValidUUID(communityId)) {
+      try {
+        const res = await pool.query(
+          `UPDATE communities
+           SET approval_status = $1,
+               verification_status = $2,
+               rejection_reason = $3,
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING *`,
+          [nextStatus, isApprove ? 'verified' : 'rejected', isApprove ? null : (comments || 'Rejected by Ward Officer'), communityId]
+        );
+        commRow = res.rows[0];
+        if (commRow?.created_by) {
+          await pool.query(
+            `UPDATE profiles SET is_active = $1, updated_at = NOW() WHERE id = $2`,
+            [isApprove, commRow.created_by]
+          ).catch(() => {});
+          await pool.query(
+            `UPDATE citizen_auth_profiles SET account_status = $1, updated_at = NOW() WHERE user_id = $2`,
+            [isApprove ? 'active' : 'suspended', commRow.created_by]
+          ).catch(() => {});
+
+          await this.createNotification(
+            commRow.created_by,
+            isApprove ? 'Community Registration Approved!' : 'Community Registration Rejected',
+            isApprove
+              ? `Your organization "${commRow.community_name}" has been verified and approved by the Ward ${commRow.ward_number} Officer. You can now log in to your Community Head Dashboard.`
+              : `Your registration for "${commRow.community_name}" was not approved. Reason: ${comments || 'Verification document could not be validated.'}`,
+            communityId,
+            isApprove ? 'community_approved' : 'community_rejected'
+          );
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - reviewCommunityRegistration]:', err.message);
+      }
+    }
+
+    // Sync in-memory store
+    if (commRow) {
+      const pIdx = (store.profiles || []).findIndex(p => p.id === commRow.created_by || p.phone === (commRow.contact_phone || commRow.phone));
+      if (pIdx !== -1) {
+        store.profiles[pIdx].is_active = isApprove;
+      }
+      const aIdx = (store.authProfiles || []).findIndex(a => a.user_id === commRow.created_by);
+      if (aIdx !== -1) {
+        store.authProfiles[aIdx].account_status = isApprove ? 'active' : 'suspended';
+      }
+      const cIdx = (store.communities || []).findIndex(c => c.id === communityId);
+      if (cIdx !== -1) {
+        store.communities[cIdx].approval_status = nextStatus;
+        store.communities[cIdx].rejection_reason = isApprove ? null : comments;
+      } else if (isApprove) {
+        store.communities.push({
+          id: commRow.id,
+          user_id: commRow.created_by,
+          community_name: commRow.community_name,
+          organisation_type: commRow.organisation_type,
+          head_name: commRow.head_name,
+          phone: commRow.contact_phone || commRow.phone,
+          email: commRow.contact_email || commRow.email,
+          username: commRow.username,
+          plain_password: commRow.plain_password,
+          ward_number: commRow.ward_number || 3,
+          ward_name: commRow.ward_name || `Ward ${commRow.ward_number || 3}`,
+          address: commRow.address,
+          locality: commRow.locality,
+          verification_document_url: commRow.verification_document_url,
+          verification_document_name: commRow.verification_document_name,
+          approval_status: 'approved',
+          created_at: commRow.created_at
+        });
+      }
+    }
+
+    return {
+      success: true,
+      community: commRow,
+      message: isApprove
+        ? `Organization "${commRow?.community_name || 'Community'}" approved! Community Head can now log in.`
+        : `Organization "${commRow?.community_name || 'Community'}" registration rejected.`
+    };
+  }
+
+  public static async getPendingActivitiesForOfficer(wardNumbers?: number | number[]): Promise<WardApprovalItem[]> {
+    const wardArr = Array.isArray(wardNumbers)
+      ? wardNumbers.map(Number).filter(n => !isNaN(n) && n > 0)
+      : (wardNumbers && Number(wardNumbers) > 0 ? [Number(wardNumbers)] : []);
+
     if (isDbConnected()) {
       try {
         let sql = `
           SELECT 
             a.id, a.title, a.short_description, a.detailed_description, a.address, a.landmark,
-            a.proposed_start_at, a.maximum_participants, a.safety_guidelines, a.cover_image_path,
-            a.created_at, a.ward_number, a.community_id, a.created_by, a.linked_problem_id,
-            c.community_name, c.head_name,
-            cp.title as problem_title, cp.action_plan as problem_action_plan
+            a.proposed_start_at, a.proposed_end_at, a.maximum_participants, a.safety_guidelines, a.cover_image_path,
+            a.created_at, a.ward_number, a.ward_name, a.community_id, a.created_by, a.linked_problem_id,
+            a.approval_status,
+            c.community_name, c.head_name, c.contact_phone as community_phone,
+            cp.id as problem_id, cp.title as problem_title, cp.action_plan as problem_action_plan,
+            COALESCE(cp.allow_multiple_orgs, TRUE) as problem_allow_multiple_orgs,
+            cp.status as problem_status,
+            (SELECT COUNT(*) FROM community_activities ca2 WHERE ca2.linked_problem_id::text = a.linked_problem_id::text AND ca2.linked_problem_id IS NOT NULL AND ca2.approval_status IN ('pending_officer_review', 'ward_review', 'pending', 'changes_requested')) as sibling_pending_count,
+            (SELECT COUNT(*) FROM community_activities ca3 WHERE ca3.linked_problem_id::text = a.linked_problem_id::text AND ca3.linked_problem_id IS NOT NULL AND ca3.approval_status IN ('approved', 'ward_approved')) as sibling_approved_count
           FROM community_activities a
           LEFT JOIN communities c ON c.id = a.community_id
-          LEFT JOIN community_problems cp ON (cp.id = a.linked_problem_id OR cp.linked_activity_id = a.id)
+          LEFT JOIN community_problems cp ON (cp.id::text = a.linked_problem_id::text OR cp.linked_activity_id::text = a.id::text)
           WHERE a.approval_status IN ('pending_officer_review', 'ward_review', 'pending', 'changes_requested')
         `;
         const vals: any[] = [];
-        if (wardNumber && wardNumber > 0) {
-          vals.push(wardNumber);
-          sql += ` AND (a.ward_number = $${vals.length} OR a.ward_number IS NULL)`;
+        if (wardArr.length > 0) {
+          vals.push(wardArr);
+          sql += ` AND a.ward_number = ANY($${vals.length}::int[])`;
         }
         sql += ` ORDER BY a.created_at DESC`;
 
@@ -6955,24 +6616,34 @@ export class DbRepository {
           submission_time: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
           ward_number: r.ward_number || 3,
           status: 'pending',
+          linked_problem_id: r.linked_problem_id || r.problem_id || null,
+          problem_title: r.problem_title || null,
+          problem_allow_multiple_orgs: r.problem_allow_multiple_orgs !== false,
+          problem_status: r.problem_status || null,
+          sibling_pending_count: Number(r.sibling_pending_count || 0),
+          sibling_approved_count: Number(r.sibling_approved_count || 0),
+          community_name: r.community_name || 'Community Organization',
           details: {
-            proposed_date: r.proposed_start_at ? new Date(r.proposed_start_at).toLocaleDateString() : 'Upcoming',
-            location: r.address || r.landmark || 'Navsari',
+            organization: r.community_name || 'Community Organization',
+            proposed_date: r.proposed_start_at ? new Date(r.proposed_start_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Upcoming',
+            location: r.address || r.landmark || `Ward ${r.ward_number || 3}, Navsari`,
             expected_volunteers: r.maximum_participants || 30,
             safety_plan: r.short_description || r.detailed_description || 'Volunteer tools and safety equipment planned.',
             linked_problem: r.problem_title ? `Flagged Problem: "${r.problem_title}"` : undefined
           },
           photos: r.cover_image_path ? [r.cover_image_path] : []
-        }));
+        } as any));
       } catch (err: any) {
         console.error('[DB REPO ERROR - getPendingActivitiesForOfficer]:', err.message);
       }
     }
 
-    // In-memory fallback
-    const pending = (store.communityActivities || []).filter(
-      (a: any) => a.approval_status === 'ward_review' || a.approval_status === 'pending_officer_review' || a.approval_status === 'changes_requested' || a.approval_status === 'submitted'
-    );
+    // In-memory fallback (strictly scoped to wardArr)
+    const pending = (store.communityActivities || []).filter((a: any) => {
+      const isPending = ['ward_review', 'pending_officer_review', 'changes_requested', 'submitted', 'pending'].includes(a.approval_status);
+      const matchesWard = wardArr.length === 0 || wardArr.includes(Number(a.ward_number || 3));
+      return isPending && matchesWard;
+    });
     return pending.map((a: any) => ({
       id: a.id,
       type: 'activity',
@@ -6991,58 +6662,38 @@ export class DbRepository {
     }));
   }
 
-  public static async getPendingEvidenceReviewActivities(wardNumber?: number): Promise<any[]> {
-    const map = new Map<string, any>();
-
-    if (isDbConnected()) {
-      try {
-        let sql = `
-          SELECT a.*, c.community_name
-          FROM community_activities a
-          LEFT JOIN communities c ON c.id = a.community_id
-          WHERE a.evidence_status = 'submitted'
-        `;
-        const vals: any[] = [];
-        if (wardNumber && wardNumber > 0) {
-          vals.push(wardNumber);
-          sql += ` AND (a.ward_number = $${vals.length} OR a.ward_number IS NULL)`;
-        }
-        sql += ` ORDER BY a.updated_at DESC`;
-        const res = await pool.query(sql, vals);
-        for (const r of res.rows) {
-          map.set(r.id, r);
-        }
-      } catch (err: any) {
-        console.error('[DB REPO ERROR - getPendingEvidenceReviewActivities]:', err.message);
-      }
-    }
-
-    for (const act of (store.communityActivities || [])) {
-      if (
-        act.evidence_status === 'submitted' &&
-        (!wardNumber || !act.ward_number || act.ward_number === wardNumber) &&
-        !map.has(act.id)
-      ) {
-        map.set(act.id, act);
-      }
-    }
-
-    return Array.from(map.values());
-  }
-
   public static async officerReviewApproval(
     id: string,
     action: 'approve' | 'reject' | 'changes_requested',
     comments: string,
-    officerWardNumber?: number
+    officerWardNumber?: number,
+    options?: { allow_multiple_orgs?: boolean; approval_type?: string }
   ): Promise<{ success: boolean; message: string }> {
+    // Auto-detect if this ID belongs to a pending community registration
+    if (options?.approval_type === 'community_registration') {
+      return this.reviewCommunityRegistration(id, action === 'approve' ? 'approve' : 'reject', comments);
+    }
+    if (isDbConnected() && this.isValidUUID(id)) {
+      const commCheck = await pool.query(`SELECT id FROM communities WHERE id = $1`, [id]).catch(() => ({ rows: [] as any[] }));
+      if (commCheck.rows.length > 0) {
+        return this.reviewCommunityRegistration(id, action === 'approve' ? 'approve' : 'reject', comments);
+      }
+    }
+
     // 1. Locate activity in database or memory
     let act: any = null;
+    let orgName = 'Community Action Team';
     if (isDbConnected()) {
       try {
-        const actRes = await pool.query('SELECT * FROM community_activities WHERE id = $1', [id]);
+        const actRes = await pool.query(`
+          SELECT a.*, c.community_name
+          FROM community_activities a
+          LEFT JOIN communities c ON c.id = a.community_id
+          WHERE a.id = $1
+        `, [id]);
         if (actRes.rows.length > 0) {
           act = actRes.rows[0];
+          if (act.community_name) orgName = act.community_name;
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - finding activity]:', err.message);
@@ -7057,6 +6708,7 @@ export class DbRepository {
       const newApprovalStatus = isApproved ? 'approved' : action === 'reject' ? 'rejected' : 'changes_requested';
       const newPublicationStatus = isApproved ? 'published' : 'rejected';
       const newRegStatus = isApproved ? 'open' : 'not_open';
+      const allowMultipleOrgs = options?.allow_multiple_orgs !== undefined ? Boolean(options.allow_multiple_orgs) : true;
 
       if (isDbConnected()) {
         try {
@@ -7069,38 +6721,85 @@ export class DbRepository {
             WHERE id = $4
           `, [newApprovalStatus, newPublicationStatus, newRegStatus, id]);
 
-          // If approved, insert into cleanliness_drives so citizen dashboard shows it
           if (isApproved) {
             const wardId = act.ward_id || `ward-0${act.ward_number || 3}`;
             const locName = act.address || act.landmark || 'Navsari Ward Area';
             const startTime = act.proposed_start_at || new Date().toISOString();
             const endTime = act.proposed_end_at || new Date(Date.now() + 10800000).toISOString();
             const deadline = act.registration_open_at || startTime;
-            const orgName = 'Community Action Team';
             const banner = act.cover_image_path || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
             const maxVol = act.maximum_participants || 50;
 
             await pool.query(`
               INSERT INTO cleanliness_drives (
-                id, title, description, ward_id, location_name, start_time, end_time,
-                registration_deadline, organiser_name, status, banner_path, max_volunteers
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'upcoming', $10, $11)
+                id, title, description, ward_id, ward_name, location_name, latitude, longitude,
+                start_time, end_time, registration_deadline, organiser_name, lead_person, contact_phone,
+                status, banner_url, max_volunteers
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16)
               ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
-                status = 'upcoming',
-                updated_at = NOW()
+                ward_name = EXCLUDED.ward_name,
+                organiser_name = EXCLUDED.organiser_name,
+                status = 'upcoming'
             `, [
               id, act.title, act.short_description || act.detailed_description,
-              wardId, locName, startTime, endTime, deadline, orgName, banner, maxVol
-            ]);
+              wardId, act.ward_name || `Ward ${act.ward_number || 3}`, locName,
+              Number(act.latitude) || 20.9470, Number(act.longitude) || 72.9280,
+              startTime, endTime, deadline, orgName, act.head_name || orgName,
+              act.contact_phone || '+919825100000', banner, maxVol
+            ]).catch(err => console.warn('[DB REPO NOTICE - cleanliness_drives sync]:', err.message));
 
-            // Update linked problem status to claimed
-            await pool.query(`
-              UPDATE community_problems
-              SET status = 'claimed', linked_activity_id = $1, updated_at = NOW()
-              WHERE id = $2 OR linked_activity_id = $1
-            `, [id, act.linked_problem_id || id]);
+            // Handle Multi-Org vs Exclusive Single-Org policy on linked community problem!
+            if (act.linked_problem_id) {
+              if (allowMultipleOrgs) {
+                // Keep problem open so multiple organizations can also run cleanliness drives on this same problem
+                await pool.query(`
+                  UPDATE community_problems
+                  SET allow_multiple_orgs = TRUE,
+                      status = 'open',
+                      updated_at = NOW()
+                  WHERE id::text = $1::text
+                `, [act.linked_problem_id]).catch(() => {});
+              } else {
+                // Exclusive single organization: lock problem to this org & close competing pending drives on the same problem
+                await pool.query(`
+                  UPDATE community_problems
+                  SET allow_multiple_orgs = FALSE,
+                      status = 'claimed',
+                      claimed_by_community_id = $1,
+                      claimed_by_community_name = $2,
+                      linked_activity_id = $3,
+                      updated_at = NOW()
+                  WHERE id::text = $4::text
+                `, [act.community_id, orgName, id, act.linked_problem_id]).catch(() => {});
+
+                // Reject other pending proposals on the same problem and notify their community heads
+                const otherPending = await pool.query(`
+                  UPDATE community_activities
+                  SET approval_status = 'rejected',
+                      publication_status = 'rejected',
+                      registration_status = 'not_open',
+                      updated_at = NOW()
+                  WHERE linked_problem_id::text = $1::text
+                    AND id::text <> $2::text
+                    AND approval_status IN ('pending_officer_review', 'ward_review', 'pending', 'changes_requested')
+                  RETURNING id, title, created_by
+                `, [act.linked_problem_id, id]).catch(() => ({ rows: [] as any[] }));
+
+                for (const other of otherPending.rows) {
+                  if (other.created_by) {
+                    await this.createNotification(
+                      other.created_by,
+                      'Drive Proposal Closed (Exclusive Assignment)',
+                      `The Ward Officer assigned this ward problem exclusively to "${orgName}". Your proposal "${other.title}" has been closed.`,
+                      other.id,
+                      'drive_rejected'
+                    );
+                  }
+                }
+              }
+            }
           } else if (action === 'reject') {
             await pool.query(`DELETE FROM cleanliness_drives WHERE id = $1`, [id]);
           }
@@ -7130,7 +6829,7 @@ export class DbRepository {
             start_time: act.proposed_start_at || new Date().toISOString(),
             end_time: act.proposed_end_at || new Date(Date.now() + 10800000).toISOString(),
             registration_deadline: act.proposed_start_at || new Date().toISOString(),
-            organiser_name: 'Community Organization',
+            organiser_name: orgName,
             status: 'upcoming',
             banner_url: act.cover_image_path || '',
             max_volunteers: act.maximum_participants || 50,
@@ -7142,17 +6841,20 @@ export class DbRepository {
       // 4. Send Notification to Community Head!
       const targetUserId = act.created_by || 'c0000000-0000-0000-0000-000000000099';
       if (isApproved) {
+        const modeLabel = act.linked_problem_id
+          ? (allowMultipleOrgs ? ' (Multi-Organization Collaborative Drive allowed on this problem)' : ' (Exclusive Single-Organization assignment)')
+          : '';
         await this.createNotification(
           targetUserId,
-          'Cleanliness Drive Approved! 🎉',
-          `Your cleanliness drive "${act.title}" has been APPROVED by the Ward ${act.ward_number || 3} Officer. Citizen registration is now open across all citizen dashboards!`,
+          'Cleanliness Drive Approved!',
+          `Your cleanliness drive "${act.title}" has been APPROVED by the Ward ${act.ward_number || 3} Officer${modeLabel}. Citizen registration is now open!`,
           id,
           'drive_approved'
         );
       } else if (action === 'reject') {
         await this.createNotification(
           targetUserId,
-          'Cleanliness Drive Rejected ⚠️',
+          'Cleanliness Drive Rejected',
           `Your cleanliness drive "${act.title}" was REJECTED by Ward ${act.ward_number || 3} Officer. Reason: ${comments || 'Did not meet cleanliness guidelines.'}`,
           id,
           'drive_rejected'
@@ -7160,7 +6862,7 @@ export class DbRepository {
       } else {
         await this.createNotification(
           targetUserId,
-          'Changes Requested for Cleanliness Drive 📝',
+          'Changes Requested for Cleanliness Drive',
           `Ward ${act.ward_number || 3} Officer requested adjustments for "${act.title}": ${comments}`,
           id,
           'drive_changes_requested'
@@ -7169,7 +6871,9 @@ export class DbRepository {
 
       return {
         success: true,
-        message: `Activity ${id} marked as ${action}. Notification dispatched to Community Head.`
+        message: isApproved
+          ? `Cleanliness Drive "${act.title}" approved${act.linked_problem_id ? (allowMultipleOrgs ? ' (Multiple organizations allowed on problem)' : ' (Exclusive single organization assigned)') : ''}!`
+          : `Activity marked as ${action}. Notification dispatched to Community Head.`
       };
     }
 
@@ -7177,5 +6881,343 @@ export class DbRepository {
       success: true,
       message: `Item ${id} processed as ${action}.`
     };
+  }
+
+  // =========================================================================
+  // ORGANIZATION DRIVES (ACTIVE DRIVES, COMPLETE HISTORY, ATTENDANCE & CERTIFICATES)
+  // =========================================================================
+  public static async getWardOrganizationDrives(wardNumbers?: number[]): Promise<any[]> {
+    const wardArr = (wardNumbers || []).map(Number).filter(n => !isNaN(n) && n > 0);
+    if (isDbConnected()) {
+      try {
+        let sql = `
+          SELECT
+            a.*,
+            c.community_name,
+            c.head_name,
+            c.contact_phone as community_phone,
+            c.contact_email as community_email,
+            cp.title as linked_problem_title,
+            (SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.registration_status <> 'cancelled') as registered_count,
+            (SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.attendance_status = 'present') as present_count,
+            (SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.attendance_status = 'absent') as absent_count,
+            (SELECT COUNT(*) FROM activity_evidence ae WHERE ae.activity_id = a.id) as evidence_count,
+            (SELECT COUNT(*) FROM drive_certificates dc WHERE dc.activity_id = a.id::text) as certificates_count
+          FROM community_activities a
+          LEFT JOIN communities c ON c.id = a.community_id
+          LEFT JOIN community_problems cp ON cp.id::text = a.linked_problem_id::text
+          WHERE a.approval_status IN ('approved', 'ward_approved', 'nmc_admin_approved')
+        `;
+        const vals: any[] = [];
+        if (wardArr.length > 0) {
+          vals.push(wardArr);
+          sql += ` AND a.ward_number = ANY($${vals.length}::int[])`;
+        }
+        sql += ` ORDER BY a.created_at DESC`;
+
+        const res = await pool.query(sql, vals);
+        return res.rows.map(r => {
+          const isCompleted = r.event_status === 'completed' || r.evidence_status === 'verified_complete';
+          return {
+            id: r.id,
+            community_id: r.community_id,
+            community_name: r.community_name || 'Community Organization',
+            head_name: r.head_name || 'Community Head',
+            community_phone: r.community_phone || '',
+            community_email: r.community_email || '',
+            created_by: r.created_by,
+            title: r.title,
+            activity_category: r.activity_category || 'Cleanliness Drive',
+            short_description: r.short_description,
+            detailed_description: r.detailed_description,
+            ward_number: r.ward_number || 3,
+            ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
+            address: r.address,
+            landmark: r.landmark,
+            latitude: r.latitude ? parseFloat(r.latitude) : 20.9470,
+            longitude: r.longitude ? parseFloat(r.longitude) : 72.9280,
+            proposed_start_at: r.proposed_start_at,
+            proposed_end_at: r.proposed_end_at,
+            maximum_participants: r.maximum_participants || 50,
+            cover_image_path: r.cover_image_path,
+            safety_guidelines: r.safety_guidelines,
+            equipment_list: r.equipment_list || [],
+            approval_status: r.approval_status,
+            publication_status: r.publication_status,
+            registration_status: r.registration_status,
+            event_status: isCompleted ? 'completed' : (r.event_status || 'upcoming'),
+            evidence_status: r.evidence_status || 'not_submitted',
+            linked_problem_id: r.linked_problem_id || null,
+            linked_problem_title: r.linked_problem_title || null,
+            registered_count: Number(r.registered_count || 0),
+            present_count: Number(r.present_count || 0),
+            absent_count: Number(r.absent_count || 0),
+            evidence_count: Number(r.evidence_count || 0),
+            certificates_count: Number(r.certificates_count || 0),
+            created_at: r.created_at,
+            updated_at: r.updated_at
+          };
+        });
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getWardOrganizationDrives]:', err.message);
+      }
+    }
+    return [];
+  }
+
+  public static async completeOrganizationDrive(
+    activityId: string,
+    officerId: string,
+    officerName: string,
+    comments: string = 'Evidence verified and cleanliness drive marked complete by Ward Officer.'
+  ): Promise<{ success: boolean; message: string; drive?: any }> {
+    let act: any = null;
+    if (isDbConnected() && this.isValidUUID(activityId)) {
+      try {
+        const res = await pool.query(
+          `UPDATE community_activities
+           SET event_status = 'completed',
+               evidence_status = 'verified_complete',
+               registration_status = 'closed',
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [activityId]
+        );
+        act = res.rows[0];
+
+        await pool.query(
+          `UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1`,
+          [activityId]
+        ).catch(() => {});
+
+        await pool.query(
+          `UPDATE cleanliness_drives SET status = 'completed' WHERE id = $1`,
+          [activityId]
+        ).catch(() => {});
+
+        if (act?.linked_problem_id) {
+          await pool.query(
+            `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE id::text = $1::text OR linked_activity_id::text = $2::text`,
+            [act.linked_problem_id, activityId]
+          ).catch(() => {});
+        } else {
+          await pool.query(
+            `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE linked_activity_id::text = $1::text`,
+            [activityId]
+          ).catch(() => {});
+        }
+        if (store.communityProblems) {
+          for (const p of store.communityProblems) {
+            if ((act?.linked_problem_id && p.id === act.linked_problem_id) || p.linked_activity_id === activityId) {
+              p.status = 'completed' as any;
+              p.updated_at = new Date().toISOString();
+            }
+          }
+        }
+
+        const validReviewer = this.isValidUUID(officerId) ? officerId : 'd0000000-0000-0000-0000-000000000003';
+        await pool.query(
+          `INSERT INTO activity_evidence_reviews (activity_id, reviewer_id, reviewer_role, decision, comments)
+           VALUES ($1, $2, 'ward_officer', 'approved', $3)`,
+          [activityId, validReviewer, comments]
+        ).catch(() => {});
+
+        if (act?.created_by) {
+          await this.createNotification(
+            act.created_by,
+            'Cleanliness Drive Verified & Completed!',
+            `Ward Officer ${officerName} verified your evidence and marked "${act.title}" as COMPLETE. Official certificates can now be issued!`,
+            activityId,
+            'drive_completed'
+          );
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - completeOrganizationDrive]:', err.message);
+      }
+    }
+
+    const memAct = (store.communityActivities || []).find(a => a.id === activityId);
+    if (memAct) {
+      memAct.event_status = 'completed' as any;
+      memAct.evidence_status = 'verified_complete' as any;
+    }
+
+    return {
+      success: true,
+      drive: act,
+      message: `Cleanliness drive "${act?.title || activityId}" verified and marked complete!`
+    };
+  }
+
+  public static async issueDriveCertificates(
+    activityId: string,
+    issuedByOfficer: string
+  ): Promise<{ success: boolean; certificates: any[]; message: string }> {
+    if (!isDbConnected() || !this.isValidUUID(activityId)) {
+      return { success: false, certificates: [], message: 'Database connection and valid drive ID required.' };
+    }
+
+    const actRes = await pool.query(`
+      SELECT a.*, c.community_name, c.head_name, c.contact_phone as community_phone, c.created_by as head_user_id
+      FROM community_activities a
+      LEFT JOIN communities c ON c.id = a.community_id
+      WHERE a.id = $1
+    `, [activityId]);
+
+    if (actRes.rows.length === 0) {
+      return { success: false, certificates: [], message: 'Cleanliness drive not found.' };
+    }
+
+    const act = actRes.rows[0];
+    const wardNum = act.ward_number || 3;
+    const wardObj = (store.wards || []).find(w => w.ward_number === wardNum);
+    const wardName = wardObj ? `Ward ${wardObj.ward_number} - ${wardObj.ward_name}` : (act.ward_name || `Ward ${wardNum}`);
+    const driveDate = act.proposed_start_at
+      ? new Date(act.proposed_start_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const locationName = act.address || act.landmark || wardName;
+
+    // Extract waste cleared from 'after' evidence review_metadata if available
+    const evRes = await pool.query(
+      `SELECT review_metadata FROM activity_evidence WHERE activity_id = $1 AND evidence_type = 'after' ORDER BY created_at DESC LIMIT 1`,
+      [activityId]
+    ).catch(() => ({ rows: [] as any[] }));
+    const wasteKg = evRes.rows[0]?.review_metadata?.waste_collected_kg;
+    const wasteCleared = wasteKg ? `${wasteKg} kg` : 'Verified Cleanliness Impact';
+
+    // Collect recipients: Community Head + participated citizens (prefer present; fallback to all registered)
+    const regRes = await pool.query(
+      `SELECT ar.*, p.full_name as profile_name, p.phone as profile_phone
+       FROM activity_registrations ar
+       LEFT JOIN profiles p ON p.id = ar.citizen_id
+       WHERE ar.activity_id = $1 AND ar.registration_status <> 'cancelled'`,
+      [activityId]
+    ).catch(() => ({ rows: [] as any[] }));
+
+    const presentRegs = regRes.rows.filter(r => r.attendance_status === 'present');
+    const participantRegs = presentRegs.length > 0 ? presentRegs : regRes.rows;
+
+    const existingCertsRes = await pool.query(
+      `SELECT * FROM drive_certificates WHERE activity_id = $1`,
+      [activityId]
+    );
+    const existingByUser = new Map<string, any>();
+    for (const c of existingCertsRes.rows) {
+      const key = `${c.recipient_role}::${c.recipient_user_id || c.recipient_name}`;
+      existingByUser.set(key, c);
+    }
+
+    const recipients: Array<{ userId: string | null; name: string; role: 'community_head' | 'citizen'; phone: string }> = [
+      {
+        userId: act.head_user_id || act.created_by || null,
+        name: act.head_name || act.community_name || 'Community Head',
+        role: 'community_head',
+        phone: act.community_phone || ''
+      }
+    ];
+
+    for (const reg of participantRegs) {
+      recipients.push({
+        userId: reg.citizen_id || null,
+        name: reg.citizen_name || reg.profile_name || 'Citizen Volunteer',
+        role: 'citizen',
+        phone: reg.citizen_phone || reg.profile_phone || ''
+      });
+    }
+
+    const issued: any[] = [];
+    for (const rec of recipients) {
+      const key = `${rec.role}::${rec.userId || rec.name}`;
+      if (existingByUser.has(key)) {
+        issued.push(existingByUser.get(key));
+        continue;
+      }
+
+      const certId = randomUUID();
+      const shortCode = `${Date.now().toString(36).toUpperCase().slice(-4)}${certId.replace(/-/g, '').slice(0, 4).toUpperCase()}`;
+      const certCode = `NMC-CERT-${new Date().getFullYear()}-${shortCode}`;
+      const verificationUrl = `https://swachhsetu.navsari.gov.in/verify/${certCode}`;
+
+      const ins = await pool.query(
+        `INSERT INTO drive_certificates (
+           id, certificate_code, activity_id, drive_title, community_id, community_name,
+           ward_number, ward_name, drive_date, location_name, waste_cleared,
+           recipient_user_id, recipient_name, recipient_role, recipient_phone,
+           issued_by_officer, verification_url
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         RETURNING *`,
+        [
+          certId, certCode, activityId, act.title, act.community_id || null, act.community_name || 'Community Organization',
+          wardNum, wardName, driveDate, locationName, wasteCleared,
+          rec.userId, rec.name, rec.role, rec.phone,
+          issuedByOfficer, verificationUrl
+        ]
+      );
+      const savedCert = ins.rows[0];
+      issued.push(savedCert);
+
+      if (rec.userId) {
+        await this.createNotification(
+          rec.userId,
+          'Official NMC Cleanliness Certificate Issued!',
+          `Congratulations ${rec.name}! Your verified certificate (${certCode}) for "${act.title}" has been issued by ${issuedByOfficer}. View it in your Certificates section!`,
+          activityId,
+          'certificate_issued'
+        );
+      }
+    }
+
+    return {
+      success: true,
+      certificates: issued,
+      message: `Issued ${issued.length} official QR-verified certificate${issued.length === 1 ? '' : 's'} (Community Head + ${Math.max(0, issued.length - 1)} participant${issued.length - 1 === 1 ? '' : 's'})!`
+    };
+  }
+
+  public static async getDriveCertificates(activityId: string): Promise<any[]> {
+    if (!isDbConnected()) return [];
+    try {
+      const res = await pool.query(
+        `SELECT * FROM drive_certificates WHERE activity_id = $1 ORDER BY (recipient_role = 'community_head') DESC, issued_at ASC`,
+        [activityId]
+      );
+      return res.rows;
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - getDriveCertificates]:', err.message);
+      return [];
+    }
+  }
+
+  public static async getCertificatesForUser(userId: string, phone?: string, role?: string): Promise<any[]> {
+    if (!isDbConnected()) return [];
+    try {
+      const comm = role === 'community_head' ? await this.getCommunityByUserId(userId).catch(() => null) : null;
+      const res = await pool.query(
+        `SELECT * FROM drive_certificates
+         WHERE recipient_user_id = $1
+            OR ($2::text IS NOT NULL AND $2::text <> '' AND recipient_phone = $2::text)
+            OR ($3::text IS NOT NULL AND community_id = $3::text AND recipient_role = 'community_head')
+         ORDER BY issued_at DESC`,
+        [userId, phone || null, comm?.id || null]
+      );
+      return res.rows;
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - getCertificatesForUser]:', err.message);
+      return [];
+    }
+  }
+
+  public static async verifyCertificateByCode(code: string): Promise<any | null> {
+    if (!isDbConnected()) return null;
+    try {
+      const res = await pool.query(
+        `SELECT * FROM drive_certificates WHERE UPPER(certificate_code) = UPPER($1) LIMIT 1`,
+        [code.trim()]
+      );
+      return res.rows[0] || null;
+    } catch {
+      return null;
+    }
   }
 }

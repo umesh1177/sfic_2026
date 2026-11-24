@@ -14,4 +14,7 @@ __pycache__/
 .DS_Store
 database/pgdata/
 .gemini/
-analyzeproject.md  
+analyzeproject.md
+**/vapid_keys.json
+*.mp4
+data/

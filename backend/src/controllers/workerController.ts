@@ -7,13 +7,59 @@ import { recordAttendanceForAssignment, recordEvidenceForAssignment } from './wa
 export class WorkerController {
 
   // =========================================================================
-  // Helper: Resolve Worker ID
+  // Helper: Resolve Worker ID (NEVER fall back to another worker's static ID!)
   // =========================================================================
-  private static async getWorkerIdFromRequest(req: AuthenticatedRequest): Promise<{ workerId: string; userId: string }> {
+  private static async getWorkerIdFromRequest(req: AuthenticatedRequest): Promise<{ workerId: string; userId: string; workerName: string }> {
     const userId = req.user?.id || 'f1000000-0000-0000-0000-000000000001';
     const profile = await DbRepository.getWorkerProfileByUserId(userId);
-    const workerId = profile?.id || 'f2000000-0000-0000-0000-000000000001';
-    return { workerId, userId };
+    const workerId = profile?.id || (req.user?.id ? req.user.id : 'f2000000-0000-0000-0000-000000000001');
+    const workerName = profile?.full_name || req.user?.full_name || 'Sanitation Worker';
+    return { workerId, userId, workerName };
+  }
+
+  // Helper: Sync linked complaint status when worker performs attendance / evidence / completion
+  private static async syncLinkedComplaintStatus(
+    assignmentId: string,
+    targetStatus: 'in_progress' | 'awaiting_verification',
+    actorName: string,
+    note: string,
+    notifyTitle?: string,
+    notifyMessage?: string
+  ): Promise<void> {
+    try {
+      const assignment: any = await DbRepository.getAssignmentById(assignmentId);
+      const memAssignment: any = (store.workAssignments || []).find(wa => wa.id === assignmentId);
+      const complaintId = assignment?.complaint_id || memAssignment?.complaint_id;
+      const complaintNumber = assignment?.complaint_number || memAssignment?.complaint_number;
+      const lookup = complaintId || complaintNumber;
+      if (!lookup) return;
+
+      const comp = await DbRepository.getComplaintById(lookup) || (store.complaints || []).find(c => c.id === lookup || c.complaint_number === lookup);
+      if (!comp) return;
+
+      // Never downgrade a resolved/rejected complaint
+      if (comp.status === 'resolved' || comp.status === 'rejected') return;
+      // Don't downgrade awaiting_verification back to in_progress
+      if (comp.status === 'awaiting_verification' && targetStatus === 'in_progress') return;
+
+      await DbRepository.updateComplaintStatus(comp.id, targetStatus, {
+        name: actorName,
+        role: 'worker',
+        note
+      });
+
+      if (notifyTitle && notifyMessage && comp.citizen_id) {
+        await DbRepository.createNotification(
+          comp.citizen_id,
+          notifyTitle,
+          notifyMessage.replace('{complaint_number}', comp.complaint_number),
+          comp.id,
+          'complaint_status'
+        );
+      }
+    } catch (err: any) {
+      console.error('[WorkerController syncLinkedComplaintStatus warning]:', err.message);
+    }
   }
 
   // =========================================================================
@@ -22,7 +68,30 @@ export class WorkerController {
   public static async getProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { userId } = await WorkerController.getWorkerIdFromRequest(req);
-      const profile = await DbRepository.getWorkerProfileByUserId(userId);
+      let profile = await DbRepository.getWorkerProfileByUserId(userId);
+      if (!profile && req.user) {
+        const wardNum = (req.user as any).ward_number || 3;
+        profile = {
+          id: req.user.id,
+          user_id: req.user.id,
+          worker_code: (req.user as any).username || `WRK-${req.user.id.slice(0, 6).toUpperCase()}`,
+          full_name: req.user.full_name,
+          phone: req.user.phone,
+          email: req.user.email,
+          avatar_url: req.user.avatar_url,
+          designation_name: 'Sanitation Worker',
+          designation_code: 'sanitation_worker',
+          ward_id: `ward-${String(wardNum).padStart(2, '0')}`,
+          ward_number: wardNum,
+          ward_name: `Ward ${wardNum}`,
+          employment_status: 'permanent',
+          joining_date: req.user.created_at ? req.user.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          experience_years: 0,
+          availability_status: 'available',
+          language_preference: req.user.preferred_language || 'gu',
+          skills: []
+        };
+      }
       if (!profile) {
         res.status(404).json({ success: false, error: 'Worker profile not found' });
         return;
@@ -49,12 +118,47 @@ export class WorkerController {
   // =========================================================================
   // 3. Worker Assignments
   // =========================================================================
+  private static async enrichAssignmentWithWorkSla(a: any): Promise<any> {
+    let maxWorkDays = Number(a.max_work_days || 0);
+    if (!maxWorkDays) {
+      let comp: any = null;
+      const lookup = a.complaint_id || a.complaint_number;
+      if (lookup) {
+        comp =
+          (await DbRepository.getComplaintById(lookup).catch(() => null)) ||
+          (store.complaints || []).find(c => c.id === lookup || c.complaint_number === lookup);
+      }
+      const cat = comp
+        ? (store.categories || []).find(
+            c =>
+              c.id === comp.category_id ||
+              c.category_name.toLowerCase() === String(comp.category_name || '').toLowerCase()
+          )
+        : (store.categories || []).find(c =>
+            String(a.title || '').toLowerCase().includes(c.category_name.toLowerCase().split(' ')[0])
+          );
+      maxWorkDays = cat?.max_work_days ?? 3;
+    }
+    const baseTime = new Date(a.created_at || a.scheduled_date || Date.now()).getTime();
+    const daysElapsed = Math.max(0, Math.floor((Date.now() - baseTime) / (1000 * 60 * 60 * 24)));
+    const isDone = ['verified_complete', 'closed', 'resolved'].includes(String(a.status || '').toLowerCase());
+    return {
+      ...a,
+      max_work_days: maxWorkDays,
+      work_days_elapsed: daysElapsed,
+      is_work_sla_overdue: !isDone && daysElapsed > maxWorkDays
+    };
+  }
+
   public static async getAssignments(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { workerId } = await WorkerController.getWorkerIdFromRequest(req);
       const status = req.query.status as string;
 
-      const assignments = await DbRepository.getWorkerAssignments(workerId, status);
+      const rawAssignments = await DbRepository.getWorkerAssignments(workerId, status);
+      const assignments = await Promise.all(
+        rawAssignments.map(a => WorkerController.enrichAssignmentWithWorkSla(a))
+      );
       res.status(200).json({
         success: true,
         data: assignments,
@@ -77,11 +181,12 @@ export class WorkerController {
       }
 
       const teamMembers = await DbRepository.getAssignmentTeamMembers(id);
+      const enriched = await WorkerController.enrichAssignmentWithWorkSla(assignment);
 
       res.status(200).json({
         success: true,
         data: {
-          ...assignment,
+          ...enriched,
           team_members: teamMembers
         }
       });
@@ -110,7 +215,7 @@ export class WorkerController {
   // =========================================================================
   public static async markAttendance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { workerId } = await WorkerController.getWorkerIdFromRequest(req);
+      const { workerId, workerName } = await WorkerController.getWorkerIdFromRequest(req);
       const {
         assignment_id,
         latitude,
@@ -139,6 +244,7 @@ export class WorkerController {
         const assignment = (store.workAssignments || []).find(wa => wa.id === assignment_id);
         if (assignment) {
           assignment.my_attendance_status = 'verified';
+          if (assignment.status === 'assigned') assignment.status = 'in_progress';
           if (assignment.team_members) {
             const mem = assignment.team_members.find((m: any) => m.worker_id === workerId);
             if (mem) {
@@ -147,6 +253,14 @@ export class WorkerController {
               mem.validation_status = result.attendance?.validation_status || 'verified_match';
             }
           }
+        }
+        if (result.success) {
+          await WorkerController.syncLinkedComplaintStatus(
+            assignment_id,
+            'in_progress',
+            workerName,
+            `${workerName} checked in at the site via GPS geofence and started field work.`
+          );
         }
       }
 
@@ -251,7 +365,7 @@ export class WorkerController {
   // =========================================================================
   public static async uploadEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { workerId } = await WorkerController.getWorkerIdFromRequest(req);
+      const { workerId, workerName } = await WorkerController.getWorkerIdFromRequest(req);
       const { id } = req.params; // assignment_id
       const {
         stage, // 'before' | 'during' | 'after'
@@ -270,12 +384,13 @@ export class WorkerController {
         return;
       }
 
+      const normalizedStage = String(stage).toLowerCase() as 'before' | 'during' | 'after';
       const evidence = await DbRepository.addWorkEvidence(
         id,
         workerId,
-        stage as 'before' | 'during' | 'after',
+        normalizedStage,
         photo_url,
-        description || `${stage} photographic verification evidence`,
+        description || `${normalizedStage.toUpperCase()} photographic verification evidence`,
         latitude ? parseFloat(latitude) : undefined,
         longitude ? parseFloat(longitude) : undefined,
         gps_accuracy ? parseFloat(gps_accuracy) : undefined
@@ -285,14 +400,33 @@ export class WorkerController {
         recordEvidenceForAssignment(id, evidence);
         const assignment = (store.workAssignments || []).find(wa => wa.id === id);
         if (assignment) {
-          if (stage === 'before') assignment.has_before_evidence = true;
-          if (stage === 'after') assignment.has_after_evidence = true;
+          if (normalizedStage === 'before') assignment.has_before_evidence = true;
+          if (normalizedStage === 'after') assignment.has_after_evidence = true;
+          if (assignment.status === 'assigned') assignment.status = 'in_progress';
+        }
+
+        if (normalizedStage === 'after') {
+          await WorkerController.syncLinkedComplaintStatus(
+            id,
+            'awaiting_verification',
+            workerName,
+            `Team Leader (${workerName}) submitted AFTER-cleanup photo evidence: "${evidence.description}"`,
+            'Cleanup Work Completed — Awaiting Officer Verification',
+            'The sanitation squad has finished cleaning for complaint {complaint_number} and submitted after-work photo proof for Ward Officer verification.'
+          );
+        } else {
+          await WorkerController.syncLinkedComplaintStatus(
+            id,
+            'in_progress',
+            workerName,
+            `Team Leader (${workerName}) uploaded ${normalizedStage.toUpperCase()} field evidence: "${evidence.description}"`
+          );
         }
       }
 
       res.status(201).json({
         success: true,
-        message: `${stage.toUpperCase()} evidence uploaded successfully with location audit`,
+        message: `${normalizedStage.toUpperCase()} evidence uploaded successfully with location audit`,
         data: evidence
       });
     } catch (err: any) {
@@ -318,7 +452,7 @@ export class WorkerController {
   // =========================================================================
   public static async submitCompletionReport(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { workerId } = await WorkerController.getWorkerIdFromRequest(req);
+      const { workerId, workerName } = await WorkerController.getWorkerIdFromRequest(req);
       const { id } = req.params; // assignment_id
       const {
         completion_description,
@@ -356,6 +490,15 @@ export class WorkerController {
         res.status(400).json(result);
         return;
       }
+
+      await WorkerController.syncLinkedComplaintStatus(
+        id,
+        'awaiting_verification',
+        workerName,
+        `Team Leader (${workerName}) submitted completion report: ${completion_description || 'Site cleared and sanitized.'}`,
+        'Completion Report Submitted — Pending Final Verification',
+        'Sanitation Team Leader submitted the final completion report for complaint {complaint_number}. Ward Officer will review and verify shortly.'
+      );
 
       res.status(201).json({
         success: true,

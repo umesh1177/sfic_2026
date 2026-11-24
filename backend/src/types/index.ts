@@ -48,6 +48,8 @@ export interface OtpSession {
   mobile_number: string;
   otp_hash: string;
   purpose: 'signup' | 'password_reset' | 'phone_change';
+  delivery_mode?: 'local_hash' | 'twilio_verify';
+  verify_service_sid?: string;
   expires_at: string;
   attempts_count: number;
   max_attempts: number;
@@ -153,6 +155,7 @@ export interface Complaint {
   complaint_number: string;
   citizen_id: string;
   citizen_name: string;
+  citizen_phone?: string;
   category_id: string;
   category_name: string;
   location: ComplaintLocation;
@@ -168,6 +171,7 @@ export interface Complaint {
   is_duplicate: boolean;
   parent_complaint_id?: string;
   submitted_at: string;
+  created_at?: string;
   reviewed_at?: string;
   resolved_at?: string;
   reopened_at?: string;

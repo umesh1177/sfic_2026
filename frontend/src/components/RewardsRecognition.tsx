@@ -26,6 +26,8 @@ import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
 import { CommunityRecognitionPost, RecognitionComment } from '../types/index.js';
 import { Language, translations } from '../i18n/translations.js';
+import { CertificateCard, DriveCertificateData } from './common/CertificateCard.js';
+import { CertificatesTableView } from './common/CertificatesTableView.js';
 
 interface RewardsRecognitionProps {
   lang: Language;
@@ -33,8 +35,10 @@ interface RewardsRecognitionProps {
 
 export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) => {
   const [posts, setPosts] = useState<CommunityRecognitionPost[]>([]);
+  const [certificates, setCertificates] = useState<DriveCertificateData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'official' | 'community'>('all');
+  const [loadingCerts, setLoadingCerts] = useState<boolean>(false);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'official' | 'community' | 'certificates'>('all');
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [newCommentText, setNewCommentText] = useState<Record<string, string>>({});
   const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
@@ -72,8 +76,23 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
     }
   };
 
+  const fetchCertificates = async () => {
+    try {
+      setLoadingCerts(true);
+      const res = await api.getMyCertificates();
+      if (res.success && Array.isArray(res.data)) {
+        setCertificates(res.data);
+      }
+    } catch {
+      // Guest or unauthenticated view
+    } finally {
+      setLoadingCerts(false);
+    }
+  };
+
   useEffect(() => {
     fetchPosts();
+    fetchCertificates();
   }, []);
 
   // Handle Like / Applaud
@@ -223,16 +242,9 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
       {/* HERO HEADER */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e2e8f0] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ecfdf5] border border-[#a7f3d0] text-xs font-black text-[#047857] mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-[#10b981]" />
-            {t.app_subtitle}
-          </div>
           <h1 className="text-xl sm:text-2xl font-black text-[#095c54] tracking-tight">
             {t.rewards_title}
           </h1>
-          <p className="text-xs text-[#64748b] mt-1 max-w-lg">
-            {t.action_drives_sub}
-          </p>
         </div>
 
         <button
@@ -249,7 +261,8 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
         {[
           { id: 'all', label: lang === 'gu' ? 'બધા' : lang === 'hi' ? 'सभी' : 'All Spotlights', icon: Award },
           { id: 'official', label: lang === 'gu' ? 'NMC સત્તાવાર' : lang === 'hi' ? 'NMC आधिकारिक' : 'NMC Official', icon: ShieldCheck },
-          { id: 'community', label: lang === 'gu' ? 'નાગરિક સ્પૉટ' : lang === 'hi' ? 'नागरिक स्पॉट' : 'Citizen Spotlights', icon: Users }
+          { id: 'community', label: lang === 'gu' ? 'નાગરિક સ્પૉટ' : lang === 'hi' ? 'नागरिक स्पॉट' : 'Citizen Spotlights', icon: Users },
+          { id: 'certificates', label: lang === 'gu' ? 'મારા પ્રમાણપત્રો' : lang === 'hi' ? 'मेरे प्रमाणपत्र' : 'My Drive Certificates', icon: BadgeCheck, count: certificates.length }
         ].map(f => {
           const TabIcon = f.icon;
           const isActive = activeFilter === f.id;
@@ -265,15 +278,37 @@ export const RewardsRecognition: React.FC<RewardsRecognitionProps> = ({ lang }) 
             >
               <TabIcon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-300' : 'text-[#64748b]'}`} />
               <span>{f.label}</span>
+              {'count' in f && typeof (f as any).count === 'number' && (f as any).count > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                  isActive ? 'bg-emerald-400 text-[#095c54]' : 'bg-emerald-100 text-[#095c54]'
+                }`}>
+                  {(f as any).count}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
       {/* ======================================================== */}
-      {/* 3. POSTS FEED (LINKEDIN STYLE)                          */}
+      {/* 2B. MY DRIVE CERTIFICATES VIEW (TABLE WITH VIEW, PRINT, DOWNLOAD) */}
       {/* ======================================================== */}
-      {loading ? (
+      {activeFilter === 'certificates' ? (
+        <CertificatesTableView
+          certificates={certificates}
+          loading={loadingCerts}
+          onRefresh={fetchCertificates}
+          role="citizen"
+          title={lang === 'gu' ? 'મારા પ્રમાણપત્રો' : lang === 'hi' ? 'मेरे स्वच्छता अभियान प्रमाणपत्र' : 'My Cleanliness Drive Certificates'}
+          subtitle={
+            lang === 'gu'
+              ? 'નવસારી મહાનગરપાલિકા દ્વારા જારી કરાયેલ સત્તાવાર ડિજિટલ ક્યૂઆર પ્રમાણપત્રો.'
+              : lang === 'hi'
+              ? 'नवसारी नगर निगम द्वारा जारी आधिकारिक डिजिटल क्यूआर-सत्यापित प्रमाणपत्र।'
+              : 'Every certificate carries an official unique verification ID and scannable QR code issued by your Navsari Municipal Corporation Ward Officer.'
+          }
+        />
+      ) : loading ? (
         <div className="space-y-4">
           {[1, 2].map(n => (
             <div key={n} className="bg-white rounded-3xl p-5 border border-[#e2e8f0] animate-pulse space-y-3">

@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { DbRepository } from '../data/dbRepository.js';
-import { store } from '../data/store.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { AIService } from '../services/aiService.js';
 import { findWardByCoordinates } from '../utils/postgis.js';
@@ -233,6 +232,19 @@ export class CommunityHeadController {
       const { id } = req.params;
       const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
 
+      const existing = await DbRepository.getActivityById(id);
+      if (existing) {
+        const maxCap = existing.maximum_participants || 50;
+        const currentCount = existing.registered_count || 0;
+        if (currentCount >= maxCap) {
+          res.status(400).json({
+            success: false,
+            error: `Drive is already at maximum capacity (${currentCount}/${maxCap}). Increase the Max Volunteer Limit first before reopening registrations.`
+          });
+          return;
+        }
+      }
+
       const activity = await DbRepository.changeActivityStatus(
         id,
         { registration_status: 'open', publication_status: 'published' },
@@ -385,33 +397,8 @@ export class CommunityHeadController {
       const { id } = req.params; // registration_id
       const { attendance_status, registration_status } = req.body;
 
-      // Resolve logged-in Community Head's community ID so in Joint Drives only the respective Community Head marks their citizens
-      let actingCommunityId: string | undefined;
-      if (req.user?.role === 'community_head' && req.user?.id) {
-        const comm = await DbRepository.getCommunityByUserId(req.user.id);
-        actingCommunityId = comm?.id;
-      }
-
-      const result = await DbRepository.updateRegistrationAttendance(
-        id,
-        attendance_status,
-        registration_status,
-        actingCommunityId
-      );
-
-      if (!result.success) {
-        res.status(403).json({ success: false, error: result.error || 'Not authorized to update this volunteer.' });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        data: result.data,
-        message:
-          attendance_status === 'present'
-            ? 'Final attendance confirmed as PRESENT! Citizen has been notified.'
-            : 'Attendance status updated.'
-      });
+      const updated = await DbRepository.updateRegistrationAttendance(id, attendance_status, registration_status);
+      res.status(200).json({ success: true, data: updated, message: 'Attendance status updated' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -423,58 +410,44 @@ export class CommunityHeadController {
 
   public static async createQuestion(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { id } = req.params; // activity_id or officer-created problem/drive id
-      const { question_text, language, question_language } = req.body;
-      const lang = language || question_language || 'en';
+      const { id } = req.params; // activity_id
+      const { question_text, language } = req.body;
       const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
 
-      if (!question_text || !question_text.trim()) {
-        res.status(400).json({ success: false, error: 'Question text is required' });
-        return;
-      }
-
       const act = await DbRepository.getActivityById(id);
-      const prob = !act ? (store.communityProblems || []).find(p => p.id === id) : null;
-      const drv = (!act && !prob) ? (store.drives || []).find(d => d.id === id) : null;
-
-      if (!act && !prob && !drv) {
-        res.status(404).json({ success: false, error: 'Cleanliness drive not found' });
+      if (!act) {
+        res.status(404).json({ success: false, error: 'Activity not found' });
         return;
       }
 
-      const targetCommunityId =
-        act?.community_id ||
-        prob?.assigned_communities?.[0]?.community_id ||
-        prob?.claimed_by_community_id?.split(',')[0]?.trim() ||
-        'b0000000-0000-0000-0000-000000000001';
-
-      // 1. Save question in database / store
+      // 1. Save question in PostgreSQL
       const question = await DbRepository.createActivityQuestion(
         id,
-        targetCommunityId,
+        act.community_id,
         citizenId,
         question_text,
-        lang
+        language || 'en',
+        { fullName: req.user?.full_name, phone: req.user?.phone }
       );
 
       // 2. Trigger AI answer suggestion generation using approved event context
       const aiSug = await AIService.suggestQuestionAnswer(
         question_text,
         {
-          title: act?.title || prob?.title || drv?.title || 'Cleanliness Drive',
-          description: act?.detailed_description || prob?.description || drv?.description || '',
-          date: act?.proposed_start_at || prob?.start_time || drv?.start_time || '',
-          location: act?.address || prob?.location_name || prob?.address || drv?.location_name || '',
-          landmark: act?.landmark || prob?.meeting_point,
-          instructions: act?.instructions || prob?.citizen_instructions || prob?.action_plan,
-          equipment: act?.equipment_requirements || prob?.necessary_gears || prob?.suggested_equipment,
-          safety: act?.safety_guidelines || prob?.citizen_instructions,
-          faq: act?.faq
+          title: act.title,
+          description: act.detailed_description,
+          date: act.proposed_start_at,
+          location: act.address,
+          landmark: act.landmark,
+          instructions: act.instructions,
+          equipment: act.equipment_requirements,
+          safety: act.safety_guidelines,
+          faq: act.faq
         },
-        lang
+        language || 'en'
       );
 
-      // 3. Store AI suggestion
+      // 3. Store AI suggestion in database
       const savedSug = await DbRepository.saveAiAnswerSuggestion(question.id, aiSug);
       question.ai_suggestion = savedSug;
       question.status = 'ai_suggestion_ready';
@@ -541,20 +514,17 @@ export class CommunityHeadController {
       }
 
       const act = await DbRepository.getActivityById(question.activity_id);
-      const prob = !act ? (store.communityProblems || []).find(p => p.id === question.activity_id) : null;
-      const drv = (!act && !prob) ? (store.drives || []).find(d => d.id === question.activity_id) : null;
-
       const aiSug = await AIService.suggestQuestionAnswer(
         question.question_text,
         {
-          title: act?.title || prob?.title || drv?.title || '',
-          description: act?.detailed_description || prob?.description || drv?.description || '',
-          date: act?.proposed_start_at || prob?.start_time || drv?.start_time || '',
-          location: act?.address || prob?.location_name || prob?.address || drv?.location_name || '',
-          landmark: act?.landmark || prob?.meeting_point,
-          instructions: act?.instructions || prob?.citizen_instructions || prob?.action_plan,
-          equipment: act?.equipment_requirements || prob?.necessary_gears || prob?.suggested_equipment,
-          safety: act?.safety_guidelines || prob?.citizen_instructions,
+          title: act?.title || '',
+          description: act?.detailed_description || '',
+          date: act?.proposed_start_at || '',
+          location: act?.address || '',
+          landmark: act?.landmark,
+          instructions: act?.instructions,
+          equipment: act?.equipment_requirements,
+          safety: act?.safety_guidelines,
           faq: act?.faq
         },
         question.question_language || 'en'
@@ -667,7 +637,7 @@ export class CommunityHeadController {
 
   public static async uploadEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { id } = req.params; // activity_id or ward problem/drive id
+      const { id } = req.params; // activity_id
       const {
         evidence_type,
         stage,
@@ -677,32 +647,32 @@ export class CommunityHeadController {
         description,
         latitude,
         longitude,
-        image_hash
+        image_hash,
+        review_metadata
       } = req.body;
       const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
+      const resolvedStage = (evidence_type || stage) as 'before' | 'during' | 'after';
+      const resolvedPath = storage_path || image_url;
 
-      const finalPath = storage_path || image_url;
-      const finalType = (evidence_type || stage || 'after') as 'before' | 'during' | 'after';
-      const finalCaption = (caption || description || '').trim();
-
-      if (!finalPath || !finalCaption) {
-        res.status(400).json({ success: false, error: 'Evidence photograph and caption/description are required' });
+      if (!resolvedPath || !resolvedStage) {
+        res.status(400).json({ success: false, error: 'Evidence stage (before/during/after) and photograph are required' });
         return;
       }
 
       const ev = await DbRepository.createActivityEvidence({
         activity_id: id,
         uploaded_by: userId,
-        evidence_type: finalType,
-        storage_path: finalPath,
-        caption: finalCaption,
-        description: description || finalCaption,
+        evidence_type: resolvedStage,
+        storage_path: resolvedPath,
+        caption: caption?.trim() || `${String(resolvedStage).toUpperCase()} Stage Evidence`,
+        description: description || caption,
         latitude,
         longitude,
-        image_hash
+        image_hash,
+        review_metadata: review_metadata || {}
       });
 
-      res.status(201).json({ success: true, data: ev, message: 'Evidence photograph recorded' });
+      res.status(201).json({ success: true, data: ev, message: 'Evidence photograph and details recorded' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -710,14 +680,13 @@ export class CommunityHeadController {
 
   public static async submitEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { id } = req.params; // activity_id or ward problem/drive id
-      const { notes } = req.body || {};
+      const { id } = req.params; // activity_id
       const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
 
-      await DbRepository.submitActivityEvidence(id, userId, notes);
+      await DbRepository.submitActivityEvidence(id, userId);
       res.status(200).json({
         success: true,
-        message: 'Evidence submitted! Review request has been sent to the Ward Officer.'
+        message: 'Evidence submitted for official Ward Officer and NMC Admin verification.'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -819,8 +788,13 @@ export class CommunityHeadController {
       // If ward_number is specified (and not 'all'), filter by ward; otherwise return ALL problems across all wards
       const wardQuery = req.query.ward_number as string | undefined;
       const wardNum = wardQuery && wardQuery !== 'all' ? parseInt(wardQuery, 10) : undefined;
-      const problems = await DbRepository.getCommunityProblems(wardNum);
-      res.status(200).json({ success: true, data: problems });
+      const allProblems = await DbRepository.getCommunityProblems(wardNum);
+      // Exclude problems already solved/completed and verified by the Ward Officer
+      const activeProblems = allProblems.filter(p => {
+        const st = String(p.status || 'open').toLowerCase();
+        return st !== 'completed' && st !== 'resolved';
+      });
+      res.status(200).json({ success: true, data: activeProblems });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -839,98 +813,6 @@ export class CommunityHeadController {
       res.status(200).json({
         success: true,
         message: 'Problem claimed for community drive!'
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  }
-
-  public static async requestPlanDrive(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const {
-        proposed_volunteers_count,
-        proposed_date,
-        equipment_available,
-        notes
-      } = req.body;
-
-      const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
-      let community = await DbRepository.getCommunityByUserId(userId);
-      if (!community) {
-        const all = await DbRepository.getCommunitiesList();
-        community = all[0] || null;
-      }
-
-      if (!community) {
-        res.status(404).json({ success: false, error: 'Community organization not found for this user.' });
-        return;
-      }
-
-      const driveRequest = await DbRepository.submitDriveRequest(id, {
-        communityId: community.id,
-        communityName: community.community_name,
-        headName: community.head_name || req.user?.full_name || 'Community Leader',
-        contactPhone: (community as any).phone || community.contact_phone || (req.user as any)?.phone || '+919825100099',
-        proposedVolunteersCount: Number(proposed_volunteers_count) || 15,
-        proposedDate: proposed_date || new Date(Date.now() + 86400000 * 3).toISOString(),
-        equipmentAvailable: Array.isArray(equipment_available) ? equipment_available : [],
-        notes: notes?.trim() || ''
-      });
-
-      if (!driveRequest) {
-        res.status(404).json({ success: false, error: 'Problem/Drive not found.' });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        message: 'Your request to plan this cleanliness drive has been submitted to the Ward Officer for review!',
-        data: driveRequest
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  }
-
-  /**
-   * POST /api/community/ward-problems/:id/plan-drive
-   * Allows approved community to set instructions & necessary gears for citizens
-   */
-  public static async planDriveForProblem(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const {
-        citizen_instructions,
-        necessary_gears,
-        meeting_point,
-        emergency_contact
-      } = req.body;
-
-      const userId = req.user?.id || 'u0000000-0000-0000-0000-000000000001';
-      let community = await DbRepository.getCommunityByUserId(userId);
-      if (!community) {
-        const all = await DbRepository.getCommunitiesList();
-        community = all[0] || null;
-      }
-
-      const updated = await DbRepository.updateProblemDrivePlan(id, {
-        communityId: community?.id,
-        citizenInstructions: citizen_instructions,
-        necessaryGears: Array.isArray(necessary_gears) ? necessary_gears : [],
-        meetingPoint: meeting_point,
-        emergencyContact: emergency_contact
-      });
-
-      if (!updated) {
-        res.status(404).json({ success: false, error: 'Problem/Drive not found.' });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        message: 'Cleanliness drive instructions and necessary gears successfully published for citizens!',
-        data: updated
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

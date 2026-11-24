@@ -21,7 +21,7 @@ exports.apiRouter = (0, express_1.Router)();
 function softAuthenticate(req, _res, next) {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-        (0, auth_js_1.authenticate)(req, _res, () => next());
+        void (0, auth_js_1.authenticate)(req, _res, () => next());
     }
     else {
         // Default to initial test citizen for seamless preview if unauthenticated
@@ -33,8 +33,8 @@ function softAuthenticate(req, _res, next) {
 exports.apiRouter.post('/auth/signup/send-otp', authController_js_1.AuthController.signupSendOtp);
 exports.apiRouter.post('/auth/signup/verify-otp', authController_js_1.AuthController.signupVerifyOtp);
 exports.apiRouter.post('/auth/signup/complete-profile', authController_js_1.AuthController.signupCompleteProfile);
-exports.apiRouter.post('/auth/signup/community-request', authController_js_1.AuthController.submitCommunityRegistrationRequest);
-exports.apiRouter.get('/auth/sms-messages', authController_js_1.AuthController.getSimulatedSmsMessages);
+exports.apiRouter.get('/auth/check-username', authController_js_1.AuthController.checkUsername);
+exports.apiRouter.post('/auth/register-community', authController_js_1.AuthController.registerCommunity);
 exports.apiRouter.post('/auth/login', authController_js_1.AuthController.login);
 exports.apiRouter.post('/auth/logout', authController_js_1.AuthController.logout);
 exports.apiRouter.post('/auth/refresh', auth_js_1.authenticate, authController_js_1.AuthController.refresh);
@@ -74,6 +74,7 @@ exports.apiRouter.get('/map/nearby', mapController_js_1.MapController.getNearby)
 exports.apiRouter.get('/drives', softAuthenticate, drivesController_js_1.DrivesController.getDrives);
 exports.apiRouter.get('/drives/my-registrations', auth_js_1.authenticate, drivesController_js_1.DrivesController.getMyRegistrations);
 exports.apiRouter.get('/drives/:id', softAuthenticate, drivesController_js_1.DrivesController.getDriveById);
+exports.apiRouter.get('/drives/:id/questions', softAuthenticate, drivesController_js_1.DrivesController.getDriveQuestions);
 exports.apiRouter.post('/drives/:id/register', softAuthenticate, drivesController_js_1.DrivesController.registerForDrive);
 exports.apiRouter.delete('/drives/:id/register', softAuthenticate, drivesController_js_1.DrivesController.cancelRegistration);
 exports.apiRouter.post('/drives/:id/attendance', softAuthenticate, drivesController_js_1.DrivesController.markAttendance);
@@ -87,10 +88,14 @@ exports.apiRouter.get('/community/recognition-posts', softAuthenticate, communit
 exports.apiRouter.post('/community/recognition-posts', auth_js_1.authenticate, communityController_js_1.CommunityController.createRecognitionPost);
 exports.apiRouter.post('/community/recognition-posts/:id/like', auth_js_1.authenticate, communityController_js_1.CommunityController.togglePostLike);
 exports.apiRouter.post('/community/recognition-posts/:id/comments', auth_js_1.authenticate, communityController_js_1.CommunityController.addPostComment);
-// 8. Notifications
+// 8. Notifications & PWA Web Push
 exports.apiRouter.get('/notifications', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.getNotifications);
 exports.apiRouter.patch('/notifications/:id/read', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.markAsRead);
 exports.apiRouter.patch('/notifications/read-all', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.markAllAsRead);
+exports.apiRouter.get('/push/vapid-public-key', notificationsController_js_1.NotificationsController.getVapidPublicKey);
+exports.apiRouter.post('/push/subscribe', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.subscribePush);
+exports.apiRouter.post('/push/unsubscribe', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.unsubscribePush);
+exports.apiRouter.post('/push/test', auth_js_1.authenticate, notificationsController_js_1.NotificationsController.sendTestPush);
 // 9. Citizen Support
 exports.apiRouter.post('/support/tickets', auth_js_1.authenticate, supportController_js_1.SupportController.createTicket);
 exports.apiRouter.get('/support/tickets', auth_js_1.authenticate, supportController_js_1.SupportController.getTickets);
@@ -142,8 +147,6 @@ exports.apiRouter.get('/community/ai/activity-insights', softAuthenticate, commu
 exports.apiRouter.get('/community/dashboard/summary', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getDashboardSummary);
 exports.apiRouter.get('/community/ward-problems', softAuthenticate, communityHeadController_js_1.CommunityHeadController.getWardProblems);
 exports.apiRouter.post('/community/ward-problems/:id/claim', softAuthenticate, communityHeadController_js_1.CommunityHeadController.claimWardProblem);
-exports.apiRouter.post('/community/ward-problems/:id/request-drive', softAuthenticate, communityHeadController_js_1.CommunityHeadController.requestPlanDrive);
-exports.apiRouter.post('/community/ward-problems/:id/plan-drive', softAuthenticate, communityHeadController_js_1.CommunityHeadController.planDriveForProblem);
 // ============================================================================
 // WORKER DASHBOARD ROUTES (Navsari Municipal Corporation)
 // ============================================================================
@@ -175,6 +178,7 @@ exports.apiRouter.get('/worker/directory', softAuthenticate, workerController_js
 exports.apiRouter.get('/ward/dashboard/summary', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getDashboardSummary);
 exports.apiRouter.get('/ward/complaints', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getComplaints);
 exports.apiRouter.get('/ward/complaints/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getComplaintDetails);
+exports.apiRouter.delete('/ward/complaints/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteComplaint);
 exports.apiRouter.post('/ward/complaints/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenComplaint);
 exports.apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, wardOfficerController_js_1.WardOfficerController.assignComplaint);
 exports.apiRouter.post('/ward/complaints/:id/reject', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectComplaint);
@@ -182,6 +186,7 @@ exports.apiRouter.post('/ward/complaints/:id/verify-complete', softAuthenticate,
 exports.apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishComplaintToCommunity);
 exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);
 exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);
+exports.apiRouter.post('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.createAssignment);
 exports.apiRouter.get('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getWorkers);
 exports.apiRouter.post('/ward/workers', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addWorker);
 exports.apiRouter.put('/ward/workers/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateWorker);
@@ -192,19 +197,19 @@ exports.apiRouter.put('/ward/teams/:id', softAuthenticate, wardOfficerController
 exports.apiRouter.delete('/ward/teams/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteTeam);
 exports.apiRouter.get('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunities);
 exports.apiRouter.post('/ward/communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunity);
+exports.apiRouter.post('/ward/communities/bulk', softAuthenticate, wardOfficerController_js_1.WardOfficerController.bulkAddCommunities);
 exports.apiRouter.put('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateCommunity);
 exports.apiRouter.delete('/ward/communities/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunity);
-exports.apiRouter.get('/ward/community-requests', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityRequests);
-exports.apiRouter.post('/ward/community-requests/:id/approve', softAuthenticate, wardOfficerController_js_1.WardOfficerController.approveCommunityRequest);
-exports.apiRouter.post('/ward/community-requests/:id/reject', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectCommunityRequest);
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
-exports.apiRouter.get('/ward/completed-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCompletedDrives);
-exports.apiRouter.post('/ward/drives/:id/publish-completion', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishDriveCompletion);
+exports.apiRouter.get('/ward/organization-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getOrganizationDrives);
+exports.apiRouter.post('/ward/organization-drives/:id/complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.completeOrganizationDrive);
+exports.apiRouter.post('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.issueDriveCertificates);
+exports.apiRouter.get('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getDriveCertificates);
+exports.apiRouter.get('/certificates/my', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getMyCertificates);
+exports.apiRouter.get('/certificates/verify/:code', wardOfficerController_js_1.WardOfficerController.verifyCertificate);
 exports.apiRouter.get('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityProblems);
 exports.apiRouter.post('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunityProblem);
-exports.apiRouter.get('/ward/community-problems/:id/requests', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getProblemDriveRequests);
-exports.apiRouter.post('/ward/community-problems/:id/approve-communities', softAuthenticate, wardOfficerController_js_1.WardOfficerController.approveProblemCommunities);
 exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenCommunityProblem);
 exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
@@ -222,6 +227,8 @@ exports.apiRouter.get('/admin/wards', softAuthenticate, adminController_js_1.Adm
 exports.apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, adminController_js_1.AdminController.updateWardBoundary);
 exports.apiRouter.get('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.getCityBoundary);
 exports.apiRouter.put('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.updateCityBoundary);
+exports.apiRouter.get('/admin/boundary-history', softAuthenticate, adminController_js_1.AdminController.getBoundaryHistory);
+exports.apiRouter.post('/admin/boundary-history/:id/restore', softAuthenticate, adminController_js_1.AdminController.restoreBoundaryHistory);
 exports.apiRouter.get('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.getWardOfficers);
 exports.apiRouter.post('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.createWardOfficer);
 exports.apiRouter.put('/admin/ward-officers/:id', softAuthenticate, adminController_js_1.AdminController.updateWardOfficer);
@@ -234,3 +241,5 @@ exports.apiRouter.post('/admin/categories', softAuthenticate, adminController_js
 exports.apiRouter.put('/admin/categories/:id', softAuthenticate, adminController_js_1.AdminController.updateCategory);
 exports.apiRouter.delete('/admin/categories/:id', softAuthenticate, adminController_js_1.AdminController.deleteCategory);
 exports.apiRouter.get('/admin/flagged-officers', softAuthenticate, adminController_js_1.AdminController.getFlaggedOfficers);
+exports.apiRouter.get('/admin/ward-analysis/:wardNumber', softAuthenticate, adminController_js_1.AdminController.getWardAnalysis);
+exports.apiRouter.get('/admin/complaints/:id/tracking', softAuthenticate, adminController_js_1.AdminController.getComplaintTrackingDetails);

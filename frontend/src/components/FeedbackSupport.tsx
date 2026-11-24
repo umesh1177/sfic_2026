@@ -90,9 +90,6 @@ export const FeedbackSupport: React.FC<FeedbackSupportProps> = ({ lang }) => {
             <HelpCircle className="w-5 h-5 text-[#10b981]" />
             {t.support_title}
           </h2>
-          <p className="text-xs text-[#64748b] mt-0.5">
-            {t.rate_resolution}
-          </p>
         </div>
 
         <button
