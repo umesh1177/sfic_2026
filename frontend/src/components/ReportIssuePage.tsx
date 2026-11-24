@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Sparkles,
   ChevronRight,
+  ChevronDown,
   ShieldCheck,
   Check,
   X,
@@ -36,6 +37,7 @@ import { enqueueOfflineSubmission, isNetworkError } from '../services/offlineSyn
 import {
   extractImageVisualFeatures,
   checkLocalCleanlinessRelevance,
+  detectCategoryFromVisualFeatures,
   ExtractedVisualFeatures
 } from '../utils/imageFeatures.js';
 import { checkTextForAbuse } from '../utils/moderation.js';
@@ -304,6 +306,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   const [description, setDescription] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('cat-03');
   const [aiIdentifiedCategory, setAiIdentifiedCategory] = useState<{ id: string; name: string; confidence: number } | null>(null);
+  const [isCategoryManuallyOverridden, setIsCategoryManuallyOverridden] = useState<boolean>(false);
   const [isUrgent, setIsUrgent] = useState<boolean>(false);
 
   // 3. Location & Map State (Uber/Rapido style)
@@ -454,12 +457,11 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     reverseGeocode(lat, lng);
   };
 
-  // Live Description Input Handler with Instant Abuse Detection & AI Category Match
-  const descDebounceRef = useRef<any>(null);
+  // Live Description Input Handler with Instant Abuse Detection
   const handleDescriptionChange = (newVal: string) => {
     setDescription(newVal);
 
-    // 1. Instant client-side Profanity & Abuse Check
+    // Live Profanity & Abuse Check (Does NOT modify or overwrite AI-predicted category from photo)
     const abuse = checkTextForAbuse(newVal);
     setAbuseAlert(abuse);
 
@@ -472,33 +474,6 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         setFormError(null);
       }
     }
-
-    // 2. Instant client-side keyword matching
-    const autoCat = detectCategoryFromText(newVal, imageFileName);
-    if (autoCat && categories.some(c => c.id === autoCat)) {
-      setSelectedCategoryId(autoCat);
-    }
-
-    // 3. Debounced AI Backend Check (PyTorch category classification)
-    if (descDebounceRef.current) clearTimeout(descDebounceRef.current);
-    descDebounceRef.current = setTimeout(async () => {
-      if (newVal.trim().length >= 4 && abuse.isSafe) {
-        try {
-          // Deep ML classification with description
-          const mlRes = await api.classifyImage(
-            imageFileName,
-            500000,
-            newVal,
-            imageUrl.startsWith('data:') ? imageUrl : undefined
-          );
-          if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
-            setSelectedCategoryId(mlRes.data.matched_category_id);
-          }
-        } catch {
-          // Silent fallback
-        }
-      }
-    }, 500);
   };
 
   // Unified visual analysis, relevance check & category prediction for BOTH uploads and live camera captures
@@ -528,8 +503,9 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     }
 
     // 2. Backend + PyTorch ML classification & semantic relevance validation
+    // Empty description is intentionally passed so prediction is 100% determined from the photo image
     try {
-      const mlRes = await api.classifyImage(fileName, fileSize, description, b64, visualFeatures, source);
+      const mlRes = await api.classifyImage(fileName, fileSize, '', b64, visualFeatures, source);
       if (mlRes.data?.is_relevant === false) {
         const msg =
           mlRes.data.relevance_reason ||
@@ -543,6 +519,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 
       if (mlRes.data?.matched_category_id && categories.some(c => c.id === mlRes.data.matched_category_id)) {
         setSelectedCategoryId(mlRes.data.matched_category_id);
+        setIsCategoryManuallyOverridden(false);
         const catObj = categories.find(c => c.id === mlRes.data.matched_category_id);
         setAiIdentifiedCategory({
           id: mlRes.data.matched_category_id,
@@ -552,7 +529,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           )
         });
         setImageValidationStatus(
-          `AI Predicted: ${mlRes.data.predicted_category_name}${
+          `AI Auto-Selected: ${catObj?.category_name || mlRes.data.predicted_category_name}${
             mlRes.data.matched_learned_sample ? ' (Learned Model)' : ''
           }`
         );
@@ -560,10 +537,17 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
         setImageValidationStatus('Photo verified (Cleanliness visual clear)');
       }
     } catch {
-      // Offline fallback: keyword detection from description/filename
-      const autoCat = detectCategoryFromText(description, fileName);
+      // Offline fallback: visual pixel features from the captured photo
+      const autoCat = detectCategoryFromVisualFeatures(visualFeatures);
       if (autoCat && categories.some(c => c.id === autoCat)) {
         setSelectedCategoryId(autoCat);
+        setIsCategoryManuallyOverridden(false);
+        const catObj = categories.find(c => c.id === autoCat);
+        setAiIdentifiedCategory({
+          id: autoCat,
+          name: catObj?.category_name || 'Civic Issue',
+          confidence: 88
+        });
       }
       setImageValidationStatus('Photo verified locally (Offline mode ready)');
     }
@@ -1301,55 +1285,96 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
               </div>
             </div>
 
-            {/* Category Selector with AI Auto-Detected Indicator */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-extrabold text-[#095c54]">
-                  Issue Category
+            {/* Category Dropdown with AI Auto-Prediction from Photo & Manual Override */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label htmlFor="complaint-category-dropdown" className="block text-xs font-extrabold text-[#095c54]">
+                  Complaint Category / ફરિયાદનો પ્રકાર
                 </label>
-                {selectedCategoryObj && (
-                  <span className="text-[11px] font-extrabold text-[#095c54] bg-[#e6f4f1] px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-[#b8e0d7]">
-                    <Sparkles className="w-3 h-3 text-[#095c54]" />
-                    AI Assigned: {selectedCategoryObj.category_name}
+                {aiIdentifiedCategory && (
+                  <span
+                    className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 border shadow-xs transition-colors ${
+                      isCategoryManuallyOverridden
+                        ? 'text-[#b45309] bg-[#fef3c7] border-[#fde68a]'
+                        : 'text-[#095c54] bg-[#e6f4f1] border-[#b8e0d7]'
+                    }`}
+                  >
+                    <Sparkles className="w-3 h-3 shrink-0" />
+                    {isCategoryManuallyOverridden
+                      ? 'Manually Adjusted'
+                      : `AI Photo-Predicted (${aiIdentifiedCategory.confidence}%)`}
                   </span>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5">
-                {categories.map(c => {
-                  const isSelected = selectedCategoryId === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setSelectedCategoryId(c.id)}
-                      className={`p-2.5 sm:p-3 rounded-2xl text-left transition-all touch-press border relative flex items-center gap-2.5 ${
-                        isSelected
-                          ? 'bg-[#095c54] text-white border-[#095c54] shadow-md shadow-[#095c54]/20 ring-2 ring-[#095c54]/30'
-                          : 'bg-[#f8faf9] text-[#0f2925] border-[#e2e8f0] hover:border-[#095c54] hover:bg-[#e6f4f1]/50'
-                      }`}
-                    >
-                      <CategoryVisualSymbol
-                        categoryId={c.id}
-                        categoryName={c.category_name}
-                        isSelected={isSelected}
-                        size="sm"
-                        showCheckBadge={false}
-                        className="shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-black truncate">{c.category_name}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                        </div>
-                        <div className={`text-[10px] font-semibold truncate mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-[#64748b]'}`}>
-                          {c.category_name_gu}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              {/* Accessible, responsive native dropdown */}
+              <div className="relative">
+                <select
+                  id="complaint-category-dropdown"
+                  value={selectedCategoryId}
+                  onChange={e => {
+                    setSelectedCategoryId(e.target.value);
+                    setIsCategoryManuallyOverridden(true);
+                  }}
+                  className={`w-full bg-[#f8faf9] text-[#0f2925] border-2 rounded-2xl px-4 py-3.5 text-sm font-bold appearance-none transition-all outline-none pr-11 shadow-xs cursor-pointer ${
+                    aiIdentifiedCategory && !isCategoryManuallyOverridden
+                      ? 'border-[#095c54] bg-[#f0faf7] ring-2 ring-[#095c54]/15'
+                      : 'border-[#e2e8f0] focus:border-[#095c54] focus:bg-white'
+                  }`}
+                >
+                  <option value="" disabled>
+                    -- Select Category or Upload Photo to Auto-Detect --
+                  </option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id} className="text-[#0f2925] py-2 font-semibold">
+                      {c.category_name} ({c.category_name_gu})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#095c54] flex items-center">
+                  <ChevronDown className="w-5 h-5" />
+                </div>
               </div>
+
+              {/* Selected Category Visual Preview Card */}
+              {selectedCategoryObj ? (
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-[#f0faf7] border border-[#b8e0d7] flex items-center gap-3 transition-all">
+                  <CategoryVisualSymbol
+                    categoryId={selectedCategoryObj.id}
+                    categoryName={selectedCategoryObj.category_name}
+                    isSelected={true}
+                    size="sm"
+                    showCheckBadge={false}
+                    className="shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-[#0f2925] truncate">
+                        {selectedCategoryObj.category_name}
+                      </span>
+                      <span className="text-[10px] font-bold text-[#095c54] bg-white px-2 py-0.5 rounded-md border border-[#b8e0d7]">
+                        {selectedCategoryObj.category_name_gu}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#64748b] truncate mt-0.5">
+                      {selectedCategoryObj.description}
+                    </p>
+                  </div>
+                  {isCategoryManuallyOverridden ? (
+                    <span className="text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-2 py-1 rounded-full shrink-0 border border-[#fde68a]">
+                      Citizen Selected
+                    </span>
+                  ) : aiIdentifiedCategory ? (
+                    <span className="text-[10px] font-bold text-[#095c54] bg-white px-2 py-1 rounded-full shrink-0 border border-[#b8e0d7] flex items-center gap-1">
+                      <Check className="w-3 h-3 text-[#095c54]" /> Auto Selected
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-[11px] text-[#64748b] italic">
+                  Upload or capture a photo above to auto-detect the category, or select from the dropdown.
+                </p>
+              )}
             </div>
 
             {/* Urgency Checkbox */}

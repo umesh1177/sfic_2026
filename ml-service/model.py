@@ -493,10 +493,12 @@ class WasteClassifierInference:
                 pass
 
         # 6. Multilingual Description & Filename Semantics
+        # When photo is provided, visual model features strictly lead category prediction.
+        text_weight = 0.2 if img_raw is not None else 1.8
         text_corpus = f"{filename} {description}".lower()
         for cat, words in CATEGORY_KEYWORDS.items():
             if cat in scores and any(w in text_corpus for w in words):
-                scores[cat] += 1.8
+                scores[cat] += text_weight
 
         # Explicit Clean Place / Sketch / Non-overflowed text cues
         clean_text_indicators = ["already clean", "clean place", "clean road", "clean park", "clean street", "clean area", "spotless", "neat and clean", "સ્વચ્છ જગ્યા", "સાફ રસ્તો", "સાફ જગ્યા", "साफ जगह", "साफ सड़क"]

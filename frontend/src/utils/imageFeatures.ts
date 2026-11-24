@@ -183,3 +183,17 @@ export function checkLocalCleanlinessRelevance(
   }
   return { isRelevant: true };
 }
+
+/**
+ * Predicts complaint category directly from pixel visual features (for offline or instantaneous fallback)
+ */
+export function detectCategoryFromVisualFeatures(f: ExtractedVisualFeatures | null): string {
+  if (!f) return 'cat-03';
+  if (f.green_ratio > 0.22 && f.brown_earth_ratio > 0.06) return 'cat-08'; // Fallen tree / Blockage
+  if (f.blue_water_ratio > 0.14) return 'cat-05'; // Drainage / Waterlogging
+  if (f.gray_road_ratio > 0.38 && f.edge_density > 0.075 && f.saturation < 0.22) return 'cat-07'; // Potholes
+  if (f.brown_earth_ratio > 0.20 && f.edge_density > 0.10) return 'cat-02'; // Open Garbage Dumping
+  if (f.saturation > 0.30 && f.edge_density > 0.10) return 'cat-03'; // Overflowing Dustbin
+  if (f.gray_road_ratio > 0.25) return 'cat-04'; // Roadside Garbage
+  return 'cat-01'; // Littering / Plastic
+}

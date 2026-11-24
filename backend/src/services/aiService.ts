@@ -361,7 +361,7 @@ export class AIService {
           const isModernModel =
             String(mlData.model_version || '').startsWith('v2') ||
             String(mlData.model_version || '').startsWith('v3');
-          const mlWeight = isModernModel ? 2.5 : 0.4;
+          const mlWeight = isModernModel ? 4.5 : 1.5;
 
           if (mlData.is_relevant === false) {
             isRelevant = false;
@@ -473,6 +473,9 @@ export class AIService {
     }
 
     // 3c. Multilingual Text Semantics (Filename + Description)
+    // When photo is provided, category classification is strictly driven by the photo;
+    // text keywords only act as a minor tie-breaker. Text keywords have standard weight only when no photo is provided.
+    const textWeight = imageBase64 ? 0.2 : 1.8;
     const textCorpus = `${fileName} ${description || ''}`.toLowerCase();
     const kwMap: Record<string, string[]> = {
       'Drainage / Waste Accumulation': ['drain', 'gutter', 'sewer', 'sewage', 'stagnant', 'choked', 'nala', 'ગટર', 'નાલી', 'नाली', 'गटर'],
@@ -489,7 +492,7 @@ export class AIService {
     for (const [catName, words] of Object.entries(kwMap)) {
       for (const w of words) {
         if (textCorpus.includes(w)) {
-          scores[catName] = (scores[catName] || 0) + 1.8;
+          scores[catName] = (scores[catName] || 0) + textWeight;
         }
       }
     }
