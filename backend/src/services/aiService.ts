@@ -357,26 +357,47 @@ export class AIService {
 
         if (res.ok) {
           const mlData = (await res.json()) as any;
+          // Only weight ML prediction strongly when v2+ or v3+ real image was analyzed with distinct confidence
+          const isModernModel =
+            String(mlData.model_version || '').startsWith('v2') ||
+            String(mlData.model_version || '').startsWith('v3');
+          const mlWeight = isModernModel ? 2.5 : 0.4;
+
           if (mlData.is_relevant === false) {
             isRelevant = false;
             relevanceReason =
               mlData.relevance_reason ||
               relevanceReason ||
               'This photo is not relevant to a cleanliness issue and cannot be submitted.';
+          } else if (
+            mlData.category === 'Clean / Not Garbage' ||
+            mlData.category === 'Garbage Sketch / Drawing' ||
+            mlData.category === 'Non-Overflowed Dustbin'
+          ) {
+            isRelevant = false;
+            if (mlData.category === 'Garbage Sketch / Drawing') {
+              relevanceReason =
+                'This image appears to be a drawing, sketch, or illustration rather than an actual photograph. Please upload a real photograph.';
+            } else if (mlData.category === 'Non-Overflowed Dustbin') {
+              relevanceReason =
+                'The dustbin in this photo is not overflowing and is within capacity. Municipal clearance complaints can only be filed for overflowing or damaged community bins.';
+            } else {
+              relevanceReason =
+                'The location in this photo appears to be clean and well-maintained with no visible garbage or waste. A complaint cannot be registered for a clean place.';
+            }
           }
+
           mlLearnedCount = Number(mlData.total_learned_samples || 0);
           if (mlData.matched_learned_samples) {
             matchedLearnedSample = true;
           }
-          // Only weight ML prediction strongly when v2+ or real image was analyzed with distinct confidence
-          const isV2 = String(mlData.model_version || '').startsWith('v2');
-          const mlWeight = isV2 ? 1.8 : 0.4;
+
           if (mlData.category && scores[mlData.category] !== undefined) {
             scores[mlData.category] += (Number(mlData.confidence) || 0.85) * mlWeight;
           }
-          if (isV2 && mlData.model_name) {
+          if (isModernModel && mlData.model_name) {
             mlModelName = mlData.model_name;
-            mlModelVersion = mlData.model_version || 'v2.0.0';
+            mlModelVersion = mlData.model_version || 'v3.0.0';
           }
         }
       } catch {
