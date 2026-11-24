@@ -8,6 +8,8 @@ import os
 import sys
 import time
 import json
+import math
+import copy
 import random
 import shutil
 import argparse
@@ -124,6 +126,8 @@ def bootstrap_sample_dataset(data_dir: str):
         os.makedirs(split_dir, exist_ok=True)
         for cat in CIVIC_CATEGORIES:
             cat_clean = cat.replace(" / ", "_").replace("-", "_").replace(" ", "_")
+            if cat == "Garbage Sketch / Drawing":
+                cat_clean = "Garbage_Sketch"
             if cat in ["Clean / Not Garbage", "Garbage Sketch / Drawing", "Non-Overflowed Dustbin"]:
                 cat_folder = os.path.join(split_dir, "Invalid_Categories", cat_clean)
             else:
@@ -191,6 +195,8 @@ class PreprocessedDataset(Dataset):
         self.samples = []
 
         valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+        real_samples_by_class: Dict[str, List] = {c: [] for c in CIVIC_CATEGORIES}
+        bootstrap_samples_by_class: Dict[str, List] = {c: [] for c in CIVIC_CATEGORIES}
         class_tally = {c: 0 for c in CIVIC_CATEGORIES}
 
         for dirpath, dirs, filenames in os.walk(root):
@@ -204,15 +210,45 @@ class PreprocessedDataset(Dataset):
             except ValueError:
                 continue
 
+            cat_name = CIVIC_CATEGORIES[civic_idx]
             for fname in filenames:
                 ext = os.path.splitext(fname)[1].lower()
-                if ext in valid_exts and not fname.startswith((".", "bootstrap_", "sample_")):
+                if ext in valid_exts and not fname.startswith("."):
                     full_path = os.path.join(dirpath, fname)
-                    self.samples.append((full_path, civic_idx))
-                    class_tally[CIVIC_CATEGORIES[civic_idx]] += 1
+                    if fname.startswith(("bootstrap_", "sample_")):
+                        bootstrap_samples_by_class[cat_name].append((full_path, civic_idx))
+                    else:
+                        real_samples_by_class[cat_name].append((full_path, civic_idx))
+
+        # Assemble samples: prioritize real photos; use bootstrap only if category has 0 real photos
+        for cat_name in CIVIC_CATEGORIES:
+            r_samples = real_samples_by_class[cat_name]
+            b_samples = bootstrap_samples_by_class[cat_name]
+
+            if len(r_samples) > 0:
+                if self.is_training and len(r_samples) < 150:
+                    # Oversample minority class to prevent gradient starvation
+                    multiplier = math.ceil(150 / len(r_samples))
+                    selected = (r_samples * multiplier)[:150]
+                else:
+                    selected = r_samples
+            else:
+                if self.is_training and len(b_samples) > 0 and len(b_samples) < 150:
+                    multiplier = math.ceil(150 / len(b_samples))
+                    selected = (b_samples * multiplier)[:150]
+                else:
+                    selected = b_samples
+
+            self.samples.extend(selected)
+            class_tally[cat_name] = len(selected)
 
         if is_training:
-            print(f"[DATASET SCAN] Found {len(self.samples)} images across {len(CIVIC_CATEGORIES)} classes:")
+            print(f"[DATASET SCAN] Found {len(self.samples)} training samples across {len(CIVIC_CATEGORIES)} classes:")
+            for cat, count in class_tally.items():
+                real_cnt = len(real_samples_by_class[cat])
+                print(f"  - {cat:30}: {count} samples ({real_cnt} real images)")
+        else:
+            print(f"[VAL SCAN] Found {len(self.samples)} validation images across {len(CIVIC_CATEGORIES)} classes:")
             for cat, count in class_tally.items():
                 print(f"  - {cat:30}: {count} images")
 
@@ -399,7 +435,7 @@ def train_waste_model(
         # Early Stopping check
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
-            best_weights = model.state_dict().copy()
+            best_weights = copy.deepcopy(model.state_dict())
             epochs_no_improve = 0
             torch.save(best_weights, output_weights)
             print(f"  --> Saved new best checkpoint to {output_weights}")
