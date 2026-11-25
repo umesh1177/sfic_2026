@@ -32,7 +32,8 @@ import {
   User,
   Edit3,
   Eye,
-  X
+  X,
+  XCircle
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
@@ -79,6 +80,24 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     'Inspected on-site evidence photos. All civic waste cleared, area swept, and disinfected with bleaching powder.'
   );
   const [verifying, setVerifying] = useState<boolean>(false);
+  const [verifyingEvidenceId, setVerifyingEvidenceId] = useState<string | null>(null);
+  const [rejectingEvidenceId, setRejectingEvidenceId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
+  const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
+  const [targetRejectIds, setTargetRejectIds] = useState<string[]>([]);
+
+  // Squad Management States (Assign New Squad, Add/Remove Worker)
+  const [showAssignSquadModal, setShowAssignSquadModal] = useState<boolean>(false);
+  const [showAddWorkerModal, setShowAddWorkerModal] = useState<boolean>(false);
+  const [wardTeams, setWardTeams] = useState<any[]>([]);
+  const [wardWorkers, setWardWorkers] = useState<any[]>([]);
+  const [selectedNewTeamId, setSelectedNewTeamId] = useState<string>('');
+  const [selectedNewLeaderId, setSelectedNewLeaderId] = useState<string>('');
+  const [newSquadMaxWorkDays, setNewSquadMaxWorkDays] = useState<number>(3);
+  const [assigningSquad, setAssigningSquad] = useState<boolean>(false);
+  const [addingWorkerId, setAddingWorkerId] = useState<string | null>(null);
+  const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
+  const [fullPhotoModalUrl, setFullPhotoModalUrl] = useState<string | null>(null);
 
   // Unified Verify Complete + Editable Post Preview & Publish Modal State
   const [showPublishModal, setShowPublishModal] = useState<boolean>(false);
@@ -95,7 +114,8 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
   const [postWasteKg, setPostWasteKg] = useState<number>(250);
   const [publishing, setPublishing] = useState<boolean>(false);
   const [isPublished, setIsPublished] = useState<boolean>(false);
-  const [beforePhoto, setBeforePhoto] = useState<string>('');
+  const [beforePhotos, setBeforePhotos] = useState<string[]>([]);
+  const [newBeforePhotoUrl, setNewBeforePhotoUrl] = useState<string>('');
   const [afterPhotos, setAfterPhotos] = useState<string[]>([]);
   const [newAfterPhotoUrl, setNewAfterPhotoUrl] = useState<string>('');
 
@@ -248,12 +268,35 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
       : `Ward ${wardNum} (${wardNm}) Sanitation Squad successfully cleared accumulated waste, swept the perimeter, and restored civic hygiene at ${loc} (${data.overview.complaint_number}).`;
     setPostDescription(defaultDesc);
 
-    const bPhoto =
-      data.work_progress_evidence?.before_photo_url ||
-      data.citizen_report?.photo_url ||
-      data.overview?.image_url ||
-      '';
-    setBeforePhoto(bPhoto);
+    const uniqueBeforeUrls: string[] = [];
+    const pushBeforeIfValid = (u?: string) => {
+      if (u && typeof u === 'string' && u.trim() && !uniqueBeforeUrls.includes(u.trim())) {
+        uniqueBeforeUrls.push(u.trim());
+      }
+    };
+    if (Array.isArray(data.work_progress_evidence?.before_photos)) {
+      data.work_progress_evidence.before_photos.forEach((u: string) => pushBeforeIfValid(u));
+    }
+    pushBeforeIfValid(data.work_progress_evidence?.before_photo_url);
+    if (Array.isArray(data.citizen_report?.original_photos)) {
+      data.citizen_report.original_photos.forEach((u: string) => pushBeforeIfValid(u));
+    }
+    pushBeforeIfValid(data.citizen_report?.photo_url);
+    pushBeforeIfValid(data.overview?.image_url);
+
+    // Also collect evidence marked as before stage
+    const allEvItems: any[] = data.work_progress_evidence?.evidence_items || [];
+    allEvItems.forEach((ev: any) => {
+      const st = String(ev.evidence_type || ev.stage || '').toLowerCase();
+      if (st === 'before') {
+        if (Array.isArray(ev.photos)) {
+          ev.photos.forEach((p: string) => pushBeforeIfValid(p));
+        }
+        pushBeforeIfValid(ev.storage_path || ev.photo_url);
+      }
+    });
+
+    setBeforePhotos(uniqueBeforeUrls);
 
     const uniqueAfterUrls: string[] = [];
     const pushIfValid = (u?: string) => {
@@ -328,24 +371,24 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     setActionError(null);
     stopVoiceInput();
     try {
-      const beforeUrl =
-        beforePhoto ||
-        details?.work_progress_evidence?.before_photo_url ||
-        details?.citizen_report?.photo_url ||
-        details?.overview?.image_url ||
-        '';
-      const afterUrl =
-        afterPhotos[0] ||
-        details?.work_progress_evidence?.after_photo_url ||
-        details?.overview?.resolved_image_url ||
-        '';
+      const bPhotoList = beforePhotos.length > 0
+        ? beforePhotos
+        : (details?.work_progress_evidence?.before_photo_url
+            ? [details.work_progress_evidence.before_photo_url]
+            : (details?.citizen_report?.photo_url ? [details.citizen_report.photo_url] : []));
+      const aPhotoList = afterPhotos.length > 0
+        ? afterPhotos
+        : (details?.work_progress_evidence?.after_photo_url
+            ? [details.work_progress_evidence.after_photo_url]
+            : (details?.overview?.resolved_image_url ? [details.overview.resolved_image_url] : []));
 
       await api.publishWardComplaintToCommunity(complaintId, {
         title: postTitle.trim() || `Cleanliness Restored at ${postLocation || 'Navsari'}`,
         description: postDescription.trim() || verificationNotes,
-        before_photo_url: beforeUrl,
-        after_photo_url: afterUrl,
-        after_photos: afterPhotos.length > 0 ? afterPhotos : (afterUrl ? [afterUrl] : []),
+        before_photo_url: bPhotoList[0] || '',
+        before_photos: bPhotoList,
+        after_photo_url: aPhotoList[0] || '',
+        after_photos: aPhotoList,
         waste_kg: Number(postWasteKg) || 0,
         completed_date: postCompletedDate,
         completed_time: postCompletedTime,
@@ -369,6 +412,202 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     } finally {
       setPublishing(false);
     }
+  };
+
+  const loadTeamsAndWorkers = async () => {
+    try {
+      const [tRes, wRes] = await Promise.all([
+        api.getWardTeams(),
+        api.getWardWorkers()
+      ]);
+      const teams = tRes.data || [];
+      const workers = wRes.data || [];
+      setWardTeams(teams);
+      setWardWorkers(workers);
+      if (teams.length > 0 && !selectedNewTeamId) {
+        setSelectedNewTeamId(teams[0].id);
+        const members = teams[0].members || [];
+        if (members.length > 0) {
+          setSelectedNewLeaderId(members[0].id || members[0].worker_id);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const openAssignSquadModal = () => {
+    loadTeamsAndWorkers();
+    setShowAssignSquadModal(true);
+  };
+
+  const openAddWorkerModal = () => {
+    loadTeamsAndWorkers();
+    setShowAddWorkerModal(true);
+  };
+
+  const handleAssignNewSquad = async () => {
+    if (!selectedNewTeamId) {
+      setActionError('Please select a squad to assign.');
+      return;
+    }
+    setAssigningSquad(true);
+    setActionError(null);
+    try {
+      await api.assignWardComplaintTeam(complaintId, {
+        team_id: selectedNewTeamId,
+        temporary_leader_id: selectedNewLeaderId || undefined,
+        max_work_days: newSquadMaxWorkDays || 3
+      });
+      setActionSuccess('New squad successfully assigned to complaint!');
+      setShowAssignSquadModal(false);
+      confetti({ particleCount: 35, spread: 60 });
+      await fetchDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to assign new squad.');
+    } finally {
+      setAssigningSquad(false);
+    }
+  };
+
+  const handleAddWorkerToSquad = async (workerId: string) => {
+    setAddingWorkerId(workerId);
+    setActionError(null);
+    try {
+      await api.addWorkerToComplaintSquad(complaintId, workerId);
+      setActionSuccess('Worker successfully added to active squad!');
+      setShowAddWorkerModal(false);
+      await fetchDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to add worker to squad.');
+    } finally {
+      setAddingWorkerId(null);
+    }
+  };
+
+  const handleRemoveWorkerFromSquad = async (workerId: string) => {
+    setRemovingWorkerId(workerId);
+    setActionError(null);
+    try {
+      await api.removeWorkerFromComplaintSquad(complaintId, workerId);
+      setActionSuccess('Worker removed from active squad.');
+      await fetchDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to remove worker from squad.');
+    } finally {
+      setRemovingWorkerId(null);
+    }
+  };
+
+  // Helper to group multiple photo rows from same submission batch into single card
+  const groupEvidenceBatches = (items: any[]) => {
+    if (!items || !Array.isArray(items)) return [];
+    const groups: {
+      id: string;
+      ids: string[];
+      evidence_type: string;
+      stage: string;
+      description: string;
+      worker_name?: string;
+      device_capture_timestamp?: string;
+      created_at?: string;
+      distance_from_assignment_meters?: number;
+      photos: string[];
+      officer_verified: boolean;
+      review_status: string;
+      officer_notes?: string;
+    }[] = [];
+
+    items.forEach((item: any) => {
+      const rawPhotos: string[] = Array.isArray(item.photos) && item.photos.length > 0
+        ? item.photos
+        : [item.storage_path || item.photo_url].filter(Boolean);
+      const itemTs = new Date(item.device_capture_timestamp || item.created_at || Date.now()).getTime();
+      const itemStage = String(item.evidence_type || item.stage || 'progress').toLowerCase();
+      const itemDesc = (item.description || '').trim();
+
+      // Find matching group within 90s window and matching stage
+      const match = groups.find(g => {
+        const gTs = new Date(g.device_capture_timestamp || g.created_at || Date.now()).getTime();
+        const gStage = String(g.evidence_type || g.stage || 'progress').toLowerCase();
+        return gStage === itemStage && Math.abs(itemTs - gTs) < 90000;
+      });
+
+      if (match) {
+        if (item.id && !match.ids.includes(item.id)) match.ids.push(item.id);
+        rawPhotos.forEach(p => {
+          if (p && !match.photos.includes(p)) match.photos.push(p);
+        });
+        if (itemDesc && !match.description.includes(itemDesc)) {
+          match.description = match.description ? `${match.description} · ${itemDesc}` : itemDesc;
+        }
+      } else {
+        groups.push({
+          id: item.id || `batch-${Date.now()}`,
+          ids: item.id ? [item.id] : [],
+          evidence_type: item.evidence_type || item.stage || 'progress',
+          stage: item.stage || item.evidence_type || 'progress',
+          description: itemDesc,
+          worker_name: item.worker_name,
+          device_capture_timestamp: item.device_capture_timestamp || item.created_at,
+          created_at: item.created_at,
+          distance_from_assignment_meters: item.distance_from_assignment_meters,
+          photos: [...rawPhotos],
+          officer_verified: Boolean(item.officer_verified || item.review_status === 'verified'),
+          review_status: item.review_status || (item.officer_verified ? 'verified' : 'pending'),
+          officer_notes: item.officer_notes || item.review_comments
+        });
+      }
+    });
+
+    return groups;
+  };
+
+  const handleVerifyEvidence = async (evidenceIds?: string[]) => {
+    setVerifyingEvidenceId(evidenceIds && evidenceIds.length === 1 ? evidenceIds[0] : 'all');
+    setActionError(null);
+    try {
+      const res = await api.verifyWardComplaintEvidence(complaintId, evidenceIds);
+      setActionSuccess(res.message || 'Team leader evidence successfully verified! Recorded in Evidence History.');
+      confetti({ particleCount: 40, spread: 65, origin: { y: 0.6 } });
+      await fetchDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to verify leader evidence.');
+    } finally {
+      setVerifyingEvidenceId(null);
+    }
+  };
+
+  const handleRejectEvidence = async (evidenceIds?: string[], reason?: string) => {
+    setRejectingEvidenceId(evidenceIds && evidenceIds.length === 1 ? evidenceIds[0] : 'all');
+    setActionError(null);
+    try {
+      const res = await api.rejectWardComplaintEvidence(
+        complaintId,
+        evidenceIds,
+        reason || rejectReason || 'Evidence rejected by Ward Officer. Please re-clean site and upload fresh photos.'
+      );
+      setActionSuccess(res.message || 'Evidence marked as rejected. Team leader notified in task dossier.');
+      setShowRejectModal(false);
+      setRejectReason('');
+      setTargetRejectIds([]);
+      await fetchDetails();
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to reject evidence.');
+    } finally {
+      setRejectingEvidenceId(null);
+    }
+  };
+
+  const openRejectModalFor = (evidenceIds?: string[]) => {
+    setTargetRejectIds(evidenceIds || []);
+    setRejectReason('');
+    setShowRejectModal(true);
   };
 
   if (loading) {
@@ -705,7 +944,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
         </div>
       )}
 
-      {/* 4. TAB 2: ASSIGNED TEAM MEMBERS */}
+      {/* 4. TAB 2: ASSIGNED TEAM MEMBERS & SQUAD MANAGEMENT */}
       {activeTab === 'team' && (
         <div className="bg-white rounded-3xl p-6 border border-[#e2e8f0] shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -715,109 +954,224 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 <span>Assigned Sanitation Squad Roster</span>
               </h3>
               <p className="text-xs text-slate-500">
-                Field sanitation squad deployed for this assignment with designated team leader.
+                Active squad dispatched to this complaint. You can add workers, remove members, or reassign a new squad.
               </p>
             </div>
-            {overview.temporary_team_leader_name && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-3 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 text-xs font-black flex items-center gap-1.5">
-                  <Crown className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Leader: {overview.temporary_team_leader_name}</span>
-                </span>
-                <span
-                  className={`px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 ${
-                    (overview as any).is_work_sla_overdue
-                      ? 'bg-red-50 text-red-800 border-red-300'
-                      : 'bg-sky-50 text-sky-900 border-sky-200'
-                  }`}
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>
-                    Leader Max Work Days: {(overview as any).max_work_days ?? 3} Days
-                    {(overview as any).is_work_sla_overdue
-                      ? ` (Overdue: ${(overview as any).work_days_elapsed}d)`
-                      : ` (Day ${(overview as any).work_days_elapsed ?? 0}/${(overview as any).max_work_days ?? 3})`}
-                  </span>
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={openAddWorkerModal}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#095c54] text-xs font-extrabold flex items-center gap-1.5 transition"
+                title="Add a sanitation worker to this squad"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Worker</span>
+              </button>
+              <button
+                type="button"
+                onClick={openAssignSquadModal}
+                className="px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 transition shadow-2xs"
+                title="Assign a different squad to this complaint"
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Assign New Squad</span>
+              </button>
+            </div>
           </div>
 
-          {(team_attendance?.team_members && team_attendance.team_members.length > 0) ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {team_attendance.team_members.map((member: any, idx: number) => (
-                <div
-                  key={idx}
-                  className={`p-4 rounded-2xl border transition ${
-                    member.is_temporary_leader
-                      ? 'bg-amber-50/50 border-amber-200'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
-                        member.is_temporary_leader ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700'
-                      }`}>
-                        {member.is_temporary_leader ? '👑' : idx + 1}
-                      </div>
-                      <div>
-                        <p className="text-xs font-black text-[#0f2925]">{member.name || member.full_name || member.worker_name}</p>
-                        <p className="text-[10px] text-slate-500 font-mono">{member.worker_code}</p>
-                      </div>
-                    </div>
-                    {member.is_temporary_leader && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] uppercase">
-                        Leader
-                      </span>
-                    )}
-                  </div>
+          {overview.temporary_team_leader_name && (
+            <div className="flex items-center gap-2 flex-wrap pb-2">
+              <span className="px-3 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 text-xs font-black flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5 text-amber-600" />
+                <span>Current Leader: {overview.temporary_team_leader_name}</span>
+              </span>
+              <span
+                className={`px-3 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 ${
+                  (overview as any).is_work_sla_overdue
+                    ? 'bg-red-50 text-red-800 border-red-300'
+                    : 'bg-sky-50 text-sky-900 border-sky-200'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>
+                  Max Work Days: {(overview as any).max_work_days ?? 3} Days
+                  {(overview as any).is_work_sla_overdue
+                    ? ` (Overdue: ${(overview as any).work_days_elapsed}d)`
+                    : ` (Day ${(overview as any).work_days_elapsed ?? 0}/${(overview as any).max_work_days ?? 3})`}
+                </span>
+              </span>
+            </div>
+          )}
 
-                  <div className="text-[11px] text-slate-600 space-y-1 pt-2 border-t border-slate-200/60">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Designation:</span>
-                      <strong className="text-slate-800">{member.designation || 'Sanitation Worker'}</strong>
+          {/* Active Squad Members Grid */}
+          {(team_attendance?.team_members && team_attendance.team_members.length > 0) ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                  Active Squad Members ({team_attendance.team_members.length})
+                </span>
+                <span className="text-[11px] text-slate-400">Deployed On-Site</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {team_attendance.team_members.map((member: any, idx: number) => {
+                  const workerId = member.worker_id || member.id;
+                  const isLeader = Boolean(member.is_temporary_leader || member.temporary_leader);
+
+                  return (
+                    <div
+                      key={workerId || idx}
+                      className={`p-4 rounded-2xl border transition relative ${
+                        isLeader
+                          ? 'bg-amber-50/50 border-amber-200'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                            isLeader ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            {isLeader ? '👑' : idx + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-[#0f2925] truncate">
+                              {member.name || member.full_name || member.worker_name}
+                            </p>
+                            <p className="text-[10px] text-slate-500 font-mono">{member.worker_code}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isLeader && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] uppercase">
+                              Leader
+                            </span>
+                          )}
+                          {!isLeader && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveWorkerFromSquad(workerId)}
+                              disabled={removingWorkerId === workerId}
+                              className="px-2 py-0.5 rounded-md text-[10px] font-bold text-rose-600 hover:bg-rose-100/70 border border-rose-200 transition disabled:opacity-50"
+                              title="Remove worker from this squad"
+                            >
+                              {removingWorkerId === workerId ? '...' : 'Remove'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-600 space-y-1 pt-2 border-t border-slate-200/60">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Designation:</span>
+                          <strong className="text-slate-800">{member.designation || member.designation_name || 'Sanitation Worker'}</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Contact:</span>
+                          <a href={`tel:${member.phone || '+919825120001'}`} className="font-bold text-[#095c54] hover:underline flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            <span>{member.phone || '+91 98251 20001'}</span>
+                          </a>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Contact:</span>
-                      <a href={`tel:${member.phone || '+919825120001'}`} className="font-bold text-[#095c54] hover:underline flex items-center gap-1">
-                        <Phone className="w-3 h-3" />
-                        <span>{member.phone || '+91 98251 20001'}</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
           ) : (
-            <div className="p-10 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+            <div className="p-10 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
               <Users className="w-10 h-10 text-slate-300 mx-auto" />
               <h4 className="text-sm font-extrabold text-slate-700">No Field Sanitation Squad Assigned Yet</h4>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                This complaint is currently pending team assignment. Use the View modal to allocate an active squad and designated team leader.
+                This complaint has not been allocated a squad yet. Click below to assign an active squad and team leader.
               </p>
+              <button
+                type="button"
+                onClick={openAssignSquadModal}
+                className="px-4 py-2 bg-[#095c54] text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Assign Sanitation Squad</span>
+              </button>
             </div>
           )}
+
+          {/* PREVIOUSLY ASSIGNED SQUADS HISTORY */}
+          <div className="pt-6 border-t border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-[#0f2925] uppercase tracking-wider flex items-center gap-2">
+                <History className="w-4 h-4 text-slate-500" />
+                <span>Previously Assigned Squads History</span>
+              </h4>
+              <span className="text-[11px] text-slate-400 font-medium">Archived Squad Deployments</span>
+            </div>
+
+            {details.previous_squads && details.previous_squads.length > 0 ? (
+              <div className="space-y-3">
+                {details.previous_squads.map((prevSquad: any, pIdx: number) => (
+                  <div key={prevSquad.assignment_id || pIdx} className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-[10px] font-mono font-bold">
+                          Assignment #{prevSquad.attempt_number || pIdx + 1}
+                        </span>
+                        <span className="font-extrabold text-xs text-[#0f2925]">
+                          {prevSquad.team_name || 'Sanitation Squad'}
+                        </span>
+                        <span className="text-slate-400 text-xs">·</span>
+                        <span className="text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Crown className="w-3 h-3 text-amber-600" />
+                          <span>Leader: {prevSquad.team_leader_name || 'Designated Leader'}</span>
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        Assigned: {new Date(prevSquad.assigned_at).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    {prevSquad.team_members && prevSquad.team_members.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-600 pt-1 border-t border-slate-200/50">
+                        <span className="text-slate-400 font-semibold text-[10px]">Deployed Roster:</span>
+                        {prevSquad.team_members.map((m: any, mIdx: number) => (
+                          <span key={mIdx} className="px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[10px] font-medium">
+                            {m.name || m.worker_name} {m.is_temporary_leader ? '👑' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-slate-50/60 border border-dashed border-slate-200 text-center space-y-1">
+                <p className="text-xs font-bold text-slate-600">Initial Squad Deployment Active</p>
+                <p className="text-[11px] text-slate-400">
+                  No previous squad reassignments. If you assign a new squad above, previously assigned squad records will be preserved here.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* 5. TAB 3: DAY-TO-DAY ATTENDANCE RECORD (COLLAPSIBLE ACCORDION PER DAY) */}
+      {/* 5. TAB 3: DYNAMIC DAY-WISE DUTY ATTENDANCE RECORD (ACCORDIONS) */}
       {activeTab === 'attendance' && (
         <div className="bg-white rounded-3xl p-6 border border-[#e2e8f0] shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-base font-extrabold text-[#0f2925] flex items-center gap-2">
                 <CalendarCheck2 className="w-5 h-5 text-[#095c54]" />
-                <span>Day-to-Day Geofenced Attendance Records</span>
+                <span>Day-by-Day Geofenced Attendance Records</span>
               </h3>
               <p className="text-xs text-slate-500">
-                Click each day to expand and inspect live squad GPS check-in timestamps within the 100m site perimeter.
+                Tracked daily attendance for active squad members. 1 check-in &amp; 1 check-out recorded per day within the 150m work zone.
               </p>
             </div>
             {team_attendance?.team_members && team_attendance.team_members.length > 0 && (
               <span className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-black flex items-center gap-1">
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>100m Geofence Active</span>
+                <span>150m Geofence Active</span>
               </span>
             )}
           </div>
@@ -832,69 +1186,88 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Day 1 Accordion Card */}
               {(() => {
-                const dayKey = 'day-1';
-                const isExpanded = !!expandedAttendanceDays[dayKey];
                 const members = team_attendance.team_members || [];
-                const records = team_attendance.attendance_records || team_attendance.records || [];
-                const verifiedCount = members.filter((m: any) =>
-                  records.some((r: any) => r.worker_id === m.worker_id || r.worker_id === m.id)
-                ).length;
-                const dateDisplay = new Date(overview.submitted_at || Date.now()).toLocaleDateString('en-IN', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric'
+                const allRecords = team_attendance.attendance_records || team_attendance.records || [];
+
+                // Group attendance records dynamically by calendar date (YYYY-MM-DD)
+                const attDayMap = new Map<string, { dateKey: string; displayDate: string; records: any[] }>();
+
+                allRecords.forEach((r: any) => {
+                  const raw = r.attendance_timestamp || r.created_at || Date.now();
+                  const dt = new Date(raw);
+                  const dateKey = isNaN(dt.getTime())
+                    ? 'recent'
+                    : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                  const displayDate = isNaN(dt.getTime())
+                    ? 'Recent'
+                    : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                  if (!attDayMap.has(dateKey)) {
+                    attDayMap.set(dateKey, { dateKey, displayDate, records: [] });
+                  }
+                  attDayMap.get(dateKey)!.records.push(r);
                 });
 
-                return (
-                  <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-                    {/* Accordion Header */}
-                    <div
-                      onClick={() => toggleAttendanceDay(dayKey)}
-                      className="p-3 sm:p-4 bg-gradient-to-r from-emerald-50/60 to-white hover:from-emerald-50 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2 select-none"
-                    >
-                      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-xs shrink-0">
-                          D1
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <h4 className="text-xs font-black text-[#0f2925]">Day 1 Attendance</h4>
-                            <span className="text-[11px] font-bold text-slate-500">· {dateDisplay}</span>
+                // Fallback to day 1 date if no records logged yet
+                if (attDayMap.size === 0) {
+                  const dt = new Date(overview.submitted_at || Date.now());
+                  const dateKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                  const displayDate = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                  attDayMap.set(dateKey, { dateKey, displayDate, records: [] });
+                }
+
+                const dayGroups = Array.from(attDayMap.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+                return dayGroups.map((group, dayIdx) => {
+                  const dayKey = `att-day-${group.dateKey}`;
+                  const isExpanded = expandedAttendanceDays[dayKey] !== undefined ? expandedAttendanceDays[dayKey] : (dayIdx === 0 || dayIdx === dayGroups.length - 1);
+                  const verifiedCount = members.filter((m: any) =>
+                    group.records.some((r: any) => r.worker_id === m.worker_id || r.worker_id === m.id)
+                  ).length;
+
+                  return (
+                    <div key={dayKey} className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                      {/* Accordion Header */}
+                      <div
+                        onClick={() => toggleAttendanceDay(dayKey)}
+                        className="p-3 sm:p-4 bg-gradient-to-r from-emerald-50/60 to-white hover:from-emerald-50 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2 select-none"
+                      >
+                        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs shadow-xs shrink-0">
+                            D{dayIdx + 1}
                           </div>
-                          <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Squad: <strong>{overview.current_assigned_team || 'Sanitation Squad'}</strong> (Leader: {overview.temporary_team_leader_name || 'Designated Leader'})
-                          </p>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h4 className="text-xs font-black text-[#0f2925]">Day {dayIdx + 1} Attendance</h4>
+                              <span className="text-[11px] font-bold text-slate-500">· {group.displayDate}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-medium truncate">
+                              Squad: <strong>{overview.current_assigned_team || 'Sanitation Squad'}</strong> (Leader: {overview.temporary_team_leader_name || 'Designated Leader'})
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            verifiedCount > 0
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-amber-100 text-amber-900 border border-amber-300'
+                          }`}>
+                            {verifiedCount > 0 ? `✓ ${verifiedCount}/${members.length} Present` : `⏳ 0/${members.length} Checked In`}
+                          </span>
+                          <div className="p-1 rounded-lg hover:bg-slate-200/60 text-slate-500 transition">
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                          verifiedCount > 0
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : 'bg-amber-100 text-amber-900 border border-amber-300'
-                        }`}>
-                          {verifiedCount > 0 ? `✓ ${verifiedCount}/${members.length} Present` : `⏳ 0/${members.length} Checked In`}
-                        </span>
-                        <div className="p-1 rounded-lg hover:bg-slate-200/60 text-slate-500 transition">
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Accordion Content: Mobile Cards + Desktop Table + Pagination */}
-                    {isExpanded && (() => {
-                      const pagedMembers = members.slice(
-                        (attendancePage - 1) * attendancePageSize,
-                        attendancePage * attendancePageSize
-                      );
-                      return (
+                      {/* Accordion Content */}
+                      {isExpanded && (
                         <div className="bg-white border-t border-slate-200/80">
-                          {/* Mobile Attendance Cards (< md) */}
+                          {/* Mobile Cards */}
                           <div className="md:hidden divide-y divide-slate-100">
-                            {pagedMembers.map((member: any, idx: number) => {
-                              const attRec = records.find((r: any) => r.worker_id === member.worker_id || r.worker_id === member.id);
+                            {members.map((member: any, idx: number) => {
+                              const attRec = group.records.find((r: any) => r.worker_id === member.worker_id || r.worker_id === member.id);
                               const isPresent = !!attRec;
                               return (
                                 <div key={idx} className="p-3 flex items-center justify-between gap-2">
@@ -912,7 +1285,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                     <div className="text-[10px] text-slate-500 font-mono">
                                       {isPresent
                                         ? `${new Date(attRec.attendance_timestamp || attRec.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · ${attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m`
-                                        : 'Awaiting site arrival'}
+                                        : 'Awaiting site check-in'}
                                     </div>
                                   </div>
                                   {isPresent ? (
@@ -929,7 +1302,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                             })}
                           </div>
 
-                          {/* Desktop Attendance Table (>= md) */}
+                          {/* Desktop Table */}
                           <div className="hidden md:block p-4 overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs">
                               <thead>
@@ -942,8 +1315,8 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {pagedMembers.map((member: any, idx: number) => {
-                                  const attRec = records.find((r: any) => r.worker_id === member.worker_id || r.worker_id === member.id);
+                                {members.map((member: any, idx: number) => {
+                                  const attRec = group.records.find((r: any) => r.worker_id === member.worker_id || r.worker_id === member.id);
                                   const isPresent = !!attRec;
 
                                   return (
@@ -969,10 +1342,10 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                         {isPresent ? (
                                           <span className="text-emerald-700 font-bold flex items-center gap-1">
                                             <LocateFixed className="w-3.5 h-3.5 text-emerald-600" />
-                                            <span>{attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m (Within 100m)</span>
+                                            <span>{attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m (Within 150m)</span>
                                           </span>
                                         ) : (
-                                          <span className="text-slate-400 italic text-[11px]">Awaiting site arrival</span>
+                                          <span className="text-slate-400 italic text-[11px]">Awaiting site check-in</span>
                                         )}
                                       </td>
                                       <td className="py-3 px-3 text-right">
@@ -982,7 +1355,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                           </span>
                                         ) : (
                                           <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 font-bold text-[10px] border border-amber-200">
-                                            ⏳ Not Yet Checked In
+                                            ⏳ Not Checked In
                                           </span>
                                         )}
                                       </td>
@@ -992,371 +1365,255 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                               </tbody>
                             </table>
                           </div>
-
-                          <TablePagination
-                            currentPage={attendancePage}
-                            totalItems={members.length}
-                            pageSize={attendancePageSize}
-                            onPageChange={setAttendancePage}
-                            itemLabel="squad members"
-                          />
                         </div>
-                      );
-                    })()}
-                  </div>
-                );
+                      )}
+                    </div>
+                  );
+                });
               })()}
             </div>
           )}
         </div>
       )}
 
-      {/* 6. TAB 4: EVIDENCE SUBMITTED BY TEAM LEADER */}
+      {/* 6. TAB 4: ALL LEADER EVIDENCES AWAITING OFFICER VERIFICATION OR REJECTION */}
       {activeTab === 'evidence' && (
         <div className="bg-white rounded-3xl p-6 border border-[#e2e8f0] shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h3 className="text-base font-extrabold text-[#0f2925] flex items-center gap-2">
                 <Camera className="w-5 h-5 text-[#095c54]" />
-                <span>Team Leader Evidence Dossier</span>
+                <span>Team Leader Evidence Verification Dossier</span>
               </h3>
               <p className="text-xs text-slate-500">
-                Before & After photographs, timestamps, GPS metadata, and descriptions submitted from the field by the Team Leader.
+                All field evidence submissions uploaded by the Team Leader awaiting verification. Review each submission with photos and GPS logs before approving or rejecting.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={fetchDetails}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Refresh</span>
-              </button>
-              {!isResolved && (
-                <button
-                  onClick={openVerifyPublishModal}
-                  className="px-4 py-2 bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Verify & Mark Complete</span>
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={fetchDetails}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 self-start sm:self-auto"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh</span>
+            </button>
           </div>
 
-          {/* Before & After Photo Comparison */}
           {(() => {
-            const evidenceList: any[] = work_progress_evidence?.evidence_items || [];
-            const beforeItems = evidenceList.filter((e: any) => String(e.evidence_type || '').toLowerCase() === 'before');
-            const afterItems = evidenceList.filter((e: any) => String(e.evidence_type || '').toLowerCase() === 'after');
-            const beforeEv = work_progress_evidence?.before_evidence || (beforeItems.length > 0 ? beforeItems[beforeItems.length - 1] : null);
-            const afterEv = work_progress_evidence?.after_evidence || (afterItems.length > 0 ? afterItems[afterItems.length - 1] : null);
-            const citizenPhoto = citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url;
-            const beforeImgSrc = beforeEv?.storage_path || beforeEv?.photo_url || citizenPhoto;
-            const afterImgSrc = afterEv?.storage_path || afterEv?.photo_url || work_progress_evidence?.after_photo_url || overview.resolved_image_url;
-
-            const fmtDate = (ts?: string) =>
-              ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-            const fmtTime = (ts?: string) =>
-              ts ? new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
-
-            const beforeTs = beforeEv?.device_capture_timestamp || beforeEv?.created_at || citizen_report?.submitted_at || overview.submitted_at;
-            const afterTs = afterEv?.device_capture_timestamp || afterEv?.created_at || overview.resolved_at;
-
-            return (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Before Photo Card */}
-                  <div className="p-5 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 font-black text-xs uppercase">
-                        Before Cleanup Stage
-                      </span>
-                      <span className="text-[11px] text-slate-600 font-mono flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-amber-700" />
-                        <span>{fmtDate(beforeTs)} · {fmtTime(beforeTs)}</span>
-                      </span>
-                    </div>
-
-                    <div className="h-56 rounded-xl overflow-hidden border border-amber-200 bg-slate-100 relative group">
-                      {beforeImgSrc ? (
-                        <img
-                          src={beforeImgSrc}
-                          alt="Before cleanup"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-4 text-center">
-                          <Camera className="w-8 h-8 text-slate-300 mb-1" />
-                          <span className="text-xs font-bold text-slate-500">No Before Photo</span>
-                        </div>
-                      )}
-                      <div className="absolute top-2 left-2 bg-black/65 backdrop-blur-xs text-white px-2.5 py-0.5 rounded-md text-[10px] font-bold">
-                        {beforeEv ? 'Field Leader Photo' : 'Citizen Initial Report'}
-                      </div>
-                    </div>
-
-                    {/* Metadata Details Strip */}
-                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-white/80 rounded-xl p-2.5 border border-amber-200/70">
-                      <div className="flex items-center gap-1.5 text-slate-700">
-                        <User className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                        <span className="truncate font-semibold">
-                          {beforeEv ? (beforeEv.worker_name || overview.temporary_team_leader_name || 'Team Leader') : 'Citizen Report'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-700 justify-end">
-                        <LocateFixed className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                        <span className="font-semibold">
-                          {beforeEv?.distance_from_assignment_meters != null
-                            ? `${Number(beforeEv.distance_from_assignment_meters).toFixed(1)}m from site`
-                            : 'GPS Verified'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1 text-xs">
-                      <span className="font-bold text-slate-700 block">Description / Observation Notes:</span>
-                      <p data-no-translate="true" className="text-slate-700 font-medium text-[11px] leading-relaxed bg-white/80 p-3 rounded-xl border border-amber-200/60">
-                        {beforeEv?.description || citizen_report?.original_description || overview.description || 'Civic waste accumulation recorded.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* After Photo Card */}
-                  <div className="p-5 rounded-2xl bg-emerald-50/50 border border-emerald-200 space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-200 text-emerald-950 font-black text-xs uppercase">
-                        After Cleanup Stage (Completion Proof)
-                      </span>
-                      <span className="text-[11px] text-slate-600 font-mono flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-emerald-700" />
-                        <span>{afterTs ? `${fmtDate(afterTs)} · ${fmtTime(afterTs)}` : 'Pending Upload'}</span>
-                      </span>
-                    </div>
-
-                    <div className="h-56 rounded-xl overflow-hidden border border-emerald-200 bg-slate-100 relative group">
-                      {afterImgSrc ? (
-                        <>
-                          <img
-                            src={afterImgSrc}
-                            alt="After cleanup"
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute top-2 left-2 bg-emerald-700/90 backdrop-blur-xs text-white px-2.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1">
-                            <Check className="w-3 h-3" />
-                            <span>After Evidence Submitted</span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-center p-5 bg-emerald-50/30 border border-dashed border-emerald-300 rounded-xl">
-                          <Camera className="w-9 h-9 text-emerald-400 mb-2 animate-pulse" />
-                          <span className="text-xs font-black text-emerald-900">Awaiting Cleanup Completion Photo</span>
-                          <p className="text-[11px] text-slate-500 mt-1 max-w-xs leading-relaxed">
-                            Field squad is currently deployed. The final After-stage photograph, timestamp, and description will appear here immediately once uploaded by the Team Leader.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* After Evidence Metadata Strip */}
-                    {afterEv && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] bg-white/90 rounded-xl p-2.5 border border-emerald-200/80">
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Date</span>
-                          <span className="font-bold text-slate-800">{fmtDate(afterTs)}</span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Time</span>
-                          <span className="font-bold text-slate-800">{fmtTime(afterTs)}</span>
-                        </div>
-                        <div className="col-span-2 sm:col-span-1">
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Submitted By</span>
-                          <span className="font-bold text-[#095c54] truncate block">
-                            {afterEv.worker_name || overview.temporary_team_leader_name || 'Team Leader'}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="space-y-1 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-700">Team Leader Description / Observation:</span>
-                        {afterEv?.distance_from_assignment_meters != null && (
-                          <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1">
-                            <LocateFixed className="w-3 h-3" />
-                            {Number(afterEv.distance_from_assignment_meters).toFixed(1)}m GPS verified
-                          </span>
-                        )}
-                      </div>
-                      <p data-no-translate="true" className="text-slate-700 font-medium text-[11px] leading-relaxed bg-white/90 p-3 rounded-xl border border-emerald-200/70">
-                        {afterEv?.description
-                          ? afterEv.description
-                          : afterImgSrc
-                            ? 'After-cleanup photo uploaded by Team Leader (no additional text description entered).'
-                            : 'Pending completion evidence from Team Leader.'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Additional After Photos strip if Team Leader uploaded multiple 'after' photos */}
-                {afterItems.length > 1 && (
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                    <h4 className="text-xs font-extrabold text-[#0f2925] flex items-center justify-between">
-                      <span>All After-Cleanup Photos Submitted ({afterItems.length})</span>
-                      <span className="text-[10px] text-slate-500 font-semibold">Latest shown in primary card above</span>
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {afterItems.map((item: any, idx: number) => {
-                        const ts = item.device_capture_timestamp || item.created_at;
-                        return (
-                          <div key={item.id || idx} className="p-3 rounded-xl bg-white border border-slate-200 space-y-2">
-                            <div className="aspect-video rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
-                              <img
-                                src={item.storage_path || item.photo_url}
-                                alt={`After upload ${idx + 1}`}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                              <span>{fmtDate(ts)}</span>
-                              <span>{fmtTime(ts)}</span>
-                            </div>
-                            <p className="text-[11px] text-slate-700 line-clamp-2">
-                              {item.description || 'After-stage photo uploaded.'}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+            const evidenceItems: any[] = work_progress_evidence?.evidence_items || [];
+            // Show all evidence items awaiting review (not verified and not rejected)
+            const unreviewedItems = evidenceItems.filter((e: any) => 
+              !e.officer_verified && e.review_status !== 'verified' && e.review_status !== 'rejected'
             );
-          })()}
+            const groupedUnreviewed = groupEvidenceBatches(unreviewedItems);
 
-          {/* AI-BASED TRUTH CHECKER (Before vs After Photo Verification & Cleanliness Scoring) */}
-          {(() => {
-            const evidenceList = work_progress_evidence?.evidence_items || [];
-            const afterEv = work_progress_evidence?.after_evidence || [...evidenceList].reverse().find((e: any) => String(e.evidence_type || '').toLowerCase() === 'after');
-            const hasAfterPhoto = Boolean(afterEv?.storage_path || afterEv?.photo_url || work_progress_evidence?.after_photo_url || work_progress_evidence?.after_photo || isResolved);
-
-            if (!hasAfterPhoto) {
+            if (groupedUnreviewed.length === 0) {
               return (
-                <div className="p-5 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
-                    <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider">
-                      AI Truth Checker — Awaiting After-Cleanup Photo
-                    </h4>
+                <div className="p-12 text-center bg-white rounded-2xl border border-slate-200/80 space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200 shadow-2xs">
+                    <CheckCircle2 className="w-7 h-7" />
                   </div>
-                  <p className="text-xs text-amber-800 leading-relaxed font-medium">
-                    Once the field team uploads the final <strong>After-Cleanup photo</strong>, the Navsari AI Truth Checker will automatically run computer-vision comparison between the initial Before photo and the completion photo, computing cleanliness score, geofence match, and digital authenticity.
-                  </p>
+                  <div className="space-y-1">
+                    <h4 className="text-base font-extrabold text-[#0f2925]">All Leader Evidences Reviewed</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                      No pending evidence submissions remaining for verification. All field submissions have been verified or rejected and are permanently archived in the <strong>Evidence History</strong> tab.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('history')}
+                    className="px-4 py-2 bg-[#095c54] hover:bg-[#074741] text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <History className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>View Evidence History →</span>
+                  </button>
                 </div>
               );
             }
 
+            const allUnreviewedIds = unreviewedItems.map((e: any) => e.id).filter(Boolean);
+
             return (
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-emerald-50/90 via-[#f0fdf4] to-teal-50/80 border-2 border-emerald-300 shadow-sm space-y-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200/80 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
-                      <Sparkles className="w-6 h-6" />
+              <div className="space-y-6">
+                {/* Global Batch Actions Bar: Verify All & Reject All */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/50 to-white border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-[#095c54] text-white flex items-center justify-center font-black text-xs">
+                      {groupedUnreviewed.length}
                     </div>
                     <div>
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-200 text-emerald-950 text-[10px] font-black uppercase tracking-wider mb-0.5">
-                        <span>AI TRUTH CHECKER ENGINE ACTIVE</span>
-                      </div>
-                      <h4 className="text-base font-black text-[#0f2925]">
-                        Before vs After Visual Truth Score: 96% (High Confidence)
+                      <h4 className="text-xs font-black text-[#0f2925]">
+                        {groupedUnreviewed.length} Evidence Submission{groupedUnreviewed.length > 1 ? 's' : ''} Awaiting Review
                       </h4>
-                      <p className="text-xs text-slate-600 font-medium">
-                        Automated deep comparison of Before & After photographs confirms genuine site remediation.
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Total {groupedUnreviewed.reduce((acc, g) => acc + g.photos.length, 0)} on-site photograph(s) submitted by Team Leader.
                       </p>
                     </div>
                   </div>
 
-                  {!isResolved && (
+                  <div className="flex items-center gap-2 flex-wrap sm:justify-end">
                     <button
-                      onClick={openVerifyPublishModal}
-                      className="px-5 py-2.5 bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black rounded-xl shadow-xs transition flex items-center gap-2 shrink-0 self-start sm:self-center"
+                      type="button"
+                      onClick={() => openRejectModalFor(allUnreviewedIds)}
+                      disabled={verifyingEvidenceId !== null || rejectingEvidenceId !== null}
+                      className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                      <span>Verify & Mark Complete</span>
+                      <XCircle className="w-4 h-4 text-rose-600" />
+                      <span>Reject All</span>
                     </button>
-                  )}
-                </div>
-
-                {/* 4 Truth Verification Pillars Grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Litter Clearance Index
-                    </span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-xl font-black text-emerald-700">98%</span>
-                      <span className="text-[10px] font-bold text-emerald-600">Cleared</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Accumulated waste, plastics & debris fully removed.</p>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Geofence GPS Match
-                    </span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-xl font-black text-[#095c54]">100%</span>
-                      <span className="text-[10px] font-bold text-emerald-600">On-Site</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Camera coordinates match complaint pin within 12m.</p>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Ground Context Match
-                    </span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-xl font-black text-teal-700">95%</span>
-                      <span className="text-[10px] font-bold text-teal-600">Consistent</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Pavement, curb boundary & background align.</p>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Digital Tampering Check
-                    </span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-xl font-black text-emerald-700">0%</span>
-                      <span className="text-[10px] font-bold text-emerald-600">Tampering</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Live mobile camera EXIF & timestamp match dispatch.</p>
+                    <button
+                      type="button"
+                      onClick={() => handleVerifyEvidence()}
+                      disabled={verifyingEvidenceId !== null || rejectingEvidenceId !== null}
+                      className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {verifyingEvidenceId === 'all' ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Verifying All...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                          <span>Verify All Pending ({groupedUnreviewed.length})</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                {/* Detailed Comparison Findings */}
-                <div className="p-4 rounded-2xl bg-white/90 border border-emerald-200 text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <strong className="text-[#095c54] flex items-center gap-1.5">
-                      <Check className="w-4 h-4 text-emerald-600" />
-                      <span>AI Comparative Inspection Verdict</span>
-                    </strong>
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-950 font-black text-[10px]">
-                      PASSED NMC SANITATION BENCHMARK
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 text-[11px] text-slate-700">
-                    <div className="p-2.5 rounded-xl bg-amber-50/50 border border-amber-100">
-                      <span className="font-bold text-amber-900 block mb-0.5">Detected in Before Photo:</span>
-                      <p className="text-slate-600">Severe municipal solid waste accumulation, plastic pouches, paper cups, and wet organic waste causing sidewalk obstruction.</p>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-100">
-                      <span className="font-bold text-emerald-900 block mb-0.5">Detected in After Photo:</span>
-                      <p className="text-slate-600">100% surface waste cleared, commercial curb swept clean, treated with disinfectant bleaching powder. No remaining debris.</p>
-                    </div>
-                  </div>
+                {/* List of All Grouped Unreviewed Evidence Cards */}
+                <div className="space-y-6">
+                  {groupedUnreviewed.map((batch, bIdx) => {
+                    const baseTs = new Date(overview.submitted_at || overview.approved_at || Date.now()).getTime();
+                    const evTs = new Date(batch.device_capture_timestamp || batch.created_at || Date.now()).getTime();
+                    const dayNum = Math.max(1, Math.floor((evTs - baseTs) / (1000 * 60 * 60 * 24)) + 1);
+                    const evDateStr = new Date(evTs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    const evTimeStr = new Date(evTs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                    const isVerifyingThis = verifyingEvidenceId === batch.id || (batch.ids.length > 0 && batch.ids.includes(verifyingEvidenceId || ''));
+                    const isRejectingThis = rejectingEvidenceId === batch.id || (batch.ids.length > 0 && batch.ids.includes(rejectingEvidenceId || ''));
+
+                    return (
+                      <div
+                        key={batch.id || bIdx}
+                        className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs bg-white space-y-4 p-5 hover:border-slate-300 transition"
+                      >
+                        {/* Evidence Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2.5 py-0.5 rounded-full bg-[#095c54] text-white text-[11px] font-black uppercase tracking-wider">
+                                Day {dayNum} Evidence
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase tracking-wider">
+                                Stage: {batch.stage.toUpperCase()}
+                              </span>
+                              <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{evDateStr} · {evTimeStr}</span>
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap pt-0.5">
+                              <span className="flex items-center gap-1 font-semibold text-slate-800">
+                                <Crown className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Submitted by: <strong>{batch.worker_name || overview.temporary_team_leader_name || 'Team Leader'}</strong></span>
+                              </span>
+                              <span className="flex items-center gap-1 text-emerald-700 font-bold">
+                                <LocateFixed className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>{batch.distance_from_assignment_meters != null ? `${Number(batch.distance_from_assignment_meters).toFixed(1)}m from site` : 'GPS Verified'}</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openRejectModalFor(batch.ids.length > 0 ? batch.ids : [batch.id])}
+                              disabled={isVerifyingThis || isRejectingThis}
+                              className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center gap-1 disabled:opacity-50"
+                            >
+                              <XCircle className="w-4 h-4 text-rose-600" />
+                              <span>Reject</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyEvidence(batch.ids.length > 0 ? batch.ids : [batch.id])}
+                              disabled={isVerifyingThis || isRejectingThis}
+                              className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {isVerifyingThis ? (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Verifying...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                                  <span>Verify &amp; Approve</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* All Photo Attachments for this single evidence batch */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                            <span className="flex items-center gap-1.5 uppercase tracking-wider">
+                              <Camera className="w-4 h-4 text-[#095c54]" />
+                              <span>Submitted Photographs ({batch.photos.length})</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-normal">Click any photo to view full resolution</span>
+                          </div>
+
+                          {batch.photos.length > 0 ? (
+                            <div className={`grid gap-3 ${
+                              batch.photos.length === 1
+                                ? 'grid-cols-1 max-w-md'
+                                : batch.photos.length === 2
+                                ? 'grid-cols-2 max-w-xl'
+                                : 'grid-cols-2 sm:grid-cols-3'
+                            }`}>
+                              {batch.photos.map((photoUrl, pIdx) => (
+                                <div
+                                  key={pIdx}
+                                  onClick={() => setFullPhotoModalUrl(photoUrl)}
+                                  className="relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-900 group cursor-pointer shadow-2xs hover:shadow-md transition"
+                                >
+                                  <img
+                                    src={photoUrl}
+                                    alt={`Leader evidence #${pIdx + 1}`}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                  />
+                                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold">
+                                    Photo #{pIdx + 1}
+                                  </div>
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold gap-1.5">
+                                    <Eye className="w-4 h-4" />
+                                    <span>Zoom</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-4 text-center bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500">
+                              No photographic attachments in this submission.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Description / Observation */}
+                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                            Team Leader Observation &amp; Description:
+                          </span>
+                          <p data-no-translate="true" className="text-xs text-slate-800 font-medium leading-relaxed bg-white p-3 rounded-lg border border-slate-200/60">
+                            {batch.description || 'Civic cleanup evidence recorded at the assigned work site.'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -1475,58 +1732,111 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                       {/* Accordion Body */}
                       {isExpanded && (
                         <div className="p-5 bg-white border-t border-slate-200/80">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {group.items.map((item: any, idx: number) => {
-                              const ts = item.device_capture_timestamp || item.created_at;
-                              const dateStr = ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : group.displayDate;
-                              const timeStr = ts ? new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
-                              return (
-                                <div key={item.id || idx} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3 flex flex-col justify-between">
-                                  <div className="space-y-3">
-                                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStageBadgeStyle(item.evidence_type)}`}>
-                                        {String(item.evidence_type || 'progress').toUpperCase()} STAGE
-                                      </span>
-                                      <span className="text-[10px] font-mono text-slate-600 flex items-center gap-1">
-                                        <Clock className="w-3 h-3 text-slate-400" />
-                                        <span>{dateStr} · {timeStr}</span>
-                                      </span>
-                                    </div>
+                          {(() => {
+                            const groupedDayBatches = groupEvidenceBatches(group.items);
+                            return (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {groupedDayBatches.map((batch: any, idx: number) => {
+                                  const ts = batch.device_capture_timestamp || batch.created_at;
+                                  const dateStr = ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : group.displayDate;
+                                  const timeStr = ts ? new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
+                                  const isVerified = batch.officer_verified || batch.review_status === 'verified';
+                                  const isRejected = batch.review_status === 'rejected';
 
-                                    <div className="aspect-video rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
-                                      <img
-                                        src={item.storage_path || item.photo_url}
-                                        alt={`${item.evidence_type || 'field'} evidence`}
-                                        className="w-full h-full object-cover"
-                                      />
-                                    </div>
+                                  return (
+                                    <div key={batch.id || idx} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3 flex flex-col justify-between">
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getStageBadgeStyle(batch.evidence_type)}`}>
+                                              {String(batch.evidence_type || 'progress').toUpperCase()} STAGE
+                                            </span>
+                                            {isVerified ? (
+                                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                <span>Verified by Officer</span>
+                                              </span>
+                                            ) : isRejected ? (
+                                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                                                <XCircle className="w-3 h-3 text-rose-600" />
+                                                <span>Rejected by Officer</span>
+                                              </span>
+                                            ) : (
+                                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                                                <Clock className="w-3 h-3 text-amber-600" />
+                                                <span>Pending Review</span>
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className="text-[10px] font-mono text-slate-600 flex items-center gap-1">
+                                            <Clock className="w-3 h-3 text-slate-400" />
+                                            <span>{dateStr} · {timeStr}</span>
+                                          </span>
+                                        </div>
 
-                                    <div className="space-y-1 text-xs">
-                                      <span className="font-bold text-slate-700 block">Description / Observation Notes:</span>
-                                      <p className="text-slate-600 font-medium text-[11px] leading-relaxed bg-white p-2.5 rounded-xl border border-slate-200/70">
-                                        {item.description || 'Field evidence submitted without extra text notes.'}
-                                      </p>
-                                    </div>
-                                  </div>
+                                        {/* Multi-Photo Grid */}
+                                        <div className={`grid gap-2 ${
+                                          batch.photos.length === 1
+                                            ? 'grid-cols-1'
+                                            : batch.photos.length === 2
+                                            ? 'grid-cols-2'
+                                            : 'grid-cols-2 sm:grid-cols-3'
+                                        }`}>
+                                          {batch.photos.map((pu: string, pIdx: number) => (
+                                            <div
+                                              key={pIdx}
+                                              onClick={() => setFullPhotoModalUrl(pu)}
+                                              className="relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-200 group cursor-pointer"
+                                            >
+                                              <img
+                                                src={pu}
+                                                alt={`Field evidence photo #${pIdx + 1}`}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                              />
+                                              <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold">
+                                                #{pIdx + 1}
+                                              </div>
+                                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px] font-bold gap-1">
+                                                <Eye className="w-3.5 h-3.5" />
+                                                <span>Zoom</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
 
-                                  <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2 text-[10px] text-slate-500 flex-wrap">
-                                    <span className="flex items-center gap-1 text-slate-700 font-semibold">
-                                      <User className="w-3 h-3 text-[#095c54]" />
-                                      <span>{item.worker_name || overview.temporary_team_leader_name || 'Team Leader'}</span>
-                                    </span>
-                                    <span className="flex items-center gap-1 text-emerald-700 font-bold">
-                                      <LocateFixed className="w-3 h-3 text-emerald-600" />
-                                      <span>
-                                        {item.distance_from_assignment_meters != null
-                                          ? `${Number(item.distance_from_assignment_meters).toFixed(1)}m from site`
-                                          : 'GPS Verified'}
-                                      </span>
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                                        <div className="space-y-1 text-xs">
+                                          <span className="font-bold text-slate-700 block">Description / Observation Notes:</span>
+                                          <p className="text-slate-600 font-medium text-[11px] leading-relaxed bg-white p-2.5 rounded-xl border border-slate-200/70">
+                                            {batch.description || 'Field evidence submitted without extra text notes.'}
+                                          </p>
+                                          {isRejected && batch.officer_notes && (
+                                            <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold">
+                                              <strong>Officer Rejection Reason:</strong> {batch.officer_notes}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2 text-[10px] text-slate-500 flex-wrap">
+                                        <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                                          <User className="w-3 h-3 text-[#095c54]" />
+                                          <span>{batch.worker_name || overview.temporary_team_leader_name || 'Team Leader'}</span>
+                                        </span>
+                                        <span className="flex items-center gap-1 text-emerald-700 font-bold">
+                                          <LocateFixed className="w-3 h-3 text-emerald-600" />
+                                          <span>
+                                            {batch.distance_from_assignment_meters != null
+                                              ? `${Number(batch.distance_from_assignment_meters).toFixed(1)}m from site`
+                                              : 'GPS Verified'}
+                                          </span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -1577,7 +1887,196 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
         </div>
       )}
 
-      {/* 8. UNIFIED VERIFY & MARK COMPLETE — EDITABLE POST PREVIEW & PUBLIC UPLOAD MODAL */}
+      {/* 9. ASSIGN NEW SQUAD MODAL */}
+      {showAssignSquadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center shadow-xs">
+                  <Users className="w-4 h-4 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0f2925]">Assign New Sanitation Squad</h3>
+                  <p className="text-xs text-slate-500">Dispatch a new squad to take over this complaint</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAssignSquadModal(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Select Squad / Team *</label>
+                <select
+                  value={selectedNewTeamId}
+                  onChange={e => {
+                    setSelectedNewTeamId(e.target.value);
+                    const sel = wardTeams.find(t => t.id === e.target.value);
+                    if (sel?.members && sel.members.length > 0) {
+                      setSelectedNewLeaderId(sel.members[0].id || sel.members[0].worker_id);
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                >
+                  <option value="">-- Choose Squad --</option>
+                  {wardTeams.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.team_name || t.name} ({t.members?.length || 0} workers)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedNewTeamId && (() => {
+                const selTeam = wardTeams.find(t => t.id === selectedNewTeamId);
+                const members = selTeam?.members || [];
+                return (
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Designate Team Leader *</label>
+                    <select
+                      value={selectedNewLeaderId}
+                      onChange={e => setSelectedNewLeaderId(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                    >
+                      {members.map((m: any) => (
+                        <option key={m.id || m.worker_id} value={m.id || m.worker_id}>
+                          👑 {m.name || m.worker_name} ({m.designation || 'Worker'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Max Work Days SLA</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={14}
+                  value={newSquadMaxWorkDays}
+                  onChange={e => setNewSquadMaxWorkDays(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAssignSquadModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignNewSquad}
+                disabled={assigningSquad || !selectedNewTeamId}
+                className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 transition disabled:opacity-50"
+              >
+                {assigningSquad ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>Confirm Assignment</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 10. ADD WORKER TO SQUAD MODAL */}
+      {showAddWorkerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center shadow-xs">
+                  <Plus className="w-4 h-4 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0f2925]">Add Worker to Squad</h3>
+                  <p className="text-xs text-slate-500">Select an available worker to attach to this active squad</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddWorkerModal(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-2 divide-y divide-slate-100">
+              {(() => {
+                const currentMemberIds = new Set(
+                  (team_attendance?.team_members || []).map((m: any) => m.worker_id || m.id)
+                );
+                const availableWorkers = wardWorkers.filter(w => !currentMemberIds.has(w.id));
+
+                if (availableWorkers.length === 0) {
+                  return (
+                    <div className="p-6 text-center text-xs text-slate-500">
+                      All available ward workers are already part of this squad.
+                    </div>
+                  );
+                }
+
+                return availableWorkers.map((worker: any) => (
+                  <div key={worker.id} className="pt-2 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-bold text-[#0f2925]">{worker.name}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">{worker.worker_code} · {worker.designation || 'Worker'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddWorkerToSquad(worker.id)}
+                      disabled={addingWorkerId === worker.id}
+                      className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold flex items-center gap-1 transition disabled:opacity-50"
+                    >
+                      {addingWorkerId === worker.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                      <span>Add</span>
+                    </button>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 text-right">
+              <button
+                type="button"
+                onClick={() => setShowAddWorkerModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 11. PHOTO LIGHTBOX MODAL */}
+      {fullPhotoModalUrl && (
+        <div
+          onClick={() => setFullPhotoModalUrl(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xs p-4 animate-in fade-in duration-150 cursor-pointer"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl bg-black" onClick={e => e.stopPropagation()}>
+            <img src={fullPhotoModalUrl} alt="Enlarged evidence" className="w-full h-full object-contain max-h-[85vh]" />
+            <button
+              onClick={() => setFullPhotoModalUrl(null)}
+              className="absolute top-3 right-3 p-2 rounded-full bg-black/70 hover:bg-black text-white text-xs font-bold transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
       {showPublishModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-3 sm:p-5 animate-in fade-in duration-150 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 flex flex-col max-h-[92vh]">
@@ -1660,15 +2159,15 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                   {/* Before vs After Preview Grid */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="relative aspect-[16/10] rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-                      {beforePhoto ? (
-                        <img src={beforePhoto} alt="Before preview" className="w-full h-full object-cover" />
+                      {beforePhotos[0] ? (
+                        <img src={beforePhotos[0]} alt="Before preview" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-400 font-semibold">
                           No Before Photo
                         </div>
                       )}
                       <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-bold">
-                        Before
+                        Before ({beforePhotos.length})
                       </span>
                     </div>
 
@@ -1844,58 +2343,215 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                   />
                 </div>
 
+                {/* Photo Picker Tray from Team Leader Submissions */}
+                {(() => {
+                  const candidatePhotos: { url: string; label: string; date: string; stage: string }[] = [];
+                  const seen = new Set<string>();
+
+                  const citizenPic = citizen_report?.photo_url || (citizen_report?.original_photos && citizen_report.original_photos[0]) || overview.image_url;
+                  if (citizenPic && !seen.has(citizenPic)) {
+                    seen.add(citizenPic);
+                    candidatePhotos.push({
+                      url: citizenPic,
+                      label: 'Citizen Original Report',
+                      date: new Date(citizen_report?.submitted_at || overview.submitted_at).toLocaleDateString('en-IN'),
+                      stage: 'citizen'
+                    });
+                  }
+
+                  const evList: any[] = work_progress_evidence?.evidence_items || [];
+                  evList.forEach((e: any) => {
+                    const dt = new Date(e.device_capture_timestamp || e.created_at || Date.now());
+                    const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                    const stage = String(e.evidence_type || e.stage || 'Work').toUpperCase();
+
+                    if (Array.isArray(e.photos)) {
+                      e.photos.forEach((pu: string, pIdx: number) => {
+                        if (pu && !seen.has(pu)) {
+                          seen.add(pu);
+                          candidatePhotos.push({
+                            url: pu,
+                            label: `Leader ${stage} #${pIdx + 1}`,
+                            date: dateStr,
+                            stage: stage.toLowerCase()
+                          });
+                        }
+                      });
+                    }
+                    const mainU = e.storage_path || e.photo_url;
+                    if (mainU && !seen.has(mainU)) {
+                      seen.add(mainU);
+                      candidatePhotos.push({
+                        url: mainU,
+                        label: `Leader ${stage} Photo`,
+                        date: dateStr,
+                        stage: stage.toLowerCase()
+                      });
+                    }
+                  });
+
+                  if (candidatePhotos.length === 0) return null;
+
+                  return (
+                    <div className="p-4 rounded-2xl bg-[#f0f7f5] border border-[#cde6df] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-[#0f2925] uppercase tracking-wider flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-[#095c54]" />
+                          <span>Select Before &amp; After Photos from Leader Evidence ({candidatePhotos.length})</span>
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">Click buttons on each photo to select</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-56 overflow-y-auto p-1">
+                        {candidatePhotos.map((item, cIdx) => {
+                          const isBefore = beforePhotos.includes(item.url);
+                          const isAfter = afterPhotos.includes(item.url);
+
+                          return (
+                            <div
+                              key={cIdx}
+                              className={`relative rounded-xl overflow-hidden border-2 bg-slate-900 aspect-video flex flex-col justify-between group transition ${
+                                isBefore
+                                  ? 'border-amber-400 ring-2 ring-amber-200'
+                                  : isAfter
+                                  ? 'border-emerald-500 ring-2 ring-emerald-200'
+                                  : 'border-slate-200 hover:border-slate-300'
+                              }`}
+                            >
+                              <img src={item.url} alt={item.label} className="w-full h-full object-cover absolute inset-0" />
+                              <div className="relative z-10 p-1.5 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent">
+                                <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded bg-black/60 truncate max-w-[90px]">
+                                  {item.label}
+                                </span>
+                                <span className="text-[9px] text-slate-200 font-mono">
+                                  {item.date}
+                                </span>
+                              </div>
+
+                              <div className="relative z-10 p-1.5 flex items-center gap-1 bg-gradient-to-t from-black/80 to-transparent mt-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isBefore) {
+                                      setBeforePhotos(prev => prev.filter(u => u !== item.url));
+                                    } else {
+                                      setBeforePhotos(prev => [...prev, item.url]);
+                                    }
+                                  }}
+                                  className={`flex-1 py-1 rounded text-[9px] font-bold transition flex items-center justify-center gap-0.5 ${
+                                    isBefore
+                                      ? 'bg-amber-400 text-slate-950 shadow-xs font-black'
+                                      : 'bg-white/80 hover:bg-white text-slate-900'
+                                  }`}
+                                  title="Add or remove from Before photos"
+                                >
+                                  {isBefore ? '✓ Before' : '+ Before'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isAfter) {
+                                      setAfterPhotos(prev => prev.filter(u => u !== item.url));
+                                    } else {
+                                      setAfterPhotos(prev => [...prev, item.url]);
+                                    }
+                                  }}
+                                  className={`flex-1 py-1 rounded text-[9px] font-bold transition flex items-center justify-center gap-0.5 ${
+                                    isAfter
+                                      ? 'bg-emerald-500 text-white shadow-xs font-black'
+                                      : 'bg-white/80 hover:bg-white text-slate-900'
+                                  }`}
+                                  title="Add or remove from After photos"
+                                >
+                                  {isAfter ? '✓ After' : '+ After'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Editable Before & After Photos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Before Photo Editor */}
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                  <div className="p-3.5 rounded-2xl bg-amber-50/40 border border-amber-200/80 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <Camera className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Before Photo</span>
+                      <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Before Photos ({beforePhotos.length})</span>
                       </label>
-                      {beforePhoto && (
-                        <button
-                          type="button"
-                          onClick={() => setBeforePhoto('')}
-                          className="text-[10px] font-bold text-rose-600 hover:underline"
-                        >
-                          Replace / Clear
-                        </button>
-                      )}
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
+                        Initial / Editable
+                      </span>
                     </div>
-                    {beforePhoto ? (
-                      <div className="relative h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-                        <img src={beforePhoto} alt="Before cleanup" className="w-full h-full object-cover" />
+
+                    {beforePhotos.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {beforePhotos.map((photo, idx) => (
+                          <div key={idx} className="relative aspect-video rounded-xl overflow-hidden border border-amber-300 bg-slate-100">
+                            <img src={photo} alt={`Before ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setBeforePhotos(prev => prev.filter((_, i) => i !== idx))}
+                              className="absolute top-1 right-1 p-1 bg-rose-600/90 hover:bg-rose-700 text-white rounded-md"
+                              title="Remove before photo"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Paste Before Photo URL..."
-                          value={beforePhoto}
-                          onChange={e => setBeforePhoto(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
-                        />
-                        <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed border-slate-300 bg-white text-slate-700 text-xs font-bold cursor-pointer hover:border-[#095c54]">
-                          <ImageIcon className="w-3.5 h-3.5" />
-                          <span>Upload Before Photo</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={e => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const reader = new FileReader();
-                              reader.onload = ev => {
-                                if (typeof ev.target?.result === 'string') setBeforePhoto(ev.target.result);
-                              };
-                              reader.readAsDataURL(file);
-                            }}
-                          />
-                        </label>
-                      </div>
+                      <p className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                        Add at least one Before photo below (or select from above tray).
+                      </p>
                     )}
+
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="Add Before Photo URL..."
+                        value={newBeforePhotoUrl}
+                        onChange={e => setNewBeforePhotoUrl(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newBeforePhotoUrl.trim()) {
+                            setBeforePhotos(prev => [...prev, newBeforePhotoUrl.trim()]);
+                            setNewBeforePhotoUrl('');
+                          }
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add</span>
+                      </button>
+                    </div>
+
+                    <label className="flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl border border-dashed border-amber-300 hover:border-amber-500 bg-white text-amber-900 text-xs font-bold cursor-pointer transition">
+                      <Camera className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Upload / Capture Before Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = ev => {
+                            if (typeof ev.target?.result === 'string') {
+                              setBeforePhotos(prev => [...prev, ev.target!.result as string]);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
                   </div>
 
                   {/* After Photos Editor */}
@@ -2035,6 +2691,90 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Officer Reject Evidence Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden space-y-4">
+            <div className="px-6 py-4 bg-gradient-to-r from-rose-50 to-white border-b border-rose-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <XCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#0f2925]">Reject Field Evidence</h3>
+                  <p className="text-[11px] text-slate-500">Provide reason to team leader for re-cleaning</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectReason('');
+                  setTargetRejectIds([]);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3">
+              <label className="text-xs font-bold text-slate-700 block">
+                Rejection Reason / Required Corrective Actions:
+              </label>
+              <textarea
+                rows={3}
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="e.g. Photographs are blurry / Waste not completely removed / Perimeter not disinfected. Please re-visit and capture fresh evidence."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:border-rose-500 outline-hidden leading-relaxed"
+              />
+
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[
+                  'Photographs unclear or incomplete',
+                  'Accumulated waste still visible on-site',
+                  'GPS location mismatch with complaint coordinates',
+                  'Disinfection / bleaching powder not applied'
+                ].map((quickText, qIdx) => (
+                  <button
+                    key={qIdx}
+                    type="button"
+                    onClick={() => setRejectReason(quickText)}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                  >
+                    + {quickText}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectReason('');
+                  setTargetRejectIds([]);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/80 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRejectEvidence(targetRejectIds.length > 0 ? targetRejectIds : undefined, rejectReason)}
+                disabled={rejectingEvidenceId !== null}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+              >
+                {rejectingEvidenceId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                <span>Confirm Rejection</span>
+              </button>
             </div>
           </div>
         </div>

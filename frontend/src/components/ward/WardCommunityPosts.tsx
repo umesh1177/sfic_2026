@@ -31,6 +31,7 @@ export const WardCommunityPosts: React.FC = () => {
   const [newCommentText, setNewCommentText] = useState<Record<string, string>>({});
   const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
 
   // New Official Post Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
@@ -332,50 +333,156 @@ export const WardCommunityPosts: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Before & After or Gallery Photos */}
-                {(post as any).before_image_url && ((post as any).after_image_url || ((post as any).after_photos && (post as any).after_photos.length > 0)) ? (
-                  <div className="mt-4 px-4 sm:px-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="relative rounded-2xl overflow-hidden border border-rose-200 bg-slate-900 group shadow-sm">
-                      <img
-                        src={(post as any).before_image_url}
-                        alt="Before Cleanup"
-                        className="w-full h-48 object-cover group-hover:scale-105 transition duration-300"
-                        loading="lazy"
-                      />
-                      <span className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-rose-600/95 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
-                        Before Cleanup
-                      </span>
-                    </div>
-                    <div className="relative rounded-2xl overflow-hidden border border-emerald-200 bg-slate-900 group shadow-sm">
-                      <img
-                        src={(post as any).after_image_url || (post as any).after_photos[0]}
-                        alt="After Cleanup"
-                        className="w-full h-48 object-cover group-hover:scale-105 transition duration-300"
-                        loading="lazy"
-                      />
-                      <span className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-emerald-600/95 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
-                        Restored & Clean ✓
-                      </span>
-                    </div>
-                  </div>
-                ) : (post as any).after_photos && (post as any).after_photos.length > 1 ? (
-                  <div className="mt-4 px-4 sm:px-5 grid grid-cols-2 gap-2">
-                    {(post as any).after_photos.map((ph: string, idx: number) => (
-                      <div key={idx} className="relative rounded-2xl overflow-hidden border border-slate-200 aspect-video bg-slate-900">
-                        <img src={ph} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                {/* Multi-Photo Comparison & Gallery Rendering (No 2-photo limit) */}
+                {(() => {
+                  const bPhotos: string[] = Array.isArray((post as any).before_photos) && (post as any).before_photos.length > 0
+                    ? (post as any).before_photos
+                    : ((post as any).before_image_url ? [(post as any).before_image_url] : []);
+                  const aPhotos: string[] = Array.isArray((post as any).after_photos) && (post as any).after_photos.length > 0
+                    ? (post as any).after_photos
+                    : ((post as any).after_image_url ? [(post as any).after_image_url] : (post.image_url ? [post.image_url] : []));
+
+                  if (bPhotos.length > 0 && aPhotos.length > 0) {
+                    return (
+                      <div className="mt-4 px-4 sm:px-5 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {/* Before Section (All Before Photos) */}
+                        <div className="space-y-1.5 p-2.5 rounded-2xl border border-rose-200 bg-rose-50/30">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 flex items-center gap-1">
+                              <span>Before Cleanup ({bPhotos.length})</span>
+                            </span>
+                            <span className="text-[9px] text-slate-400">Click to zoom</span>
+                          </div>
+                          <div className={`grid gap-1.5 ${
+                            bPhotos.length === 1
+                              ? 'grid-cols-1'
+                              : bPhotos.length === 2
+                              ? 'grid-cols-2'
+                              : 'grid-cols-2 sm:grid-cols-3'
+                          }`}>
+                            {bPhotos.map((bUrl, bIdx) => (
+                              <div
+                                key={bIdx}
+                                onClick={() => setPreviewPhotoUrl(bUrl)}
+                                className="relative rounded-xl overflow-hidden border border-rose-200 aspect-[4/3] bg-slate-900 group cursor-pointer shadow-xs"
+                              >
+                                <img
+                                  src={bUrl}
+                                  alt={`Before photo #${bIdx + 1}`}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                  loading="lazy"
+                                />
+                                <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold">
+                                  #{bIdx + 1}
+                                </span>
+                                <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px] font-bold gap-1">
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Zoom</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* After Section (All After Photos) */}
+                        <div className="space-y-1.5 p-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/30">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>Restored &amp; Clean ✓ ({aPhotos.length})</span>
+                            </span>
+                            <span className="text-[9px] text-slate-400">Click to zoom</span>
+                          </div>
+                          <div className={`grid gap-1.5 ${
+                            aPhotos.length === 1
+                              ? 'grid-cols-1'
+                              : aPhotos.length === 2
+                              ? 'grid-cols-2'
+                              : 'grid-cols-2 sm:grid-cols-3'
+                          }`}>
+                            {aPhotos.map((aUrl, aIdx) => (
+                              <div
+                                key={aIdx}
+                                onClick={() => setPreviewPhotoUrl(aUrl)}
+                                className="relative rounded-xl overflow-hidden border border-emerald-200 aspect-[4/3] bg-slate-900 group cursor-pointer shadow-xs"
+                              >
+                                <img
+                                  src={aUrl}
+                                  alt={`After cleanup #${aIdx + 1}`}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                  loading="lazy"
+                                />
+                                <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold">
+                                  #{aIdx + 1}
+                                </span>
+                                <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px] font-bold gap-1">
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Zoom</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                ) : post.image_url ? (
-                  <div className="mt-4 border-y border-slate-100 bg-slate-50 overflow-hidden">
-                    <img
-                      src={post.image_url}
-                      alt={post.title}
-                      className="w-full max-h-[420px] object-cover hover:scale-[1.01] transition duration-300"
-                      loading="lazy"
-                    />
-                  </div>
-                ) : null}
+                    );
+                  }
+
+                  if (aPhotos.length > 1) {
+                    return (
+                      <div className="mt-4 px-4 sm:px-5 space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Completion Evidence Photographs ({aPhotos.length})</span>
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {aPhotos.map((ph: string, idx: number) => (
+                            <div
+                              key={idx}
+                              onClick={() => setPreviewPhotoUrl(ph)}
+                              className="relative rounded-xl overflow-hidden border border-slate-200 aspect-video bg-slate-900 group cursor-pointer"
+                            >
+                              <img
+                                src={ph}
+                                alt={`Photo ${idx + 1}`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                loading="lazy"
+                              />
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px] font-bold gap-1">
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Zoom</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const singlePhoto = aPhotos[0] || bPhotos[0] || post.image_url;
+                  if (singlePhoto) {
+                    return (
+                      <div
+                        onClick={() => setPreviewPhotoUrl(singlePhoto)}
+                        className="mt-4 border-y border-slate-100 bg-slate-50 overflow-hidden cursor-pointer group relative"
+                      >
+                        <img
+                          src={singlePhoto}
+                          alt={post.title}
+                          className="w-full max-h-[420px] object-cover group-hover:scale-[1.01] transition duration-300"
+                          loading="lazy"
+                        />
+                        <div className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/60 text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                          <Eye className="w-3 h-3" />
+                          <span>View Full</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
 
                 {/* Engagement Bar (Likes & Comments count) */}
                 <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs text-slate-500 border-b border-slate-100">
@@ -622,6 +729,31 @@ export const WardCommunityPosts: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Lightbox / Full Resolution Image Modal */}
+      {previewPhotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPreviewPhotoUrl(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] bg-transparent rounded-2xl overflow-hidden flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => setPreviewPhotoUrl(null)}
+              className="absolute top-2 right-2 p-2 rounded-full bg-black/70 hover:bg-black text-white transition z-10"
+              title="Close image"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={previewPhotoUrl}
+              alt="Full preview"
+              className="max-h-[85vh] w-auto object-contain rounded-2xl shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
     </div>

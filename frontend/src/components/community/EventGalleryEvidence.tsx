@@ -235,7 +235,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   const handleSubmitEvidenceForReview = async () => {
     if (!currentActivityId) return;
     const confirm = window.confirm(
-      'Are you sure you want to officially submit this completion evidence for Ward Officer verification and civic points reward?'
+      'Are you sure you want to officially submit this completion evidence for Ward Officer verification?'
     );
     if (!confirm) return;
 

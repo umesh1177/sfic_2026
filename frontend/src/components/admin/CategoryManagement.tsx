@@ -169,7 +169,10 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         setAddDesc('');
         setAddApprovalDays(2);
         setAddWorkDays(5);
-        fetchCategories();
+        if (res.data) {
+          setCategories(prev => [res.data, ...prev]);
+        }
+        await fetchCategories();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create category');
@@ -200,7 +203,10 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         setSuccessMessage(`Category "${editName}" updated successfully.`);
         setTimeout(() => setSuccessMessage(null), 4000);
         setEditModalOpen(false);
-        fetchCategories();
+        if (res.data) {
+          setCategories(prev => prev.map(c => c.id === selectedCategory.id ? { ...c, ...res.data } : c));
+        }
+        await fetchCategories();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to update category');
@@ -216,7 +222,8 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
       if (res.success) {
         setSuccessMessage(`Category "${name}" deactivated.`);
         setTimeout(() => setSuccessMessage(null), 3000);
-        fetchCategories();
+        setCategories(prev => prev.map(c => c.id === id ? { ...c, is_active: false } : c));
+        await fetchCategories();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to delete category');

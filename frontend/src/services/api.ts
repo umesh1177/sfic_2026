@@ -971,6 +971,19 @@ class ApiService {
     });
   }
 
+  async assignWardComplaintTeam(id: string, data: {
+    team_id?: string;
+    temporary_leader_id?: string;
+    max_work_days?: number;
+    instructions?: string;
+    worker_ids?: string[];
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
   async rejectWardComplaint(id: string, data: { rejection_reason: string }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/reject`, {
       method: 'POST',
@@ -985,10 +998,39 @@ class ApiService {
     });
   }
 
+  async verifyWardComplaintEvidence(id: string, evidenceIds?: string[]) {
+    return this.request<{ success: boolean; message: string }>(`/ward/complaints/${id}/verify-evidence`, {
+      method: 'POST',
+      body: JSON.stringify({ evidence_ids: evidenceIds })
+    });
+  }
+
+  async rejectWardComplaintEvidence(id: string, evidenceIds?: string[], reason?: string) {
+    return this.request<{ success: boolean; message: string }>(`/ward/complaints/${id}/reject-evidence`, {
+      method: 'POST',
+      body: JSON.stringify({ evidence_ids: evidenceIds, reason })
+    });
+  }
+
+  async addWorkerToComplaintSquad(id: string, workerId: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/add-worker`, {
+      method: 'POST',
+      body: JSON.stringify({ worker_id: workerId })
+    });
+  }
+
+  async removeWorkerFromComplaintSquad(id: string, workerId: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/remove-worker`, {
+      method: 'POST',
+      body: JSON.stringify({ worker_id: workerId })
+    });
+  }
+
   async publishWardComplaintToCommunity(id: string, data: {
     title: string;
     description: string;
     before_photo_url: string;
+    before_photos?: string[];
     after_photo_url: string;
     after_photos?: string[];
     waste_kg?: number;
@@ -1416,11 +1458,13 @@ class ApiService {
   }
 
   async getAdminWards() {
-    return this.request<{ success: boolean; data: (import('../types/index.js').Ward & {
-      assigned_officers: Array<{ id: string; name: string; phone: string }>;
-      active_complaints_count: number;
-      total_workers_count: number;
-    })[] }>('/admin/wards');
+    return this.request<{
+      success: boolean; data: (import('../types/index.js').Ward & {
+        assigned_officers: Array<{ id: string; name: string; phone: string }>;
+        active_complaints_count: number;
+        total_workers_count: number;
+      })[]
+    }>('/admin/wards');
   }
 
   async updateWardBoundary(wardId: string, boundary_coordinates: [number, number][], location_summary?: string) {
@@ -1476,10 +1520,12 @@ class ApiService {
   }
 
   async getWardOfficers() {
-    return this.request<{ success: boolean; data: (import('../types/index.js').WardOfficerRecord & {
-      flagged_count?: number;
-      allowed_tabs?: string[];
-    })[] }>('/admin/ward-officers');
+    return this.request<{
+      success: boolean; data: (import('../types/index.js').WardOfficerRecord & {
+        flagged_count?: number;
+        allowed_tabs?: string[];
+      })[]
+    }>('/admin/ward-officers');
   }
 
   async createWardOfficer(data: {
@@ -1516,19 +1562,21 @@ class ApiService {
   }
 
   async getAdminWorkers() {
-    return this.request<{ success: boolean; data: Array<{
-      id: string;
-      worker_code: string;
-      full_name: string;
-      phone: string;
-      email: string;
-      ward_number: number;
-      ward_name: string;
-      designation: string;
-      preferred_language: string;
-      is_active: boolean;
-      created_at: string;
-    }> }>('/admin/workers');
+    return this.request<{
+      success: boolean; data: Array<{
+        id: string;
+        worker_code: string;
+        full_name: string;
+        phone: string;
+        email: string;
+        ward_number: number;
+        ward_name: string;
+        designation: string;
+        preferred_language: string;
+        is_active: boolean;
+        created_at: string;
+      }>
+    }>('/admin/workers');
   }
 
   async createAdminWorker(data: {
@@ -1566,10 +1614,12 @@ class ApiService {
   }
 
   async getAdminCategories() {
-    return this.request<{ success: boolean; data: Array<import('../types/index.js').ComplaintCategory & {
-      active_complaints_count: number;
-      total_complaints_count: number;
-    }> }>('/admin/categories');
+    return this.request<{
+      success: boolean; data: Array<import('../types/index.js').ComplaintCategory & {
+        active_complaints_count: number;
+        total_complaints_count: number;
+      }>
+    }>('/admin/categories');
   }
 
   async createAdminCategory(data: {
@@ -1610,10 +1660,12 @@ class ApiService {
   }
 
   async getAdminFlaggedOfficers() {
-    return this.request<{ success: boolean; data: Array<{
-      officer: import('../types/index.js').WardOfficerRecord;
-      overdue_complaints: any[];
-    }> }>('/admin/flagged-officers');
+    return this.request<{
+      success: boolean; data: Array<{
+        officer: import('../types/index.js').WardOfficerRecord;
+        overdue_complaints: any[];
+      }>
+    }>('/admin/flagged-officers');
   }
 
   async getAdminWardAnalysis(wardNumber: number) {

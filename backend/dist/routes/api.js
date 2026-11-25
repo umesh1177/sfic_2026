@@ -183,6 +183,10 @@ exports.apiRouter.post('/ward/complaints/:id/reopen', softAuthenticate, wardOffi
 exports.apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, wardOfficerController_js_1.WardOfficerController.assignComplaint);
 exports.apiRouter.post('/ward/complaints/:id/reject', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectComplaint);
 exports.apiRouter.post('/ward/complaints/:id/verify-complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyCompleteComplaint);
+exports.apiRouter.post('/ward/complaints/:id/verify-evidence', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyLeaderEvidence);
+exports.apiRouter.post('/ward/complaints/:id/reject-evidence', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectLeaderEvidence);
+exports.apiRouter.post('/ward/complaints/:id/add-worker', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addWorkerToComplaintSquad);
+exports.apiRouter.post('/ward/complaints/:id/remove-worker', softAuthenticate, wardOfficerController_js_1.WardOfficerController.removeWorkerFromComplaintSquad);
 exports.apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishComplaintToCommunity);
 exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);
 exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);

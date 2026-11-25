@@ -14,7 +14,8 @@ import {
   Volume2,
   Globe,
   Wrench,
-  Building2
+  Building2,
+  ShieldCheck
 } from 'lucide-react';
 import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile } from '../types/index.js';
@@ -141,10 +142,10 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
                 ) : user.role === 'community_head' ? (
                   <span className="flex items-center gap-1"><Building2 className="w-3 h-3 text-[#047857] shrink-0" /> Community Head</span>
                 ) : (
-                  <>
-                    <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
-                    <span>120 Karma Pts</span>
-                  </>
+                  <span className="flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-[#047857] shrink-0" />
+                    <span>Verified Citizen</span>
+                  </span>
                 )}
               </p>
             </div>

@@ -56,7 +56,7 @@ export class DbRepository {
            VALUES ($1, 'citizen')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'citizen'`,
           [validId]
-        ).catch(() => {});
+        ).catch(() => { });
       } catch (err: any) {
         console.warn('[DB REPO - ensureProfileExists warning]:', err.message);
       }
@@ -113,7 +113,7 @@ export class DbRepository {
            VALUES ($1, $2)
            ON CONFLICT (user_id, role) DO UPDATE SET role = EXCLUDED.role`,
           [validId, roleToAssign]
-        ).catch(() => {});
+        ).catch(() => { });
 
         const authId = randomUUID();
         await pool.query(
@@ -299,14 +299,14 @@ export class DbRepository {
           const resolvedRole = matchedByCommUsername
             ? 'community_head'
             : matchedByWorkerUsername
-            ? 'worker'
-            : (row.role || row.latest_user_role || 'citizen');
+              ? 'worker'
+              : (row.role || row.latest_user_role || 'citizen');
 
           const plainPass = matchedByCommUsername
             ? (row.auth_plain_password || row.comm_plain_password || row.plain_password)
             : matchedByWorkerUsername
-            ? (row.auth_plain_password || row.worker_plain_password || row.plain_password)
-            : (row.auth_plain_password || row.plain_password || row.comm_plain_password || row.worker_plain_password);
+              ? (row.auth_plain_password || row.worker_plain_password || row.plain_password)
+              : (row.auth_plain_password || row.plain_password || row.comm_plain_password || row.worker_plain_password);
 
           const profile: any = {
             id: row.id,
@@ -316,8 +316,8 @@ export class DbRepository {
             username: matchedByCommUsername
               ? row.comm_username
               : matchedByWorkerUsername
-              ? (row.worker_username || row.worker_code)
-              : (row.username || row.comm_username || row.worker_username || row.worker_code),
+                ? (row.worker_username || row.worker_code)
+                : (row.username || row.comm_username || row.worker_username || row.worker_code),
             plain_password: plainPass,
             avatar_url: row.avatar_url,
             preferred_language: row.preferred_language || 'en',
@@ -795,23 +795,23 @@ export class DbRepository {
         const isResolvedStatus = newStatus === 'resolved';
         const updateRes = this.isValidUUID(lookupId)
           ? await pool.query(
-              `UPDATE complaints
+            `UPDATE complaints
                SET status = $1,
                    resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
                    updated_at = NOW()
                WHERE id = $3 OR complaint_number = $4
                RETURNING id`,
-              [newStatus, isResolvedStatus, lookupId, lookupNum]
-            )
+            [newStatus, isResolvedStatus, lookupId, lookupNum]
+          )
           : await pool.query(
-              `UPDATE complaints
+            `UPDATE complaints
                SET status = $1,
                    resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
                    updated_at = NOW()
                WHERE complaint_number = $3
                RETURNING id`,
-              [newStatus, isResolvedStatus, lookupNum]
-            );
+            [newStatus, isResolvedStatus, lookupNum]
+          );
 
         const dbComplaintId = updateRes.rows[0]?.id;
         if (actorInfo && dbComplaintId) {
@@ -819,7 +819,7 @@ export class DbRepository {
             `INSERT INTO complaint_activity_logs (complaint_id, status, note, actor_name, actor_role)
              VALUES ($1, $2, $3, $4, $5)`,
             [dbComplaintId, newStatus, actorInfo.note, actorInfo.name, actorInfo.role]
-          ).catch(() => {});
+          ).catch(() => { });
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - updateComplaintStatus]:', err.message);
@@ -868,7 +868,7 @@ export class DbRepository {
       type,
       referenceId,
       tag: `swachhsetu-${type}-${referenceId || Date.now()}`
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   public static async submitFeedback(complaintId: string, citizenId: string, rating: number, feedbackText: string, satisfactory: boolean) {
@@ -943,7 +943,7 @@ export class DbRepository {
   // 2. CLEANLINESS DRIVES: FETCH & REGISTER
   // =========================================================================
 
-    public static async getDrives(citizenId?: string): Promise<CleanlinessDrive[]> {
+  public static async getDrives(citizenId?: string): Promise<CleanlinessDrive[]> {
     if (isDbConnected()) {
       try {
         const res = await pool.query('SELECT * FROM cleanliness_drives ORDER BY start_time ASC');
@@ -1095,7 +1095,7 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
               [driveId]
-            ).catch(() => {});
+            ).catch(() => { });
             return {
               success: false,
               error: `Registration limit reached (${currentCount}/${maxCap} volunteers). Registrations are now closed.`,
@@ -1124,13 +1124,13 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
               [driveId]
-            ).catch(() => {});
+            ).catch(() => { });
           }
 
           await pool.query(
             `UPDATE cleanliness_drives SET registered_volunteers_count = $1 WHERE id = $2`,
             [newCount, driveId]
-          ).catch(() => {});
+          ).catch(() => { });
 
           return {
             success: true,
@@ -1205,12 +1205,12 @@ export class DbRepository {
     const validCitizenId = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
     if (isDbConnected()) {
       try {
-        await pool.query('DELETE FROM drive_registrations WHERE drive_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => {});
-        await pool.query('DELETE FROM activity_registrations WHERE activity_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => {});
+        await pool.query('DELETE FROM drive_registrations WHERE drive_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => { });
+        await pool.query('DELETE FROM activity_registrations WHERE activity_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => { });
         await pool.query(
           `UPDATE cleanliness_drives SET registered_volunteers_count = GREATEST(0, registered_volunteers_count - 1) WHERE id = $1`,
           [driveId]
-        ).catch(() => {});
+        ).catch(() => { });
         return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - cancelDriveRegistration]:', err.message);
@@ -1243,7 +1243,7 @@ export class DbRepository {
           UPDATE activity_registrations
           SET attendance_status = 'present', checked_in_at = NOW()
           WHERE activity_id = $1 AND citizen_id = $2
-        `, [driveId, validCitizenId]).catch(() => {});
+        `, [driveId, validCitizenId]).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - markDriveAttendance]:', err.message);
       }
@@ -1558,12 +1558,14 @@ export class DbRepository {
     achievement_stats: string;
     image_url: string;
     before_image_url?: string;
+    before_photos?: string[];
     after_image_url?: string;
     after_photos?: string[];
   }): Promise<CommunityRecognitionPost | null> {
     if (isDbConnected()) {
       try {
         const afterPhotosJson = data.after_photos ? JSON.stringify(data.after_photos) : null;
+        const beforePhotosJson = data.before_photos ? JSON.stringify(data.before_photos) : null;
         const res = await pool.query(
           `INSERT INTO community_recognition_posts (
             author_name, author_role, is_verified_nmc, ward_number, ward_name,
@@ -1571,6 +1573,8 @@ export class DbRepository {
             achievement_stats, image_url, likes_count, comments_count,
             before_image_url, after_image_url, after_photos
           ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14)
+            before_image_url, after_image_url, after_photos, before_photos
+          ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14, $15)
           RETURNING *`,
           [
             data.author_name,
@@ -1586,9 +1590,37 @@ export class DbRepository {
             data.image_url,
             data.before_image_url || null,
             data.after_image_url || null,
-            afterPhotosJson
+            afterPhotosJson,
+            beforePhotosJson
           ]
-        );
+        ).catch(async () => {
+          // Fallback if before_photos column not yet in DB
+          return pool.query(
+            `INSERT INTO community_recognition_posts (
+              author_name, author_role, is_verified_nmc, ward_number, ward_name,
+              hero_name, hero_role, badge_title, title, description,
+              achievement_stats, image_url, likes_count, comments_count,
+              before_image_url, after_image_url, after_photos
+            ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14)
+            RETURNING *`,
+            [
+              data.author_name,
+              data.author_role,
+              data.ward_number,
+              data.ward_name,
+              data.hero_name,
+              data.hero_role,
+              data.badge_title,
+              data.title,
+              data.description,
+              data.achievement_stats,
+              data.image_url,
+              data.before_image_url || null,
+              data.after_image_url || null,
+              afterPhotosJson
+            ]
+          );
+        });
         const r = res.rows[0];
         const postObj: any = {
           id: r.id,
@@ -1606,6 +1638,7 @@ export class DbRepository {
           achievement_stats: r.achievement_stats,
           image_url: r.image_url,
           before_image_url: r.before_image_url || data.before_image_url,
+          before_photos: r.before_photos || data.before_photos || (r.before_image_url ? [r.before_image_url] : []),
           after_image_url: r.after_image_url || data.after_image_url,
           after_photos: r.after_photos || data.after_photos,
           likes_count: r.likes_count,
@@ -1622,7 +1655,7 @@ export class DbRepository {
     }
 
     // Fallback store
-    const newPost: CommunityRecognitionPost = {
+    const newPost: any = {
       id: `post-${Date.now()}`,
       author_name: data.author_name,
       author_role: data.author_role,
@@ -1638,6 +1671,7 @@ export class DbRepository {
       achievement_stats: data.achievement_stats,
       image_url: data.image_url,
       before_image_url: data.before_image_url,
+      before_photos: data.before_photos || (data.before_image_url ? [data.before_image_url] : []),
       after_image_url: data.after_image_url,
       after_photos: data.after_photos,
       likes_count: 1,
@@ -2085,7 +2119,7 @@ export class DbRepository {
           await pool.query(
             `UPDATE cleanliness_drives SET max_volunteers = $1 WHERE id = $2`,
             [parsedMax, id]
-          ).catch(() => {});
+          ).catch(() => { });
 
           const cntRes = await pool.query(
             `SELECT COUNT(*) FROM activity_registrations WHERE activity_id = $1 AND registration_status <> 'cancelled'`,
@@ -2097,13 +2131,13 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
               [id]
-            ).catch(() => {});
+            ).catch(() => { });
           } else if (existing.registration_status === 'closed' && existing.event_status !== 'completed') {
             // Reopen automatically if organizer raised the limit above current enrollment
             await pool.query(
               `UPDATE community_activities SET registration_status = 'open', updated_at = NOW() WHERE id = $1`,
               [id]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
 
@@ -2185,7 +2219,7 @@ export class DbRepository {
           prev.approval_status,
           updates.approval_status || prev.approval_status,
           actionDesc
-        ]).catch(() => {});
+        ]).catch(() => { });
 
         return this.getActivityById(id);
       } catch (err: any) {
@@ -2765,7 +2799,7 @@ export class DbRepository {
             `Question Answered: ${q.activity_title}`,
             `The Community Head has answered your question regarding "${q.activity_title}": "${responseText.slice(0, 100)}..."`,
             q.activity_id
-          ]).catch(() => {});
+          ]).catch(() => { });
 
           const r = res.rows[0];
           return {
@@ -2918,7 +2952,7 @@ export class DbRepository {
             INSERT INTO activity_announcement_recipients (announcement_id, citizen_id, registration_id, delivery_status)
             VALUES ($1, $2, $3, 'delivered')
             ON CONFLICT (announcement_id, citizen_id) DO NOTHING
-          `, [an.id, cit.citizen_id, cit.reg_id]).catch(() => {});
+          `, [an.id, cit.citizen_id, cit.reg_id]).catch(() => { });
 
           await pool.query(`
             INSERT INTO notifications (user_id, title, message, notification_type, reference_id, is_read)
@@ -2928,7 +2962,7 @@ export class DbRepository {
             `📢 ${data.title}`,
             data.message,
             data.activity_id
-          ]).catch(() => {});
+          ]).catch(() => { });
         }
 
         return {
@@ -3044,12 +3078,12 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET evidence_status = 'submitted', updated_at = NOW() WHERE id = $1 AND COALESCE(evidence_status, '') <> 'verified_complete'`,
               [data.activity_id]
-            ).catch(() => {});
+            ).catch(() => { });
           } else {
             await pool.query(
               `UPDATE community_activities SET event_status = CASE WHEN event_status = 'upcoming' THEN 'ongoing' ELSE event_status END, updated_at = NOW() WHERE id = $1`,
               [data.activity_id]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
 
@@ -3144,8 +3178,8 @@ export class DbRepository {
           decision === 'approved'
             ? 'verified_complete'
             : decision === 'rejected'
-            ? 'rejected'
-            : 'changes_requested';
+              ? 'rejected'
+              : 'changes_requested';
 
         const statusUpdates: Record<string, string> = { evidence_status: nextEvidenceStatus };
         if (decision === 'approved') {
@@ -3163,10 +3197,10 @@ export class DbRepository {
         if (decision === 'approved') {
           await pool.query(`
             UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1
-          `, [activityId]).catch(() => {});
+          `, [activityId]).catch(() => { });
           await pool.query(`
             UPDATE cleanliness_drives SET status = 'completed' WHERE id = $1
-          `, [activityId]).catch(() => {});
+          `, [activityId]).catch(() => { });
         }
 
         return true;
@@ -4052,7 +4086,7 @@ export class DbRepository {
             $1,
             FALSE
           )
-        `, [validAssignment]).catch(() => {});
+        `, [validAssignment]).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - createAttendanceException]:', err.message);
       }
@@ -4157,6 +4191,7 @@ export class DbRepository {
           worker_name: r.worker_name,
           evidence_type: r.evidence_type,
           storage_path: r.storage_path,
+          photos: (Array.isArray(r.photos) && r.photos.length > 0) ? r.photos : (r.storage_path ? [r.storage_path] : []),
           description: r.description,
           latitude: r.latitude ? parseFloat(r.latitude) : undefined,
           longitude: r.longitude ? parseFloat(r.longitude) : undefined,
@@ -4188,7 +4223,8 @@ export class DbRepository {
     description: string,
     lat?: number,
     lon?: number,
-    accuracy?: number
+    accuracy?: number,
+    photos?: string[]
   ): Promise<WorkEvidence> {
     const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : randomUUID();
     let validWorker = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
@@ -4211,7 +4247,7 @@ export class DbRepository {
           validWorker = wpRes.rows[0].id;
           workerName = wpRes.rows[0].full_name || workerName;
         }
-      } catch {}
+      } catch { }
     }
 
     if (lat && lon) {
@@ -4227,7 +4263,7 @@ export class DbRepository {
             taskLon = parseFloat(taskRes.rows[0].longitude);
             evidenceRadius = parseInt(taskRes.rows[0].evidence_radius_meters || '150', 10);
           }
-        } catch {}
+        } catch { }
       }
 
       distanceMeters = this.calculateHaversineDistanceMeters(lat, lon, taskLat, taskLon);
@@ -4235,13 +4271,15 @@ export class DbRepository {
     }
 
     const nowIso = new Date().toISOString();
+    const photoArray = Array.isArray(photos) && photos.length > 0 ? photos : (storagePath ? [storagePath] : []);
     const evidence: WorkEvidence = {
       id: `ev-${Date.now()}`,
       assignment_id: validAssignment,
       submitted_by: validWorker,
       worker_name: workerName,
       evidence_type: evidenceType,
-      storage_path: storagePath,
+      storage_path: storagePath || (photoArray[0] || ''),
+      photos: photoArray,
       description: description.trim(),
       latitude: lat,
       longitude: lon,
@@ -4260,15 +4298,31 @@ export class DbRepository {
           INSERT INTO work_evidence (
             assignment_id, submitted_by, evidence_type, storage_path, description,
             latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status
+            latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status,
+            photos
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           RETURNING *
         `, [
-          validAssignment, validWorker, evidenceType, storagePath, description.trim(),
-          lat || null, lon || null, accuracy || null, distanceMeters || null, locationStatus
-        ]);
+          validAssignment, validWorker, evidenceType, storagePath || (photoArray[0] || ''), description.trim(),
+          lat || null, lon || null, accuracy || null, distanceMeters || null, locationStatus,
+          photoArray
+        ]).catch(async () => {
+          // Fallback if photos column doesn't exist yet
+          return pool.query(`
+            INSERT INTO work_evidence (
+              assignment_id, submitted_by, evidence_type, storage_path, description,
+              latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING *
+          `, [
+            validAssignment, validWorker, evidenceType, storagePath || (photoArray[0] || ''), description.trim(),
+            lat || null, lon || null, accuracy || null, distanceMeters || null, locationStatus
+          ]);
+        });
 
-        if (res.rows.length > 0) {
+        if (res && res.rows && res.rows.length > 0) {
           evidence.id = res.rows[0].id;
           evidence.created_at = res.rows[0].created_at ? new Date(res.rows[0].created_at).toISOString() : nowIso;
           evidence.device_capture_timestamp = res.rows[0].device_capture_timestamp ? new Date(res.rows[0].device_capture_timestamp).toISOString() : nowIso;
@@ -4318,6 +4372,132 @@ export class DbRepository {
     }
     if (validAssignment === 'a1000000-0000-0000-0000-000000000002') {
       return validWorker === 'f2000000-0000-0000-0000-000000000002';
+    }
+    return true;
+  }
+
+  public static async verifyWorkEvidence(assignmentId: string, evidenceIds?: string[]): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        if (evidenceIds && evidenceIds.length > 0) {
+          const validIds = evidenceIds.filter(id => this.isValidUUID(id));
+          if (validIds.length > 0) {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'verified' WHERE id = ANY($1::uuid[]) OR assignment_id = $2`,
+              [validIds, assignmentId]
+            );
+          } else {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'verified' WHERE assignment_id = $1`,
+              [assignmentId]
+            );
+          }
+        } else {
+          await pool.query(
+            `UPDATE work_evidence SET review_status = 'verified' WHERE assignment_id = $1`,
+            [assignmentId]
+          );
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - verifyWorkEvidence]:', err.message);
+      }
+    }
+    if ((store as any).workEvidence) {
+      for (const ev of (store as any).workEvidence) {
+        if (ev.assignment_id === assignmentId || (evidenceIds && evidenceIds.includes(ev.id))) {
+          ev.review_status = 'verified';
+        }
+      }
+    }
+    return true;
+  }
+
+  public static async rejectWorkEvidence(assignmentId: string, evidenceIds?: string[], reason?: string): Promise<boolean> {
+    const comments = reason || 'Rejected by Ward Officer upon inspection';
+    if (isDbConnected()) {
+      try {
+        if (evidenceIds && evidenceIds.length > 0) {
+          const validIds = evidenceIds.filter(id => this.isValidUUID(id));
+          if (validIds.length > 0) {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'rejected', review_comments = $2 WHERE id = ANY($1::uuid[]) OR assignment_id = $3`,
+              [validIds, comments, assignmentId]
+            );
+          } else {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'rejected', review_comments = $2 WHERE assignment_id = $1`,
+              [assignmentId, comments]
+            );
+          }
+        } else {
+          await pool.query(
+            `UPDATE work_evidence SET review_status = 'rejected', review_comments = $2 WHERE assignment_id = $1`,
+            [assignmentId, comments]
+          );
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - rejectWorkEvidence]:', err.message);
+      }
+    }
+    if ((store as any).workEvidence) {
+      for (const ev of (store as any).workEvidence) {
+        if (ev.assignment_id === assignmentId || (evidenceIds && evidenceIds.includes(ev.id))) {
+          ev.review_status = 'rejected';
+          ev.review_comments = comments;
+        }
+      }
+    }
+    return true;
+  }
+
+  public static async addWorkerToWorkAssignment(assignmentId: string, worker: any): Promise<boolean> {
+    if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(worker.id)) {
+      try {
+        await pool.query(`
+          INSERT INTO work_assignment_members (assignment_id, worker_id, temporary_leader, assignment_status)
+          VALUES ($1, $2, false, 'assigned')
+          ON CONFLICT (assignment_id, worker_id) DO NOTHING
+        `, [assignmentId, worker.id]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - addWorkerToWorkAssignment]:', err.message);
+      }
+    }
+    const assignment = (store.workAssignments || []).find(a => a.id === assignmentId);
+    if (assignment) {
+      if (!assignment.team_members) assignment.team_members = [];
+      const exists = assignment.team_members.some((m: any) => m.worker_id === worker.id || m.id === worker.id);
+      if (!exists) {
+        assignment.team_members.push({
+          id: `wam-${Date.now()}-${worker.id}`,
+          assignment_id: assignmentId,
+          worker_id: worker.id,
+          user_id: worker.user_id,
+          worker_code: worker.worker_code,
+          worker_name: worker.full_name,
+          worker_phone: worker.phone,
+          designation_name: worker.designation,
+          temporary_leader: false,
+          assignment_status: 'assigned'
+        });
+      }
+    }
+    return true;
+  }
+
+  public static async removeWorkerFromWorkAssignment(assignmentId: string, workerId: string): Promise<boolean> {
+    if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(workerId)) {
+      try {
+        await pool.query(`
+          DELETE FROM work_assignment_members
+          WHERE assignment_id = $1 AND worker_id = $2
+        `, [assignmentId, workerId]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - removeWorkerFromWorkAssignment]:', err.message);
+      }
+    }
+    const assignment = (store.workAssignments || []).find(a => a.id === assignmentId);
+    if (assignment && assignment.team_members) {
+      assignment.team_members = assignment.team_members.filter((m: any) => m.worker_id !== workerId && m.id !== workerId);
     }
     return true;
   }
@@ -4417,7 +4597,7 @@ export class DbRepository {
             $1,
             FALSE
           )
-        `, [validAssignment]).catch(() => {});
+        `, [validAssignment]).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - submitWorkCompletionReport]:', err.message);
       }
@@ -4608,8 +4788,8 @@ export class DbRepository {
     const attendanceStatus = recentAttendance.length > 0 && isVerifiedRec(recentAttendance[0])
       ? 'Checked-in (GPS Verified)'
       : verifiedAssignmentIds.size > 0
-      ? 'Checked-in (Verified)'
-      : 'Attendance Pending';
+        ? 'Checked-in (Verified)'
+        : 'Attendance Pending';
 
     let onTimeRate = 0;
     if (assignments.length > 0) {
@@ -4922,11 +5102,13 @@ export class DbRepository {
           mw.plain_password || 'Worker@123',
           mw.ward_number,
           `Ward ${mw.ward_number}`
-        ]).catch(() => {});
+        ]).catch(() => { });
       }
 
       // 3. Ensure communities enhancements
       await pool.query(`
+        ALTER TABLE work_evidence ADD COLUMN IF NOT EXISTS photos TEXT[];
+        ALTER TABLE community_recognition_posts ADD COLUMN IF NOT EXISTS before_photos JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE communities ALTER COLUMN created_by DROP NOT NULL;
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS head_name VARCHAR(150);
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
@@ -4986,15 +5168,15 @@ export class DbRepository {
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS registered_via VARCHAR(50) DEFAULT 'ward_officer';
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS description TEXT;
-      `).catch(() => {});
+      `).catch(() => { });
 
       await pool.query(`
         ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS allow_multiple_orgs BOOLEAN DEFAULT TRUE;
-      `).catch(() => {});
+      `).catch(() => { });
 
       await pool.query(`
         ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS review_metadata JSONB DEFAULT '{}'::jsonb;
-      `).catch(() => {});
+      `).catch(() => { });
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS drive_certificates (
@@ -5017,7 +5199,7 @@ export class DbRepository {
           verification_url TEXT,
           issued_at TIMESTAMPTZ DEFAULT NOW()
         );
-      `).catch(() => {});
+      `).catch(() => { });
 
       // 4. Synchronize memory store from database on startup so state is 100% unified
       await this.syncWardOfficersFromDb();
@@ -5061,7 +5243,7 @@ export class DbRepository {
   public static async syncWardOfficersFromDb(): Promise<void> {
     if (!isDbConnected()) return;
     try {
-      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => {});
+      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => { });
 
       const res = await pool.query(`
         SELECT woa.*, a.password_hash, a.plain_password
@@ -5211,7 +5393,7 @@ export class DbRepository {
       await pool.query(
         `INSERT INTO user_roles (user_id, role) VALUES ($1, 'ward_officer') ON CONFLICT (user_id) DO UPDATE SET role = 'ward_officer'`,
         [resolvedUserId]
-      ).catch(() => {});
+      ).catch(() => { });
 
       // 3. Upsert password in citizen_auth_profiles if provided
       if (passwordHash) {
@@ -5224,11 +5406,11 @@ export class DbRepository {
              plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
              updated_at = NOW()`,
           [resolvedUserId, officer.phone, passwordHash, plainPassword || null]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       // 4. Upsert into ward_officer_assignments (including allowed_tabs RBAC)
-      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => {});
+      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => { });
       const allowedTabsJson =
         Array.isArray(officer.allowed_tabs) && officer.allowed_tabs.length > 0
           ? JSON.stringify(officer.allowed_tabs)
@@ -5292,7 +5474,7 @@ export class DbRepository {
         saved_by VARCHAR(255),
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
-    `).catch(() => {});
+    `).catch(() => { });
   }
 
   public static async recordBoundaryHistory(entry: {
@@ -5428,17 +5610,17 @@ export class DbRepository {
         ).catch(() => ({ rows: [] as any[] }));
 
         for (const a of assignRes.rows) {
-          await pool.query(`DELETE FROM work_evidence WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM work_attendance WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM work_completion_reports WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM assignment_team_members WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM work_assignments WHERE id = $1`, [a.id]).catch(() => {});
+          await pool.query(`DELETE FROM work_evidence WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM work_attendance WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM work_completion_reports WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM assignment_team_members WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM work_assignments WHERE id = $1`, [a.id]).catch(() => { });
         }
 
         if (this.isValidUUID(compId)) {
-          await pool.query(`DELETE FROM complaint_activity_logs WHERE complaint_id = $1`, [compId]).catch(() => {});
-          await pool.query(`DELETE FROM complaint_feedback WHERE complaint_id = $1`, [compId]).catch(() => {});
-          await pool.query(`DELETE FROM notifications WHERE related_id = $1`, [compId]).catch(() => {});
+          await pool.query(`DELETE FROM complaint_activity_logs WHERE complaint_id = $1`, [compId]).catch(() => { });
+          await pool.query(`DELETE FROM complaint_feedback WHERE complaint_id = $1`, [compId]).catch(() => { });
+          await pool.query(`DELETE FROM notifications WHERE related_id = $1`, [compId]).catch(() => { });
           const delRes = await pool.query(
             `DELETE FROM complaints WHERE id = $1 OR complaint_number = $2`,
             [compId, compNum]
@@ -5653,7 +5835,7 @@ export class DbRepository {
            VALUES ($1, 'worker')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'worker'`,
           [validUserId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         // 5. Upsert worker_profiles with guaranteed unique worker_code and RETURNING actual DB id
         const skillsJson = JSON.stringify(Array.isArray(worker.skills) ? worker.skills : [worker.skills || 'Litter Abatement']);
@@ -5720,7 +5902,7 @@ export class DbRepository {
     if (isDbConnected()) {
       try {
         const skillsJson = updates.skills ? JSON.stringify(Array.isArray(updates.skills) ? updates.skills : [updates.skills]) : undefined;
-        
+
         let wpSql = `UPDATE worker_profiles SET updated_at = CURRENT_TIMESTAMP`;
         const wpVals: any[] = [];
         if (updates.designation) {
@@ -5760,7 +5942,7 @@ export class DbRepository {
             await pool.query(
               `UPDATE citizen_auth_profiles SET mobile_number = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
               [updates.phone.trim(), userId]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
         return true;
@@ -5789,7 +5971,7 @@ export class DbRepository {
         }
 
         if (userId) {
-          await pool.query(`UPDATE profiles SET is_active = FALSE WHERE id = $1`, [userId]).catch(() => {});
+          await pool.query(`UPDATE profiles SET is_active = FALSE WHERE id = $1`, [userId]).catch(() => { });
         }
         return true;
       } catch (err: any) {
@@ -6046,7 +6228,7 @@ export class DbRepository {
            VALUES ($1, 'community_head')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'community_head'`,
           [validUserId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         await pool.query(
           `INSERT INTO communities (
@@ -6109,7 +6291,7 @@ export class DbRepository {
            VALUES (gen_random_uuid(), $1, $2, 'community_head')
            ON CONFLICT (community_id, user_id) DO UPDATE SET membership_role = 'community_head'`,
           [validCommId, validUserId]
-        ).catch(() => {});
+        ).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - saveCommunityToDb]:', err.message);
       }
@@ -6508,11 +6690,11 @@ export class DbRepository {
           await pool.query(
             `UPDATE profiles SET is_active = $1, updated_at = NOW() WHERE id = $2`,
             [isApprove, commRow.created_by]
-          ).catch(() => {});
+          ).catch(() => { });
           await pool.query(
             `UPDATE citizen_auth_profiles SET account_status = $1, updated_at = NOW() WHERE user_id = $2`,
             [isApprove ? 'active' : 'suspended', commRow.created_by]
-          ).catch(() => {});
+          ).catch(() => { });
 
           await this.createNotification(
             commRow.created_by,
@@ -6760,7 +6942,7 @@ export class DbRepository {
                       status = 'open',
                       updated_at = NOW()
                   WHERE id::text = $1::text
-                `, [act.linked_problem_id]).catch(() => {});
+                `, [act.linked_problem_id]).catch(() => { });
               } else {
                 // Exclusive single organization: lock problem to this org & close competing pending drives on the same problem
                 await pool.query(`
@@ -6772,7 +6954,7 @@ export class DbRepository {
                       linked_activity_id = $3,
                       updated_at = NOW()
                   WHERE id::text = $4::text
-                `, [act.community_id, orgName, id, act.linked_problem_id]).catch(() => {});
+                `, [act.community_id, orgName, id, act.linked_problem_id]).catch(() => { });
 
                 // Reject other pending proposals on the same problem and notify their community heads
                 const otherPending = await pool.query(`
@@ -6989,23 +7171,23 @@ export class DbRepository {
         await pool.query(
           `UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1`,
           [activityId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         await pool.query(
           `UPDATE cleanliness_drives SET status = 'completed' WHERE id = $1`,
           [activityId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         if (act?.linked_problem_id) {
           await pool.query(
             `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE id::text = $1::text OR linked_activity_id::text = $2::text`,
             [act.linked_problem_id, activityId]
-          ).catch(() => {});
+          ).catch(() => { });
         } else {
           await pool.query(
             `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE linked_activity_id::text = $1::text`,
             [activityId]
-          ).catch(() => {});
+          ).catch(() => { });
         }
         if (store.communityProblems) {
           for (const p of store.communityProblems) {
@@ -7021,7 +7203,7 @@ export class DbRepository {
           `INSERT INTO activity_evidence_reviews (activity_id, reviewer_id, reviewer_role, decision, comments)
            VALUES ($1, $2, 'ward_officer', 'approved', $3)`,
           [activityId, validReviewer, comments]
-        ).catch(() => {});
+        ).catch(() => { });
 
         if (act?.created_by) {
           await this.createNotification(

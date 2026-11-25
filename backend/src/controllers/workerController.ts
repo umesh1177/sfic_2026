@@ -370,33 +370,41 @@ export class WorkerController {
       const {
         stage, // 'before' | 'during' | 'after'
         photo_url,
+        photos,
         latitude,
         longitude,
         description,
         gps_accuracy
       } = req.body;
 
-      if (!stage || !photo_url) {
+      const photoList: string[] = Array.isArray(photos) && photos.length > 0
+        ? photos
+        : (photo_url ? [photo_url] : []);
+
+      if (!stage || photoList.length === 0) {
         res.status(400).json({
           success: false,
-          error: 'stage (before|during|after) and photo_url are required'
+          error: 'stage (before|during|after) and at least one photo (photos array or photo_url) are required'
         });
         return;
       }
 
       const normalizedStage = String(stage).toLowerCase() as 'before' | 'during' | 'after';
+      const primaryPhoto = photoList[0];
       const evidence = await DbRepository.addWorkEvidence(
         id,
         workerId,
         normalizedStage,
-        photo_url,
+        primaryPhoto,
         description || `${normalizedStage.toUpperCase()} photographic verification evidence`,
         latitude ? parseFloat(latitude) : undefined,
         longitude ? parseFloat(longitude) : undefined,
-        gps_accuracy ? parseFloat(gps_accuracy) : undefined
+        gps_accuracy ? parseFloat(gps_accuracy) : undefined,
+        photoList
       );
 
       if (evidence) {
+        evidence.photos = photoList;
         recordEvidenceForAssignment(id, evidence);
         const assignment = (store.workAssignments || []).find(wa => wa.id === id);
         if (assignment) {

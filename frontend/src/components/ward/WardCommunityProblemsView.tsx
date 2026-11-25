@@ -144,13 +144,16 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
       });
 
       if (res.success) {
+        if (res.data) {
+          setProblems(prev => [res.data, ...prev]);
+        }
         setSuccessMsg(`Civic problem published for Ward ${wardNumber} organizations!`);
         setIsCreateOpen(false);
         setTitle('');
         setDescription('');
         setActionPlan('');
         setLocationName('');
-        fetchProblems();
+        await fetchProblems();
         setTimeout(() => setSuccessMsg(null), 5000);
       }
     } catch (err: any) {
@@ -164,7 +167,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
     try {
       await api.reopenWardCommunityProblem(id);
       setSuccessMsg('Problem reopened for community organizations.');
-      fetchProblems();
+      await fetchProblems();
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Could not reopen problem.');
@@ -177,6 +180,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
       await api.deleteWardCommunityProblem(id);
       setProblems(prev => prev.filter(p => p.id !== id));
       setSuccessMsg('Problem removed.');
+      await fetchProblems();
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Could not remove problem.');

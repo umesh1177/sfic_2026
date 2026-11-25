@@ -191,10 +191,13 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
 
       const res = await api.updateWardOfficer(selectedOfficer.id, payload);
       if (res.success) {
+        if (res.data) {
+          setOfficers(prev => prev.map(o => o.id === selectedOfficer.id ? { ...o, ...res.data } : o));
+        }
         setSuccessMessage(`Ward Officer ${editName} updated successfully.`);
         setTimeout(() => setSuccessMessage(null), 4000);
         setEditModalOpen(false);
-        fetchOfficers();
+        await fetchOfficers();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to update officer.');
@@ -225,6 +228,9 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
 
       const res = await api.createWardOfficer(payload);
       if (res.success) {
+        if (res.data) {
+          setOfficers(prev => [res.data, ...prev]);
+        }
         setSuccessMessage(`Officer ${newName} created successfully. They can now login with ${newPhone}.`);
         setTimeout(() => setSuccessMessage(null), 4000);
         setAddModalOpen(false);
@@ -235,7 +241,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
         setNewPassword('');
         setNewAssignedWards([1]);
         setNewAllowedTabs([...ALL_TAB_IDS]);
-        fetchOfficers();
+        await fetchOfficers();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create officer.');

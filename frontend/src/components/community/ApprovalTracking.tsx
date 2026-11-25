@@ -88,7 +88,7 @@ export const ApprovalTracking: React.FC<ApprovalTrackingProps> = ({
     { num: 8, title: 'Activity Concluded', desc: 'Cleanup finished on the ground' },
     { num: 9, title: 'Evidence Uploaded', desc: 'Before / During / After photos added' },
     { num: 10, title: 'Evidence Submitted', desc: 'Official packet sent to Ward Officer' },
-    { num: 11, title: 'Verified Complete', desc: 'Official stamp & civic karma points issued' }
+    { num: 11, title: 'Verified Complete', desc: 'Official stamp & resolution verified' }
   ];
 
   return (

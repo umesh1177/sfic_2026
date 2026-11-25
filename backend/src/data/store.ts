@@ -1822,7 +1822,7 @@ export const store: DataStore = {
     ward_boundary_overrides: {},
     last_updated: new Date().toISOString()
   },
-  profiles: initialProfiles,
+  profiles: initialProfiles.filter(p => p.role === 'super_admin' || p.role === 'nmc_admin' || p.role === 'ward_officer'),
   authProfiles: [
     {
       id: 'auth-admin-01',
@@ -1858,50 +1858,6 @@ export const store: DataStore = {
       updated_at: '2026-10-15T09:00:00Z'
     },
     {
-      id: 'auth-01',
-      user_id: defaultCitizenId,
-      mobile_number: '+919876543210',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s', // Default hashed pass 'Admin@123'
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-99',
-      user_id: 'c0000000-0000-0000-0000-000000000099',
-      mobile_number: '+919825100099',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-w1',
-      user_id: 'f1000000-0000-0000-0000-000000000001',
-      mobile_number: '+919825120001',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-w2',
-      user_id: 'f1000000-0000-0000-0000-000000000002',
-      mobile_number: '+919825120002',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
       id: 'auth-w3',
       user_id: 'w0000000-0000-0000-0000-000000000003',
       mobile_number: '+919825130003',
@@ -1928,28 +1884,20 @@ export const store: DataStore = {
   loginLogs: [],
   wards: NAVSARI_WARDS,
   categories: initialCategories,
-  complaints: initialComplaints,
-  drives: initialDrives,
-  driveRegistrations: [
-    { drive_id: 'drive-01', citizen_id: defaultCitizenId, registered_at: '2026-10-28T14:10:00Z' }
-  ],
-  challenges: initialChallenges,
-  challengeParticipants: [
-    { challenge_id: 'ch-01', citizen_id: defaultCitizenId, progress: 3 }
-  ],
-  rewards: initialRewards,
-  citizenRewards: [
-    { citizen_id: defaultCitizenId, reward_id: 'rew-01', awarded_at: '2026-10-26T09:05:00Z' },
-    { citizen_id: defaultCitizenId, reward_id: 'rew-02', awarded_at: '2026-10-20T14:00:00Z' },
-    { citizen_id: defaultCitizenId, reward_id: 'rew-03', awarded_at: '2026-10-16T11:00:00Z' }
-  ],
-  notifications: initialNotifications,
-  supportTickets: initialSupportTickets,
-  teams: initialTeams,
-  workers: initialWorkers,
-  workAssignments: initialWorkAssignments,
-  communities: initialCommunities,
-  communityActivities: initialCommunityActivities,
-  recognitionPosts: initialRecognitionPosts,
-  communityProblems: initialCommunityProblems
+  complaints: [],
+  drives: [],
+  driveRegistrations: [],
+  challenges: [],
+  challengeParticipants: [],
+  rewards: [],
+  citizenRewards: [],
+  notifications: [],
+  supportTickets: [],
+  teams: [],
+  workers: [],
+  workAssignments: [],
+  communities: [],
+  communityActivities: [],
+  recognitionPosts: [],
+  communityProblems: []
 };

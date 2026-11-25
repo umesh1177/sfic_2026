@@ -65,9 +65,12 @@ export const TeamManagementView: React.FC = () => {
         worker_ids: editWorkerIds,
         temporary_leader_id: editTemporaryLeaderId
       });
+      if (res.data) {
+        setTeams(prev => prev.map(t => t.id === editingTeam.id ? { ...t, ...res.data } : t));
+      }
       setActionSuccess(res.message || 'Team updated successfully');
       setEditingTeam(null);
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       setActionError(err.message || 'Failed to update team');
     } finally {
@@ -83,6 +86,7 @@ export const TeamManagementView: React.FC = () => {
       const res = await api.deleteWardTeam(teamId);
       setActionSuccess(res.message || `Team "${teamName}" disbanded`);
       setTeams(prev => prev.filter(t => t.id !== teamId));
+      await fetchData();
     } catch (err: any) {
       setActionError(err.message || 'Failed to delete team');
     }
@@ -151,6 +155,9 @@ export const TeamManagementView: React.FC = () => {
       });
 
       const leader = workers.find(w => w.id === temporaryLeaderId);
+      if (res.data) {
+        setTeams(prev => [res.data, ...prev]);
+      }
       setActionSuccess(
         res.message ||
         `Team "${newTeamName}" created with temporary leader ${leader?.full_name || 'selected worker'}.`

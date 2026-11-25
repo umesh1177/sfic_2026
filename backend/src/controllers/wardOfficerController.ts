@@ -400,7 +400,7 @@ export class WardOfficerController {
   public static async getDashboardSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       initializeSeedAttempts();
-      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      await DbRepository.syncWardOfficersFromDb().catch(() => { });
 
       const officerWards = WardOfficerController.resolveOfficerWards(req);
       const wardNum = officerWards[0] || 3;
@@ -468,15 +468,15 @@ export class WardOfficerController {
           type: c.status === 'resolved'
             ? 'completion_report_submitted'
             : c.status === 'awaiting_verification'
-            ? 'evidence_uploaded'
-            : 'new_complaint',
+              ? 'evidence_uploaded'
+              : 'new_complaint',
           title: c.status === 'resolved'
             ? `Resolved: ${c.complaint_number}`
             : c.status === 'awaiting_verification'
-            ? `Evidence Ready: ${c.complaint_number}`
-            : c.status === 'assigned' || c.status === 'in_progress'
-            ? `In Field Progress: ${c.complaint_number}`
-            : `New Complaint: ${c.complaint_number}`,
+              ? `Evidence Ready: ${c.complaint_number}`
+              : c.status === 'assigned' || c.status === 'in_progress'
+                ? `In Field Progress: ${c.complaint_number}`
+                : `New Complaint: ${c.complaint_number}`,
           description: `${c.category_name} at ${c.location?.landmark || c.location?.address || wardName}`,
           actor_name: c.status === 'submitted' ? 'Anonymous Citizen' : officerName,
           actor_role: c.status === 'submitted' ? 'Citizen' : 'Ward Officer',
@@ -494,8 +494,8 @@ export class WardOfficerController {
         Array.isArray((matchedOfficerRec as any)?.allowed_tabs) && (matchedOfficerRec as any).allowed_tabs.length > 0
           ? (matchedOfficerRec as any).allowed_tabs
           : Array.isArray((req.user as any)?.allowed_tabs) && (req.user as any).allowed_tabs.length > 0
-          ? (req.user as any).allowed_tabs
-          : undefined;
+            ? (req.user as any).allowed_tabs
+            : undefined;
 
       const summary: any = {
         ward_number: wardNum,
@@ -589,15 +589,15 @@ export class WardOfficerController {
       }
       let complaints = Array.from(mergedMap.values());
 
-      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      await DbRepository.syncWardOfficersFromDb().catch(() => { });
       const officerWardNums = WardOfficerController.resolveOfficerWards(req);
       const requestedWard = ward || ward_number;
       const targetWardNums: number[] | null =
         requestedWard === 'all'
           ? officerWardNums
           : requestedWard && !isNaN(Number(requestedWard))
-          ? [Number(requestedWard)]
-          : officerWardNums;
+            ? [Number(requestedWard)]
+            : officerWardNums;
 
       if (targetWardNums && targetWardNums.length > 0) {
         complaints = complaints.filter(c => targetWardNums.includes(Number(c.location?.ward_number || 3)));
@@ -1033,6 +1033,17 @@ export class WardOfficerController {
           geofence_radius_meters: 150
         },
 
+        // Previous Squads History
+        previous_squads: attempts.length > 1 ? attempts.slice(0, attempts.length - 1).map((att: any) => ({
+          assignment_id: att.assignment_id,
+          attempt_number: att.attempt_number,
+          team_id: att.team_id,
+          team_name: att.team_name,
+          team_leader_name: att.team_leader_name,
+          assigned_at: att.assigned_at,
+          team_members: att.team_members || []
+        })) : [],
+
         // Section 7: Work Progress & Evidence (ALL chronological evidence across attempts)
         work_progress_evidence: {
           assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
@@ -1420,7 +1431,7 @@ export class WardOfficerController {
             `Ward Officer dispatched "${newAssignment.title}" to ${team.team_name}. Please check in at ${newAssignment.location_name}.`,
             assignmentId,
             'complaint_status'
-          ).catch(() => {});
+          ).catch(() => { });
         }
       }
 
@@ -1725,10 +1736,10 @@ export class WardOfficerController {
             evidence_status: row.has_before && row.has_after
               ? 'Before & After Uploaded'
               : row.has_after
-              ? 'After Uploaded'
-              : row.has_before
-              ? 'Before Uploaded'
-              : 'Pending Evidence'
+                ? 'After Uploaded'
+                : row.has_before
+                  ? 'Before Uploaded'
+                  : 'Pending Evidence'
           }));
         } catch (err: any) {
           console.error('[WardOfficerController getAssignments DB error]:', err.message);
@@ -1762,8 +1773,8 @@ export class WardOfficerController {
           evidence_status: a.has_before_evidence && a.has_after_evidence
             ? 'Before & After Uploaded'
             : a.has_before_evidence
-            ? 'Before Uploaded'
-            : 'Pending Evidence'
+              ? 'Before Uploaded'
+              : 'Pending Evidence'
         }));
 
       res.status(200).json({ success: true, data: [...dbRows, ...memRows] });
@@ -1877,7 +1888,7 @@ export class WardOfficerController {
             `Ward Officer assigned "${newAssignment.title}" at ${newAssignment.location_name}.`,
             assignmentId,
             'complaint_status'
-          ).catch(() => {});
+          ).catch(() => { });
         }
       }
 
@@ -3022,7 +3033,7 @@ export class WardOfficerController {
         await pool.query(
           `UPDATE complaints SET resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
           [after_photo_url, complaint.id]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       // Dispatch live notification to citizen
@@ -3060,6 +3071,7 @@ export class WardOfficerController {
         title,
         description,
         before_photo_url,
+        before_photos = [],
         after_photo_url,
         after_photos = [],
         waste_kg,
@@ -3089,13 +3101,21 @@ export class WardOfficerController {
       const allAfterPhotos = Array.isArray(after_photos) && after_photos.length > 0
         ? after_photos
         : after_photo_url
-        ? [after_photo_url]
-        : dbAfterPhotos.length > 0
-        ? [dbAfterPhotos[dbAfterPhotos.length - 1]]
-        : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'];
+          ? [after_photo_url]
+          : dbAfterPhotos.length > 0
+            ? [dbAfterPhotos[dbAfterPhotos.length - 1]]
+            : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'];
+
+      const allBeforePhotos = Array.isArray(before_photos) && before_photos.length > 0
+        ? before_photos
+        : before_photo_url
+          ? [before_photo_url]
+          : complaint.image_url
+            ? [complaint.image_url]
+            : [];
 
       const primaryAfterPhoto = allAfterPhotos[0];
-      const primaryBeforePhoto = before_photo_url || complaint.image_url;
+      const primaryBeforePhoto = allBeforePhotos[0] || before_photo_url || complaint.image_url;
 
       const officerWard = complaint.location?.ward_number || WardOfficerController.resolveOfficerWard(req);
       const officerName = req.user?.full_name || (officerWard === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)');
@@ -3126,6 +3146,7 @@ export class WardOfficerController {
         achievement_stats: achievementStats,
         image_url: primaryAfterPhoto,
         before_image_url: primaryBeforePhoto,
+        before_photos: allBeforePhotos,
         after_image_url: primaryAfterPhoto,
         after_photos: allAfterPhotos
       });
@@ -3155,7 +3176,7 @@ export class WardOfficerController {
         await pool.query(
           `UPDATE complaints SET status = 'resolved', is_published_to_community = true, resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
           [primaryAfterPhoto, complaint.id]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       // Update in-memory work attempts
@@ -3180,6 +3201,146 @@ export class WardOfficerController {
         success: true,
         message: 'Complaint verified complete, post published to Public Posts feed, and citizen notified!',
         data: savedPost
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 15. Verify Team Leader Submitted Evidence Batch
+  public static async verifyLeaderEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { evidence_ids } = req.body;
+      const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || (complaint as any)?.work_assignment_id || id;
+
+      await DbRepository.verifyWorkEvidence(assignmentId, evidence_ids);
+
+      const targetIds = Array.isArray(evidence_ids) && evidence_ids.length > 0 ? evidence_ids : null;
+      for (const att of attempts) {
+        for (const ev of (att.evidence || [])) {
+          if (!targetIds || targetIds.includes(ev.id)) {
+            ev.review_status = 'verified';
+            ev.officer_verified = true;
+            ev.officer_reviewed_at = new Date().toISOString();
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Evidence verified and logged to Evidence History.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 15B. Reject Team Leader Submitted Evidence Batch
+  public static async rejectLeaderEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { evidence_ids, reason } = req.body;
+      const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || (complaint as any)?.work_assignment_id || id;
+
+      await DbRepository.rejectWorkEvidence(assignmentId, evidence_ids, reason);
+
+      const targetIds = Array.isArray(evidence_ids) && evidence_ids.length > 0 ? evidence_ids : null;
+      for (const att of attempts) {
+        for (const ev of (att.evidence || [])) {
+          if (!targetIds || targetIds.includes(ev.id)) {
+            ev.review_status = 'rejected';
+            ev.officer_verified = false;
+            ev.review_comments = reason || 'Rejected by Ward Officer';
+            ev.officer_reviewed_at = new Date().toISOString();
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Evidence rejected and marked in Evidence Log.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 16. Add Worker to Active Complaint Squad
+  public static async addWorkerToComplaintSquad(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { worker_id } = req.body;
+      if (!worker_id) {
+        res.status(400).json({ success: false, error: 'worker_id is required' });
+        return;
+      }
+      const dbWorkers = await DbRepository.getWorkersList({}).catch(() => []);
+      const worker = dbWorkers.find((w: any) => w.id === worker_id || w.user_id === worker_id);
+      if (!worker) {
+        res.status(404).json({ success: false, error: 'Worker not found' });
+        return;
+      }
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || id;
+
+      await DbRepository.addWorkerToWorkAssignment(assignmentId, worker);
+      if (latestAttempt) {
+        if (!latestAttempt.team_members) latestAttempt.team_members = [];
+        const exists = latestAttempt.team_members.some((m: any) => m.worker_id === worker.id || m.id === worker.id);
+        if (!exists) {
+          (latestAttempt.team_members as any[]).push({
+            id: `wam-${Date.now()}-${worker.id}`,
+            assignment_id: assignmentId,
+            worker_id: worker.id,
+            user_id: worker.user_id,
+            worker_code: worker.worker_code,
+            worker_name: worker.full_name,
+            worker_phone: worker.phone,
+            designation_name: worker.designation,
+            temporary_leader: false,
+            assignment_status: 'assigned'
+          });
+        }
+      }
+      res.status(200).json({
+        success: true,
+        message: `Worker ${worker.full_name} added to the squad.`,
+        data: latestAttempt?.team_members
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 17. Remove Worker from Active Complaint Squad
+  public static async removeWorkerFromComplaintSquad(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { worker_id } = req.body;
+      if (!worker_id) {
+        res.status(400).json({ success: false, error: 'worker_id is required' });
+        return;
+      }
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || id;
+
+      await DbRepository.removeWorkerFromWorkAssignment(assignmentId, worker_id);
+      if (latestAttempt && latestAttempt.team_members) {
+        latestAttempt.team_members = latestAttempt.team_members.filter((m: any) => m.worker_id !== worker_id && m.id !== worker_id);
+      }
+      res.status(200).json({
+        success: true,
+        message: 'Worker removed from squad.',
+        data: latestAttempt?.team_members
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

@@ -252,6 +252,7 @@ export interface CommunityRecognitionPost {
   achievement_stats: string;
   image_url: string;
   before_image_url?: string;
+  before_photos?: string[];
   after_image_url?: string;
   after_photos?: string[];
   resolved_image_url?: string;
@@ -724,6 +725,9 @@ export interface WorkEvidence {
   ai_analysis_result?: any;
   review_status: 'submitted' | 'verified' | 'changes_requested' | 'rejected';
   review_comments?: string;
+  photos?: string[];
+  officer_verified?: boolean;
+  officer_reviewed_at?: string;
   created_at: string;
 }
 

@@ -155,7 +155,6 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     try {
       const res = await api.registerForDrive(driveId);
       setActionSuccess(res.message);
-      fetchDrives();
       if (selectedDrive && selectedDrive.id === driveId) {
         setSelectedDrive({
           ...selectedDrive,
@@ -163,6 +162,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           registered_volunteers_count: selectedDrive.registered_volunteers_count + 1
         });
       }
+      setDrives(prev => prev.map(d => d.id === driveId ? { ...d, is_registered: true, registered_volunteers_count: d.registered_volunteers_count + 1 } : d));
+      await fetchDrives();
     } catch (err: any) {
       setActionError(err.message || 'Failed to register for drive');
     }
@@ -174,7 +175,6 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     try {
       const res = await api.cancelDriveRegistration(driveId);
       setActionSuccess(res.message);
-      fetchDrives();
       if (selectedDrive && selectedDrive.id === driveId) {
         setSelectedDrive({
           ...selectedDrive,
@@ -182,6 +182,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           registered_volunteers_count: Math.max(0, selectedDrive.registered_volunteers_count - 1)
         });
       }
+      setDrives(prev => prev.map(d => d.id === driveId ? { ...d, is_registered: false, registered_volunteers_count: Math.max(0, d.registered_volunteers_count - 1) } : d));
+      await fetchDrives();
     } catch (err: any) {
       setActionError(err.message || 'Failed to cancel registration');
     }
@@ -247,7 +249,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           // Within 150m! Proceed with recording attendance
           const res = await api.markCitizenDriveAttendance(selectedDrive.id, userLat, userLng);
-          setAttendanceMessage(res.message || '✓ Attendance verified and recorded! 150 Civic Karma points awarded.');
+          setAttendanceMessage(res.message || '✓ Attendance verified and officially recorded!');
           setSelectedDrive({
             ...selectedDrive,
             attendance_status: 'present',
@@ -413,7 +415,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   Civic Volunteer Participation
                 </div>
                 <div className="text-[11px] text-[#64748b]">
-                  Registered volunteers earn +150 Civic Karma upon attendance verification
+                  Registered volunteers earn official participation status upon verification
                 </div>
               </div>
             </div>
@@ -786,7 +788,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     <li>Open this tab on your mobile device.</li>
                     <li>Click <strong>"Verify Live GPS & Mark Attendance"</strong>.</li>
                     <li>Your device coordinates are validated against the venue (must be within 150 meters).</li>
-                    <li>Receive +150 Civic Karma points instantly to your profile!</li>
+                    <li>Receive official NMC Drive Certificate upon verification!</li>
                   </ol>
                 </div>
               </div>
@@ -804,9 +806,9 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     You have successfully checked in for this cleanliness drive. Thank you for your active civic participation!
                   </p>
                 </div>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-100 border border-amber-300 text-xs font-black text-amber-900">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  <span>+150 Civic Karma Points Credited to Your Account</span>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-100 border border-emerald-300 text-xs font-black text-emerald-900">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Official Attendance Recorded &amp; Certificate Issued</span>
                 </div>
               </div>
             ) : (

@@ -202,7 +202,6 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     category !== 'all' ||
     priority !== 'all' ||
     progressStatus !== 'all' ||
-    wardFilter !== 'all' ||
     assignment !== 'all' ||
     locationFilter !== 'all' ||
     additionalFlags !== 'all' ||
@@ -212,7 +211,10 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
     return (
       <ComplaintInspectView
         complaintId={inspectingComplaintId}
-        onBack={() => setInspectingComplaintId(null)}
+        onBack={() => {
+          setInspectingComplaintId(null);
+          fetchComplaints();
+        }}
         onComplaintUpdated={fetchComplaints}
         onNavigateTab={onNavigateTab}
       />
@@ -346,35 +348,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
             </select>
           </div>
 
-          {/* 2. Ward Location */}
-          <div>
-            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Ward</label>
-            <select
-              value={wardFilter}
-              onChange={e => {
-                setWardFilter(e.target.value);
-                setPage(1);
-              }}
-              className="w-full text-xs font-bold p-2 rounded-xl border border-slate-200 bg-white focus:border-[#095c54] outline-hidden truncate"
-            >
-              <option value="all">All Wards (Navsari)</option>
-              <option value="3">Ward 3 - Dudhiya Talao</option>
-              <option value="1">Ward 1 - Lunsikui</option>
-              <option value="2">Ward 2 - Station Road</option>
-              <option value="4">Ward 4 - Kaliawadi</option>
-              <option value="5">Ward 5 - Jalalpore</option>
-              <option value="6">Ward 6 - Shantadevi</option>
-              <option value="7">Ward 7 - Chhapra</option>
-              <option value="8">Ward 8 - Kabilpore</option>
-              <option value="9">Ward 9 - Vejalpore</option>
-              <option value="10">Ward 10 - Eru Char Rasta</option>
-              <option value="11">Ward 11 - Gandevi Road</option>
-              <option value="12">Ward 12 - Maroli</option>
-              <option value="13">Ward 13 - Aat Heritage</option>
-            </select>
-          </div>
-
-          {/* 3. Complaint Status */}
+          {/* 2. Complaint Status */}
           <div>
             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Status</label>
             <select
@@ -519,7 +493,13 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium">
-                {displayedComplaints.map(complaint => (
+                {displayedComplaints.map(complaint => {
+                  const isTeamAssigned = Boolean(
+                    complaint.assigned_team_name &&
+                    complaint.assigned_team_name !== 'Unassigned' &&
+                    !['submitted', 'under_review', 'pending', 'rejected'].includes(complaint.status)
+                  );
+                  return (
                   <React.Fragment key={complaint.id}>
                     <tr className="hover:bg-slate-50/80 transition group">
                     {/* ID & Category */}
@@ -624,14 +604,20 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         </button>
 
                         <button
+                          disabled={!isTeamAssigned}
                           onClick={e => {
                             e.stopPropagation();
+                            if (!isTeamAssigned) return;
                             setInspectingComplaintId(complaint.id);
                           }}
-                          className="px-2.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold transition flex items-center gap-1 shadow-2xs"
-                          title="Open full dedicated inspection dossier with 5 tabs"
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition flex items-center gap-1 shadow-2xs ${
+                            isTeamAssigned
+                              ? 'bg-[#095c54] hover:bg-[#074741] text-white cursor-pointer'
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                          }`}
+                          title={isTeamAssigned ? "Open full dedicated inspection dossier with 5 tabs" : "Approve and assign team first to enable inspection"}
                         >
-                          <ClipboardCheck className="w-3.5 h-3.5 text-emerald-300" />
+                          <ClipboardCheck className={`w-3.5 h-3.5 ${isTeamAssigned ? 'text-emerald-300' : 'text-slate-400'}`} />
                           <span>Inspect</span>
                         </button>
 
@@ -714,14 +700,21 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                     </tr>
                   )}
                 </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           {/* Mobile Cards View (Visible on mobile/tablet) */}
           <div className="lg:hidden space-y-3">
-            {displayedComplaints.map(complaint => (
+            {displayedComplaints.map(complaint => {
+              const isTeamAssigned = Boolean(
+                complaint.assigned_team_name &&
+                complaint.assigned_team_name !== 'Unassigned' &&
+                !['submitted', 'under_review', 'pending', 'rejected'].includes(complaint.status)
+              );
+              return (
               <div
                 key={complaint.id}
                 className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 hover:border-[#095c54] transition"
@@ -775,13 +768,20 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                       <span>View</span>
                     </button>
                     <button
+                      disabled={!isTeamAssigned}
                       onClick={e => {
                         e.stopPropagation();
+                        if (!isTeamAssigned) return;
                         setInspectingComplaintId(complaint.id);
                       }}
-                      className="px-2.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white font-extrabold text-xs flex items-center gap-1 shadow-2xs"
+                      className={`px-2.5 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1 shadow-2xs transition ${
+                        isTeamAssigned
+                          ? 'bg-[#095c54] hover:bg-[#074741] text-white cursor-pointer'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                      }`}
+                      title={isTeamAssigned ? "Open full dedicated inspection dossier with 5 tabs" : "Approve and assign team first to enable inspection"}
                     >
-                      <ClipboardCheck className="w-3.5 h-3.5 text-emerald-300" />
+                      <ClipboardCheck className={`w-3.5 h-3.5 ${isTeamAssigned ? 'text-emerald-300' : 'text-slate-400'}`} />
                       <span>Inspect</span>
                     </button>
                     <button
@@ -857,7 +857,8 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                   </div>
                 )}
               </div>
-            ))}
+            );
+          })}
           </div>
 
           {/* Pagination Controls */}

@@ -103,11 +103,14 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
     }
     try {
       const res = await api.reopenComplaint(complaintId, reopenReason.trim());
-      setSelectedComplaint(res.data);
+      if (res.data) {
+        setSelectedComplaint(res.data);
+        setComplaints(prev => prev.map(c => c.id === complaintId ? { ...c, ...res.data } : c));
+      }
       setIsReopening(false);
       setReopenReason('');
       setActionSuccess('Issue reopened and escalated to the senior ward officer for re-inspection.');
-      fetchComplaints();
+      await fetchComplaints();
     } catch (err: any) {
       setActionError(err.message || 'Failed to reopen complaint');
     }
@@ -119,7 +122,7 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
       setIsSubmittingFeedback(false);
       setActionSuccess('Thank you! Your feedback helps evaluate municipal sanitation quality.');
       confetti({ particleCount: 65, spread: 60, origin: { y: 0.6 } });
-      fetchComplaints();
+      await fetchComplaints();
       if (selectedComplaint && selectedComplaint.id === complaintId) {
         setSelectedComplaint(prev =>
           prev
@@ -148,8 +151,9 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
     try {
       await api.deleteComplaint(complaintId);
       setSelectedComplaint(null);
+      setComplaints(prev => prev.filter(c => c.id !== complaintId));
       setActionSuccess('Complaint record permanently deleted from database.');
-      fetchComplaints();
+      await fetchComplaints();
     } catch (err: any) {
       setActionError(err.message || 'Failed to delete complaint');
     }
