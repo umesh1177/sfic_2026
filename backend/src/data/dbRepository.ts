@@ -972,7 +972,9 @@ export class DbRepository {
           is_registered: registeredDriveIds.has(r.id),
           latitude: 20.9470,
           longitude: 72.9280,
-          attendance_status: registeredDriveIds.has(r.id) ? 'registered' : undefined
+          attendance_status: (r.status === 'completed' && registeredDriveIds.has(r.id))
+            ? 'absent'
+            : (registeredDriveIds.has(r.id) ? 'registered' : undefined)
         }));
 
         // Also retrieve published & approved community activities so citizens can discover and register
@@ -1029,7 +1031,9 @@ export class DbRepository {
           max_volunteers: parseInt(r.max_volunteers, 10) || 50,
           registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
           is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
-          attendance_status: r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined)
+          attendance_status: (r.status === 'completed' && !presentActIds.has(r.id) && registeredActIds.has(r.id))
+            ? 'absent'
+            : (r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined))
         } as any));
 
         const combined = [...communityDrives];
@@ -3028,6 +3032,9 @@ export class DbRepository {
           review_metadata: r.review_metadata || {},
           evidence_version: r.evidence_version || 1,
           submission_status: r.submission_status,
+          verification_status: r.verification_status || (r.submission_status === 'verified' ? 'verified' : 'submitted'),
+          verification_notes: r.verification_notes || null,
+          verified_at: r.verified_at || null,
           created_at: r.created_at
         }));
       } catch (err: any) {
@@ -3209,6 +3216,98 @@ export class DbRepository {
       }
     }
     return false;
+  }
+
+  public static async verifyDriveEvidence(
+    activityId: string,
+    evidenceId: string,
+    status: 'verified' | 'rejected',
+    notes?: string,
+    officerName?: string
+  ): Promise<{ success: boolean; evidence?: any; message: string }> {
+    if (!isDbConnected()) {
+      return { success: false, message: 'Database not connected.' };
+    }
+    try {
+      const res = await pool.query(
+        `UPDATE activity_evidence
+         SET verification_status = $1,
+             submission_status = CASE WHEN $1 = 'verified' THEN 'verified' ELSE 'rejected' END,
+             verification_notes = $2,
+             verified_at = CURRENT_TIMESTAMP
+         WHERE id = $3 AND activity_id = $4
+         RETURNING *`,
+        [status, notes || null, evidenceId, activityId]
+      );
+      if (res.rows.length === 0) {
+        return { success: false, message: 'Evidence item not found.' };
+      }
+      const updated = res.rows[0];
+
+      // Notify community head
+      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id = $1`, [activityId]).catch(() => ({ rows: [] as any[] }));
+      if (actRes.rows[0]?.created_by) {
+        await this.createNotification(
+          actRes.rows[0].created_by,
+          `Drive Evidence ${status === 'verified' ? 'Verified' : 'Flagged / Rejected'}`,
+          `Ward Officer ${officerName || 'Official'} marked evidence as ${status.toUpperCase()} for "${actRes.rows[0].title}". ${notes ? `Remarks: ${notes}` : ''}`,
+          activityId,
+          'drive_evidence_reviewed'
+        ).catch(() => {});
+      }
+
+      return {
+        success: true,
+        evidence: updated,
+        message: `Evidence successfully marked as ${status.toUpperCase()}`
+      };
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - verifyDriveEvidence]:', err.message);
+      return { success: false, message: err.message };
+    }
+  }
+
+  public static async verifyAllDriveEvidence(
+    activityId: string,
+    status: 'verified' | 'rejected',
+    notes?: string,
+    officerName?: string
+  ): Promise<{ success: boolean; updatedCount: number; message: string }> {
+    if (!isDbConnected()) {
+      return { success: false, updatedCount: 0, message: 'Database not connected.' };
+    }
+    try {
+      const res = await pool.query(
+        `UPDATE activity_evidence
+         SET verification_status = $1,
+             submission_status = CASE WHEN $1 = 'verified' THEN 'verified' ELSE 'rejected' END,
+             verification_notes = $2,
+             verified_at = CURRENT_TIMESTAMP
+         WHERE activity_id = $3
+         RETURNING id`,
+        [status, notes || null, activityId]
+      );
+
+      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id = $1`, [activityId]).catch(() => ({ rows: [] as any[] }));
+      if (actRes.rows[0]?.created_by) {
+        await this.createNotification(
+          actRes.rows[0].created_by,
+          `All Drive Evidence ${status === 'verified' ? 'Verified' : 'Flagged'}`,
+          `Ward Officer ${officerName || 'Official'} reviewed all ${res.rows.length} evidence uploads for "${actRes.rows[0].title}". Status: ${status.toUpperCase()}.`,
+          activityId,
+          'drive_evidence_reviewed'
+        ).catch(() => {});
+      }
+
+      return {
+        success: true,
+        updatedCount: res.rows.length,
+        message: `All ${res.rows.length} evidence photo(s) marked as ${status.toUpperCase()}`
+      };
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - verifyAllDriveEvidence]:', err.message);
+      return { success: false, updatedCount: 0, message: err.message };
+    }
   }
 
   // =========================================================================
@@ -5349,10 +5448,16 @@ export class DbRepository {
 
       await pool.query(`
         ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS allow_multiple_orgs BOOLEAN DEFAULT TRUE;
+        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS location_url TEXT;
       `).catch(() => { });
 
       await pool.query(`
         ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS review_metadata JSONB DEFAULT '{}'::jsonb;
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verification_status VARCHAR(30) DEFAULT 'submitted';
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verification_notes TEXT;
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verified_by UUID;
+        ALTER TABLE drive_certificates ADD COLUMN IF NOT EXISTS attendance_status VARCHAR(30) DEFAULT 'present';
       `).catch(() => { });
 
       await pool.query(`
@@ -6625,6 +6730,7 @@ export class DbRepository {
           estimated_volunteers_needed: parseInt(r.estimated_volunteers_needed || '15', 10),
           suggested_equipment: Array.isArray(r.suggested_equipment) ? r.suggested_equipment : [],
           image_url: r.image_url,
+          location_url: r.location_url,
           status: r.status,
           allow_multiple_orgs: r.allow_multiple_orgs !== false,
           claimed_by_community_id: r.claimed_by_community_id,
@@ -6665,6 +6771,7 @@ export class DbRepository {
       estimated_volunteers_needed: parseInt(problem.estimated_volunteers_needed || '15', 10),
       suggested_equipment: Array.isArray(problem.suggested_equipment) ? problem.suggested_equipment : ['Brooms', 'Gloves', 'Trash Bags'],
       image_url: problem.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+      location_url: problem.location_url || null,
       status: problem.status || 'open',
       allow_multiple_orgs: allowMultipleOrgs,
       claimed_by_community_id: problem.claimed_by_community_id,
@@ -6682,15 +6789,15 @@ export class DbRepository {
           INSERT INTO community_problems (
             id, ward_number, ward_name, title, description, location_name,
             address, latitude, longitude, action_plan, urgency,
-            estimated_volunteers_needed, suggested_equipment, image_url,
+            estimated_volunteers_needed, suggested_equipment, image_url, location_url,
             status, allow_multiple_orgs, claimed_by_community_id, claimed_by_community_name,
             linked_activity_id, created_by, officer_name, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
-            $12, $13, $14,
-            $15, $16, $17, $18,
-            $19, $20, $21, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            $12, $13, $14, $15,
+            $16, $17, $18, $19,
+            $20, $21, $22, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
           ON CONFLICT (id) DO UPDATE SET
             title = EXCLUDED.title,
@@ -6700,6 +6807,7 @@ export class DbRepository {
             estimated_volunteers_needed = EXCLUDED.estimated_volunteers_needed,
             suggested_equipment = EXCLUDED.suggested_equipment,
             image_url = EXCLUDED.image_url,
+            location_url = EXCLUDED.location_url,
             status = EXCLUDED.status,
             allow_multiple_orgs = EXCLUDED.allow_multiple_orgs,
             claimed_by_community_id = EXCLUDED.claimed_by_community_id,
@@ -6721,6 +6829,7 @@ export class DbRepository {
           newProblem.estimated_volunteers_needed,
           JSON.stringify(newProblem.suggested_equipment),
           newProblem.image_url,
+          newProblem.location_url,
           newProblem.status,
           allowMultipleOrgs,
           newProblem.claimed_by_community_id || null,
@@ -7387,6 +7496,21 @@ export class DbRepository {
           [activityId]
         ).catch(() => { });
 
+        // Auto-mark absent for any registered volunteers who did not check in during the drive
+        await pool.query(
+          `UPDATE activity_registrations
+           SET attendance_status = 'absent', updated_at = NOW()
+           WHERE activity_id = $1 AND (attendance_status IS NULL OR attendance_status = 'not_marked' OR attendance_status = '' OR attendance_status = 'registered')`,
+          [activityId]
+        ).catch(() => { });
+
+        await pool.query(
+          `UPDATE drive_registrations
+           SET attendance_status = 'absent'
+           WHERE drive_id = $1 AND (attendance_status IS NULL OR attendance_status = 'not_marked' OR attendance_status = '' OR attendance_status = 'registered')`,
+          [activityId]
+        ).catch(() => { });
+
         if (act?.linked_problem_id) {
           await pool.query(
             `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE id::text = $1::text OR linked_activity_id::text = $2::text`,
@@ -7443,7 +7567,8 @@ export class DbRepository {
 
   public static async issueDriveCertificates(
     activityId: string,
-    issuedByOfficer: string
+    issuedByOfficer: string,
+    option: 'all' | 'present_only' = 'all'
   ): Promise<{ success: boolean; certificates: any[]; message: string }> {
     if (!isDbConnected() || !this.isValidUUID(activityId)) {
       return { success: false, certificates: [], message: 'Database connection and valid drive ID required.' };
@@ -7477,7 +7602,7 @@ export class DbRepository {
     const wasteKg = evRes.rows[0]?.review_metadata?.waste_collected_kg;
     const wasteCleared = wasteKg ? `${wasteKg} kg` : 'Verified Cleanliness Impact';
 
-    // Collect recipients: Community Head + participated citizens (prefer present; fallback to all registered)
+    // Collect recipients: Community Head + participated citizens (either all or present-only based on option)
     const regRes = await pool.query(
       `SELECT ar.*, p.full_name as profile_name, p.phone as profile_phone
        FROM activity_registrations ar
@@ -7486,8 +7611,10 @@ export class DbRepository {
       [activityId]
     ).catch(() => ({ rows: [] as any[] }));
 
-    const presentRegs = regRes.rows.filter(r => r.attendance_status === 'present');
-    const participantRegs = presentRegs.length > 0 ? presentRegs : regRes.rows;
+    let targetRegs = regRes.rows;
+    if (option === 'present_only') {
+      targetRegs = regRes.rows.filter(r => r.attendance_status === 'present');
+    }
 
     const existingCertsRes = await pool.query(
       `SELECT * FROM drive_certificates WHERE activity_id = $1`,
@@ -7499,21 +7626,29 @@ export class DbRepository {
       existingByUser.set(key, c);
     }
 
-    const recipients: Array<{ userId: string | null; name: string; role: 'community_head' | 'citizen'; phone: string }> = [
+    const recipients: Array<{
+      userId: string | null;
+      name: string;
+      role: 'community_head' | 'citizen';
+      phone: string;
+      attendance_status: string;
+    }> = [
       {
         userId: act.head_user_id || act.created_by || null,
         name: act.head_name || act.community_name || 'Community Head',
         role: 'community_head',
-        phone: act.community_phone || ''
+        phone: act.community_phone || '',
+        attendance_status: 'organizer_present'
       }
     ];
 
-    for (const reg of participantRegs) {
+    for (const reg of targetRegs) {
       recipients.push({
         userId: reg.citizen_id || null,
         name: reg.citizen_name || reg.profile_name || 'Citizen Volunteer',
         role: 'citizen',
-        phone: reg.citizen_phone || reg.profile_phone || ''
+        phone: reg.citizen_phone || reg.profile_phone || '',
+        attendance_status: reg.attendance_status === 'present' ? 'present' : 'absent'
       });
     }
 
@@ -7521,7 +7656,15 @@ export class DbRepository {
     for (const rec of recipients) {
       const key = `${rec.role}::${rec.userId || rec.name}`;
       if (existingByUser.has(key)) {
-        issued.push(existingByUser.get(key));
+        const existing = existingByUser.get(key);
+        if (existing && existing.attendance_status !== rec.attendance_status) {
+          await pool.query(
+            `UPDATE drive_certificates SET attendance_status = $1 WHERE id = $2`,
+            [rec.attendance_status, existing.id]
+          ).catch(() => {});
+          existing.attendance_status = rec.attendance_status;
+        }
+        issued.push(existing);
         continue;
       }
 
@@ -7535,14 +7678,14 @@ export class DbRepository {
            id, certificate_code, activity_id, drive_title, community_id, community_name,
            ward_number, ward_name, drive_date, location_name, waste_cleared,
            recipient_user_id, recipient_name, recipient_role, recipient_phone,
-           issued_by_officer, verification_url
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           issued_by_officer, verification_url, attendance_status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
          RETURNING *`,
         [
           certId, certCode, activityId, act.title, act.community_id || null, act.community_name || 'Community Organization',
           wardNum, wardName, driveDate, locationName, wasteCleared,
           rec.userId, rec.name, rec.role, rec.phone,
-          issuedByOfficer, verificationUrl
+          issuedByOfficer, verificationUrl, rec.attendance_status
         ]
       );
       const savedCert = ins.rows[0];
@@ -7552,7 +7695,7 @@ export class DbRepository {
         await this.createNotification(
           rec.userId,
           'Official NMC Cleanliness Certificate Issued!',
-          `Congratulations ${rec.name}! Your verified certificate (${certCode}) for "${act.title}" has been issued by ${issuedByOfficer}. View it in your Certificates section!`,
+          `Congratulations ${rec.name}! Your verified certificate (${certCode}) for "${act.title}" has been issued by ${issuedByOfficer} [Attendance: ${rec.attendance_status.toUpperCase()}]. View it in your Certificates section!`,
           activityId,
           'certificate_issued'
         );

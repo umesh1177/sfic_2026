@@ -46,7 +46,8 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
     { id: 'home', label: t.nav_home, icon: Home },
     { id: 'complaints', label: t.nav_complaints, icon: FileText, badge: unreadCount > 0 ? unreadCount : undefined },
     { id: 'drives', label: t.nav_drives, icon: Users },
-    { id: 'rewards', label: t.nav_rewards, icon: Award },
+    { id: 'certificates', label: t.nav_certificates || 'Certificates', icon: Award },
+    { id: 'rewards', label: t.nav_rewards, icon: Trophy },
     { id: 'notifications', label: t.nav_notifications, icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },
     { id: 'support', label: t.nav_support, icon: Headphones },
     { id: 'profile', label: t.nav_profile, icon: User }

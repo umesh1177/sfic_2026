@@ -3420,8 +3420,9 @@ export class WardOfficerController {
   // =========================================================================
   public static async getCommunityProblems(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const officerWard = WardOfficerController.resolveOfficerWard(req);
-      const problems = await DbRepository.getCommunityProblems(officerWard);
+      const qWard = req.query.ward_number as string | undefined;
+      const targetWard = qWard && qWard !== 'all' ? parseInt(qWard, 10) : undefined;
+      const problems = await DbRepository.getCommunityProblems(targetWard);
       res.status(200).json({ success: true, data: problems });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -3442,6 +3443,8 @@ export class WardOfficerController {
         estimated_volunteers_needed = 15,
         suggested_equipment = ['Brooms', 'Gloves', 'Trash Bags'],
         image_url,
+        location_url,
+        ward_number,
         allow_multiple_orgs = true
       } = req.body;
 
@@ -3453,7 +3456,7 @@ export class WardOfficerController {
         return;
       }
 
-      const officerWard = WardOfficerController.resolveOfficerWard(req);
+      const officerWard = ward_number ? Number(ward_number) : WardOfficerController.resolveOfficerWard(req);
       const officerName = req.user?.full_name || 'Ward Officer';
 
       const savedProblem = await DbRepository.saveCommunityProblem({
@@ -3470,6 +3473,7 @@ export class WardOfficerController {
         estimated_volunteers_needed,
         suggested_equipment,
         image_url,
+        location_url,
         allow_multiple_orgs: Boolean(allow_multiple_orgs),
         created_by: req.user?.id,
         officer_name: officerName

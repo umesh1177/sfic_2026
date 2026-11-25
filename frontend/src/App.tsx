@@ -5,6 +5,7 @@ import { MobileBottomNavigation } from './components/MobileBottomNavigation.js';
 import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
+import { CitizenCertificatesView } from './components/CitizenCertificatesView.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
 import { MyProfile } from './components/MyProfile.js';
@@ -348,6 +349,15 @@ export const App: React.FC = () => {
 
           {currentTab === 'drives' && (
             <CleanlinessDrives lang={lang} />
+          )}
+
+          {currentTab === 'certificates' && (
+            <CitizenCertificatesView
+              lang={lang}
+              user={user}
+              onBack={() => setCurrentTab('home')}
+              onExploreDrives={() => setCurrentTab('drives')}
+            />
           )}
 
           {(currentTab === 'rewards' || currentTab === 'posts') && (

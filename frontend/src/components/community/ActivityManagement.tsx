@@ -2664,6 +2664,33 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                           )}
                                         </div>
                                       )}
+
+                                      {/* Ward Officer Verification Status Flag */}
+                                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                                        {ev.verification_status === 'verified' || ev.submission_status === 'verified' ? (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                            <span>Verified by Ward Officer</span>
+                                          </span>
+                                        ) : ev.verification_status === 'rejected' ? (
+                                          <div className="space-y-1 w-full">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase">
+                                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                                              <span>Rejected by Ward Officer</span>
+                                            </span>
+                                            {ev.verification_notes && (
+                                              <p className="text-[11px] text-rose-800 font-semibold bg-rose-50/70 p-2 rounded-lg border border-rose-100">
+                                                <strong>Officer Remarks:</strong> {ev.verification_notes}
+                                              </p>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black uppercase">
+                                            <Clock className="w-3 h-3 text-amber-600" />
+                                            <span>Pending Ward Officer Review</span>
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 );

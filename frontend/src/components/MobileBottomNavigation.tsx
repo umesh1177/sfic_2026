@@ -38,7 +38,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
     setMoreSheetOpen(false);
   };
 
-  const isMoreTabActive = ['rewards', 'support', 'profile', 'notifications'].includes(currentTab);
+  const isMoreTabActive = ['certificates', 'rewards', 'support', 'profile', 'notifications'].includes(currentTab);
 
   return (
     <>
@@ -184,6 +184,24 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 </div>
               </button>
 
+              {/* Cleanliness Certificates */}
+              <button
+                onClick={() => handleSelectTab('certificates')}
+                className={`p-3.5 sm:p-4 rounded-2xl border text-left flex flex-col gap-2 transition touch-press ${
+                  currentTab === 'certificates'
+                    ? 'border-[#095c54] bg-[#e6f4f1] text-[#095c54]'
+                    : 'border-[#e2e8f0] bg-white text-[#0f2925] hover:border-[#b8e0d7]'
+                }`}
+              >
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="block font-bold text-xs">{t.nav_certificates || 'Certificates'}</span>
+                  <span className="block text-[10px] text-[#64748b]">QR Verified</span>
+                </div>
+              </button>
+
               {/* Civic Posts & Cleanliness Feeds */}
               <button
                 onClick={() => handleSelectTab('rewards')}
@@ -194,7 +212,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 }`}
               >
                 <div className="w-9 h-9 rounded-xl bg-[#e0f2fe] text-[#0284c7] flex items-center justify-center font-bold">
-                  <Award className="w-5 h-5" />
+                  <Trophy className="w-5 h-5" />
                 </div>
                 <div>
                   <span className="block font-bold text-xs">{t.nav_rewards}</span>

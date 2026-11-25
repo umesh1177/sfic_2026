@@ -208,6 +208,8 @@ exports.apiRouter.delete('/ward/communities/:id', softAuthenticate, wardOfficerC
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
 exports.apiRouter.get('/ward/organization-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getOrganizationDrives);
+exports.apiRouter.post('/ward/organization-drives/:id/evidence/verify-all', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyAllDriveEvidence);
+exports.apiRouter.post('/ward/organization-drives/:id/evidence/:evidenceId/verify', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyDriveEvidence);
 exports.apiRouter.post('/ward/organization-drives/:id/complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.completeOrganizationDrive);
 exports.apiRouter.post('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.issueDriveCertificates);
 exports.apiRouter.get('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getDriveCertificates);

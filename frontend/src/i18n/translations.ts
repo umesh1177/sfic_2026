@@ -20,6 +20,7 @@ export interface AppTranslations {
   nav_drives: string;
   nav_challenges: string;
   nav_rewards: string;
+  nav_certificates: string;
   nav_support: string;
   nav_notifications: string;
   nav_profile: string;
@@ -256,6 +257,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_drives: 'Cleanliness Drives',
     nav_challenges: 'Community Challenges',
     nav_rewards: 'Posts',
+    nav_certificates: 'Certificates',
     nav_support: 'Feedback & Support',
     nav_notifications: 'Notifications',
     nav_profile: 'My Profile',
@@ -489,6 +491,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_drives: 'સફાઈ અભિયાન',
     nav_challenges: 'સામુદાયિક પડકારો',
     nav_rewards: 'સ્વચ્છતા પોસ્ટ્સ',
+    nav_certificates: 'પ્રમાણપત્રો',
     nav_support: 'પ્રતિસાદ અને સહાય',
     nav_notifications: 'સૂચનાઓ',
     nav_profile: 'મારી પ્રોફાઇલ',
@@ -722,6 +725,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_drives: 'स्वच्छता अभियान',
     nav_challenges: 'सामुदायिक चुनौतियां',
     nav_rewards: 'स्वच्छता पोस्ट्स',
+    nav_certificates: 'प्रमाणपत्र',
     nav_support: 'प्रतिक्रिया व सहायता',
     nav_notifications: 'सूचनाएं',
     nav_profile: 'मेरी प्रोफ़ाइल',

@@ -1352,6 +1352,7 @@ class ApiService {
     estimated_volunteers_needed?: number;
     suggested_equipment?: string[];
     image_url?: string;
+    location_url?: string;
     ward_number?: number;
     allow_multiple_orgs?: boolean;
   }) {

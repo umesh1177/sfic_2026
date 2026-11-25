@@ -176,6 +176,7 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
                     <th className="py-3.5 px-4">Certificate ID</th>
                     <th className="py-3.5 px-4">Cleanliness Drive / Event</th>
                     <th className="py-3.5 px-4">Recipient &amp; Community</th>
+                    <th className="py-3.5 px-4">Attendance</th>
                     <th className="py-3.5 px-4">Issued On</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4 text-right pr-6">Actions</th>
@@ -264,6 +265,26 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
                               )}
                             </div>
                           </div>
+                        </td>
+
+                        {/* Attendance Status */}
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          {cert.attendance_status === 'absent' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              Absent
+                            </span>
+                          ) : isLeader ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black uppercase">
+                              <Award className="w-3 h-3 text-amber-600" />
+                              Organizer
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Present
+                            </span>
+                          )}
                         </td>
 
                         {/* Issued Date & Officer */}
@@ -376,8 +397,17 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
                     <h4 className="text-sm font-extrabold text-[#0f2925] leading-snug">
                       {cert.drive_title}
                     </h4>
-                    <p className="text-xs text-slate-600 font-semibold mt-0.5">
-                      Presented to: <span className="text-[#095c54] font-black">{cert.recipient_name}</span>
+                    <p className="text-xs text-slate-600 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      <span>Presented to: <strong className="text-[#095c54] font-black">{cert.recipient_name}</strong></span>
+                      {cert.attendance_status === 'absent' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-black uppercase">
+                          Absent
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9px] font-black uppercase">
+                          {isLeader ? 'Organizer' : 'Present'}
+                        </span>
+                      )}
                     </p>
                     <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1 flex-wrap">
                       <span className="flex items-center gap-1">

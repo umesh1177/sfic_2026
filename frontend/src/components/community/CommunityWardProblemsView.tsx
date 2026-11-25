@@ -11,7 +11,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Building,
-  HeartHandshake
+  HeartHandshake,
+  ExternalLink
 } from 'lucide-react';
 import { CommunityProblem, Community } from '../../types/index.js';
 import { api } from '../../services/api.js';
@@ -173,10 +174,23 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
                       <h3 className="text-base sm:text-lg font-black leading-tight drop-shadow-sm">
                         {prob.title}
                       </h3>
-                      <p className="text-xs text-emerald-100 flex items-center gap-1 mt-1 truncate">
-                        <MapPin className="w-3.5 h-3.5 shrink-0" />
-                        {prob.location_name} · {prob.address}
-                      </p>
+                      <div className="flex items-center justify-between gap-2 mt-1">
+                        <p className="text-xs text-emerald-100 flex items-center gap-1 truncate">
+                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{prob.location_name} · {prob.address}</span>
+                        </p>
+                        {((prob as any).location_url || (prob.latitude && prob.longitude)) && (
+                          <a
+                            href={(prob as any).location_url || `https://www.google.com/maps?q=${prob.latitude},${prob.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-emerald-300 hover:text-white underline font-bold shrink-0 flex items-center gap-0.5 bg-black/40 px-2 py-0.5 rounded-lg backdrop-blur-xs"
+                          >
+                            <span>Open Map</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
 
