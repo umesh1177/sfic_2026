@@ -1309,9 +1309,24 @@ class ApiService {
     });
   }
 
-  async issueDriveCertificates(id: string) {
+  async verifyDriveEvidence(id: string, evidenceId: string, status: 'verified' | 'rejected', notes?: string) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/organization-drives/${id}/evidence/${evidenceId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ status, notes })
+    });
+  }
+
+  async verifyAllDriveEvidence(id: string, status: 'verified' | 'rejected', notes?: string) {
+    return this.request<{ success: boolean; message: string; updatedCount: number }>(`/ward/organization-drives/${id}/evidence/verify-all`, {
+      method: 'POST',
+      body: JSON.stringify({ status, notes })
+    });
+  }
+
+  async issueDriveCertificates(id: string, option: 'all' | 'present_only' = 'all') {
     return this.request<{ success: boolean; message: string; data: any[] }>(`/ward/organization-drives/${id}/certificates`, {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({ option })
     });
   }
 

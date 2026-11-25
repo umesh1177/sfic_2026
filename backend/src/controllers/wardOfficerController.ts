@@ -2892,11 +2892,55 @@ export class WardOfficerController {
     }
   }
 
+  public static async verifyDriveEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id, evidenceId } = req.params;
+      const { status, notes } = req.body || {};
+      const officerName = req.user?.full_name || 'Ward Officer';
+      const result = await DbRepository.verifyDriveEvidence(
+        id,
+        evidenceId,
+        status || 'verified',
+        notes,
+        officerName
+      );
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.message });
+        return;
+      }
+      res.status(200).json({ success: true, message: result.message, data: result.evidence });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async verifyAllDriveEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { status, notes } = req.body || {};
+      const officerName = req.user?.full_name || 'Ward Officer';
+      const result = await DbRepository.verifyAllDriveEvidence(
+        id,
+        status || 'verified',
+        notes,
+        officerName
+      );
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.message });
+        return;
+      }
+      res.status(200).json({ success: true, message: result.message, updatedCount: result.updatedCount });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   public static async issueDriveCertificates(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const { option } = req.body || {};
       const officerName = req.user?.full_name || 'Ward Officer';
-      const result = await DbRepository.issueDriveCertificates(id, officerName);
+      const result = await DbRepository.issueDriveCertificates(id, officerName, option || 'all');
       if (!result.success) {
         res.status(400).json({ success: false, error: result.message });
         return;

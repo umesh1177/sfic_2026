@@ -278,8 +278,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     const now = new Date();
     const start = new Date(d.start_time);
     const end = new Date(d.end_time);
-    if (d.status === 'completed' || now > end) return 'completed';
-    if (d.status === 'in_progress' || (now >= start && now <= end)) return 'running';
+    if (d.status === 'completed' || (d as any).status === 'completed' || now > end) return 'completed';
+    if (d.status === 'ongoing' || (d as any).status === 'in_progress' || (now >= start && now <= end)) return 'running';
     return 'upcoming';
   };
 
