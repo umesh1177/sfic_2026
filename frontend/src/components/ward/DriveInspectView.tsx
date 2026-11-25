@@ -372,6 +372,17 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
       {/* ================================================================= */}
       {activeTab === 'details' && (
         <div className="space-y-6">
+          {(activity.requires_attendance === false || activity.is_nmc_official_drive === true) && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <span className="font-black text-emerald-950 block">🏛️ Official NMC Civic Rally / Public Awareness Drive</span>
+                <span className="text-[11px] text-emerald-800">
+                  Duty attendance check-in was waived for this public campaign. Citizens and groups participate freely without mandatory attendance tracking.
+                </span>
+              </div>
+            </div>
+          )}
           {/* Present / Absent / Total KPI Strip */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">

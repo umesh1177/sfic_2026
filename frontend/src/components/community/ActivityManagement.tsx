@@ -42,7 +42,8 @@ import {
   Truck,
   Wrench,
   Sparkle,
-  Award
+  Award,
+  Edit3
 } from 'lucide-react';
 import { CommunityActivity, ActivityRegistration, ActivityQuestion, ActivityEvidence, CommunityProblem } from '../../types/index.js';
 import { api } from '../../services/api.js';
@@ -322,6 +323,80 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     waitlist_allowed: true,
     save_as_draft: false
   });
+
+  // Edit Approved Activity Modal State (Update start/end datetime & description fields only)
+  const [editingApprovedAct, setEditingApprovedAct] = useState<CommunityActivity | null>(null);
+  const [editApprovedForm, setEditApprovedForm] = useState({
+    proposed_start_at: '',
+    proposed_end_at: '',
+    short_description: '',
+    detailed_description: ''
+  });
+  const [submittingApprovedEdit, setSubmittingApprovedEdit] = useState<boolean>(false);
+  const [approvedEditError, setApprovedEditError] = useState<string>('');
+
+  const formatForDateTimeInput = (isoStr?: string): string => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const toISTIso = (val: string): string => {
+    if (!val) return '';
+    if (val.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(val)) return val;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(val)) {
+      return `${val.slice(0, 16)}:00+05:30`;
+    }
+    return new Date(val).toISOString();
+  };
+
+  const handleOpenEditModal = (act: CommunityActivity) => {
+    setEditingApprovedAct(act);
+    setApprovedEditError('');
+    setEditApprovedForm({
+      proposed_start_at: formatForDateTimeInput(act.proposed_start_at),
+      proposed_end_at: formatForDateTimeInput(act.proposed_end_at),
+      short_description: act.short_description || '',
+      detailed_description: act.detailed_description || act.short_description || ''
+    });
+  };
+
+  const handleSaveApprovedEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingApprovedAct) return;
+    if (!editApprovedForm.proposed_start_at) {
+      setApprovedEditError('Start date & time is required');
+      return;
+    }
+    if (!editApprovedForm.short_description.trim()) {
+      setApprovedEditError('Short description is required');
+      return;
+    }
+
+    setSubmittingApprovedEdit(true);
+    setApprovedEditError('');
+    try {
+      await api.updateCommunityActivity(editingApprovedAct.id, {
+        proposed_start_at: toISTIso(editApprovedForm.proposed_start_at),
+        proposed_end_at: editApprovedForm.proposed_end_at ? toISTIso(editApprovedForm.proposed_end_at) : undefined,
+        short_description: editApprovedForm.short_description.trim(),
+        detailed_description: editApprovedForm.detailed_description.trim() || editApprovedForm.short_description.trim()
+      });
+
+      setEditingApprovedAct(null);
+      setActionMessage({
+        type: 'success',
+        text: `Cleanliness Drive "${editingApprovedAct.title}" updated successfully!`
+      });
+      onRefreshActivities();
+    } catch (err: any) {
+      setApprovedEditError(err.message || 'Failed to update activity schedule & details');
+    } finally {
+      setSubmittingApprovedEdit(false);
+    }
+  };
 
   // Counts for each filter section (Completed drives move cleanly out of Approved Drives into Completed)
   const statusCounts = {
@@ -978,8 +1053,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         detailed_description: wizardForm.detailed_description,
         volunteer_instructions: wizardForm.volunteer_instructions,
         equipment_needed: wizardForm.equipment_needed,
-        proposed_start_at: wizardForm.proposed_start_at || new Date(Date.now() + 86400000 * 3).toISOString(),
-        proposed_end_at: wizardForm.proposed_end_at || new Date(Date.now() + 86400000 * 3 + 10800000).toISOString(),
+        proposed_start_at: wizardForm.proposed_start_at ? toISTIso(wizardForm.proposed_start_at) : new Date(Date.now() + 86400000 * 3).toISOString(),
+        proposed_end_at: wizardForm.proposed_end_at ? toISTIso(wizardForm.proposed_end_at) : new Date(Date.now() + 86400000 * 3 + 10800000).toISOString(),
         target_area: wizardForm.target_area,
         meeting_point: wizardForm.meeting_point || wizardForm.target_area,
         latitude: wizardForm.latitude,
@@ -1166,15 +1241,31 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => handleOpenActivityDetails(act)}
-            className="btn-primary-custom px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs hover:shadow transition shrink-0"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>View Details</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {isApproved && !lifecycle.isCompleted && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenEditModal(act);
+                }}
+                className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold flex items-center gap-1.5 transition"
+                title="Edit schedule and description"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                <span>Edit</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleOpenActivityDetails(act)}
+              className="btn-primary-custom px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs hover:shadow transition shrink-0"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>View Details</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1866,6 +1957,18 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                         <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
                         <span>{act.target_area}</span>
                       </p>
+                      {isApproved && !lifecycle.isCompleted && (
+                        <div className="pt-1 flex sm:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(act)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[11px] font-extrabold transition shadow-2xs hover:border-amber-300"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Edit Schedule &amp; Details</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2813,6 +2916,127 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Edit Approved Cleanliness Drive Modal (Only updates proposed start/end time and descriptions) */}
+      {editingApprovedAct && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase text-[#095c54] bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  Approved Drive Update
+                </span>
+                <h3 className="text-base font-black text-[#0f2925] mt-1">
+                  Edit Drive Schedule &amp; Description
+                </h3>
+                <p className="text-xs text-slate-500 font-semibold truncate max-w-md">
+                  {editingApprovedAct.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingApprovedAct(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <span>
+                As this cleanliness drive is already approved, only the <strong>schedule timings</strong> and <strong>description/briefing</strong> can be modified. Location, ward, and core objectives remain locked.
+              </span>
+            </div>
+
+            {approvedEditError && (
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{approvedEditError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveApprovedEdit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>Start Date &amp; Time *</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editApprovedForm.proposed_start_at}
+                    onChange={e => setEditApprovedForm({ ...editApprovedForm, proposed_start_at: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>End Date &amp; Time</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editApprovedForm.proposed_end_at}
+                    onChange={e => setEditApprovedForm({ ...editApprovedForm, proposed_end_at: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Short Public Description *
+                </label>
+                <input
+                  type="text"
+                  value={editApprovedForm.short_description}
+                  onChange={e => setEditApprovedForm({ ...editApprovedForm, short_description: e.target.value })}
+                  placeholder="Brief summary displayed on cleanliness drive cards..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Detailed Briefing / Volunteer Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  value={editApprovedForm.detailed_description}
+                  onChange={e => setEditApprovedForm({ ...editApprovedForm, detailed_description: e.target.value })}
+                  placeholder="Detailed context, route details, volunteer tasks, etc..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingApprovedAct(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingApprovedEdit}
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {submittingApprovedEdit ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>Save Updated Details</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -168,6 +168,8 @@ export interface CleanlinessDrive {
   is_registered?: boolean;
   attendance_status?: string;
   attended?: boolean;
+  requires_attendance?: boolean;
+  is_nmc_official_drive?: boolean;
 }
 
 export interface Challenge {
@@ -385,6 +387,8 @@ export interface CommunityActivity {
   evidence_status?: ActivityEvidenceStatus;
   registered_count?: number;
   verified_participants_count?: number;
+  requires_attendance?: boolean;
+  is_nmc_official_drive?: boolean;
   created_by?: string;
   created_at?: string;
   updated_at?: string;

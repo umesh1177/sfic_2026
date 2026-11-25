@@ -24,7 +24,9 @@ import {
   Search,
   ShieldCheck,
   FileSpreadsheet,
-  Download
+  Download,
+  Megaphone,
+  Flag
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../../services/api.js';
@@ -79,6 +81,102 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
   const [docName, setDocName] = useState<string>('');
   const [submittingCommunity, setSubmittingCommunity] = useState<boolean>(false);
   const [communityError, setCommunityError] = useState<string>('');
+
+  // Add NMC Civic / Rally Drive Modal State (No mandatory attendance required)
+  const [showAddDriveModal, setShowAddDriveModal] = useState<boolean>(false);
+  const [submittingDrive, setSubmittingDrive] = useState<boolean>(false);
+  const [driveFormError, setDriveFormError] = useState<string>('');
+  const [newDriveForm, setNewDriveForm] = useState({
+    title: '',
+    activity_category: 'Public Awareness Rally',
+    ward_number: wardNumber || 3,
+    address: '',
+    landmark: '',
+    proposed_start_at: '',
+    proposed_end_at: '',
+    cover_image_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
+    maximum_participants: 250,
+    short_description: '',
+    detailed_description: '',
+    requires_attendance: false,
+    is_nmc_official_drive: true
+  });
+
+  const toISTIso = (val: string): string => {
+    if (!val) return '';
+    if (val.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(val)) return val;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(val)) {
+      return `${val.slice(0, 16)}:00+05:30`;
+    }
+    return new Date(val).toISOString();
+  };
+
+  const handleCreateCivicDrive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDriveForm.title.trim()) {
+      setDriveFormError('Drive / Rally Title is required');
+      return;
+    }
+    if (!newDriveForm.address.trim()) {
+      setDriveFormError('Rally Route / Location is required');
+      return;
+    }
+    if (!newDriveForm.proposed_start_at) {
+      setDriveFormError('Start date & time is required');
+      return;
+    }
+
+    setSubmittingDrive(true);
+    setDriveFormError('');
+    try {
+      const payload: any = {
+        title: newDriveForm.title.trim(),
+        activity_category: newDriveForm.activity_category,
+        short_description: newDriveForm.short_description.trim() || 'Official NMC Civic Rally & Awareness Campaign',
+        detailed_description: newDriveForm.detailed_description.trim() || newDriveForm.short_description.trim(),
+        address: newDriveForm.address.trim(),
+        landmark: newDriveForm.landmark.trim() || newDriveForm.address.trim(),
+        ward_number: Number(newDriveForm.ward_number) || wardNumber || 3,
+        ward_name: `Ward ${newDriveForm.ward_number || wardNumber || 3}`,
+        proposed_start_at: toISTIso(newDriveForm.proposed_start_at),
+        proposed_end_at: newDriveForm.proposed_end_at ? toISTIso(newDriveForm.proposed_end_at) : toISTIso(newDriveForm.proposed_start_at),
+        cover_image_path: newDriveForm.cover_image_path.trim(),
+        maximum_participants: Number(newDriveForm.maximum_participants) || 250,
+        publication_status: 'published',
+        approval_status: 'approved',
+        registration_status: 'open',
+        event_status: 'upcoming',
+        is_nmc_official_drive: true,
+        requires_attendance: false,
+        community_name: 'Navsari Municipal Corporation (NMC)'
+      };
+
+      await api.createCommunityActivity(payload);
+      setShowAddDriveModal(false);
+      setActionMessage(`Official NMC Drive "${newDriveForm.title}" planned and published successfully!`);
+      setNewDriveForm({
+        title: '',
+        activity_category: 'Public Awareness Rally',
+        ward_number: wardNumber || 3,
+        address: '',
+        landmark: '',
+        proposed_start_at: '',
+        proposed_end_at: '',
+        cover_image_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
+        maximum_participants: 250,
+        short_description: '',
+        detailed_description: '',
+        requires_attendance: false,
+        is_nmc_official_drive: true
+      });
+      fetchDrives();
+      setTimeout(() => setActionMessage(''), 6000);
+    } catch (err: any) {
+      setDriveFormError(err.message || 'Failed to plan civic drive.');
+    } finally {
+      setSubmittingDrive(false);
+    }
+  };
 
   // Bulk Excel Upload State
   interface BulkCommunityRow {
@@ -473,13 +571,24 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
           <button
             type="button"
             onClick={() => {
+              setDriveFormError('');
+              setShowAddDriveModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#095c54] to-emerald-700 hover:opacity-95 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition active:scale-95"
+          >
+            <Megaphone className="w-4 h-4 text-emerald-200" />
+            <span>Add New Drive (Rally / Event)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setCommunityError('');
               setAddCommunityTab('single');
               setShowAddCommunityModal(true);
             }}
-            className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 text-[#095c54]" />
             <span>Add Community</span>
           </button>
           <button
@@ -894,6 +1003,227 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Plan NMC Civic Drive / Rally (Ward Officer) */}
+      {showAddDriveModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-4 sm:my-6">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3 gap-2">
+              <div className="min-w-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#095c54] bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  NMC Official Event Planner
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-[#0f2925] mt-1">
+                  Plan Civic Rally &amp; Public Cleanliness Campaign
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Post official Navsari Municipal Corporation awareness rallies, plog-runs, or civic drives.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddDriveModal(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Attendance Waived Banner */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-black text-emerald-950">
+                  Public Participation · No Mandatory Duty Attendance Needed
+                </h4>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  For official NMC civic rallies, public awareness walks, and celebrations, <strong>citizens and families participate freely without GPS check-in or duty attendance requirements</strong>.
+                </p>
+              </div>
+            </div>
+
+            {driveFormError && (
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{driveFormError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateCivicDrive} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-xs font-bold text-slate-700">
+                    Drive / Rally Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newDriveForm.title}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, title: e.target.value })}
+                    placeholder="e.g. Swachhata Prabhat Pheri & Awareness Rally"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">
+                    Ward Number
+                  </label>
+                  <select
+                    value={newDriveForm.ward_number}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, ward_number: Number(e.target.value) })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-bold text-slate-900 bg-white outline-none"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(w => (
+                      <option key={w} value={w}>Ward {w}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">
+                    Campaign Theme / Category
+                  </label>
+                  <select
+                    value={newDriveForm.activity_category}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, activity_category: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 bg-white outline-none"
+                  >
+                    <option value="Public Awareness Rally">📢 Public Awareness Rally / Prabhat Pheri</option>
+                    <option value="Swachhata Marathon / Walk">🏃 Swachhata Marathon / Walkathon</option>
+                    <option value="Plog Run & Cleanup">🧹 Plog Run & Plastic Cleanup</option>
+                    <option value="Door-to-Door Civic Campaign">🚪 Door-to-Door Cleanliness Drive</option>
+                    <option value="Tree Plantation & Cleanliness">🌱 Tree Plantation & Green Drive</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">
+                    Target Public Capacity
+                  </label>
+                  <input
+                    type="number"
+                    min="20"
+                    max="5000"
+                    value={newDriveForm.maximum_participants}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, maximum_participants: Number(e.target.value) })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>Rally Route / Assembly Point *</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newDriveForm.address}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, address: e.target.value })}
+                    placeholder="e.g. Lunsikui Ground to Tower Road via Dudhiya Talao"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">
+                    Landmark / Gathering Gate
+                  </label>
+                  <input
+                    type="text"
+                    value={newDriveForm.landmark}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, landmark: e.target.value })}
+                    placeholder="e.g. Opposite Main Garden Gate"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>Start Date &amp; Time *</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={newDriveForm.proposed_start_at}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, proposed_start_at: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>End Date &amp; Time</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newDriveForm.proposed_end_at}
+                    onChange={e => setNewDriveForm({ ...newDriveForm, proposed_end_at: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Public Banner Image URL
+                </label>
+                <input
+                  type="url"
+                  value={newDriveForm.cover_image_path}
+                  onChange={e => setNewDriveForm({ ...newDriveForm, cover_image_path: e.target.value })}
+                  placeholder="https://..."
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Campaign Message &amp; Short Description
+                </label>
+                <textarea
+                  rows={2}
+                  value={newDriveForm.short_description}
+                  onChange={e => setNewDriveForm({ ...newDriveForm, short_description: e.target.value })}
+                  placeholder="Public call-to-action for all citizens, students, and local groups..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddDriveModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingDrive}
+                  className="px-6 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-md shadow-[#095c54]/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {submittingDrive ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Megaphone className="w-4 h-4" />
+                  )}
+                  <span>Publish NMC Civic Drive</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

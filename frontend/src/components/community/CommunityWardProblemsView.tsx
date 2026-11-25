@@ -122,21 +122,39 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
             <div key={i} className="h-64 bg-slate-100 rounded-3xl animate-pulse" />
           ))}
         </div>
-      ) : problems.length === 0 ? (
-        <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-black text-[#0f2925]">No Pending Civic Problems for Action</h3>
-          <p className="text-sm text-slate-500 max-w-md mx-auto">
-            Your Ward Officer has not posted any unresolved community problems at this moment. You can still initiate your own independent cleanliness drives under the Activities tab!
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {problems.map(prob => {
-            const isClaimedByMe = prob.claimed_by_community_id === community?.id;
-            return (
+      ) : (() => {
+        // Single vs Multi-Org visibility filter:
+        // If single organization and claimed by another community after approval, hide it from other communities!
+        const visibleProblems = problems.filter(prob => {
+          const isSingleOrg = (prob as any).allow_multiple_orgs === false;
+          const isClaimedByOther = (prob.status === 'claimed' || prob.status === 'in_progress' || prob.status === 'resolved') &&
+            prob.claimed_by_community_id &&
+            prob.claimed_by_community_id !== community?.id;
+          if (isSingleOrg && isClaimedByOther) {
+            return false;
+          }
+          return true;
+        });
+
+        if (visibleProblems.length === 0) {
+          return (
+            <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-lg font-black text-[#0f2925]">No Pending Civic Problems for Action</h3>
+              <p className="text-sm text-slate-500 max-w-md mx-auto">
+                Your Ward Officer has not posted any unresolved community problems at this moment. You can still initiate your own independent cleanliness drives under the Activities tab!
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {visibleProblems.map(prob => {
+              const isClaimedByMe = prob.claimed_by_community_id === community?.id;
+              return (
               <div
                 key={prob.id}
                 className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between"
@@ -287,7 +305,8 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
             );
           })}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

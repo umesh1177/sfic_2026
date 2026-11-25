@@ -32,6 +32,22 @@ export class DbRepository {
   }
 
   /**
+   * Normalizes datetime strings to explicit Indian Standard Time (+05:30)
+   * Prevents UTC auto-shifting on Render / PostgreSQL TIMESTAMPTZ columns
+   */
+  public static normalizeDateWithIST(val: any): string | null {
+    if (!val) return null;
+    const s = String(val).trim();
+    if (!s) return null;
+    if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+      return `${s.slice(0, 16)}:00+05:30`;
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? s : d.toISOString();
+  }
+
+  /**
    * Ensures the citizen profile exists in PostgreSQL before creating foreign key references
    */
   public static async ensureProfileExists(
@@ -972,6 +988,8 @@ export class DbRepository {
           is_registered: registeredDriveIds.has(r.id),
           latitude: 20.9470,
           longitude: 72.9280,
+          requires_attendance: (r as any).requires_attendance !== false,
+          is_nmc_official_drive: (r as any).is_nmc_official_drive === true,
           attendance_status: (r.status === 'completed' && registeredDriveIds.has(r.id))
             ? 'absent'
             : (registeredDriveIds.has(r.id) ? 'registered' : undefined)
@@ -992,6 +1010,8 @@ export class DbRepository {
             COALESCE(a.registration_status, 'open') as registration_status,
             COALESCE(a.cover_image_path, 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80') as banner_url,
             COALESCE(a.maximum_participants, 50) as max_volunteers,
+            COALESCE(a.requires_attendance, TRUE) as requires_attendance,
+            COALESCE(a.is_nmc_official_drive, FALSE) as is_nmc_official_drive,
             COALESCE((SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.registration_status <> 'cancelled'), 0) as registered_volunteers_count,
             (SELECT ar.attendance_status FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.citizen_id = $1 AND ar.registration_status <> 'cancelled' LIMIT 1) as my_attendance_status
           FROM community_activities a
@@ -1031,6 +1051,8 @@ export class DbRepository {
           max_volunteers: parseInt(r.max_volunteers, 10) || 50,
           registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
           is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
+          requires_attendance: r.requires_attendance !== false,
+          is_nmc_official_drive: r.is_nmc_official_drive === true,
           attendance_status: (r.status === 'completed' && !presentActIds.has(r.id) && registeredActIds.has(r.id))
             ? 'absent'
             : (r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined))
@@ -1953,16 +1975,20 @@ export class DbRepository {
 
         const linkedProbRaw = (data as any).linked_problem_id;
         const linkedProblemId = this.isValidUUID(linkedProbRaw) ? linkedProbRaw : null;
+        const normStart = this.normalizeDateWithIST(data.proposed_start_at) || new Date(Date.now() + 86400000).toISOString();
+        const normEnd = this.normalizeDateWithIST(data.proposed_end_at) || new Date(Date.now() + 86400000 + 10800000).toISOString();
+        const isNmcOfficial = (data as any).is_nmc_official_drive === true;
+        const requiresAttendance = (data as any).requires_attendance !== false;
 
         const values = [
-          data.community_id || 'b0000000-0000-0000-0000-000000000001',
+          data.community_id || (isNmcOfficial ? 'b0000000-0000-0000-0000-000000000099' : 'b0000000-0000-0000-0000-000000000001'),
           data.title || 'Untitled Community Activity',
           data.short_description || 'Cleanliness drive in Navsari',
           data.detailed_description || 'Comprehensive cleanliness activity with volunteer participation.',
-          data.activity_category || (data as any).activity_type || 'Public Area Cleaning',
+          data.activity_category || (data as any).activity_type || (isNmcOfficial ? 'Public Awareness Rally' : 'Public Area Cleaning'),
           JSON.stringify(data.objectives || []),
           JSON.stringify(data.expected_outcomes || []),
-          data.instructions || (data as any).volunteer_instructions || 'Report on time with safety gloves.',
+          data.instructions || (data as any).volunteer_instructions || (isNmcOfficial ? 'Open to all citizens and families. Gather at starting point.' : 'Report on time with safety gloves.'),
           JSON.stringify(data.equipment_requirements || (data as any).equipment_needed || []),
           data.safety_guidelines || 'Follow team supervisor instructions.',
           JSON.stringify(data.faq || []),
@@ -1974,17 +2000,17 @@ export class DbRepository {
           data.longitude || 72.9280,
           data.address || (data as any).target_area || 'Navsari Municipal Area',
           data.landmark || (data as any).meeting_point || null,
-          data.proposed_start_at || new Date(Date.now() + 86400000).toISOString(),
-          data.proposed_end_at || new Date(Date.now() + 86400000 + 10800000).toISOString(),
+          normStart,
+          normEnd,
           data.registration_open_at || new Date().toISOString(),
-          data.registration_close_at || new Date(Date.now() + 86400000).toISOString(),
-          data.maximum_participants || (data as any).max_capacity || 50,
+          data.registration_close_at || normStart,
+          data.maximum_participants || (data as any).max_capacity || (isNmcOfficial ? 200 : 50),
           data.minimum_participants || 10,
           data.waiting_list_enabled ?? true,
           data.registration_requires_approval ?? false,
-          data.publication_status || 'draft',
-          data.approval_status || 'draft',
-          data.registration_status || 'not_open',
+          data.publication_status || (isNmcOfficial ? 'published' : 'draft'),
+          data.approval_status || (isNmcOfficial ? 'approved' : 'draft'),
+          data.registration_status || (isNmcOfficial ? 'open' : 'not_open'),
           data.event_status || 'upcoming',
           data.evidence_status || 'not_submitted',
           this.isValidUUID(data.created_by) ? data.created_by : 'c0000000-0000-0000-0000-000000000099',
@@ -1993,6 +2019,46 @@ export class DbRepository {
 
         const res = await pool.query(query, values);
         const mapped = this.mapActivityRow(res.rows[0]);
+
+        // Explicitly set flags
+        mapped.requires_attendance = requiresAttendance;
+        mapped.is_nmc_official_drive = isNmcOfficial;
+        await pool.query(
+          `UPDATE community_activities SET requires_attendance = $1, is_nmc_official_drive = $2 WHERE id = $3`,
+          [requiresAttendance, isNmcOfficial, mapped.id]
+        ).catch(() => {});
+
+        // If approved or NMC official, immediately upsert to cleanliness_drives
+        if (mapped.approval_status === 'approved' || isNmcOfficial) {
+          const wardId = mapped.ward_id || `ward-0${mapped.ward_number || 3}`;
+          const locName = mapped.address || mapped.landmark || 'Navsari Civic Area';
+          const orgName = isNmcOfficial ? 'Navsari Municipal Corporation (NMC)' : (mapped.community_name || 'Community Action Team');
+          await pool.query(`
+            INSERT INTO cleanliness_drives (
+              id, title, description, ward_id, ward_name, location_name, latitude, longitude,
+              start_time, end_time, registration_deadline, organiser_name, lead_person, contact_phone,
+              status, banner_url, max_volunteers, requires_attendance, is_nmc_official_drive
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16, $17, $18)
+            ON CONFLICT (id) DO UPDATE SET
+              title = EXCLUDED.title,
+              description = EXCLUDED.description,
+              ward_name = EXCLUDED.ward_name,
+              organiser_name = EXCLUDED.organiser_name,
+              start_time = EXCLUDED.start_time,
+              end_time = EXCLUDED.end_time,
+              requires_attendance = EXCLUDED.requires_attendance,
+              is_nmc_official_drive = EXCLUDED.is_nmc_official_drive,
+              status = 'upcoming'
+          `, [
+            mapped.id, mapped.title, mapped.short_description || mapped.detailed_description,
+            wardId, mapped.ward_name, locName,
+            Number(mapped.latitude) || 20.9470, Number(mapped.longitude) || 72.9280,
+            normStart, normEnd, normStart, orgName, orgName,
+            '+919825100000', mapped.cover_image_path, mapped.maximum_participants,
+            requiresAttendance, isNmcOfficial
+          ]).catch(err => console.warn('[DB REPO NOTICE - cleanliness_drives immediate sync]:', err.message));
+        }
+
         if (!store.communityActivities) store.communityActivities = [];
         store.communityActivities.unshift(mapped);
         return mapped;
@@ -2079,6 +2145,9 @@ export class DbRepository {
           ? Math.max(1, parseInt(String(rawMax), 10))
           : null;
 
+        const normStart = data.proposed_start_at ? this.normalizeDateWithIST(data.proposed_start_at) : null;
+        const normEnd = data.proposed_end_at ? this.normalizeDateWithIST(data.proposed_end_at) : null;
+
         await pool.query(`
           UPDATE community_activities SET
             title = COALESCE($1, title),
@@ -2111,12 +2180,29 @@ export class DbRepository {
           data.safety_guidelines || null,
           data.cover_image_path || null,
           parsedMax,
-          data.proposed_start_at || null,
-          data.proposed_end_at || null,
+          normStart,
+          normEnd,
           data.address || null,
           data.landmark || null,
           id
         ]);
+
+        // Sync start_time, end_time & description to cleanliness_drives
+        if (normStart || normEnd || data.short_description || data.detailed_description) {
+          const desc = data.short_description || data.detailed_description;
+          await pool.query(`
+            UPDATE cleanliness_drives SET
+              start_time = COALESCE($1, start_time),
+              end_time = COALESCE($2, end_time),
+              description = COALESCE($3, description)
+            WHERE id::text = $4::text
+          `, [
+            normStart || null,
+            normEnd || null,
+            desc || null,
+            id
+          ]).catch(() => { });
+        }
 
         // Sync max_volunteers & auto-close/reopen registration_status based on current count
         if (parsedMax !== null) {
@@ -3229,15 +3315,16 @@ export class DbRepository {
       return { success: false, message: 'Database not connected.' };
     }
     try {
+      const submissionStatus = status === 'verified' ? 'verified' : 'rejected';
       const res = await pool.query(
         `UPDATE activity_evidence
-         SET verification_status = $1,
-             submission_status = CASE WHEN $1 = 'verified' THEN 'verified' ELSE 'rejected' END,
-             verification_notes = $2,
+         SET verification_status = $1::text,
+             submission_status = $2::text,
+             verification_notes = $3::text,
              verified_at = CURRENT_TIMESTAMP
-         WHERE id = $3 AND activity_id = $4
+         WHERE id::text = $4::text AND activity_id::text = $5::text
          RETURNING *`,
-        [status, notes || null, evidenceId, activityId]
+        [status, submissionStatus, notes || null, String(evidenceId), String(activityId)]
       );
       if (res.rows.length === 0) {
         return { success: false, message: 'Evidence item not found.' };
@@ -3245,7 +3332,7 @@ export class DbRepository {
       const updated = res.rows[0];
 
       // Notify community head
-      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id = $1`, [activityId]).catch(() => ({ rows: [] as any[] }));
+      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id::text = $1::text`, [String(activityId)]).catch(() => ({ rows: [] as any[] }));
       if (actRes.rows[0]?.created_by) {
         await this.createNotification(
           actRes.rows[0].created_by,
@@ -3277,18 +3364,19 @@ export class DbRepository {
       return { success: false, updatedCount: 0, message: 'Database not connected.' };
     }
     try {
+      const submissionStatus = status === 'verified' ? 'verified' : 'rejected';
       const res = await pool.query(
         `UPDATE activity_evidence
-         SET verification_status = $1,
-             submission_status = CASE WHEN $1 = 'verified' THEN 'verified' ELSE 'rejected' END,
-             verification_notes = $2,
+         SET verification_status = $1::text,
+             submission_status = $2::text,
+             verification_notes = $3::text,
              verified_at = CURRENT_TIMESTAMP
-         WHERE activity_id = $3
+         WHERE activity_id::text = $4::text
          RETURNING id`,
-        [status, notes || null, activityId]
+        [status, submissionStatus, notes || null, String(activityId)]
       );
 
-      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id = $1`, [activityId]).catch(() => ({ rows: [] as any[] }));
+      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id::text = $1::text`, [String(activityId)]).catch(() => ({ rows: [] as any[] }));
       if (actRes.rows[0]?.created_by) {
         await this.createNotification(
           actRes.rows[0].created_by,
@@ -3508,6 +3596,8 @@ export class DbRepository {
       evidence_status: r.evidence_status || 'not_submitted',
       registered_count: r.registered_count ? parseInt(r.registered_count) : 0,
       verified_participants_count: r.verified_participants_count ? parseInt(r.verified_participants_count) : 0,
+      requires_attendance: r.requires_attendance !== false,
+      is_nmc_official_drive: r.is_nmc_official_drive === true,
       created_by: r.created_by,
       created_at: r.created_at,
       updated_at: r.updated_at
@@ -5520,6 +5610,10 @@ export class DbRepository {
       await pool.query(`
         ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS allow_multiple_orgs BOOLEAN DEFAULT TRUE;
         ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS location_url TEXT;
+        ALTER TABLE community_activities ADD COLUMN IF NOT EXISTS is_nmc_official_drive BOOLEAN DEFAULT FALSE;
+        ALTER TABLE community_activities ADD COLUMN IF NOT EXISTS requires_attendance BOOLEAN DEFAULT TRUE;
+        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS is_nmc_official_drive BOOLEAN DEFAULT FALSE;
+        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS requires_attendance BOOLEAN DEFAULT TRUE;
       `).catch(() => { });
 
       await pool.query(`
@@ -7279,7 +7373,15 @@ export class DbRepository {
       const newApprovalStatus = isApproved ? 'approved' : action === 'reject' ? 'rejected' : 'changes_requested';
       const newPublicationStatus = isApproved ? 'published' : 'rejected';
       const newRegStatus = isApproved ? 'open' : 'not_open';
-      const allowMultipleOrgs = options?.allow_multiple_orgs !== undefined ? Boolean(options.allow_multiple_orgs) : true;
+      let allowMultipleOrgs = options?.allow_multiple_orgs !== undefined ? Boolean(options.allow_multiple_orgs) : true;
+      if (act.linked_problem_id && isDbConnected()) {
+        try {
+          const probCheck = await pool.query(`SELECT allow_multiple_orgs FROM community_problems WHERE id::text = $1::text`, [act.linked_problem_id]);
+          if (probCheck.rows.length > 0 && probCheck.rows[0].allow_multiple_orgs !== null) {
+            allowMultipleOrgs = Boolean(probCheck.rows[0].allow_multiple_orgs);
+          }
+        } catch { }
+      }
 
       if (isDbConnected()) {
         try {
@@ -7295,30 +7397,37 @@ export class DbRepository {
           if (isApproved) {
             const wardId = act.ward_id || `ward-0${act.ward_number || 3}`;
             const locName = act.address || act.landmark || 'Navsari Ward Area';
-            const startTime = act.proposed_start_at || new Date().toISOString();
-            const endTime = act.proposed_end_at || new Date(Date.now() + 10800000).toISOString();
-            const deadline = act.registration_open_at || startTime;
+            const startTime = this.normalizeDateWithIST(act.proposed_start_at) || new Date().toISOString();
+            const endTime = this.normalizeDateWithIST(act.proposed_end_at) || new Date(Date.now() + 10800000).toISOString();
+            const deadline = this.normalizeDateWithIST(act.registration_open_at) || startTime;
             const banner = act.cover_image_path || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
             const maxVol = act.maximum_participants || 50;
+            const reqAtt = act.requires_attendance !== false;
+            const isNmc = act.is_nmc_official_drive === true;
 
             await pool.query(`
               INSERT INTO cleanliness_drives (
                 id, title, description, ward_id, ward_name, location_name, latitude, longitude,
                 start_time, end_time, registration_deadline, organiser_name, lead_person, contact_phone,
-                status, banner_url, max_volunteers
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16)
+                status, banner_url, max_volunteers, requires_attendance, is_nmc_official_drive
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16, $17, $18)
               ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
                 ward_name = EXCLUDED.ward_name,
                 organiser_name = EXCLUDED.organiser_name,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                registration_deadline = EXCLUDED.registration_deadline,
+                requires_attendance = EXCLUDED.requires_attendance,
+                is_nmc_official_drive = EXCLUDED.is_nmc_official_drive,
                 status = 'upcoming'
             `, [
               id, act.title, act.short_description || act.detailed_description,
               wardId, act.ward_name || `Ward ${act.ward_number || 3}`, locName,
               Number(act.latitude) || 20.9470, Number(act.longitude) || 72.9280,
               startTime, endTime, deadline, orgName, act.head_name || orgName,
-              act.contact_phone || '+919825100000', banner, maxVol
+              act.contact_phone || '+919825100000', banner, maxVol, reqAtt, isNmc
             ]).catch(err => console.warn('[DB REPO NOTICE - cleanliness_drives sync]:', err.message));
 
             // Handle Multi-Org vs Exclusive Single-Org policy on linked community problem!

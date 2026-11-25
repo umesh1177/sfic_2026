@@ -200,6 +200,8 @@ export interface CleanlinessDrive {
   max_volunteers: number;
   registered_volunteers_count: number;
   is_registered?: boolean;
+  requires_attendance?: boolean;
+  is_nmc_official_drive?: boolean;
 }
 
 export interface Challenge {
@@ -306,6 +308,7 @@ export type ActivityApprovalStatus =
   | 'ward_approved'
   | 'nmc_admin_review'
   | 'nmc_admin_approved'
+  | 'approved'
   | 'changes_requested'
   | 'rejected';
 
@@ -401,6 +404,8 @@ export interface CommunityActivity {
   evidence_status: ActivityEvidenceStatus;
   registered_count?: number;
   verified_participants_count?: number;
+  requires_attendance?: boolean;
+  is_nmc_official_drive?: boolean;
   created_by: string;
   created_at: string;
   updated_at: string;

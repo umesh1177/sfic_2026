@@ -524,14 +524,20 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
               : 'text-[#64748b] hover:bg-slate-100'
               }`}
           >
-            {!selectedDrive.is_registered ? (
+            {selectedDrive.requires_attendance === false || selectedDrive.is_nmc_official_drive === true ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            ) : !selectedDrive.is_registered ? (
               <Lock className="w-4 h-4 text-slate-400" />
             ) : isDateUnlocked ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             ) : (
               <Lock className="w-4 h-4 text-amber-500" />
             )}
-            <span>Volunteer Attendance</span>
+            <span>
+              {selectedDrive.requires_attendance === false || selectedDrive.is_nmc_official_drive === true
+                ? 'Rally Attendance (Waived)'
+                : 'Volunteer Attendance'}
+            </span>
             {!selectedDrive.is_registered ? (
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-extrabold hidden sm:inline">
                 Registered Only
@@ -786,7 +792,28 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
         {/* Tab 3: Volunteer Attendance (Accessible ONLY to registered volunteers on drive date) */}
         {activeTab === 'attendance' && (
           <div className="space-y-4">
-            {!selectedDrive.is_registered ? (
+            {selectedDrive.requires_attendance === false || selectedDrive.is_nmc_official_drive === true ? (
+              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-emerald-200 bg-emerald-50/40 text-center space-y-4 shadow-xs">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-[#095c54] flex items-center justify-center mx-auto shadow-xs">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase text-[#095c54] bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                    Public Awareness Rally
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-[#0f2925] mt-2">
+                    🏛️ Official NMC Civic Rally &amp; Public Campaign
+                  </h3>
+                  <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                    This is an official public awareness march &amp; civic rally organized by Navsari Municipal Corporation.
+                    <strong> No duty attendance check-in or GPS coordinate logging is required</strong> — all citizens, families, and volunteer groups are welcome to participate freely!
+                  </p>
+                </div>
+                <div className="p-3 rounded-2xl bg-white border border-emerald-200 text-xs text-emerald-950 font-bold inline-block">
+                  📍 Route / Assembly: {selectedDrive.location_name}
+                </div>
+              </div>
+            ) : !selectedDrive.is_registered ? (
               // LOCKED: CITIZEN HAS NOT REGISTERED FOR THIS DRIVE
               <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xs text-center space-y-4">
                 <div className="w-16 h-16 rounded-3xl bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto text-slate-500">
@@ -1105,6 +1132,11 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                       {d.is_registered && (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
                           Registered
+                        </span>
+                      )}
+                      {(d.is_nmc_official_drive || d.requires_attendance === false) && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-gradient-to-r from-emerald-700 to-teal-800 text-white shadow-xs">
+                          🏛️ NMC Rally
                         </span>
                       )}
                     </div>

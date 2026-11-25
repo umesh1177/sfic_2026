@@ -329,22 +329,67 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
               </div>
             </div>
 
-            {/* Multi-Org Collaboration Policy */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-xs font-extrabold text-[#0f2925] block">
-                  Allow Multiple Organizations on This Problem
+            {/* Single vs Multiple Organization Assignment Option */}
+            <div className="space-y-2">
+              <label className="text-xs font-extrabold text-[#0f2925] flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#095c54]" />
+                  <span>Organization Assignment Policy</span>
                 </span>
-                <span className="text-[11px] text-slate-500">
-                  When enabled, multiple organizations can run drives on this site simultaneously.
-                </span>
+                <span className="text-[10px] text-slate-500 font-bold">Select Problem Mode</span>
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAllowMultipleOrgs(false)}
+                  className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 ${
+                    !allowMultipleOrgs
+                      ? 'bg-amber-50/80 border-amber-500 ring-2 ring-amber-500/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                    !allowMultipleOrgs ? 'border-amber-600' : 'border-slate-300'
+                  }`}>
+                    {!allowMultipleOrgs && <span className="w-2 h-2 rounded-full bg-amber-600" />}
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                      <span>🔒 Single Organization</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-amber-200/80 text-amber-900 font-black">Exclusive</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 block mt-1 leading-snug">
+                      Only 1 organization can take this problem. Once their drive is approved, this problem will <strong>disappear for all other organizations</strong>.
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAllowMultipleOrgs(true)}
+                  className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 ${
+                    allowMultipleOrgs
+                      ? 'bg-emerald-50/80 border-[#095c54] ring-2 ring-[#095c54]/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                    allowMultipleOrgs ? 'border-[#095c54]' : 'border-slate-300'
+                  }`}>
+                    {allowMultipleOrgs && <span className="w-2 h-2 rounded-full bg-[#095c54]" />}
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <span>👥 Multiple Organizations</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-emerald-200/80 text-emerald-900 font-black">Open</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 block mt-1 leading-snug">
+                      Allows multiple organizations to send drive requests on this site simultaneously even after approvals.
+                    </span>
+                  </div>
+                </button>
               </div>
-              <input
-                type="checkbox"
-                checked={allowMultipleOrgs}
-                onChange={e => setAllowMultipleOrgs(e.target.checked)}
-                className="w-4 h-4 accent-[#095c54] cursor-pointer shrink-0"
-              />
             </div>
 
             {/* Equipment Chips */}
