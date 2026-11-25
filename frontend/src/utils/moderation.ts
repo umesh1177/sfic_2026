@@ -23,7 +23,7 @@ const ABUSIVE_PATTERNS: string[] = [
   'chutiya', 'chutiye', 'chutiyapa', 'ch*tiya', 'chootiya', 'chutia',
   'gandu', 'gaand', 'gand', 'gaandu', 'g**d',
   'harami', 'haramkhor', 'kamina', 'kamine', 'kamini', 'kameena',
-  'kutta', 'kutte', 'kuttiya', 'suar', 'suwar',
+  'kutta', 'kutte', 'kuttiya', 'suar', 'suwar', 'gadhe', 'gadha',
   'saala', 'sala', 'saali', 'sali', 'sale',
   'randi', 'raand', 'r@ndi', 'r*ndi',
   'lodu', 'lauda', 'lawda', 'lavde', 'loda', 'lode',
@@ -33,7 +33,7 @@ const ABUSIVE_PATTERNS: string[] = [
   // Hindi Devanagari Script
   'मादरचोद', 'मादरચોદ', 'बहनचोद', 'बेहेनचोद', 'भोसड़ीके', 'भोसडीके', 'भोसड़ा',
   'चूतिया', 'चुतिया', 'गांडू', 'गांड', 'हरामी', 'हरामखोर', 'कमीना', 'कमीने',
-  'कुत्ता', 'कुत्ते', 'साला', 'साले', 'साली', 'रांड', 'लौड़ा', 'लवड़ा', 'लोड़ा',
+  'कुत्ता', 'कुत्ते', 'साला', 'साले', 'साली', 'रांड', 'गधे', 'गधा', 'लौड़ा', 'लवड़ा', 'लोड़ा',
   'झांट', 'भड़वा', 'भड़वे', 'छिनाल', 'टट्टी', 'बकवास', 'चोर निगम',
 
   // --- Gujarati & Gujarlish Vulgarities & Slurs ---
@@ -42,12 +42,16 @@ const ABUSIVE_PATTERNS: string[] = [
   'કુતરો', 'કુતરા', 'કુતરી', 'સાળો', 'સાળા', 'સાળી',
   'રાંડ', 'રાંડી', 'ભોસડી', 'ભોસડીના', 'લવડા', 'લવડો',
   'ચુતિયા', 'ચોદિયા', 'ચોદવું', 'ચોદ',
-  'બકવાસ', 'માદરચોદ', 'બેનચોદ', 'લફંગો', 'ચોર',
+  'બકવાસ', 'માદરચોદ', 'બેનચોદ', 'લફંગો', 'ચોર', 'પીકી', 'પીકીના', 'ગધેડા', 'ગધેડો', 'ગધે',
 
   // Gujarlish phonetic variants
   'haramkhor', 'gando', 'gandi', 'chodvu', 'chod', 'kutro', 'kutra', 'bhuro',
-  'lafango', 'bhosdina', 'saloo', 'radvo'
+  'lafango', 'bhosdina', 'saloo', 'radvo', 'pikina', 'piki', 'gadhe', 'gadha', 'gadheda', 'gadhedo'
 ];
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
  * Normalizes input text by replacing leetspeak characters, spaces, and repeated chars
@@ -93,8 +97,8 @@ export function checkTextForAbuse(rawText: string): ModerationCheckResult {
 
     // 1. Direct word inclusion in lowercased text
     // Use word-boundary or isolated check for short words (<= 3 chars) to avoid false positives
-    if (patternLower.length <= 3) {
-      const regex = new RegExp(`(^|\\b|\\s|[^a-zA-Z0-9])${patternLower}($|\\b|\\s|[^a-zA-Z0-9])`, 'i');
+    if (patternLower.length <= 4) {
+      const regex = new RegExp(`(^|\\b|\\s|[^a-zA-Z0-9])${escapeRegex(patternLower)}($|\\b|\\s|[^a-zA-Z0-9])`, 'i');
       if (regex.test(rawLower) || regex.test(normalized)) {
         return {
           isSafe: false,

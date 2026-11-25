@@ -111,11 +111,16 @@ def bootstrap_sample_dataset(data_dir: str):
     so training can be verified immediately even before the user provides the final dataset.
     """
     palette = {
-        "Overflowing_Dustbin": ((80, 120, 90), "DUSTBIN\nOVERFLOW"),
-        "Open_Garbage_Dumping": ((140, 100, 70), "OPEN DUMP\nHEAP"),
-        "Roadside_Garbage": ((110, 110, 115), "ROADSIDE\nKERB LITTER"),
         "Littering": ((160, 140, 90), "PLASTIC\nBOTTLE LITTER"),
+        "Open_Garbage_Dumping": ((140, 100, 70), "OPEN DUMP\nHEAP"),
+        "Overflowing_Dustbin": ((80, 120, 90), "DUSTBIN\nOVERFLOW"),
+        "Roadside_Garbage": ((110, 110, 115), "ROADSIDE\nKERB LITTER"),
         "Drainage_Waste_Accumulation": ((40, 75, 95), "CHOKED DRAIN\nSEWAGE"),
+        "Other_Cleanliness_Issues": ((120, 90, 80), "OTHER CLEANLINESS\nISSUES"),
+        "Potholes_Degraded_Road": ((95, 95, 100), "POTHOLE\nDEGRADED ROAD"),
+        "Fallen_Tree_Blockage": ((60, 110, 60), "FALLEN TREE\nROAD BLOCKAGE"),
+        "Railing_Parapet_Damaged": ((130, 100, 110), "DAMAGED RAILING\nPARAPET"),
+        "Road_Overtopped_Waterlogging": ((50, 90, 140), "WATERLOGGED ROAD\nFLOODING"),
         "Clean_Not_Garbage": ((70, 160, 80), "CLEAN STREET\nNO LITTER"),
         "Garbage_Sketch": ((200, 200, 200), "SKETCH / DRAWING\nNOT REAL PHOTO"),
         "Non_Overflowed_Dustbin": ((90, 110, 130), "NORMAL BIN\nNOT OVERFLOWED")
@@ -168,7 +173,18 @@ def get_civic_category_index(folder_name: str) -> int:
         "drawing": "Garbage Sketch / Drawing",
         "non overflowed dustbin": "Non-Overflowed Dustbin",
         "non-overflowed dustbin": "Non-Overflowed Dustbin",
-        "normal dustbin": "Non-Overflowed Dustbin"
+        "normal dustbin": "Non-Overflowed Dustbin",
+        "other cleanliness issues": "Other Cleanliness Issues",
+        "other cleanliness": "Other Cleanliness Issues",
+        "potholes degraded road": "Potholes / Degraded Road",
+        "potholes": "Potholes / Degraded Road",
+        "fallen tree blockage": "Fallen Tree / Blockage",
+        "fallen tree": "Fallen Tree / Blockage",
+        "railing parapet damaged": "Railing / Parapet Damaged",
+        "railing": "Railing / Parapet Damaged",
+        "road overtopped waterlogging": "Road Overtopped / Waterlogging",
+        "waterlogging": "Road Overtopped / Waterlogging",
+        "road overtopped": "Road Overtopped / Waterlogging"
     }
     for k, v in mappings.items():
         if k in clean_name or clean_name in k:
@@ -215,7 +231,7 @@ class PreprocessedDataset(Dataset):
                 ext = os.path.splitext(fname)[1].lower()
                 if ext in valid_exts and not fname.startswith("."):
                     full_path = os.path.join(dirpath, fname)
-                    if fname.startswith(("bootstrap_", "sample_")):
+                    if fname.startswith("bootstrap_"):
                         bootstrap_samples_by_class[cat_name].append((full_path, civic_idx))
                     else:
                         real_samples_by_class[cat_name].append((full_path, civic_idx))
@@ -346,6 +362,15 @@ def train_waste_model(
 
     # Instantiate model
     model = NavsariWasteNet(num_classes=len(CIVIC_CATEGORIES), pretrained=True)
+    if os.path.exists(output_weights):
+        try:
+            ckpt = torch.load(output_weights, map_location=device)
+            m_state = model.state_dict()
+            compatible = {k: v for k, v in ckpt.items() if k in m_state and v.shape == m_state[k].shape}
+            model.load_state_dict(compatible, strict=False)
+            print(f"[PRETRAINED] Loaded {len(compatible)} compatible layer weights from existing checkpoint {output_weights}")
+        except Exception as e:
+            print(f"[PRETRAINED] Could not load prior checkpoint: {e}")
     model.to(device)
 
     # Freeze lower backbone layers for the first 2 epochs for ultra-fast warmup, then unfreeze top layers
@@ -458,14 +483,15 @@ def train_waste_model(
     class_features: Dict[str, List[torch.Tensor]] = {c: [] for c in CIVIC_CATEGORIES}
 
     with torch.no_grad():
-        for images, labels in val_loader:
-            images = images.to(device)
-            _, feats = model(images)
-            for feat, civic_idx in zip(feats, labels):
-                idx_val = civic_idx.item() if hasattr(civic_idx, "item") else int(civic_idx)
-                if 0 <= idx_val < len(CIVIC_CATEGORIES):
-                    civic_cat = CIVIC_CATEGORIES[idx_val]
-                    class_features[civic_cat].append(feat.cpu())
+        for loader in [val_loader, train_loader]:
+            for images, labels in loader:
+                images = images.to(device)
+                _, feats = model(images)
+                for feat, civic_idx in zip(feats, labels):
+                    idx_val = civic_idx.item() if hasattr(civic_idx, "item") else int(civic_idx)
+                    if 0 <= idx_val < len(CIVIC_CATEGORIES):
+                        civic_cat = CIVIC_CATEGORIES[idx_val]
+                        class_features[civic_cat].append(feat.cpu())
 
     prototypes = {}
     for cat, feat_list in class_features.items():
@@ -475,12 +501,21 @@ def train_waste_model(
             centroid = centroid / (centroid.norm(p=2) + 1e-6)
             prototypes[cat] = [round(float(x), 5) for x in centroid.tolist()]
 
-    # Save to online_prototypes.json
+    # Save to online_prototypes.json (preserve existing exemplar bank)
+    existing_samples = []
+    if os.path.exists(output_prototypes):
+        try:
+            with open(output_prototypes, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+                existing_samples = old_data.get("samples", [])
+        except Exception:
+            pass
+
     os.makedirs(os.path.dirname(output_prototypes), exist_ok=True)
     with open(output_prototypes, "w", encoding="utf-8") as f:
         json.dump({
             "prototypes": prototypes,
-            "samples": [],
+            "samples": existing_samples,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }, f, indent=2)
 

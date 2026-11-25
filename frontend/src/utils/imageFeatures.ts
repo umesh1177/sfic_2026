@@ -189,11 +189,13 @@ export function checkLocalCleanlinessRelevance(
  */
 export function detectCategoryFromVisualFeatures(f: ExtractedVisualFeatures | null): string {
   if (!f) return 'cat-03';
-  if (f.green_ratio > 0.22 && f.brown_earth_ratio > 0.06) return 'cat-08'; // Fallen tree / Blockage
-  if (f.blue_water_ratio > 0.14) return 'cat-05'; // Drainage / Waterlogging
-  if (f.gray_road_ratio > 0.38 && f.edge_density > 0.075 && f.saturation < 0.22) return 'cat-07'; // Potholes
+  if (f.blue_water_ratio > 0.18 && f.gray_road_ratio > 0.18) return 'cat-10'; // Road Overtopped / Waterlogging
+  if (f.green_ratio > 0.20 && (f.brown_earth_ratio > 0.05 || f.green_ratio > 0.30)) return 'cat-08'; // Fallen Tree / Blockage
+  if (f.blue_water_ratio > 0.12) return 'cat-05'; // Drainage / Waste Accumulation
+  if (f.gray_road_ratio > 0.35 && f.edge_density > 0.075 && f.saturation < 0.22) return 'cat-07'; // Potholes / Degraded Road
+  if (f.edge_density > 0.12 && f.gray_road_ratio > 0.20 && f.saturation < 0.20) return 'cat-09'; // Railing / Parapet Damaged
   if (f.brown_earth_ratio > 0.20 && f.edge_density > 0.10) return 'cat-02'; // Open Garbage Dumping
-  if (f.saturation > 0.30 && f.edge_density > 0.10) return 'cat-03'; // Overflowing Dustbin
+  if (f.saturation > 0.28 && f.edge_density > 0.09) return 'cat-03'; // Overflowing Dustbin
   if (f.gray_road_ratio > 0.25) return 'cat-04'; // Roadside Garbage
-  return 'cat-01'; // Littering / Plastic
+  return 'cat-01'; // Littering
 }

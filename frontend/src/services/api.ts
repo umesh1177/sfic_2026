@@ -978,6 +978,13 @@ class ApiService {
     });
   }
 
+  async reclassifyWardComplaint(id: string, data: { category_id?: string; category_name: string; train_model: boolean }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/reclassify`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
   async verifyCompleteWardComplaint(id: string, data?: { review_notes?: string }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/complaints/${id}/verify-complete`, {
       method: 'POST',

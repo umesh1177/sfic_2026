@@ -99,6 +99,13 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
   const [afterPhotos, setAfterPhotos] = useState<string[]>([]);
   const [newAfterPhotoUrl, setNewAfterPhotoUrl] = useState<string>('');
 
+  // Category Reclassification & Active Learning State
+  const [categoriesList, setCategoriesList] = useState<any[]>([]);
+  const [isEditingCategory, setIsEditingCategory] = useState<boolean>(false);
+  const [selectedNewCategory, setSelectedNewCategory] = useState<string>('');
+  const [showReclassifyModal, setShowReclassifyModal] = useState<boolean>(false);
+  const [reclassifying, setReclassifying] = useState<boolean>(false);
+
   // Voice-to-Text for Post Description
   const [isListening, setIsListening] = useState<boolean>(false);
   const [voiceLang, setVoiceLang] = useState<'en-IN' | 'gu-IN' | 'hi-IN'>('en-IN');
@@ -288,6 +295,9 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
       setLoading(true);
       const res = await api.getWardComplaintDetails(complaintId);
       setDetails(res.data);
+      if (res.data?.overview?.category_name) {
+        setSelectedNewCategory(res.data.overview.category_name);
+      }
       populatePostDraftFromDetails(res.data);
       setIsPublished(Boolean((res.data?.overview as any)?.is_published_to_community));
     } catch (err: any) {
@@ -299,7 +309,48 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
   useEffect(() => {
     fetchDetails();
+    api.getCategories().then((res: any) => {
+      if (res.data) setCategoriesList(res.data);
+    }).catch(() => {});
   }, [complaintId]);
+
+  // Handle Category Reclassification with Human-in-the-Loop Active Learning
+  const handleReclassifyCategory = async (trainModel: boolean) => {
+    if (!selectedNewCategory || !complaintId) return;
+    setReclassifying(true);
+    setActionError(null);
+    try {
+      const res = await api.reclassifyWardComplaint(complaintId, {
+        category_name: selectedNewCategory,
+        train_model: trainModel
+      });
+
+      setDetails((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          overview: {
+            ...prev.overview,
+            category_name: selectedNewCategory
+          }
+        };
+      });
+
+      setShowReclassifyModal(false);
+      setIsEditingCategory(false);
+      setActionSuccess(
+        `Category updated to "${selectedNewCategory}". ${trainModel ? 'AI model learned this photo in the category dataset!' : ''}`
+      );
+      if (trainModel) {
+        confetti({ particleCount: 40, spread: 60, origin: { y: 0.6 } });
+      }
+      if (onComplaintUpdated) onComplaintUpdated();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to update category.');
+    } finally {
+      setReclassifying(false);
+    }
+  };
 
   // Handle Verify Only (without public post)
   const handleVerifyCompleteOnly = async () => {
@@ -583,9 +634,49 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 </div>
 
                 <div className="space-y-3">
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category</span>
-                    <p className="text-sm font-extrabold text-[#095c54]">{overview.category_name}</p>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingCategory(!isEditingCategory);
+                          setSelectedNewCategory(overview.category_name);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold text-[#095c54] hover:bg-emerald-50 transition border border-emerald-200"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>{isEditingCategory ? 'Cancel' : 'Change Category'}</span>
+                      </button>
+                    </div>
+
+                    {!isEditingCategory ? (
+                      <p className="text-sm font-extrabold text-[#095c54]">{overview.category_name}</p>
+                    ) : (
+                      <div className="space-y-2 pt-1">
+                        <select
+                          value={selectedNewCategory}
+                          onChange={(e) => setSelectedNewCategory(e.target.value)}
+                          className="w-full p-2 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-xl focus:border-[#095c54] outline-hidden shadow-xs"
+                        >
+                          <option value="">-- Select New Category --</option>
+                          {categoriesList.map((cat: any) => (
+                            <option key={cat.id || cat.category_name} value={cat.category_name}>
+                              {cat.category_name} {cat.category_name_gu ? `(${cat.category_name_gu})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!selectedNewCategory || selectedNewCategory === overview.category_name}
+                          onClick={() => setShowReclassifyModal(true)}
+                          className="w-full py-1.5 px-3 rounded-xl bg-[#095c54] text-white text-xs font-bold shadow-xs hover:bg-[#074741] disabled:opacity-50 transition flex items-center justify-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Update Category &amp; Retrain Model</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
@@ -1572,6 +1663,101 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7b. ACTIVE LEARNING / CATEGORY RECLASSIFY CONFIRMATION MODAL */}
+      {showReclassifyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-emerald-100 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#0f2925]">
+                    Reclassify Category &amp; Active AI Learning
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">
+                    Complaint #{overview.complaint_number}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReclassifyModal(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Photo preview + Old vs New category delta */}
+            <div className="flex items-center gap-4 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300">
+                <img
+                  src={citizen_report?.photo_url || overview.photo_url || (overview as any).image_url}
+                  alt="Complaint Evidence"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="space-y-1.5 flex-1 min-w-0">
+                <div className="text-[11px] text-slate-500 font-semibold">Category Reclassification:</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold line-through">
+                    {overview.category_name}
+                  </span>
+                  <span className="text-slate-400 font-bold">&rarr;</span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-black">
+                    {selectedNewCategory}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 leading-relaxed space-y-1">
+              <div className="font-black flex items-center gap-1.5 text-amber-950">
+                <Sparkles className="w-4 h-4 text-amber-600" />
+                <span>Active Model Improvement (Human-in-the-Loop)</span>
+              </div>
+              <p>
+                As the Ward Officer, your visual inspection can directly train the AI engine. Saving and retraining will store this verified photo in the <strong>{selectedNewCategory}</strong> dataset so future citizen complaints are recognized accurately.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={reclassifying}
+                onClick={() => setShowReclassifyModal(false)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reclassifying}
+                onClick={() => handleReclassifyCategory(false)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition"
+              >
+                Update Complaint Only
+              </button>
+              <button
+                type="button"
+                disabled={reclassifying}
+                onClick={() => handleReclassifyCategory(true)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition"
+              >
+                {reclassifying ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                )}
+                <span>Confirm &amp; Train AI Model</span>
+              </button>
             </div>
           </div>
         </div>

@@ -827,6 +827,71 @@ export class DbRepository {
     }
   }
 
+  public static async updateComplaintCategory(
+    id: string,
+    newCategoryId: string,
+    newCategoryName: string,
+    actorInfo?: { name: string; role: string; note: string }
+  ): Promise<void> {
+    // 1. Update in-memory store
+    const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+    if (complaint) {
+      complaint.category_id = newCategoryId;
+      complaint.category_name = newCategoryName;
+      complaint.updated_at = new Date().toISOString();
+      if (actorInfo) {
+        if (!complaint.activity_logs) complaint.activity_logs = [];
+        complaint.activity_logs.push({
+          id: `act-${Date.now()}`,
+          complaint_id: complaint.id,
+          status: complaint.status,
+          note: actorInfo.note,
+          actor_name: actorInfo.name,
+          actor_role: actorInfo.role as any,
+          created_at: new Date().toISOString()
+        });
+      }
+    }
+
+    // 2. Synchronize to PostgreSQL if connected
+    if (isDbConnected()) {
+      try {
+        const lookupId = complaint?.id || id;
+        const lookupNum = complaint?.complaint_number || id;
+        const updateRes = this.isValidUUID(lookupId)
+          ? await pool.query(
+              `UPDATE complaints
+               SET category_id = $1,
+                   category_name = $2,
+                   updated_at = NOW()
+               WHERE id = $3 OR complaint_number = $4
+               RETURNING id`,
+              [newCategoryId, newCategoryName, lookupId, lookupNum]
+            )
+          : await pool.query(
+              `UPDATE complaints
+               SET category_id = $1,
+                   category_name = $2,
+                   updated_at = NOW()
+               WHERE complaint_number = $3
+               RETURNING id`,
+              [newCategoryId, newCategoryName, lookupNum]
+            );
+
+        const dbComplaintId = updateRes.rows[0]?.id;
+        if (actorInfo && dbComplaintId) {
+          await pool.query(
+            `INSERT INTO complaint_activity_logs (complaint_id, status, note, actor_name, actor_role)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [dbComplaintId, complaint?.status || 'pending', actorInfo.note, actorInfo.name, actorInfo.role]
+          ).catch(() => {});
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - updateComplaintCategory]:', err.message);
+      }
+    }
+  }
+
   public static async createNotification(
     userId: string,
     title: string,

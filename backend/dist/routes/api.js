@@ -182,6 +182,7 @@ exports.apiRouter.delete('/ward/complaints/:id', softAuthenticate, wardOfficerCo
 exports.apiRouter.post('/ward/complaints/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenComplaint);
 exports.apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, wardOfficerController_js_1.WardOfficerController.assignComplaint);
 exports.apiRouter.post('/ward/complaints/:id/reject', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectComplaint);
+exports.apiRouter.post('/ward/complaints/:id/reclassify', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reclassifyComplaint);
 exports.apiRouter.post('/ward/complaints/:id/verify-complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyCompleteComplaint);
 exports.apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishComplaintToCommunity);
 exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);

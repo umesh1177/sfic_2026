@@ -28,11 +28,16 @@ from preprocess import preprocess_cv_image
 # =====================================================================
 
 VALID_CIVIC_CATEGORIES: List[str] = [
-    "Overflowing Dustbin",
-    "Open Garbage Dumping",
-    "Roadside Garbage",
     "Littering",
-    "Drainage / Waste Accumulation"
+    "Open Garbage Dumping",
+    "Overflowing Dustbin",
+    "Roadside Garbage",
+    "Drainage / Waste Accumulation",
+    "Other Cleanliness Issues",
+    "Potholes / Degraded Road",
+    "Fallen Tree / Blockage",
+    "Railing / Parapet Damaged",
+    "Road Overtopped / Waterlogging"
 ]
 
 INVALID_CATEGORIES: Dict[str, str] = {
@@ -44,48 +49,73 @@ INVALID_CATEGORIES: Dict[str, str] = {
 CIVIC_CATEGORIES: List[str] = VALID_CIVIC_CATEGORIES + list(INVALID_CATEGORIES.keys())
 
 CATEGORY_GUJARATI: Dict[str, str] = {
+    "Littering": "કચરો ફેંકવો",
+    "Open Garbage Dumping": "ખુલ્લામાં કચરો ઠાલવવો",
     "Overflowing Dustbin": "ઉભરાતી કચરાપેટી",
-    "Open Garbage Dumping": "ખુલ્લામાં કચરો નાખવો",
     "Roadside Garbage": "રસ્તા કિનારે કચરો",
-    "Littering": "કચરો ફેંકવો / પ્લાસ્ટિક",
     "Drainage / Waste Accumulation": "ગટર / કચરો જમા થવો",
+    "Other Cleanliness Issues": "અન્ય સ્વચ્છતા સમસ્યાઓ",
+    "Potholes / Degraded Road": "ખાડા / તૂટેલો રસ્તો",
+    "Fallen Tree / Blockage": "પડેલું ઝાડ / માર્ગ અવરોધ",
+    "Railing / Parapet Damaged": "રેલિંગ / પેરાપેટ નુકસાન",
+    "Road Overtopped / Waterlogging": "રસ્તા પર પાણી ભરાવું",
     "Clean / Not Garbage": "સ્વચ્છ સ્થળ / કચરો નથી",
     "Garbage Sketch / Drawing": "કચરાનું સ્કેચ / ચિત્ર",
     "Non-Overflowed Dustbin": "સામાન્ય / ન ઉભરાયેલી ડસ્ટબિન"
 }
 
 CATEGORY_KEYWORDS: Dict[str, List[str]] = {
-    "Overflowing Dustbin": [
-        "dustbin", "bin", "container", "trash can", "garbage box", "overfill", "overflowing", "dumpster",
-        "કચરાપેટી", "ડસ્ટબિન", "પેટી", "ઉભરાતી", "कूड़ेदान", "डस्टबिन", "कचरा पेटी"
+    "Littering": [
+        "litter", "plastic", "bottle", "cups", "wrapper", "paper", "polythene", "bags", "chips packet",
+        "કચરો ફેંકવો", "પ્લાસ્ટિક", "બોટલ", "રેપર", "કોથળી", "કચરો", "प्लास्टिक", "बोतल", "थैली", "रैपर", "कचरा फैलाना"
     ],
     "Open Garbage Dumping": [
         "dump", "dumping", "open dump", "heap", "pile", "mound", "waste plot", "vacant", "landfill",
-        "ખુલ્લામાં", "કચરાનો ઢગલો", "પ્લોટ", "ઢગ", "खुले में कचरा", "कचरे का ढेर"
+        "ખુલ્લામાં કચરો", "ખુલ્લામાં", "કચરાનો ઢગલો", "પ્લોટ", "ઢગ", "ખુલ્લામાં કચરો ઠાલવવો", "खुले में कचरा", "कचरे का ढेर"
+    ],
+    "Overflowing Dustbin": [
+        "dustbin", "bin", "container", "trash can", "garbage box", "overfill", "overflowing", "dumpster",
+        "ઉભરાતી કચરાપેટી", "કચરાપેટી", "ડસ્ટબિન", "પેટી", "ઉભરાતી", "कूड़ेदान", "डस्टबिन", "कचरा पेटी"
     ],
     "Roadside Garbage": [
         "roadside", "street", "footpath", "walkway", "pavement", "divider", "road garbage", "curb",
-        "ફૂટપાથ", "શેરી", "રસ્તા કિનારે", "फुटपाथ", "सड़क किनारे"
-    ],
-    "Littering": [
-        "litter", "plastic", "bottle", "cups", "wrapper", "paper", "polythene", "bags", "chips packet",
-        "પ્લાસ્ટિક", "બોટલ", "રેપર", "કોથળી", "प्लास्टिक", "बोतल", "थैली", "रैपर"
+        "રસ્તા કિનારે કચરો", "ફૂટપાથ", "શેરી", "રસ્તા કિનારે", "फुटपाथ", "सड़क किनारे"
     ],
     "Drainage / Waste Accumulation": [
         "drain", "gutter", "drainage", "sewer", "sewage", "stagnant", "choked", "nala", "culvert", "manhole",
-        "ગટર", "નાળું", "ગંદુ પાણી", "નાલી", "नाली", "नाला", "गटर", "सीवर", "गंदा पानी"
+        "ગટર / કચરો જમા થવો", "ગટર", "નાળું", "ગંદુ પાણી", "નાલી", "નાલી ગટર", "नाली", "नाला", "गटर", "सीवर", "गंदा पानी"
+    ],
+    "Other Cleanliness Issues": [
+        "dead animal", "animal carcass", "debris", "malba", "construction waste", "filth", "foul smell", "public toilet", "urinal",
+        "અન્ય સ્વચ્છતા સમસ્યાઓ", "મૃત પ્રાણી", "બાંધકામ કચરો", "શૌચાલય", "અન્ય કચરો", "दुर्गंध", "शौचालय", "मलबा", "मरा हुआ जानवर"
+    ],
+    "Potholes / Degraded Road": [
+        "pothole", "crater", "broken road", "damaged road", "asphalt crack", "road pit", "road hole", "degraded road", "khada",
+        "ખાડા / તૂટેલો રસ્તો", "ખાડા", "તૂટેલો રસ્તો", "ખાડો", "રસ્તો ખરાબ", "गड्ढा", "गड्ढे", "टूटी सड़क", "खराब सड़क"
+    ],
+    "Fallen Tree / Blockage": [
+        "fallen tree", "tree branch", "uprooted tree", "road blockage", "blocked road", "fallen branch", "green waste", "wood log",
+        "પડેલું ઝાડ / માર્ગ અવરોધ", "પડેલું ઝાડ", "ડાળખી", "માર્ગ અવરોધ", "વૃક્ષ", "ઝાડ", "गिरा हुआ पेड़", "पेड़ की डाली", "रास्ता बंद"
+    ],
+    "Railing / Parapet Damaged": [
+        "railing", "parapet", "broken railing", "damaged railing", "culvert", "bridge railing", "footpath railing", "crash barrier",
+        "રેલિંગ / પેરાપેટ નુકસાન", "રેલિંગ", "પેરાપેટ", "તૂટેલી રેલિંગ", "પુલની રેલિંગ", "રેલિંગ તૂટેલી", "रेलिंग", "टूटी रेलिंग", "पुलिया", "बाउंड्री"
+    ],
+    "Road Overtopped / Waterlogging": [
+        "waterlogging", "flooding", "water accumulation", "overtopped road", "submerged road", "rain water", "puddle", "waterlogged street",
+        "રસ્તા પર પાણી ભરાવું", "પાણી ભરાવું", "જળબંબાકાર", "રસ્તા પર પાણી", "ભરાયેલું પાણી", "जलभराव", "पानी भरा", "सड़क पर पानी", "बाढ़"
     ],
     "Clean / Not Garbage": [
         "clean", "clean road", "clean street", "clean park", "neat", "spotless", "well maintained",
-        "સ્વચ્છ", "સાફ", "સાફ સુથરી", "साफ", "स्वच्छ"
+        "સ્વચ્છ", "સાફ", "સાફ સુથરી", "સાફ જગ્યા", "સાફ રસ્તો", "साफ", "स्वच्छ"
     ],
     "Garbage Sketch / Drawing": [
         "sketch", "drawing", "illustration", "cartoon", "clipart", "doodle", "graphic", "pencil", "artwork", "painting",
-        "સ્કેચ", "ચિત્ર", "કાર્ટૂન", "स्केच", "चित्र", "ड्राइंग"
+        "સ્કેચ", "ચિત્ર", "કાર્ટૂન", "ચિત્રકામ", "સ્કેચ ડ્રોઇંગ", "स्केच", "चित्र", "ड्राइंग"
     ],
     "Non-Overflowed Dustbin": [
         "empty bin", "half bin", "closed bin", "empty dustbin", "clean dustbin", "normal dustbin", "within capacity",
-        "ખાલી કચરાપેટી", "સામાન્ય ડસ્ટબિન", "खाली कूड़ेदान", "सामान्य डस्टबिन"
+        "ખાલી કચરાપેટી", "સામાન્ય ડસ્ટબિન", "ન ઉભરાયેલી ડસ્ટબિન", "ખાલી ડસ્ટબિન", "खाली कूड़ेदान", "सामान्य डस्टबिन"
     ]
 }
 
@@ -159,11 +189,16 @@ CLEAN_PLACE_TERMS: List[str] = [
 
 # ImageNet semantic visual terms that map directly to civic waste
 IMAGENET_TO_CATEGORY: Dict[str, List[str]] = {
-    "Overflowing Dustbin": ["ashcan", "trash", "garbage", "bucket", "pail", "barrel", "tub", "crate", "hamper", "shopping cart", "dumpster", "bin"],
     "Littering": ["plastic bag", "water bottle", "pop bottle", "beer bottle", "wine bottle", "packet", "carton", "cup", "paper towel", "toilet tissue"],
     "Open Garbage Dumping": ["landfill", "trash", "junk", "scrap", "pile", "wreck", "ruin", "rubble"],
+    "Overflowing Dustbin": ["ashcan", "trash", "garbage", "bucket", "pail", "barrel", "tub", "crate", "hamper", "shopping cart", "dumpster", "bin"],
+    "Roadside Garbage": ["street sign", "traffic light", "parking meter", "sidewalk", "curb", "alley", "street"],
     "Drainage / Waste Accumulation": ["manhole", "sewer", "grate", "drain", "canal", "ditch", "mud", "swamp", "pond"],
-    "Roadside Garbage": ["street sign", "traffic light", "parking meter", "sidewalk", "curb", "alley", "street"]
+    "Other Cleanliness Issues": ["rubbish", "refuse", "waste", "filth", "debris", "carcass", "dead animal", "slum", "outhouse", "toilet"],
+    "Potholes / Degraded Road": ["pothole", "crater", "excavation", "quarry", "ditch", "trench", "gravel", "cracked pavement", "damaged road", "asphalt"],
+    "Fallen Tree / Blockage": ["tree", "log", "stump", "branch", "timber", "trunk", "wood", "forest", "fallen", "blockage"],
+    "Railing / Parapet Damaged": ["railing", "balustrade", "banister", "fence", "barrier", "wall", "parapet", "culvert", "guard rail"],
+    "Road Overtopped / Waterlogging": ["lakeshore", "seashore", "coast", "water", "flood", "stream", "puddle", "reservoir", "river", "fountain"]
 }
 
 
@@ -245,9 +280,12 @@ class WasteClassifierInference:
         if os.path.exists(self.weights_path):
             try:
                 state = torch.load(self.weights_path, map_location=self.device)
-                self.model.load_state_dict(state, strict=False)
+                model_dict = self.model.state_dict()
+                compatible_state = {k: v for k, v in state.items() if k in model_dict and v.shape == model_dict[k].shape}
+                model_dict.update(compatible_state)
+                self.model.load_state_dict(model_dict)
                 self.has_weights = True
-                print(f"[AI MODEL INIT] Loaded custom trained weights from {self.weights_path}")
+                print(f"[AI MODEL INIT] Loaded custom trained weights from {self.weights_path} ({len(compatible_state)} layers)")
             except Exception as e:
                 print(f"[AI MODEL INIT WARN] Failed loading weights ({e}), using default EfficientNet-B0")
 
@@ -391,10 +429,10 @@ class WasteClassifierInference:
         if cues["brightness"] < 18 or cues["brightness"] > 248 or cues["std_dev"] < 13:
             is_relevant = False
             relevance_reason = "The captured photo is too dark, blank, or obscured. Please capture a clear photo of the civic problem."
-        elif cues["skin_ratio"] > 0.30:
+        elif cues["skin_ratio"] > 0.35 and cues["edge_density"] < 0.10:
             is_relevant = False
             relevance_reason = "This photo appears to capture a person or selfie rather than a civic cleanliness issue. Please take a photo of the waste problem."
-        elif cues["white_ratio"] > 0.58 and cues["edge_density"] > 0.065:
+        elif cues["white_ratio"] > 0.65 and cues["edge_density"] > 0.08 and cues["std_dev"] < 35:
             is_relevant = False
             relevance_reason = "This image appears to be a drawing, sketch, or illustration rather than an actual photograph. Please upload a real photograph of the civic problem."
         elif cues["white_ratio"] > 0.75 and cues["edge_density"] > 0.05:
@@ -414,26 +452,45 @@ class WasteClassifierInference:
                         scores[cat] += probs[idx] * 2.5
 
         # 4. Continual Prototype Memory (Cosine Distance to Learned Class Centroids)
+        proto_non = self.prototypes.get("Non-Overflowed Dustbin", [])
+        sim_non = sum(a * b for a, b in zip(emb_vec, proto_non)) if proto_non and len(proto_non) == len(emb_vec) else 0.0
+        proto_over = self.prototypes.get("Overflowing Dustbin", [])
+        sim_over = sum(a * b for a, b in zip(emb_vec, proto_over)) if proto_over and len(proto_over) == len(emb_vec) else 0.0
+
         for cat, proto_vec in self.prototypes.items():
             if cat in scores and len(proto_vec) == len(emb_vec):
                 dot = sum(a * b for a, b in zip(emb_vec, proto_vec))
-                if dot > 0.55:
-                    scores[cat] += dot * 3.2
-                    matched_learned = True
+                if cat == "Non-Overflowed Dustbin":
+                    # Only boost non-overflowed if it is closer than overflowing dustbin
+                    if dot > 0.05 and dot > sim_over + 0.015:
+                        scores[cat] += dot * 3.5
+                        matched_learned = True
+                else:
+                    if dot > 0.05:
+                        scores[cat] += dot * 3.5
+                        matched_learned = True
 
         # Check exemplar bank for individual close matches (k-NN)
+        knn_hits = []
+        max_knn_non = 0.0
         if self.online_samples:
-            knn_hits = []
             for sample in self.online_samples:
                 s_vec = sample.get("vector")
+                c_name = sample.get("category")
                 if s_vec and len(s_vec) == len(emb_vec):
                     sim = sum(a * b for a, b in zip(emb_vec, s_vec))
-                    if sim > 0.75:
-                        knn_hits.append((sim, sample.get("category")))
+                    if c_name == "Non-Overflowed Dustbin":
+                        if sim > max_knn_non:
+                            max_knn_non = sim
+                        if sim >= 0.40:
+                            knn_hits.append((sim, c_name))
+                    else:
+                        if sim > 0.25:
+                            knn_hits.append((sim, c_name))
             knn_hits.sort(key=lambda x: x[0], reverse=True)
             for sim, c_name in knn_hits[:5]:
                 if c_name in scores:
-                    scores[c_name] += sim * 2.0
+                    scores[c_name] += sim * 3.5
                     matched_learned = True
 
         # 5. ImageNet Visual Concepts Transfer & Multi-Category Denial Gate
@@ -448,27 +505,35 @@ class WasteClassifierInference:
                 top_labels = [self.imagenet_labels[i].lower() for i in top_i.cpu().tolist()]
                 top_scores = [float(p) for p in top_p.cpu().tolist()]
 
+                # Check if any waste term is recognized in top labels
+                has_waste_label = any(
+                    any(t in lbl for t in terms)
+                    for lbl in top_labels
+                    for terms in IMAGENET_TO_CATEGORY.values()
+                )
+
                 # A. Animal Check (dogs, cats, birds, cows, horses, monkeys, etc.)
-                for lbl, prob in zip(top_labels[:3], top_scores[:3]):
-                    if prob >= 0.18 and any(a in lbl for a in ANIMAL_TERMS):
-                        is_relevant = False
-                        clean_lbl = lbl.split(",")[0].strip().title()
-                        relevance_reason = f"This photo appears to show an animal ({clean_lbl}). Complaints can only be submitted for actual civic waste, garbage dumps, overflowing bins, or drainage issues."
-                        break
+                if not has_waste_label:
+                    for lbl, prob in zip(top_labels[:2], top_scores[:2]):
+                        if prob >= 0.35 and any(a in lbl for a in ANIMAL_TERMS):
+                            is_relevant = False
+                            clean_lbl = lbl.split(",")[0].strip().title()
+                            relevance_reason = f"This photo appears to show an animal ({clean_lbl}). Complaints can only be submitted for actual civic waste, garbage dumps, overflowing bins, or drainage issues."
+                            break
 
                 # B. Personal / Portrait / Selfie / Clothing Check
-                if is_relevant:
-                    for lbl, prob in zip(top_labels[:3], top_scores[:3]):
-                        if prob >= 0.20 and any(p in lbl for p in PERSON_SELFIE_TERMS):
+                if is_relevant and not has_waste_label:
+                    for lbl, prob in zip(top_labels[:2], top_scores[:2]):
+                        if prob >= 0.35 and any(p in lbl for p in PERSON_SELFIE_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
                             relevance_reason = f"This photo appears to capture a person, portrait, or clothing ({clean_lbl}). Please capture an outdoor photo of the civic cleanliness or waste problem."
                             break
 
                 # C. Indoor / Electronics / Food / Non-Civic Object Check
-                if is_relevant:
+                if is_relevant and not has_waste_label:
                     for lbl, prob in zip(top_labels[:2], top_scores[:2]):
-                        if prob >= 0.28 and any(n in lbl for n in NON_CIVIC_TERMS):
+                        if prob >= 0.40 and any(n in lbl for n in NON_CIVIC_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
                             relevance_reason = f"This photo appears to show an indoor or non-civic object ({clean_lbl}) rather than outdoor municipal waste."
@@ -477,7 +542,7 @@ class WasteClassifierInference:
                 # D. Clean Place Check (Clean streets, clean parks, clean plazas, fountains)
                 if is_relevant:
                     for lbl, prob in zip(top_labels[:3], top_scores[:3]):
-                        if prob >= 0.22 and any(c in lbl for c in CLEAN_PLACE_TERMS):
+                        if prob >= 0.30 and any(c in lbl for c in CLEAN_PLACE_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
                             relevance_reason = f"The location in this photo appears to be clean and well-maintained ({clean_lbl}) with no visible garbage or overflow. A complaint cannot be registered for a clean place."
@@ -488,7 +553,15 @@ class WasteClassifierInference:
                     for lbl, prob in zip(top_labels, top_scores):
                         for cat, terms in IMAGENET_TO_CATEGORY.items():
                             if any(t in lbl for t in terms) and cat in scores:
-                                scores[cat] += prob * 2.5
+                                # When a dustbin/ashcan is recognized, check whether it is a non-overflowed dustbin!
+                                if cat == "Overflowing Dustbin":
+                                    is_half_or_empty = (max_knn_non >= 0.42) or (sim_non > sim_over + 0.015 and sim_non >= 0.05)
+                                    if is_half_or_empty:
+                                        scores["Non-Overflowed Dustbin"] = scores.get("Non-Overflowed Dustbin", 0.0) + prob * 3.5
+                                    else:
+                                        scores["Overflowing Dustbin"] += prob * 3.0
+                                else:
+                                    scores[cat] += prob * 2.5
             except Exception:
                 pass
 
@@ -505,22 +578,27 @@ class WasteClassifierInference:
         if any(w in text_corpus for w in clean_text_indicators):
             scores["Clean / Not Garbage"] = scores.get("Clean / Not Garbage", 0.0) + 3.0
 
-        sketch_text_indicators = ["sketch", "drawing", "cartoon", "illustration", "doodle", "clipart", "painting", "સ્કેચ", "ચિત્ર", "स्केच", "चित्र", "ड्राइंग"]
+        sketch_text_indicators = ["sketch", "drawing", "cartoon", "illustration", "doodle", "clipart", "painting", "સ્કેચ", "ચિત્ર", "કાર્ટૂન", "ચિત્રકામ", "સ્કેચ ડ્રોઇંગ", "स्केच", "चित्र", "ड्राइंग"]
         if any(w in text_corpus for w in sketch_text_indicators):
             scores["Garbage Sketch / Drawing"] = scores.get("Garbage Sketch / Drawing", 0.0) + 3.0
 
-        normal_bin_indicators = ["empty bin", "empty dustbin", "not overflowing", "half full", "within capacity", "closed bin", "ખાલી કચરાપેટી", "खाली कूड़ेदान"]
+        normal_bin_indicators = [
+            "empty bin", "empty dustbin", "not overflowing", "half full", "half filled", "half-filled", "half dustbin",
+            "half", "50%", "not full", "within capacity", "closed bin", "clean dustbin", "normal dustbin", "less garbage",
+            "ખાલી કચરાપેટી", "સામાન્ય ડસ્ટબિન", "અડધી કચરાપેટી", "અડધી ભરેલી", "અડધી ડસ્ટબિન", "ઓછો કચરો", "ન ઉભરાયેલી",
+            "खाली कूड़ेदान", "सामान्य डस्टबिन", "आधी भरी", "आधा कूड़ेदान", "कम कचरा"
+        ]
         if any(w in text_corpus for w in normal_bin_indicators):
-            scores["Non-Overflowed Dustbin"] = scores.get("Non-Overflowed Dustbin", 0.0) + 3.0
+            scores["Non-Overflowed Dustbin"] = scores.get("Non-Overflowed Dustbin", 0.0) + 3.5
 
         # Check all invalid categories (Clean place, Garbage sketch, Non-overflowed dustbin)
         invalid_scores = {inv_cat: scores.pop(inv_cat, 0.0) for inv_cat in INVALID_CATEGORIES}
         max_waste_score = max(scores.values()) if scores else 0.0
 
         for inv_cat, inv_score in invalid_scores.items():
-            if inv_score > max_waste_score or inv_score >= 1.5:
+            if (inv_score >= 1.8 and inv_score > max_waste_score * 0.7) or (inv_score > max_waste_score and inv_score >= 1.2):
                 is_relevant = False
-                relevance_reason = relevance_reason or INVALID_CATEGORIES[inv_cat]
+                relevance_reason = INVALID_CATEGORIES[inv_cat]
                 break
 
         # Stage 2: Positive Waste Verification (Open-Set Waste Gate)
@@ -528,8 +606,8 @@ class WasteClassifierInference:
         if is_relevant and max_waste_score <= 0.25:
             is_relevant = False
             relevance_reason = (
-                "No civic waste or cleanliness issue detected in this photo. "
-                "The photo does not show an overflowing dustbin, open garbage dump, roadside garbage, littering, or drainage waste. "
+                "No civic cleanliness or infrastructure issue detected in this photo. "
+                "The photo does not show littering, an open garbage dump, overflowing dustbin, roadside garbage, drainage waste, other cleanliness issues, potholes, a fallen tree, damaged railing, or waterlogging. "
                 "Please upload a clear photo of the civic problem."
             )
 
@@ -560,6 +638,52 @@ class WasteClassifierInference:
         }
 
     # -----------------------------------------------------------------
+    # DYNAMIC CATEGORY REGISTRATION & DIRECTORY CREATION
+    # -----------------------------------------------------------------
+    def add_category(
+        self,
+        category_name: str,
+        keywords: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Dynamically registers a new civic complaint category created by NMC Admin:
+        1. Ensures the category is added to VALID_CIVIC_CATEGORIES and CIVIC_CATEGORIES.
+        2. Automatically creates data/train/<clean_dir_name> and data/val/<clean_dir_name>.
+        3. Adds optional search keywords.
+        4. Persists the state.
+        """
+        clean_name = category_name.strip()
+        if not clean_name:
+            return {"success": False, "error": "Category name cannot be empty"}
+
+        if clean_name not in VALID_CIVIC_CATEGORIES:
+            VALID_CIVIC_CATEGORIES.append(clean_name)
+        if clean_name not in CIVIC_CATEGORIES:
+            CIVIC_CATEGORIES.append(clean_name)
+
+        if keywords and clean_name not in CATEGORY_KEYWORDS:
+            CATEGORY_KEYWORDS[clean_name] = [k.strip().lower() for k in keywords if k.strip()]
+
+        clean_dir_name = clean_name.replace(" / ", "_").replace(" ", "_")
+        train_folder = os.path.join("data", "train", clean_dir_name)
+        val_folder = os.path.join("data", "val", clean_dir_name)
+        os.makedirs(train_folder, exist_ok=True)
+        os.makedirs(val_folder, exist_ok=True)
+
+        if clean_name not in self.prototypes:
+            self.prototypes[clean_name] = []
+            self._save_online_prototypes()
+
+        print(f"[DYNAMIC CATEGORY] Added '{clean_name}', created directories: {train_folder}, {val_folder}")
+        return {
+            "success": True,
+            "category": clean_name,
+            "train_folder": train_folder,
+            "val_folder": val_folder,
+            "total_categories": len(CIVIC_CATEGORIES)
+        }
+
+    # -----------------------------------------------------------------
     # CONTINUAL ONLINE TRAINING (Self-Improvement on Newer Images)
     # -----------------------------------------------------------------
     def train_sample(
@@ -575,12 +699,14 @@ class WasteClassifierInference:
           3. Fast 1-step gradient update on the classification head with replay memory.
           4. Persists the prototype memory to disk.
         """
-        if category_name not in CIVIC_CATEGORIES or category_name in INVALID_CATEGORIES:
+        if category_name in INVALID_CATEGORIES:
             return {
                 "trained": False,
                 "reason": f"Category '{category_name}' is an invalid or non-adaptive category. Only valid civic waste categories are learned online.",
                 "total_samples": len(self.online_samples)
             }
+        if category_name not in CIVIC_CATEGORIES:
+            self.add_category(category_name)
         cat = category_name
         img = self._decode_image(image_base64)
         if img is None:
@@ -596,7 +722,7 @@ class WasteClassifierInference:
             new_vec = embedding[0].cpu().numpy()
 
         # 3. Update Prototype Centroid (Exponential Moving Average)
-        if cat in self.prototypes:
+        if cat in self.prototypes and len(self.prototypes[cat]) == len(new_vec):
             old_proto = np.array(self.prototypes[cat], dtype=np.float32)
             alpha = 0.88  # Retain prior memory while adapting to new visual variation
             updated_proto = alpha * old_proto + (1.0 - alpha) * new_vec

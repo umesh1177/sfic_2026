@@ -67,7 +67,7 @@ export class AIService {
   }> = [];
   private static learnedLoaded = false;
 
-  private static readonly ALL_CATEGORIES = [
+  private static ALL_CATEGORIES = [
     'Littering',
     'Open Garbage Dumping',
     'Overflowing Dustbin',
@@ -79,6 +79,44 @@ export class AIService {
     'Railing / Parapet Damaged',
     'Road Overtopped / Waterlogging'
   ];
+
+  /**
+   * Automatically synchronizes newly created Admin categories with ml-service
+   * and creates local dataset train/val directories on disk.
+   */
+  public static async syncNewCategoryWithMlService(categoryName: string, keywords?: string[]): Promise<void> {
+    if (!categoryName) return;
+    const cleanName = categoryName.trim();
+    if (!this.ALL_CATEGORIES.includes(cleanName)) {
+      this.ALL_CATEGORIES.push(cleanName);
+    }
+
+    // 1. Create local directories for ml-service
+    try {
+      const cleanDir = cleanName.replace(/ \/ /g, '_').replace(/ /g, '_');
+      const mlTrainPath = path.resolve(process.cwd(), '..', 'ml-service', 'data', 'train', cleanDir);
+      const mlValPath = path.resolve(process.cwd(), '..', 'ml-service', 'data', 'val', cleanDir);
+      if (!fs.existsSync(mlTrainPath)) fs.mkdirSync(mlTrainPath, { recursive: true });
+      if (!fs.existsSync(mlValPath)) fs.mkdirSync(mlValPath, { recursive: true });
+    } catch (err: any) {
+      console.warn('[AI Service] Failed local directory creation:', err.message);
+    }
+
+    // 2. Register with running Python ML microservice
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 2000);
+      await fetch(`${this.ML_SERVICE_URL}/add-category`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category_name: cleanName, keywords: keywords || [] }),
+        signal: controller.signal
+      });
+      clearTimeout(tid);
+    } catch {
+      // microservice optional
+    }
+  }
 
   private static cosineSim(a: number[], b: number[]): number {
     if (!a || !b || a.length === 0 || a.length !== b.length) return 0;
@@ -150,6 +188,7 @@ export class AIService {
     categoryId?: string;
     categoryName: string;
     imageBase64?: string;
+    imageUrl?: string;
     description?: string;
     visualFeatures?: VisualFeatures;
   }): Promise<{ trained: boolean; total_samples: number }> {
@@ -191,17 +230,46 @@ export class AIService {
       }
     }
 
-    // Forward to Python ML microservice for dataset persistence & ResNet-50 online prototype training
-    if (params.imageBase64 && params.imageBase64.startsWith('data:image')) {
+    // Resolve base64 image representation if imageUrl is provided
+    let b64 = params.imageBase64;
+    if (!b64 && params.imageUrl) {
+      if (params.imageUrl.startsWith('data:image')) {
+        b64 = params.imageUrl;
+      } else if (params.imageUrl.startsWith('http://') || params.imageUrl.startsWith('https://')) {
+        try {
+          const controller = new AbortController();
+          const tid = setTimeout(() => controller.abort(), 3500);
+          const r = await fetch(params.imageUrl, { signal: controller.signal });
+          clearTimeout(tid);
+          if (r.ok) {
+            const buf = await r.arrayBuffer();
+            const mime = r.headers.get('content-type') || 'image/jpeg';
+            b64 = `data:${mime};base64,${Buffer.from(buf).toString('base64')}`;
+          }
+        } catch {
+          // fetch fallback
+        }
+      } else if (fs.existsSync(params.imageUrl)) {
+        try {
+          const buf = fs.readFileSync(params.imageUrl);
+          b64 = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        } catch {
+          // fs fallback
+        }
+      }
+    }
+
+    // Forward to Python ML microservice for dataset persistence & online prototype training
+    if (b64 && b64.startsWith('data:image')) {
       try {
         const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 2500);
+        const tid = setTimeout(() => controller.abort(), 3500);
         await fetch(`${this.ML_SERVICE_URL}/train-sample`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             category_name: params.categoryName,
-            image_base64: params.imageBase64,
+            image_base64: b64,
             description: params.description || ''
           }),
           signal: controller.signal
@@ -486,7 +554,8 @@ export class AIService {
       'Potholes / Degraded Road': ['pothole', 'crater', 'khada', 'broken road', 'degraded', 'ખાડા', 'તૂટેલો રસ્તો', 'गड्ढा'],
       'Fallen Tree / Blockage': ['tree', 'branch', 'fallen tree', 'log', 'uprooted', 'ઝાડ', 'વૃક્ષ', 'पेड़'],
       'Railing / Parapet Damaged': ['railing', 'parapet', 'bridge', 'culvert', 'broken wall', 'રેલિંગ', 'પેરાપેટ', 'रेलिंग'],
-      'Road Overtopped / Waterlogging': ['waterlog', 'flood', 'overtop', 'submerged', 'ભરાયેલું પાણી', 'પાણી ભરાવું', 'जलभराव']
+      'Road Overtopped / Waterlogging': ['waterlog', 'flood', 'overtop', 'submerged', 'ભરાયેલું પાણી', 'પાણી ભરાવું', 'जलभराव'],
+      'Other Cleanliness Issues': ['dead animal', 'animal carcass', 'carcass', 'debris', 'malba', 'construction debris', 'filth', 'foul smell', 'toilet', 'urinal', 'મૃત પ્રાણી', 'બાંધકામ કચરો', 'શૌચાલય', 'दुर्गंध', 'मलबा', 'शौचालय']
     };
 
     for (const [catName, words] of Object.entries(kwMap)) {

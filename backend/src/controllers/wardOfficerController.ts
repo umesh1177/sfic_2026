@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { DbRepository } from '../data/dbRepository.js';
 import { pool, isDbConnected } from '../data/db.js';
 import { AIAnalyticsService } from '../services/aiAnalyticsService.js';
+import { AIService } from '../services/aiService.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { normalizeIndianPhone } from './authController.js';
 import { store } from '../data/store.js';
@@ -2963,6 +2964,72 @@ export class WardOfficerController {
           complaint_id: complaint.id,
           status: 'rejected',
           rejection_reason: rejection_reason.trim()
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // =========================================================================
+  // 12b. Reclassify Complaint Category & Train AI Model (Active Learning)
+  // =========================================================================
+  public static async reclassifyComplaint(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { category_id, category_name, train_model = true } = req.body;
+
+      if (!category_id && !category_name) {
+        res.status(400).json({ success: false, error: 'Target category_id or category_name is required.' });
+        return;
+      }
+
+      let complaint: any = await DbRepository.getComplaintById(id).catch(() => null);
+      if (!complaint) {
+        complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      }
+      if (!complaint) {
+        res.status(404).json({ success: false, error: 'Complaint not found.' });
+        return;
+      }
+
+      // Resolve category
+      const targetCategory = (store.categories || []).find(
+        c => c.id === category_id || c.category_name.toLowerCase() === String(category_name || '').toLowerCase()
+      );
+      const finalCatId = targetCategory?.id || category_id || complaint.category_id;
+      const finalCatName = targetCategory?.category_name || category_name;
+      const oldCatName = complaint.category_name;
+
+      const officerName = req.user?.full_name || 'Ward Officer';
+
+      await DbRepository.updateComplaintCategory(complaint.id, finalCatId, finalCatName, {
+        name: officerName,
+        role: 'ward_officer',
+        note: `Ward Officer reclassified category from "${oldCatName}" to "${finalCatName}". Active AI Model Learning: ${train_model ? 'Yes' : 'No'}.`
+      });
+
+      // Active learning: train on the corrected photo
+      let trainingResult: any = { trained: false };
+      if (train_model && complaint.image_url) {
+        trainingResult = await AIService.trainOnNewPhoto({
+          categoryId: finalCatId,
+          categoryName: finalCatName,
+          imageUrl: complaint.image_url,
+          description: complaint.description || ''
+        }).catch((err: any) => ({ trained: false, error: err.message }));
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Complaint category successfully updated to "${finalCatName}". ${train_model ? 'AI model successfully trained on this verified photo.' : ''}`,
+        data: {
+          complaint_id: complaint.id,
+          complaint_number: complaint.complaint_number,
+          old_category: oldCatName,
+          new_category: finalCatName,
+          trained_model: Boolean(train_model),
+          training_details: trainingResult
         }
       });
     } catch (err: any) {

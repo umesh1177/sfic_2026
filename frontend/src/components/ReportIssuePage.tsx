@@ -85,21 +85,12 @@ function MapMoveListener({ onLocationChanged }: { onLocationChanged: (lat: numbe
 // Comprehensive civic categories with visual illustrations
 export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
   {
-    id: 'cat-03',
-    category_name: 'Overflowing Dustbin',
-    category_name_gu: 'ઉભરાતી કચરાપેટી',
-    category_name_hi: 'कूड़ेदान का ओवरफ्लो',
-    description: 'Community dustbins and municipal bins overflowing with waste',
-    icon: 'Archive',
-    is_active: true
-  },
-  {
-    id: 'cat-05',
-    category_name: 'Drainage / Choked Gutter',
-    category_name_gu: 'ગટર / નાલી કચરો',
-    category_name_hi: 'नाली या सीवर जल जमाव',
-    description: 'Choked drains, sewage overflow, and stagnant filthy waste water',
-    icon: 'Droplets',
+    id: 'cat-01',
+    category_name: 'Littering',
+    category_name_gu: 'કચરો ફેંકવો',
+    category_name_hi: 'कचरा फैलाना',
+    description: 'Public litter on streets, sidewalks, and market areas',
+    icon: 'Trash2',
     is_active: true
   },
   {
@@ -112,6 +103,15 @@ export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
     is_active: true
   },
   {
+    id: 'cat-03',
+    category_name: 'Overflowing Dustbin',
+    category_name_gu: 'ઉભરાતી કચરાપેટી',
+    category_name_hi: 'कूड़ेदान का ओवरफ्लो',
+    description: 'Community dustbins and municipal bins overflowing with waste',
+    icon: 'Archive',
+    is_active: true
+  },
+  {
     id: 'cat-04',
     category_name: 'Roadside Garbage',
     category_name_gu: 'રસ્તા કિનારે કચરો',
@@ -121,12 +121,21 @@ export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
     is_active: true
   },
   {
-    id: 'cat-01',
-    category_name: 'Littering / Plastic',
-    category_name_gu: 'કચરો / પ્લાસ્ટિક',
-    category_name_hi: 'कचरा फैलाना / प्लास्टिक',
-    description: 'Public litter on streets, sidewalks, and market areas',
-    icon: 'Trash2',
+    id: 'cat-05',
+    category_name: 'Drainage / Waste Accumulation',
+    category_name_gu: 'ગટર / કચરો જમા થવો',
+    category_name_hi: 'नाली या जल जमाव और कचरा',
+    description: 'Choked drains, sewage overflow, and stagnant filthy waste water',
+    icon: 'Droplets',
+    is_active: true
+  },
+  {
+    id: 'cat-06',
+    category_name: 'Other Cleanliness Issues',
+    category_name_gu: 'અન્ય સ્વચ્છતા સમસ્યાઓ',
+    category_name_hi: 'अन्य स्वच्छता समस्याएं',
+    description: 'Dead animal disposal, construction debris, or public toilet issues',
+    icon: 'HelpCircle',
     is_active: true
   },
   {
@@ -158,20 +167,11 @@ export const DEFAULT_CATEGORIES: ComplaintCategory[] = [
   },
   {
     id: 'cat-10',
-    category_name: 'Road Overtopped / Flooding',
+    category_name: 'Road Overtopped / Waterlogging',
     category_name_gu: 'રસ્તા પર પાણી ભરાવું',
     category_name_hi: 'सड़क पर जलभराव / ओवरफ्लो',
     description: 'Severe waterlogging or flood water overtopping the road',
     icon: 'Waves',
-    is_active: true
-  },
-  {
-    id: 'cat-06',
-    category_name: 'Other Civic Issues',
-    category_name_gu: 'અન્ય નાગરિક સમસ્યાઓ',
-    category_name_hi: 'अन्य स्वच्छता समस्याएं',
-    description: 'Dead animal disposal, construction debris, or public toilet issues',
-    icon: 'HelpCircle',
     is_active: true
   }
 ];

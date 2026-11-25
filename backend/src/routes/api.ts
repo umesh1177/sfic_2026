@@ -206,6 +206,7 @@ apiRouter.delete('/ward/complaints/:id', softAuthenticate, WardOfficerController
 apiRouter.post('/ward/complaints/:id/reopen', softAuthenticate, WardOfficerController.reopenComplaint);
 apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, WardOfficerController.assignComplaint);
 apiRouter.post('/ward/complaints/:id/reject', softAuthenticate, WardOfficerController.rejectComplaint);
+apiRouter.post('/ward/complaints/:id/reclassify', softAuthenticate, WardOfficerController.reclassifyComplaint);
 apiRouter.post('/ward/complaints/:id/verify-complete', softAuthenticate, WardOfficerController.verifyCompleteComplaint);
 apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, WardOfficerController.publishComplaintToCommunity);
 apiRouter.get('/ward/hotspots', softAuthenticate, WardOfficerController.getHotspots);

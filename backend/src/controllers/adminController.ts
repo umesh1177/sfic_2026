@@ -7,6 +7,7 @@ import { DbRepository } from '../data/dbRepository.js';
 import { Profile, CitizenAuthProfile, WardOfficerRecord, ComplaintCategory, Ward } from '../types/index.js';
 import { DEFAULT_NAVSARI_CITY_BOUNDARY, NAVSARI_WARDS } from '../utils/postgis.js';
 import { AIAnalyticsService } from '../services/aiAnalyticsService.js';
+import { AIService } from '../services/aiService.js';
 
 export const ALL_WARD_OFFICER_TABS = [
   'overview',
@@ -1104,6 +1105,11 @@ export class AdminController {
       };
 
       store.categories.push(newCategory);
+
+      // Auto-create category dataset folders in ml-service and register with model
+      await AIService.syncNewCategoryWithMlService(newCategory.category_name).catch((err: any) => {
+        console.warn('[AdminController] ML service category sync warning:', err.message);
+      });
 
       res.status(201).json({
         success: true,
