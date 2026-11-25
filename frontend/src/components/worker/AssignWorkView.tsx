@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Briefcase,
   MapPin,
+  Globe,
   Clock,
   Calendar,
   User,
@@ -159,8 +160,19 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   } | null>(null);
   const [locating, setLocating] = useState<boolean>(false);
 
-  // Attendance states
-  const todayKey = new Date().toISOString().split('T')[0];
+  const formatTimeIST = (timeVal?: string | Date | null): string | undefined => {
+    if (!timeVal) return undefined;
+    try {
+      const d = new Date(timeVal);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      }
+    } catch {}
+    return String(timeVal);
+  };
+
+  // Attendance states (Synchronized with Indian Standard Time)
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
   const attendanceStorageKey = `worker_attendance_${profile?.id || 'worker'}_${currentTask?.id || 'task'}_${todayKey}`;
 
   const [dailyAttendance, setDailyAttendance] = useState<DailyAttendanceRecord>({
@@ -174,11 +186,18 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       try {
         const res = await api.getWorkerTodayAttendance(currentTask?.id);
         if (isMounted && res?.data && res.data.status && res.data.status !== 'none') {
+          const checkIn = res.data.rawCheckInTime
+            ? formatTimeIST(res.data.rawCheckInTime)
+            : (res.data.checkInTime ? formatTimeIST(res.data.checkInTime) : undefined);
+          const checkOut = res.data.rawCheckOutTime
+            ? formatTimeIST(res.data.rawCheckOutTime)
+            : (res.data.checkOutTime ? formatTimeIST(res.data.checkOutTime) : undefined);
+
           const rec: DailyAttendanceRecord = {
             date: res.data.date || todayKey,
             status: res.data.status,
-            checkInTime: res.data.checkInTime,
-            checkOutTime: res.data.checkOutTime
+            checkInTime: checkIn,
+            checkOutTime: checkOut
           };
           setDailyAttendance(rec);
           try {
@@ -302,7 +321,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
           rawList.forEach((e: any) => {
             const dt = new Date(e.device_capture_timestamp || e.created_at || Date.now());
             const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-            const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
             const stage = (String(e.evidence_type || e.stage || 'during').toLowerCase() as any);
             const rawPhotos: string[] = Array.isArray(e.photos) && e.photos.length > 0 ? e.photos : (e.storage_path ? [e.storage_path] : []);
 
@@ -377,7 +396,8 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     taskCoords[0],
     taskCoords[1]
   );
-  const isWithinGeofence = distanceToTask <= GEOFENCE_LIMIT_METERS;
+  const allowAnywhere = Boolean(currentTask.allow_anywhere_attendance);
+  const isWithinGeofence = allowAnywhere || distanceToTask <= GEOFENCE_LIMIT_METERS;
 
   const isEvidenceSubmitted =
     submittedEvidences.length > 0 ||
@@ -429,7 +449,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     }
 
     setSubmittingAttendance(true);
-    const nowTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const nowTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
     try {
       const res = await api.markWorkerAttendance({
@@ -442,10 +462,10 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
       const serverAtt: any = res?.data;
       const serverCheckIn = serverAtt?.check_in_time
-        ? new Date(serverAtt.check_in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-        : nowTime;
+        ? formatTimeIST(serverAtt.check_in_time)
+        : (serverAtt?.attendance_timestamp ? formatTimeIST(serverAtt.attendance_timestamp) : nowTime);
       const serverCheckOut = serverAtt?.check_out_time
-        ? new Date(serverAtt.check_out_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+        ? formatTimeIST(serverAtt.check_out_time)
         : nowTime;
 
       const record: DailyAttendanceRecord =
@@ -459,8 +479,12 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       } catch {}
       setAttendanceSuccess(
         action === 'check_in'
-          ? `Check-In verified at ${serverCheckIn} (${distanceToTask}m from site). Stored in municipal records.`
-          : `Check-Out verified at ${serverCheckOut}. Shift attendance completed and saved to database.`
+          ? (allowAnywhere
+              ? `Check-In verified at ${serverCheckIn} (Remote attendance authorized by Ward Officer). Stored in municipal records.`
+              : `Check-In verified at ${serverCheckIn} (${distanceToTask}m from site). Stored in municipal records.`)
+          : (allowAnywhere
+              ? `Check-Out verified at ${serverCheckOut} (Remote clearance). Shift attendance completed and saved to database.`
+              : `Check-Out verified at ${serverCheckOut}. Shift attendance completed and saved to database.`)
       );
       confetti({ particleCount: 25, spread: 50, origin: { y: 0.7 } });
       if (onRefresh) onRefresh();
@@ -648,7 +672,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
           photo_url: primaryPhoto,
           description: `${descToSave} [Saved Offline — Pending Auto-Sync]`,
           dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-          timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
           distance: distanceToTask,
           aiCategory: 'Queued Offline'
         }
@@ -673,7 +697,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         photo_url: primaryPhoto,
         description: descToSave,
         dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
         distance: distanceToTask,
         aiCategory: 'Field Team Evidence'
       };
@@ -1184,34 +1208,53 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </button>
           </div>
 
-          <div
-            className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
-              isWithinGeofence
-                ? 'bg-[#f0f7f5] border-[#cde6df] text-[#0f2925]'
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              {isWithinGeofence ? (
-                <CheckCircle2 className="w-4 h-4 text-[#095c54] shrink-0" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              )}
-              <div>
-                <p className="font-semibold">
-                  {isWithinGeofence
-                    ? `Inside Work Zone (~${distanceToTask}m from pin)`
-                    : `Outside Work Zone (~${distanceToTask}m away)`}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
-                  {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E
-                </p>
+          {allowAnywhere ? (
+            <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <Globe className="w-4 h-4 text-emerald-700 shrink-0 animate-pulse" />
+                <div>
+                  <p className="font-bold text-emerald-900">
+                    Ward Officer Remote Clearance Enabled
+                  </p>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">
+                    You can punch check-in/check-out and upload field evidence from anywhere (~${distanceToTask}m from site). 150m restriction bypassed.
+                  </p>
+                </div>
               </div>
+              <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-emerald-200 text-emerald-900 border border-emerald-300 shrink-0">
+                Anywhere Allowed
+              </span>
             </div>
-            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-white border border-slate-200 shrink-0">
-              {isWithinGeofence ? 'Verified' : 'Out of Range'}
-            </span>
-          </div>
+          ) : (
+            <div
+              className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                isWithinGeofence
+                  ? 'bg-[#f0f7f5] border-[#cde6df] text-[#0f2925]'
+                  : 'bg-rose-50 border-rose-200 text-rose-900'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {isWithinGeofence ? (
+                  <CheckCircle2 className="w-4 h-4 text-[#095c54] shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold">
+                    {isWithinGeofence
+                      ? `Inside Work Zone (~${distanceToTask}m from pin)`
+                      : `Outside Work Zone (~${distanceToTask}m away)`}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                    {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-white border border-slate-200 shrink-0">
+                {isWithinGeofence ? 'Verified' : 'Out of Range'}
+              </span>
+            </div>
+          )}
 
           {attendanceSuccess && (
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2">

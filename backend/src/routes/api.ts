@@ -213,6 +213,7 @@ apiRouter.post('/ward/complaints/:id/reject-evidence', softAuthenticate, WardOff
 apiRouter.post('/ward/complaints/:id/add-worker', softAuthenticate, WardOfficerController.addWorkerToComplaintSquad);
 apiRouter.post('/ward/complaints/:id/remove-worker', softAuthenticate, WardOfficerController.removeWorkerFromComplaintSquad);
 apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, WardOfficerController.publishComplaintToCommunity);
+apiRouter.post('/ward/complaints/:id/geofence-override', softAuthenticate, WardOfficerController.toggleGeofenceOverride);
 apiRouter.get('/ward/hotspots', softAuthenticate, WardOfficerController.getHotspots);
 apiRouter.get('/ward/assignments', softAuthenticate, WardOfficerController.getAssignments);
 apiRouter.post('/ward/assignments', softAuthenticate, WardOfficerController.createAssignment);

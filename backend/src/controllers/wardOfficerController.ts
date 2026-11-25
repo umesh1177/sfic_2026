@@ -979,7 +979,8 @@ export class WardOfficerController {
           reopen_count: attempts.length > 1 ? attempts.length - 1 : (complaint.status === 'reopened' ? 1 : 0),
           complaint_age_days: Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24))),
           submitted_at: complaint.submitted_at,
-          last_updated: complaint.updated_at || complaint.submitted_at
+          last_updated: complaint.updated_at || complaint.submitted_at,
+          allow_anywhere_attendance: Boolean((complaint as any).allow_anywhere_attendance)
         },
 
         // Section 2: Citizen Report (Preserves original citizen submission with full privacy protection)
@@ -1027,21 +1028,38 @@ export class WardOfficerController {
         // Section 6: Team & Attendance (Active Attempt + All Recorded Attendance)
         team_attendance: {
           assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          team_name: latestAttempt?.team_name || 'Current Sanitation Squad',
           team_members: latestAttempt ? (latestAttempt.team_members || []) : [],
           attendance_records: allAttendance,
           records: allAttendance,
-          geofence_radius_meters: 150
+          geofence_radius_meters: 150,
+          allow_anywhere_attendance: Boolean((complaint as any).allow_anywhere_attendance),
+          previous_squads_attendance: attempts.length > 1 ? attempts.slice(0, attempts.length - 1).map((att: any) => ({
+            assignment_id: att.assignment_id,
+            attempt_number: att.attempt_number,
+            task_code: att.task_code,
+            team_id: att.team_id,
+            team_name: att.team_name || `Squad Attempt #${att.attempt_number}`,
+            team_leader_name: att.team_leader_name,
+            assigned_date: att.assigned_date || att.created_at,
+            status: att.status || 'reassigned',
+            team_members: att.team_members || [],
+            attendance_records: att.attendance_records || []
+          })) : []
         },
 
         // Previous Squads History
         previous_squads: attempts.length > 1 ? attempts.slice(0, attempts.length - 1).map((att: any) => ({
           assignment_id: att.assignment_id,
           attempt_number: att.attempt_number,
+          task_code: att.task_code,
           team_id: att.team_id,
-          team_name: att.team_name,
+          team_name: att.team_name || `Squad Attempt #${att.attempt_number}`,
           team_leader_name: att.team_leader_name,
-          assigned_at: att.assigned_at,
-          team_members: att.team_members || []
+          assigned_at: att.assigned_date || att.created_at,
+          status: att.status || 'reassigned',
+          team_members: att.team_members || [],
+          attendance_records: att.attendance_records || []
         })) : [],
 
         // Section 7: Work Progress & Evidence (ALL chronological evidence across attempts)
@@ -1372,7 +1390,7 @@ export class WardOfficerController {
               `Your squad has been replaced by another team for complaint ${complaint.complaint_number}. You are no longer assigned to this task.`,
               complaint.id,
               'complaint_status'
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
       }
@@ -2892,6 +2910,35 @@ export class WardOfficerController {
     }
   }
 
+  public static async toggleGeofenceOverride(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { allow_anywhere } = req.body;
+      const allowVal = Boolean(allow_anywhere);
+
+      await DbRepository.setComplaintGeofenceOverride(id, allowVal);
+
+      const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      if (complaint) {
+        (complaint as any).allow_anywhere_attendance = allowVal;
+      }
+      const memAssignments = (store.workAssignments || []).filter(wa => wa.complaint_id === id || wa.complaint_number === id || (complaint && wa.complaint_number === complaint.complaint_number));
+      for (const wa of memAssignments) {
+        (wa as any).allow_anywhere_attendance = allowVal;
+      }
+
+      res.status(200).json({
+        success: true,
+        allow_anywhere_attendance: allowVal,
+        message: allowVal
+          ? 'Geofence bypassed: Worker and Team Leader can now record attendance and submit evidence from anywhere.'
+          : 'Geofence enforced: 150m site proximity required for attendance and evidence submission.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   public static async verifyDriveEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id, evidenceId } = req.params;
@@ -3643,7 +3690,17 @@ export function recordAttendanceForAssignment(assignmentId: string, attendanceRe
     const attempt = attempts.find(a => a.assignment_id === assignmentId);
     if (attempt) {
       if (!attempt.attendance_records) attempt.attendance_records = [];
-      attempt.attendance_records.push(attendanceRecord);
+      const existing = attempt.attendance_records.find((r: any) =>
+        (r.worker_id === attendanceRecord.worker_id || r.id === attendanceRecord.id)
+      );
+      if (existing && (attendanceRecord.check_out_time || attendanceRecord.attendance_type === 'completed_for_day')) {
+        existing.check_out_time = attendanceRecord.check_out_time;
+        existing.attendance_type = 'completed_for_day';
+        if (attendanceRecord.check_out_latitude) existing.check_out_latitude = attendanceRecord.check_out_latitude;
+        if (attendanceRecord.check_out_longitude) existing.check_out_longitude = attendanceRecord.check_out_longitude;
+      } else if (!existing) {
+        attempt.attendance_records.push(attendanceRecord);
+      }
       return;
     }
   }

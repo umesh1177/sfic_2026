@@ -837,6 +837,8 @@ class ApiService {
         status: 'none' | 'checked_in' | 'completed_for_day';
         checkInTime?: string;
         checkOutTime?: string;
+        rawCheckInTime?: string;
+        rawCheckOutTime?: string;
         latitude?: number;
         longitude?: number;
         assignment_id?: string;
@@ -1060,6 +1062,16 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(data)
     });
+  }
+
+  async toggleGeofenceOverride(complaintId: string, allowAnywhere: boolean) {
+    return this.request<{ success: boolean; allow_anywhere_attendance: boolean; message: string }>(
+      `/ward/complaints/${complaintId}/geofence-override`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ allow_anywhere: allowAnywhere })
+      }
+    );
   }
 
   async getWardHotspots(filters?: { category?: string; frequency?: string; ward?: number }) {

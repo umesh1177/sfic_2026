@@ -181,6 +181,7 @@ export interface Complaint {
   upvotes_count?: number;
   updated_at?: string;
   resolved_image_url?: string;
+  allow_anywhere_attendance?: boolean;
 }
 
 export interface CleanlinessDrive {
@@ -668,6 +669,7 @@ export interface WorkAssignment {
   my_attendance_status?: string;
   has_before_evidence?: boolean;
   has_after_evidence?: boolean;
+  allow_anywhere_attendance?: boolean;
 }
 
 export interface WorkerAttendance {
@@ -686,6 +688,8 @@ export interface WorkerAttendance {
   attendance_type?: 'check_in' | 'completed_for_day';
   check_in_time?: string;
   check_out_time?: string;
+  check_out_latitude?: number;
+  check_out_longitude?: number;
   attendance_date?: string;
   approved_by?: string;
   created_at: string;

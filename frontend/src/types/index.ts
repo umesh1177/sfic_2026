@@ -145,6 +145,7 @@ export interface Complaint {
   feedback?: ComplaintFeedback;
   followers_count: number;
   is_following?: boolean;
+  allow_anywhere_attendance?: boolean;
 }
 
 export interface CleanlinessDrive {
@@ -664,6 +665,7 @@ export interface WorkAssignment {
   my_attendance_status?: string;
   has_before_evidence?: boolean;
   has_after_evidence?: boolean;
+  allow_anywhere_attendance?: boolean;
 }
 
 export interface WorkerAttendance {

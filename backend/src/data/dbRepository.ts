@@ -3710,9 +3710,11 @@ export class DbRepository {
                   WHERE lm.assignment_id = wa.id AND lm.temporary_leader = TRUE
                   LIMIT 1) as temporary_leader_id,
                  EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'before') as has_before_evidence,
-                 EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'after') as has_after_evidence
+                 EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'after') as has_after_evidence,
+                 COALESCE(wa.allow_anywhere_attendance, c.allow_anywhere_attendance, false) as allow_anywhere_attendance
           FROM work_assignments wa
           JOIN work_assignment_members wam ON wam.assignment_id = wa.id
+          LEFT JOIN complaints c ON c.id = wa.complaint_id OR c.complaint_number = wa.complaint_number
           WHERE (
             wam.worker_id = $1
             OR wam.worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1)
@@ -3767,7 +3769,8 @@ export class DbRepository {
             complaint_id: r.complaint_id || undefined,
             complaint_number: r.complaint_number || undefined,
             team_id: r.team_id || undefined,
-            team_name: r.team_name || undefined
+            team_name: r.team_name || undefined,
+            allow_anywhere_attendance: Boolean(r.allow_anywhere_attendance)
           } as any;
         }));
       } catch (err: any) {
@@ -3795,7 +3798,8 @@ export class DbRepository {
           ...a,
           is_temporary_leader: isLeader,
           temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Team Leader)' : 'Team Leader'),
-          my_attendance_status: a.my_attendance_status || 'assigned'
+          my_attendance_status: a.my_attendance_status || 'assigned',
+          allow_anywhere_attendance: Boolean(a.allow_anywhere_attendance || (store.complaints || []).find((c: any) => c.id === a.complaint_id || c.complaint_number === a.complaint_number)?.allow_anywhere_attendance)
         };
       });
 
@@ -4043,22 +4047,30 @@ export class DbRepository {
     let taskLat = 20.9485;
     let taskLon = 72.9260;
     let geofenceRadius = 150;
+    let allowAnywhere = false;
 
     if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
         const taskRes = await pool.query(`
-          SELECT latitude, longitude, attendance_radius_meters, title
-          FROM work_assignments WHERE id = $1
+          SELECT wa.latitude, wa.longitude, wa.attendance_radius_meters, wa.title,
+                 COALESCE(wa.allow_anywhere_attendance, c.allow_anywhere_attendance, false) as allow_anywhere
+          FROM work_assignments wa
+          LEFT JOIN complaints c ON c.id = wa.complaint_id OR c.complaint_number = wa.complaint_number
+          WHERE wa.id = $1
         `, [assignmentId]);
         if (taskRes.rows.length > 0) {
           taskLat = parseFloat(taskRes.rows[0].latitude);
           taskLon = parseFloat(taskRes.rows[0].longitude);
           geofenceRadius = parseInt(taskRes.rows[0].attendance_radius_meters || '150', 10);
+          if (taskRes.rows[0].allow_anywhere) allowAnywhere = true;
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - fetch task coords]:', err.message);
       }
     }
+
+    const memWa = (store.workAssignments || []).find((wa: any) => wa.id === assignmentId);
+    if (memWa && memWa.allow_anywhere_attendance) allowAnywhere = true;
 
     // 1. Calculate distance from assigned work location
     const distanceMeters = this.calculateHaversineDistanceMeters(lat, lon, taskLat, taskLon);
@@ -4067,7 +4079,10 @@ export class DbRepository {
     let validationStatus: 'verified_match' | 'location_mismatch' | 'poor_accuracy' = 'verified_match';
     let validationReason = `GPS location matched within ${distanceMeters}m (radius: ${geofenceRadius}m).`;
 
-    if (accuracy > 65) {
+    if (allowAnywhere) {
+      validationStatus = 'verified_match';
+      validationReason = `Remote attendance authorized by Ward Officer (${distanceMeters}m from site). Geofence bypassed.`;
+    } else if (accuracy > 65) {
       validationStatus = 'poor_accuracy';
       validationReason = `GPS accuracy of ${accuracy}m is too poor to verify presence. Please move to an open area and retry.`;
     } else if (distanceMeters > geofenceRadius) {
@@ -4219,6 +4234,39 @@ export class DbRepository {
     };
   }
 
+
+  public static async setComplaintGeofenceOverride(complaintId: string, allowAnywhere: boolean): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          UPDATE complaints
+          SET allow_anywhere_attendance = $1, updated_at = NOW()
+          WHERE id = $2 OR complaint_number = $2
+        `, [allowAnywhere, complaintId]);
+
+        await pool.query(`
+          UPDATE work_assignments
+          SET allow_anywhere_attendance = $1, updated_at = NOW()
+          WHERE complaint_id = $2 OR complaint_number = $2 OR complaint_number = (
+            SELECT complaint_number FROM complaints WHERE id = $2 LIMIT 1
+          )
+        `, [allowAnywhere, complaintId]);
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - setComplaintGeofenceOverride]:', err.message);
+      }
+    }
+
+    const c = (store as any).complaints?.find((comp: any) => comp.id === complaintId || comp.complaint_number === complaintId);
+    if (c) {
+      c.allow_anywhere_attendance = allowAnywhere;
+    }
+    const was = (store.workAssignments || []).filter(wa => wa.complaint_id === complaintId || wa.complaint_number === complaintId || (c && wa.complaint_number === c.complaint_number));
+    for (const wa of was) {
+      (wa as any).allow_anywhere_attendance = allowAnywhere;
+    }
+    return true;
+  }
   public static async getTodayWorkerAttendance(
     workerId: string,
     _assignmentId?: string
@@ -4227,17 +4275,29 @@ export class DbRepository {
     status: 'none' | 'checked_in' | 'completed_for_day';
     checkInTime?: string;
     checkOutTime?: string;
+    rawCheckInTime?: string;
+    rawCheckOutTime?: string;
     latitude?: number;
     longitude?: number;
     assignment_id?: string;
   }> {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const formatIST = (val: any) => {
+      if (!val) return undefined;
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return undefined;
+      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+    };
     if (isDbConnected()) {
       try {
         const res = await pool.query(`
           SELECT * FROM worker_attendance
           WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
-            AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
+            AND (
+              attendance_date = CURRENT_DATE
+              OR DATE(attendance_timestamp AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+              OR DATE(attendance_timestamp) = CURRENT_DATE
+            )
           ORDER BY attendance_timestamp DESC
           LIMIT 1
         `, [workerId]);
@@ -4252,8 +4312,10 @@ export class DbRepository {
           return {
             date: todayStr,
             status: hasCheckedOut ? 'completed_for_day' : (hasCheckedIn ? 'checked_in' : 'none'),
-            checkInTime: cin ? new Date(cin).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
-            checkOutTime: cout ? new Date(cout).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
+            checkInTime: formatIST(cin),
+            checkOutTime: formatIST(cout),
+            rawCheckInTime: cin ? new Date(cin).toISOString() : undefined,
+            rawCheckOutTime: cout ? new Date(cout).toISOString() : undefined,
             latitude: r.latitude ? parseFloat(r.latitude) : undefined,
             longitude: r.longitude ? parseFloat(r.longitude) : undefined,
             assignment_id: r.assignment_id
@@ -4280,8 +4342,10 @@ export class DbRepository {
       return {
         date: todayStr,
         status: isCompleted ? 'completed_for_day' : (isCheckedIn ? 'checked_in' : 'none'),
-        checkInTime: cin ? new Date(cin).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
-        checkOutTime: cout ? new Date(cout).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
+        checkInTime: formatIST(cin),
+        checkOutTime: formatIST(cout),
+        rawCheckInTime: cin ? new Date(cin).toISOString() : undefined,
+        rawCheckOutTime: cout ? new Date(cout).toISOString() : undefined,
         latitude: todayRec.latitude,
         longitude: todayRec.longitude,
         assignment_id: todayRec.assignment_id
@@ -4959,6 +5023,11 @@ export class DbRepository {
             assignment_id: a.assignment_id,
             worker_id: a.worker_id,
             attendance_timestamp: a.attendance_timestamp ? new Date(a.attendance_timestamp).toISOString() : new Date().toISOString(),
+            check_in_time: a.check_in_time ? new Date(a.check_in_time).toISOString() : (a.attendance_timestamp ? new Date(a.attendance_timestamp).toISOString() : undefined),
+            check_out_time: a.check_out_time ? new Date(a.check_out_time).toISOString() : undefined,
+            check_out_latitude: a.check_out_latitude ? parseFloat(a.check_out_latitude) : undefined,
+            check_out_longitude: a.check_out_longitude ? parseFloat(a.check_out_longitude) : undefined,
+            attendance_type: a.attendance_type || (a.check_out_time ? 'completed_for_day' : 'check_in'),
             latitude: parseFloat(a.latitude),
             longitude: parseFloat(a.longitude),
             gps_accuracy: parseFloat(a.gps_accuracy || '10'),
@@ -5351,6 +5420,8 @@ export class DbRepository {
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS complaint_number VARCHAR(60);
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_id VARCHAR(100);
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_name VARCHAR(150);
+        ALTER TABLE complaints ADD COLUMN IF NOT EXISTS allow_anywhere_attendance BOOLEAN DEFAULT false;
+        ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS allow_anywhere_attendance BOOLEAN DEFAULT false;
       `);
 
       // 2B. Auto-heal any worker profiles whose profiles row exists (role='worker') without a worker_profiles row

@@ -95,7 +95,7 @@ export const WorkerOverview: React.FC<WorkerOverviewProps> = ({
     if (!isoOrStr) return null;
     const d = new Date(isoOrStr);
     if (isNaN(d.getTime())) return isoOrStr;
-    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
   };
 
   return (

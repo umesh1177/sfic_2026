@@ -366,11 +366,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
               {selectedDrive.ward_name}
             </span>
             <span
-              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-                selectedDrive.status === 'completed'
-                  ? 'bg-slate-200 text-slate-700'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}
+              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${selectedDrive.status === 'completed'
+                ? 'bg-slate-200 text-slate-700'
+                : 'bg-emerald-100 text-emerald-800'
+                }`}
             >
               {selectedDrive.status}
             </span>
@@ -476,8 +475,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     {selectedDrive.status === 'completed'
                       ? 'Drive Completed'
                       : selectedDrive.registered_volunteers_count >= selectedDrive.max_volunteers
-                      ? `Registration Full (${selectedDrive.registered_volunteers_count}/${selectedDrive.max_volunteers})`
-                      : 'Registration Closed by Organizer'}
+                        ? `Registration Full (${selectedDrive.registered_volunteers_count}/${selectedDrive.max_volunteers})`
+                        : 'Registration Closed by Organizer'}
                   </span>
                 </div>
               ) : (
@@ -498,11 +497,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
         <div className="flex border-b border-[#e2e8f0] bg-white rounded-2xl p-1.5 shadow-xs gap-1.5">
           <button
             onClick={() => setActiveTab('info')}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
-              activeTab === 'info'
-                ? 'bg-[#095c54] text-white shadow-sm'
-                : 'text-[#64748b] hover:bg-slate-100'
-            }`}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${activeTab === 'info'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-[#64748b] hover:bg-slate-100'
+              }`}
           >
             <Info className="w-4 h-4" />
             <span>Drive Overview & Kit</span>
@@ -510,11 +508,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           <button
             onClick={() => setActiveTab('organizer')}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
-              activeTab === 'organizer'
-                ? 'bg-[#095c54] text-white shadow-sm'
-                : 'text-[#64748b] hover:bg-slate-100'
-            }`}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${activeTab === 'organizer'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-[#64748b] hover:bg-slate-100'
+              }`}
           >
             <HelpCircle className="w-4 h-4" />
             <span>Organizer Info & Q&A</span>
@@ -522,11 +519,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           <button
             onClick={() => setActiveTab('attendance')}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
-              activeTab === 'attendance'
-                ? 'bg-[#095c54] text-white shadow-sm'
-                : 'text-[#64748b] hover:bg-slate-100'
-            }`}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${activeTab === 'attendance'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-[#64748b] hover:bg-slate-100'
+              }`}
           >
             {!selectedDrive.is_registered ? (
               <Lock className="w-4 h-4 text-slate-400" />
@@ -746,11 +742,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                               </p>
                             </div>
                             <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                                isAnswered
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
-                              }`}
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${isAnswered
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}
                             >
                               {isAnswered ? 'Answered' : 'Awaiting Reply'}
                             </span>
@@ -1053,17 +1048,15 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
             key={tab.id}
             type="button"
             onClick={() => setStatusFilter(tab.id as any)}
-            className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border ${
-              statusFilter === tab.id
-                ? 'bg-[#095c54] text-white border-[#095c54] shadow-xs'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-            }`}
+            className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border ${statusFilter === tab.id
+              ? 'bg-[#095c54] text-white border-[#095c54] shadow-xs'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
           >
             {tab.id === 'running' && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
             <span>{tab.label}</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-              statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-            }`}>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
               {tab.count}
             </span>
           </button>
@@ -1090,7 +1083,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 <div>
                   <div className="relative aspect-video bg-slate-100">
                     <img src={d.banner_url} alt={d.title} className="w-full h-full object-cover" />
-                    
+
                     {/* Top Left: Drive Lifecycle & Registered Status Badges */}
                     <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
                       {lifeStatus === 'running' && (

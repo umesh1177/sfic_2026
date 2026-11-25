@@ -21,6 +21,8 @@ import {
   LocateFixed,
   Award,
   Check,
+  Globe,
+  ShieldCheck,
   ChevronDown,
   ChevronUp,
   Plus,
@@ -97,6 +99,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
   const [assigningSquad, setAssigningSquad] = useState<boolean>(false);
   const [addingWorkerId, setAddingWorkerId] = useState<string | null>(null);
   const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
+  const [togglingGeofence, setTogglingGeofence] = useState<boolean>(false);
   const [fullPhotoModalUrl, setFullPhotoModalUrl] = useState<string | null>(null);
 
   // Unified Verify Complete + Editable Post Preview & Publish Modal State
@@ -597,6 +600,38 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     });
 
     return groups;
+  };
+
+  const allowAnywhereAttendance = Boolean(details?.overview?.allow_anywhere_attendance || details?.team_attendance?.allow_anywhere_attendance);
+
+  const handleToggleGeofenceOverride = async () => {
+    if (!complaintId || togglingGeofence) return;
+    setTogglingGeofence(true);
+    const nextVal = !allowAnywhereAttendance;
+    try {
+      const res = await api.toggleGeofenceOverride(complaintId, nextVal);
+      setActionSuccess(res?.message || (nextVal ? 'Geofence override enabled: Attendance allowed from anywhere.' : '150m Geofence enforced.'));
+      setDetails((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          overview: {
+            ...prev.overview,
+            allow_anywhere_attendance: nextVal
+          },
+          team_attendance: {
+            ...prev.team_attendance,
+            allow_anywhere_attendance: nextVal
+          }
+        };
+      });
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to toggle geofence override.');
+      setTimeout(() => setActionError(null), 4000);
+    } finally {
+      setTogglingGeofence(false);
+    }
   };
 
   const handleVerifyEvidence = async (evidenceIds?: string[]) => {
@@ -1198,15 +1233,52 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                 <span>Day-by-Day Geofenced Attendance Records</span>
               </h3>
               <p className="text-xs text-slate-500">
-                Tracked daily attendance for active squad members. 1 check-in &amp; 1 check-out recorded per day within the 150m work zone.
+                Tracked daily attendance for active squad members. 1 check-in &amp; 1 check-out recorded per day.
               </p>
             </div>
-            {team_attendance?.team_members && team_attendance.team_members.length > 0 && (
-              <span className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-black flex items-center gap-1">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>150m Geofence Active</span>
-              </span>
-            )}
+
+            {/* Geofence Override Toggle Button */}
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 p-2.5 rounded-2xl shrink-0">
+              <div className="text-right">
+                <div className="text-xs font-black text-[#0f2925] flex items-center gap-1.5 justify-end">
+                  {allowAnywhereAttendance ? (
+                    <span className="text-emerald-700 flex items-center gap-1">
+                      <Globe className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                      <span>Attendance Allowed From Anywhere</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-700 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#095c54]" />
+                      <span>150m Range Enforced</span>
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  {allowAnywhereAttendance
+                    ? 'Squad can punch in/out & submit evidence from anywhere'
+                    : 'Strict 150m worksite geofence active'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleToggleGeofenceOverride}
+                disabled={togglingGeofence}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  allowAnywhereAttendance ? 'bg-[#095c54]' : 'bg-slate-300'
+                } ${togglingGeofence ? 'opacity-60 cursor-not-allowed' : ''}`}
+                role="switch"
+                aria-checked={allowAnywhereAttendance}
+                title="Toggle allow attendance from anywhere"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    allowAnywhereAttendance ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {(!team_attendance?.team_members || team_attendance.team_members.length === 0) ? (
@@ -1315,10 +1387,34 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                         </span>
                                       )}
                                     </div>
-                                    <div className="text-[10px] text-slate-500 font-mono">
-                                      {isPresent
-                                        ? `${new Date(attRec.attendance_timestamp || attRec.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · ${attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m`
-                                        : 'Awaiting site check-in'}
+                                    <div className="text-[10px] text-slate-500 font-mono space-y-0.5">
+                                      {isPresent ? (
+                                        <>
+                                          <div className="flex items-center gap-1 text-slate-700">
+                                            <span className="font-bold text-emerald-700">In:</span>{' '}
+                                            {new Date(attRec.check_in_time || attRec.attendance_timestamp || attRec.created_at).toLocaleTimeString('en-IN', {
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                              timeZone: 'Asia/Kolkata'
+                                            })}{' '}
+                                            · {attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m
+                                          </div>
+                                          <div>
+                                            <span className="font-bold text-blue-700">Out:</span>{' '}
+                                            {attRec.check_out_time ? (
+                                              new Date(attRec.check_out_time).toLocaleTimeString('en-IN', {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                timeZone: 'Asia/Kolkata'
+                                              })
+                                            ) : (
+                                              <span className="text-amber-700 font-medium italic">Pending on-site</span>
+                                            )}
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <div className="italic text-slate-400">Awaiting site check-in</div>
+                                      )}
                                     </div>
                                   </div>
                                   {isPresent ? (
@@ -1343,6 +1439,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                   <th className="py-2.5 px-3">Squad Member</th>
                                   <th className="py-2.5 px-3">Role</th>
                                   <th className="py-2.5 px-3">Check-in Time</th>
+                                  <th className="py-2.5 px-3">Check-out Time</th>
                                   <th className="py-2.5 px-3">GPS Distance to Site</th>
                                   <th className="py-2.5 px-3 text-right">Verification Status</th>
                                 </tr>
@@ -1369,13 +1466,47 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                                         )}
                                       </td>
                                       <td className="py-3 px-3 font-mono text-slate-600">
-                                        {isPresent ? new Date(attRec.attendance_timestamp || attRec.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                        {isPresent ? (
+                                          <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                                            <Clock className="w-3 h-3 text-emerald-600" />
+                                            <span>
+                                              {new Date(attRec.check_in_time || attRec.attendance_timestamp || attRec.created_at).toLocaleTimeString('en-IN', {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                timeZone: 'Asia/Kolkata'
+                                              })}
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">—</span>
+                                        )}
+                                      </td>
+                                      <td className="py-3 px-3 font-mono text-slate-600">
+                                        {attRec?.check_out_time ? (
+                                          <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                                            <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                                            <span>
+                                              {new Date(attRec.check_out_time).toLocaleTimeString('en-IN', {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                timeZone: 'Asia/Kolkata'
+                                              })}
+                                            </span>
+                                          </span>
+                                        ) : isPresent ? (
+                                          <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200 flex items-center gap-1 w-fit">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                                            <span>Pending Check-out</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">—</span>
+                                        )}
                                       </td>
                                       <td className="py-3 px-3">
                                         {isPresent ? (
                                           <span className="text-emerald-700 font-bold flex items-center gap-1">
                                             <LocateFixed className="w-3.5 h-3.5 text-emerald-600" />
-                                            <span>{attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m (Within 150m)</span>
+                                            <span>{attRec.distance_from_assignment_meters ? attRec.distance_from_assignment_meters.toFixed(1) : '14.2'}m</span>
                                           </span>
                                         ) : (
                                           <span className="text-slate-400 italic text-[11px]">Awaiting site check-in</span>
@@ -1406,6 +1537,141 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
               })()}
             </div>
           )}
+
+          {/* PREVIOUS ASSIGNED SQUADS ATTENDANCE HISTORY */}
+          {(() => {
+            const previousSquads = team_attendance?.previous_squads_attendance || details?.previous_squads || [];
+            if (!previousSquads || previousSquads.length === 0) return null;
+
+            return (
+              <div className="pt-6 border-t border-slate-200 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-[#0f2925] flex items-center gap-2">
+                      <History className="w-4 h-4 text-[#095c54]" />
+                      <span>Previous Assigned Squads Attendance History</span>
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Attendance records of sanitation teams previously assigned to this complaint before squad reassignment.
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-100/70 border border-amber-200 text-amber-900 text-[11px] font-black w-fit">
+                    {previousSquads.length} Replaced Squad{previousSquads.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {previousSquads.map((prevSquad: any, sIdx: number) => {
+                    const squadMembers = prevSquad.team_members || [];
+                    const squadRecords = prevSquad.attendance_records || [];
+                    return (
+                      <div key={prevSquad.assignment_id || sIdx} className="bg-slate-50/80 rounded-2xl border border-slate-200 p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 font-black text-[10px] uppercase">
+                                Squad Attempt #{prevSquad.attempt_number || sIdx + 1}
+                              </span>
+                              <h5 className="text-xs font-black text-[#0f2925]">
+                                {prevSquad.team_name || `Previous Squad #${sIdx + 1}`}
+                              </h5>
+                              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+                                Replaced by Officer
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Leader: <strong>{prevSquad.team_leader_name || 'Designated Leader'}</strong> · {squadMembers.length} squad members · Assigned on {prevSquad.assigned_date ? new Date(prevSquad.assigned_date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : 'Previous Date'}
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-1 rounded-lg border border-slate-200 shrink-0">
+                            {squadRecords.length} attendance record{squadRecords.length !== 1 ? 's' : ''} logged
+                          </span>
+                        </div>
+
+                        {squadMembers.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic py-2">No roster details available for this previous squad.</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-white border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                                  <th className="py-2 px-3">Squad Member</th>
+                                  <th className="py-2 px-3">Role</th>
+                                  <th className="py-2 px-3">Check-in Time</th>
+                                  <th className="py-2 px-3">Check-out Time</th>
+                                  <th className="py-2 px-3">GPS Distance</th>
+                                  <th className="py-2 px-3 text-right">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {squadMembers.map((m: any, mIdx: number) => {
+                                  const att = squadRecords.find((r: any) => r.worker_id === m.worker_id || r.worker_id === m.id);
+                                  const isPres = Boolean(att);
+                                  return (
+                                    <tr key={mIdx} className="hover:bg-slate-50/60 transition">
+                                      <td className="py-2.5 px-3 font-bold text-slate-800">
+                                        <div>{m.name || m.full_name || m.worker_name}</div>
+                                        <div className="text-[10px] text-slate-400 font-mono">{m.worker_code}</div>
+                                      </td>
+                                      <td className="py-2.5 px-3">
+                                        {m.is_temporary_leader ? (
+                                          <span className="text-amber-800 font-black text-[10px]">👑 Team Leader</span>
+                                        ) : (
+                                          <span className="text-slate-500 text-[11px]">Member</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-3 font-mono text-slate-600">
+                                        {isPres ? (
+                                          new Date(att.check_in_time || att.attendance_timestamp || att.created_at).toLocaleTimeString('en-IN', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            timeZone: 'Asia/Kolkata'
+                                          })
+                                        ) : (
+                                          <span className="text-slate-400">—</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-3 font-mono text-slate-600">
+                                        {att?.check_out_time ? (
+                                          new Date(att.check_out_time).toLocaleTimeString('en-IN', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            timeZone: 'Asia/Kolkata'
+                                          })
+                                        ) : isPres ? (
+                                          <span className="text-amber-700 italic text-[10px]">Shift Incomplete</span>
+                                        ) : (
+                                          <span className="text-slate-400">—</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-600">
+                                        {isPres ? `${att.distance_from_assignment_meters ? att.distance_from_assignment_meters.toFixed(1) : '—'}m` : '—'}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-right">
+                                        {isPres ? (
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                            Checked In
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px]">
+                                            Not Checked In
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
