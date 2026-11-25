@@ -1350,6 +1350,47 @@ export class WardOfficerController {
       (complaint as any).deadline = targetDeadline;
       (complaint as any).target_completion_date = targetDeadline;
 
+      // 1. Reassignment Revocation - Check for previously active work assignments for this complaint
+      const oldActiveAssignments = (store.workAssignments || []).filter(
+        (a: any) =>
+          (a.complaint_id === complaint.id || a.complaint_number === complaint.complaint_number) &&
+          !['verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned'].includes(String(a.status || '').toLowerCase())
+      );
+
+      for (const oldWa of oldActiveAssignments) {
+        oldWa.status = 'reassigned';
+        oldWa.updated_at = new Date().toISOString();
+
+        // Notify previous squad members that their squad has been replaced
+        const oldMembers = oldWa.team_members || [];
+        for (const om of oldMembers) {
+          const targetUserId = om.user_id || (allWorkers.find((w: any) => w.id === om.worker_id)?.user_id);
+          if (targetUserId) {
+            await DbRepository.createNotification(
+              targetUserId,
+              `Squad Replaced · ${complaint.complaint_number}`,
+              `Your squad has been replaced by another team for complaint ${complaint.complaint_number}. You are no longer assigned to this task.`,
+              complaint.id,
+              'complaint_status'
+            ).catch(() => {});
+          }
+        }
+      }
+
+      if (isDbConnected()) {
+        try {
+          await pool.query(
+            `UPDATE work_assignments
+             SET status = 'reassigned', updated_at = NOW()
+             WHERE (complaint_id = $1 OR complaint_number = $2)
+               AND status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')`,
+            [complaint.id, complaint.complaint_number]
+          );
+        } catch (err: any) {
+          console.error('[DB REPO ERROR - reassign old assignments]:', err.message);
+        }
+      }
+
       // Create a unique Task Assignment Code and UUID
       const serial = Math.floor(1000 + Math.random() * 9000);
       const taskCode = `TSK-NAV-2026-${serial}`;
@@ -2138,8 +2179,11 @@ export class WardOfficerController {
   // =========================================================================
   public static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const officerWard = WardOfficerController.resolveOfficerWard(req);
-      const rawTeams = await DbRepository.getTeamsList(officerWard);
+      const [dbTeams, allWorkers] = await Promise.all([
+        DbRepository.getTeamsList().catch(() => []),
+        DbRepository.getWorkersList({}).catch(() => [])
+      ]);
+      const mergedTeams = [...dbTeams, ...(store.teams || []).filter(st => !dbTeams.some((dt: any) => dt.id === st.id))];
 
       const activeAssignments = (store.workAssignments || []).filter(a =>
         ['assigned', 'in_progress', 'pending_review', 'under_review', 'action_required'].includes(a.status?.toLowerCase())
@@ -2148,7 +2192,7 @@ export class WardOfficerController {
         !['resolved', 'closed', 'rejected', 'verified_complete'].includes(c.status?.toLowerCase())
       );
 
-      const teams = rawTeams.map(team => {
+      const teams = mergedTeams.map((team: any) => {
         const matchingAssignments = activeAssignments.filter(a =>
           (a as any).team_id === team.id ||
           (a as any).team_name === team.team_name ||
@@ -2165,8 +2209,32 @@ export class WardOfficerController {
           ...matchingComplaints.map(c => c.id)
         ]);
 
+        const rawIds: string[] = Array.isArray(team.worker_ids)
+          ? team.worker_ids
+          : (typeof team.worker_ids === 'string' ? (() => { try { return JSON.parse(team.worker_ids); } catch { return []; } })() : []);
+        const workerIdSet = new Set<string>(rawIds.map(String));
+        if (team.temporary_leader_id) workerIdSet.add(String(team.temporary_leader_id));
+
+        const members = allWorkers
+          .filter((w: any) => workerIdSet.has(String(w.id)) || workerIdSet.has(String(w.user_id)))
+          .map((w: any) => ({
+            id: w.id,
+            worker_id: w.id,
+            name: w.full_name || w.name,
+            worker_name: w.full_name || w.name,
+            worker_code: w.worker_code,
+            designation: w.designation || 'Sanitation Worker',
+            is_leader: w.id === team.temporary_leader_id || w.user_id === team.temporary_leader_id
+          }));
+
+        const leaderName = team.temporary_leader_name || (members.find((m: any) => m.is_leader)?.name) || (members[0]?.name) || 'Designated Leader';
+
         return {
           ...team,
+          members,
+          member_count: members.length || rawIds.length,
+          temporary_leader_name: leaderName,
+          leader_name: leaderName,
           work_type: team.work_type || 'General Civic Sanitation Squad',
           active_tasks_count: uniqueTaskIds.size
         };

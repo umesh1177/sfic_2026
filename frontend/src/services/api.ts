@@ -828,11 +828,28 @@ class ApiService {
     });
   }
 
+  async getWorkerTodayAttendance(assignmentId?: string) {
+    const qs = assignmentId ? `?assignment_id=${encodeURIComponent(assignmentId)}` : '';
+    return this.request<{
+      success: boolean;
+      data: {
+        date: string;
+        status: 'none' | 'checked_in' | 'completed_for_day';
+        checkInTime?: string;
+        checkOutTime?: string;
+        latitude?: number;
+        longitude?: number;
+        assignment_id?: string;
+      };
+    }>(`/worker/attendance/today${qs}`);
+  }
+
   async markWorkerAttendance(data: {
     assignment_id: string;
     latitude: number;
     longitude: number;
     gps_accuracy_meters?: number;
+    action?: 'check_in' | 'check_out';
   }) {
     return this.request<{ success: boolean; message: string; data: WorkerAttendance }>('/worker/attendance/mark', {
       method: 'POST',

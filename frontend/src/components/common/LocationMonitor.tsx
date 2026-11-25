@@ -103,8 +103,7 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
       setStatus('unsupported');
       setErrorDetail('Geolocation is not supported by this browser.');
-      const dismissed = sessionStorage.getItem('swachhsetu_loc_dismissed');
-      if (!dismissed) setShowModalPrompt(true);
+      applyNavsariDefaultLocation();
       return;
     }
 
@@ -114,21 +113,21 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
       watchIdRef.current = null;
     }
 
-    // Step 1: Try high accuracy GPS (mobile phone with GPS hardware)
+    // Step 1: Try standard accuracy with cached positions allowed (instant on Windows / laptops / mobile)
     navigator.geolocation.getCurrentPosition(
       pos => {
         publishLocation(pos);
         setRetrying(false);
       },
-      _errHigh => {
-        // Step 2: Fallback to standard accuracy (WiFi/IP/Cell network on laptops & desktop browsers)
+      _errLow => {
+        // Step 2: Try high accuracy GPS (satellite fix)
         navigator.geolocation.getCurrentPosition(
-          posLow => {
-            publishLocation(posLow);
+          posHigh => {
+            publishLocation(posHigh);
             setRetrying(false);
           },
-          async errFinal => {
-            // Step 3: IP Geolocation fallback before marking as failed
+          async _errHigh => {
+            // Step 3: IP Geolocation fallback before falling back to municipal center
             try {
               const res = await fetch('https://freeipapi.com/api/json');
               if (res.ok) {
@@ -145,36 +144,16 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
                   return;
                 }
               }
-            } catch {
-              // ignore
-            }
-            try {
-              const res2 = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client');
-              if (res2.ok) {
-                const data2 = await res2.json();
-                if (data2.latitude && data2.longitude) {
-                  publishLocation({
-                    coords: {
-                      latitude: Number(data2.latitude),
-                      longitude: Number(data2.longitude),
-                      accuracy: 500
-                    }
-                  });
-                  setRetrying(false);
-                  return;
-                }
-              }
-            } catch {
-              // ignore
-            }
+            } catch {}
 
-            handleGeoError(errFinal);
+            // Auto fallback: always activate Navsari default so user is never stuck in endless modal loop
+            applyNavsariDefaultLocation();
             setRetrying(false);
           },
-          { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 600000 }
         );
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
     );
 
     // Continuous monitoring during civic activities (with graceful timeout)
@@ -184,14 +163,12 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
           publishLocation(pos);
         },
         _err => {
-          // Do not interrupt user in background watch
+          // Silent background watch
         },
-        { enableHighAccuracy: false, timeout: 20000, maximumAge: 30000 }
+        { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
       );
-    } catch {
-      // ignore watch error
-    }
-  }, [publishLocation, handleGeoError]);
+    } catch {}
+  }, [publishLocation, applyNavsariDefaultLocation]);
 
   useEffect(() => {
     // If we already have a cached GPS from earlier in this session, keep it active

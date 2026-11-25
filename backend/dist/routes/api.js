@@ -158,6 +158,7 @@ exports.apiRouter.get('/worker/assignments', softAuthenticate, workerController_
 exports.apiRouter.get('/worker/assignments/:id', softAuthenticate, workerController_js_1.WorkerController.getAssignmentDetails);
 exports.apiRouter.post('/worker/assignments/:id/acknowledge', softAuthenticate, workerController_js_1.WorkerController.acknowledgeAssignment);
 // 3. Location-Validated Attendance (GPS geofencing)
+exports.apiRouter.get('/worker/attendance/today', softAuthenticate, workerController_js_1.WorkerController.getTodayAttendance);
 exports.apiRouter.post('/worker/attendance/mark', softAuthenticate, workerController_js_1.WorkerController.markAttendance);
 exports.apiRouter.post('/worker/attendance/exception', softAuthenticate, workerController_js_1.WorkerController.requestAttendanceException);
 exports.apiRouter.get('/worker/attendance/history', softAuthenticate, workerController_js_1.WorkerController.getAttendanceHistory);

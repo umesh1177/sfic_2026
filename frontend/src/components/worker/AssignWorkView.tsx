@@ -169,23 +169,56 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   });
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(attendanceStorageKey);
-      if (saved) {
-        setDailyAttendance(JSON.parse(saved));
-        return;
+    let isMounted = true;
+    const fetchTodayAttendance = async () => {
+      try {
+        const res = await api.getWorkerTodayAttendance(currentTask?.id);
+        if (isMounted && res?.data && res.data.status && res.data.status !== 'none') {
+          const rec: DailyAttendanceRecord = {
+            date: res.data.date || todayKey,
+            status: res.data.status,
+            checkInTime: res.data.checkInTime,
+            checkOutTime: res.data.checkOutTime
+          };
+          setDailyAttendance(rec);
+          try {
+            localStorage.setItem(attendanceStorageKey, JSON.stringify(rec));
+          } catch {}
+          return;
+        }
+      } catch {
+        // Fallback to local cache if network/offline
       }
-    } catch {}
-    if (currentTask?.my_attendance_status === 'present' || currentTask?.my_attendance_status === 'verified') {
-      setDailyAttendance({
-        date: todayKey,
-        status: 'checked_in',
-        checkInTime: 'Verified On-Site'
-      });
-    } else {
-      setDailyAttendance({ date: todayKey, status: 'none' });
-    }
-  }, [attendanceStorageKey, currentTask?.my_attendance_status, todayKey]);
+
+      try {
+        const saved = localStorage.getItem(attendanceStorageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.date === todayKey) {
+            if (isMounted) setDailyAttendance(parsed);
+            return;
+          }
+        }
+      } catch {}
+
+      if (currentTask?.my_attendance_status === 'present' || currentTask?.my_attendance_status === 'verified') {
+        if (isMounted) {
+          setDailyAttendance({
+            date: todayKey,
+            status: 'checked_in',
+            checkInTime: 'Verified On-Site'
+          });
+        }
+      } else {
+        if (isMounted) {
+          setDailyAttendance({ date: todayKey, status: 'none' });
+        }
+      }
+    };
+
+    fetchTodayAttendance();
+    return () => { isMounted = false; };
+  }, [attendanceStorageKey, currentTask?.id, currentTask?.my_attendance_status, todayKey]);
 
   const [submittingAttendance, setSubmittingAttendance] = useState<boolean>(false);
   const [attendanceSuccess, setAttendanceSuccess] = useState<string | null>(null);
@@ -368,6 +401,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     setAttendanceError(null);
     setAttendanceSuccess(null);
 
+    if (currentTask.status === 'reassigned') {
+      setAttendanceError('This task was reassigned to another squad by the Ward Officer. You are no longer assigned to this task.');
+      return;
+    }
+
     if (!isWithinGeofence) {
       setAttendanceError(
         `You are ${distanceToTask}m away from ${currentTask.location_name || currentTask.address}. Attendance requires being within ${GEOFENCE_LIMIT_METERS}m of the site.`
@@ -394,24 +432,35 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     const nowTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
     try {
-      await api.markWorkerAttendance({
+      const res = await api.markWorkerAttendance({
         assignment_id: currentTask.id,
         latitude: userCoords[0],
         longitude: userCoords[1],
-        gps_accuracy_meters: deviceCoords?.accuracy || 8
+        gps_accuracy_meters: deviceCoords?.accuracy || 8,
+        action
       });
+
+      const serverAtt: any = res?.data;
+      const serverCheckIn = serverAtt?.check_in_time
+        ? new Date(serverAtt.check_in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+        : nowTime;
+      const serverCheckOut = serverAtt?.check_out_time
+        ? new Date(serverAtt.check_out_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+        : nowTime;
 
       const record: DailyAttendanceRecord =
         action === 'check_in'
-          ? { date: todayKey, status: 'checked_in', checkInTime: nowTime }
-          : { ...dailyAttendance, status: 'completed_for_day', checkOutTime: nowTime };
+          ? { date: todayKey, status: 'checked_in', checkInTime: serverCheckIn }
+          : { ...dailyAttendance, status: 'completed_for_day', checkOutTime: serverCheckOut };
 
       setDailyAttendance(record);
-      localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
+      try {
+        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
+      } catch {}
       setAttendanceSuccess(
         action === 'check_in'
-          ? `Check-In verified at ${nowTime} (${distanceToTask}m from site).`
-          : `Check-Out verified at ${nowTime}. Shift attendance completed.`
+          ? `Check-In verified at ${serverCheckIn} (${distanceToTask}m from site). Stored in municipal records.`
+          : `Check-Out verified at ${serverCheckOut}. Shift attendance completed and saved to database.`
       );
       confetti({ particleCount: 25, spread: 50, origin: { y: 0.7 } });
       if (onRefresh) onRefresh();
@@ -531,6 +580,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     if (!currentTask) return;
     setEvidenceError(null);
     setEvidenceSuccess(null);
+
+    if (currentTask.status === 'reassigned') {
+      setEvidenceError('This task was reassigned to another squad by the Ward Officer. You are no longer authorized to submit evidence.');
+      return;
+    }
 
     // Validation: Team Leader cannot submit evidence if not checked in or after check-out
     if (dailyAttendance.status === 'none') {
@@ -1198,44 +1252,53 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </div>
           </div>
 
-          {dailyAttendance.status === 'none' && (
-            <button
-              onClick={() => handlePunchAttendance('check_in')}
-              disabled={submittingAttendance || !isWithinGeofence}
-              className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
-            >
-              {submittingAttendance ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Recording Check-In...</span>
-                </>
-              ) : (
-                <>
-                  <LocateFixed className="w-4 h-4" />
-                  <span>Mark Duty Check-In</span>
-                </>
+          {currentTask.status === 'reassigned' ? (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Squad Replaced: The Ward Officer has reassigned this complaint to another team. You are no longer authorized to submit attendance or evidence.</span>
+            </div>
+          ) : (
+            <>
+              {dailyAttendance.status === 'none' && (
+                <button
+                  onClick={() => handlePunchAttendance('check_in')}
+                  disabled={submittingAttendance || !isWithinGeofence}
+                  className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                >
+                  {submittingAttendance ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Recording Check-In...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LocateFixed className="w-4 h-4" />
+                      <span>Mark Duty Check-In</span>
+                    </>
+                  )}
+                </button>
               )}
-            </button>
-          )}
 
-          {dailyAttendance.status === 'checked_in' && (
-            <button
-              onClick={() => handlePunchAttendance('check_out')}
-              disabled={submittingAttendance || !isWithinGeofence}
-              className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
-            >
-              {submittingAttendance ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Recording Check-Out...</span>
-                </>
-              ) : (
-                <>
-                  <Clock className="w-4 h-4" />
-                  <span>Mark Duty Check-Out</span>
-                </>
+              {dailyAttendance.status === 'checked_in' && (
+                <button
+                  onClick={() => handlePunchAttendance('check_out')}
+                  disabled={submittingAttendance || !isWithinGeofence}
+                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                >
+                  {submittingAttendance ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Recording Check-Out...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4" />
+                      <span>Mark Duty Check-Out</span>
+                    </>
+                  )}
+                </button>
               )}
-            </button>
+            </>
           )}
 
           {dailyAttendance.status === 'completed_for_day' && (

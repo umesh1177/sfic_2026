@@ -502,6 +502,41 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     }
   };
 
+  // Helper to safely parse photo list from any format (array, json string, pg array, or single url)
+  const parseEvidencePhotos = (item: any): string[] => {
+    if (!item) return [];
+    const list: string[] = [];
+    const addPhoto = (p: any) => {
+      if (!p) return;
+      if (typeof p === 'string') {
+        const tr = p.trim();
+        if (tr.startsWith('[') && tr.endsWith(']')) {
+          try {
+            const arr = JSON.parse(tr);
+            if (Array.isArray(arr)) {
+              arr.forEach(addPhoto);
+              return;
+            }
+          } catch {}
+        }
+        if (tr.startsWith('{') && tr.endsWith('}')) {
+          tr.slice(1, -1).split(',').forEach(s => addPhoto(s.replace(/^"|"$/g, '').trim()));
+          return;
+        }
+        if (tr && !list.includes(tr)) list.push(tr);
+      } else if (Array.isArray(p)) {
+        p.forEach(addPhoto);
+      }
+    };
+
+    if (item.photos) addPhoto(item.photos);
+    if (item.photo_urls) addPhoto(item.photo_urls);
+    if (item.storage_path) addPhoto(item.storage_path);
+    if (item.photo_url) addPhoto(item.photo_url);
+
+    return list;
+  };
+
   // Helper to group multiple photo rows from same submission batch into single card
   const groupEvidenceBatches = (items: any[]) => {
     if (!items || !Array.isArray(items)) return [];
@@ -522,9 +557,7 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
     }[] = [];
 
     items.forEach((item: any) => {
-      const rawPhotos: string[] = Array.isArray(item.photos) && item.photos.length > 0
-        ? item.photos
-        : [item.storage_path || item.photo_url].filter(Boolean);
+      const rawPhotos: string[] = parseEvidencePhotos(item);
       const itemTs = new Date(item.device_capture_timestamp || item.created_at || Date.now()).getTime();
       const itemStage = String(item.evidence_type || item.stage || 'progress').toLowerCase();
       const itemDesc = (item.description || '').trim();
@@ -1912,47 +1945,58 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Select Squad / Team *</label>
-                <select
-                  value={selectedNewTeamId}
-                  onChange={e => {
-                    setSelectedNewTeamId(e.target.value);
-                    const sel = wardTeams.find(t => t.id === e.target.value);
-                    if (sel?.members && sel.members.length > 0) {
-                      setSelectedNewLeaderId(sel.members[0].id || sel.members[0].worker_id);
-                    }
-                  }}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
-                >
-                  <option value="">-- Choose Squad --</option>
-                  {wardTeams.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.team_name || t.name} ({t.members?.length || 0} workers)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedNewTeamId && (() => {
-                const selTeam = wardTeams.find(t => t.id === selectedNewTeamId);
-                const members = selTeam?.members || [];
-                return (
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Designate Team Leader *</label>
-                    <select
-                      value={selectedNewLeaderId}
-                      onChange={e => setSelectedNewLeaderId(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:border-[#095c54] outline-hidden"
-                    >
-                      {members.map((m: any) => (
-                        <option key={m.id || m.worker_id} value={m.id || m.worker_id}>
-                          👑 {m.name || m.worker_name} ({m.designation || 'Worker'})
-                        </option>
-                      ))}
-                    </select>
+                <label className="text-xs font-bold text-slate-700 block mb-1.5">Select Created Sanitation Squad *</label>
+                {wardTeams.length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                    No sanitation squads found for this ward. Please create squads in the Teams section first.
                   </div>
-                );
-              })()}
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {wardTeams.map(t => {
+                      const isSelected = selectedNewTeamId === t.id;
+                      const leaderName = t.temporary_leader_name || t.leader_name || (t.members?.[0]?.name) || 'Designated Leader';
+                      const memberCount = t.member_count || (t.members?.length) || (Array.isArray(t.worker_ids) ? t.worker_ids.length : 0);
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => {
+                            setSelectedNewTeamId(t.id);
+                            setSelectedNewLeaderId(t.temporary_leader_id || t.members?.[0]?.id || '');
+                          }}
+                          className={`p-3 rounded-2xl border-2 cursor-pointer transition flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? 'border-[#095c54] bg-[#f0faf7] shadow-xs'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-[#0f2925] truncate">
+                                {t.team_name || t.name}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                                Ward {t.ward_number || 3}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                              <span className="inline-flex items-center gap-1 font-semibold text-[#095c54]">
+                                👑 Leader: {leaderName}
+                              </span>
+                              <span>·</span>
+                              <span>{memberCount} worker{memberCount !== 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            isSelected ? 'border-[#095c54] bg-[#095c54] text-white' : 'border-slate-300'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">Max Work Days SLA</label>
@@ -2027,23 +2071,43 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
                   );
                 }
 
-                return availableWorkers.map((worker: any) => (
-                  <div key={worker.id} className="pt-2 flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-bold text-[#0f2925]">{worker.name}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{worker.worker_code} · {worker.designation || 'Worker'}</p>
+                return availableWorkers.map((worker: any) => {
+                  const isBusy = Boolean(worker.is_busy || worker.active_complaint_number);
+                  return (
+                    <div key={worker.id} className="pt-2 pb-1 flex items-center justify-between gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs font-bold text-[#0f2925] truncate">
+                            {worker.name || worker.full_name}
+                          </p>
+                          {isBusy ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              <span>Working on {worker.active_complaint_number || 'Another Task'}</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black inline-flex items-center gap-1">
+                              <Check className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>Available</span>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-mono">
+                          {worker.worker_code} · {worker.designation || 'Sanitation Worker'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddWorkerToSquad(worker.id)}
+                        disabled={addingWorkerId === worker.id}
+                        className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold flex items-center gap-1 transition disabled:opacity-50 shrink-0 shadow-2xs"
+                      >
+                        {addingWorkerId === worker.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                        <span>Add</span>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleAddWorkerToSquad(worker.id)}
-                      disabled={addingWorkerId === worker.id}
-                      className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold flex items-center gap-1 transition disabled:opacity-50"
-                    >
-                      {addingWorkerId === worker.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                      <span>Add</span>
-                    </button>
-                  </div>
-                ));
+                  );
+                });
               })()}
             </div>
 

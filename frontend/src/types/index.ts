@@ -607,7 +607,7 @@ export interface WorkAssignmentMember {
   worker_phone: string;
   designation_name: string;
   temporary_leader: boolean;
-  assignment_status: 'assigned' | 'acknowledged' | 'present' | 'absent' | 'reassigned';
+  assignment_status: 'assigned' | 'acknowledged' | 'present' | 'absent' | 'reassigned' | 'completed';
   attendance_timestamp?: string;
   validation_status?: string;
   distance_from_assignment_meters?: number;
@@ -616,6 +616,10 @@ export interface WorkAssignmentMember {
 export interface WorkAssignment {
   id: string;
   task_code: string;
+  complaint_id?: string;
+  complaint_number?: string;
+  team_id?: string;
+  team_name?: string;
   title: string;
   description: string;
   category: string;
@@ -645,7 +649,8 @@ export interface WorkAssignment {
     | 'changes_requested'
     | 'verified_complete'
     | 'closed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'reassigned';
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -674,6 +679,10 @@ export interface WorkerAttendance {
   validation_status: 'verified_match' | 'location_mismatch' | 'poor_accuracy' | 'exception_approved' | 'exception_rejected';
   validation_reason?: string;
   attendance_method: 'gps' | 'manual_exception';
+  attendance_type?: 'check_in' | 'completed_for_day';
+  check_in_time?: string;
+  check_out_time?: string;
+  attendance_date?: string;
   approved_by?: string;
   created_at: string;
 }

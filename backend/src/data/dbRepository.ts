@@ -3938,11 +3938,12 @@ export class DbRepository {
     workerId: string,
     lat: number,
     lon: number,
-    accuracy: number
+    accuracy: number,
+    action: 'check_in' | 'check_out' = 'check_in'
   ): Promise<{ success: boolean; attendance: WorkerAttendance; message: string }> {
     let taskLat = 20.9485;
     let taskLon = 72.9260;
-    let geofenceRadius = 100;
+    let geofenceRadius = 150;
 
     if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
@@ -3953,7 +3954,7 @@ export class DbRepository {
         if (taskRes.rows.length > 0) {
           taskLat = parseFloat(taskRes.rows[0].latitude);
           taskLon = parseFloat(taskRes.rows[0].longitude);
-          geofenceRadius = parseInt(taskRes.rows[0].attendance_radius_meters || '100', 10);
+          geofenceRadius = parseInt(taskRes.rows[0].attendance_radius_meters || '150', 10);
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - fetch task coords]:', err.message);
@@ -3976,12 +3977,13 @@ export class DbRepository {
     }
 
     const isMatch = validationStatus === 'verified_match';
+    const nowIso = new Date().toISOString();
 
     const attendanceRecord: WorkerAttendance = {
       id: `att-${Date.now()}`,
       assignment_id: assignmentId,
       worker_id: workerId,
-      attendance_timestamp: new Date().toISOString(),
+      attendance_timestamp: nowIso,
       latitude: lat,
       longitude: lon,
       gps_accuracy: accuracy,
@@ -3990,40 +3992,100 @@ export class DbRepository {
       validation_status: validationStatus,
       validation_reason: validationReason,
       attendance_method: 'gps',
-      created_at: new Date().toISOString()
+      attendance_type: action === 'check_out' ? 'completed_for_day' : 'check_in',
+      check_in_time: action === 'check_in' ? nowIso : undefined,
+      check_out_time: action === 'check_out' ? nowIso : undefined,
+      created_at: nowIso
     };
 
     if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(workerId)) {
       try {
-        const ins = await pool.query(`
-          INSERT INTO worker_attendance (
-            assignment_id, worker_id, attendance_timestamp, latitude, longitude,
-            gps_accuracy, distance_from_assignment_meters, geofence_radius_meters,
-            validation_status, validation_reason, attendance_method
-          )
-          VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, 'gps')
-          RETURNING *
-        `, [
-          assignmentId, workerId, lat, lon, accuracy,
-          distanceMeters, geofenceRadius, validationStatus, validationReason
-        ]);
+        if (action === 'check_out') {
+          // Update existing today's check-in row with check-out timestamp
+          const updRes = await pool.query(`
+            UPDATE worker_attendance
+            SET check_out_time = NOW(),
+                attendance_type = 'completed_for_day',
+                check_out_latitude = $1,
+                check_out_longitude = $2
+            WHERE (worker_id = $3 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $3))
+              AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
+            RETURNING *
+          `, [lat, lon, workerId]);
 
-        if (ins.rows.length > 0) {
-          attendanceRecord.id = ins.rows[0].id;
-        }
+          if (updRes.rows.length > 0) {
+            attendanceRecord.id = updRes.rows[0].id;
+            attendanceRecord.check_in_time = updRes.rows[0].check_in_time ? new Date(updRes.rows[0].check_in_time).toISOString() : updRes.rows[0].attendance_timestamp;
+            attendanceRecord.check_out_time = updRes.rows[0].check_out_time ? new Date(updRes.rows[0].check_out_time).toISOString() : nowIso;
+          }
+        } else {
+          // Check if already checked in today
+          const checkExisting = await pool.query(`
+            SELECT * FROM worker_attendance
+            WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          `, [workerId]);
 
-        if (isMatch) {
-          await pool.query(`
-            UPDATE work_assignment_members
-            SET assignment_status = 'present'
-            WHERE assignment_id = $1 AND worker_id = $2
-          `, [assignmentId, workerId]);
+          if (checkExisting.rows.length > 0) {
+            const row = checkExisting.rows[0];
+            if (row.check_out_time || row.attendance_type === 'completed_for_day') {
+              return {
+                success: false,
+                attendance: {
+                  ...attendanceRecord,
+                  id: row.id,
+                  attendance_type: 'completed_for_day',
+                  check_in_time: row.check_in_time,
+                  check_out_time: row.check_out_time
+                },
+                message: "You have already completed check-in and check-out for today's shift."
+              };
+            }
+            return {
+              success: false,
+              attendance: {
+                ...attendanceRecord,
+                id: row.id,
+                attendance_type: 'check_in',
+                check_in_time: row.check_in_time || row.attendance_timestamp
+              },
+              message: 'You have already checked in today for your shift.'
+            };
+          }
 
-          await pool.query(`
-            UPDATE work_assignments
-            SET status = 'in_progress', updated_at = NOW()
-            WHERE id = $1 AND status = 'assigned'
-          `, [assignmentId]);
+          const ins = await pool.query(`
+            INSERT INTO worker_attendance (
+              assignment_id, worker_id, attendance_timestamp, latitude, longitude,
+              gps_accuracy, distance_from_assignment_meters, geofence_radius_meters,
+              validation_status, validation_reason, attendance_method, attendance_type,
+              check_in_time, check_in_latitude, check_in_longitude, attendance_date
+            )
+            VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, 'gps', 'check_in', NOW(), $3, $4, CURRENT_DATE)
+            RETURNING *
+          `, [
+            assignmentId, workerId, lat, lon, accuracy,
+            distanceMeters, geofenceRadius, validationStatus, validationReason
+          ]);
+
+          if (ins.rows.length > 0) {
+            attendanceRecord.id = ins.rows[0].id;
+          }
+
+          if (isMatch) {
+            await pool.query(`
+              UPDATE work_assignment_members
+              SET assignment_status = 'present'
+              WHERE assignment_id = $1 AND worker_id = $2
+            `, [assignmentId, workerId]);
+
+            await pool.query(`
+              UPDATE work_assignments
+              SET status = 'in_progress', updated_at = NOW()
+              WHERE id = $1 AND status = 'assigned'
+            `, [assignmentId]);
+          }
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - recordWorkerAttendance]:', err.message);
@@ -4033,14 +4095,103 @@ export class DbRepository {
     if (!(store as any).workerAttendances) {
       (store as any).workerAttendances = [];
     }
-    (store as any).workerAttendances.unshift(attendanceRecord);
+    const memList: any[] = (store as any).workerAttendances;
+    const existingIdx = memList.findIndex((a: any) => 
+      (a.worker_id === workerId || a.user_id === workerId) && 
+      (a.attendance_timestamp || a.created_at || '').startsWith(nowIso.split('T')[0])
+    );
+    if (existingIdx !== -1 && action === 'check_out') {
+      memList[existingIdx].check_out_time = nowIso;
+      memList[existingIdx].attendance_type = 'completed_for_day';
+      memList[existingIdx].check_out_latitude = lat;
+      memList[existingIdx].check_out_longitude = lon;
+    } else if (existingIdx === -1) {
+      memList.unshift(attendanceRecord);
+    }
 
     return {
       success: isMatch,
       attendance: attendanceRecord,
       message: isMatch
-        ? `Attendance verified successfully! You are at the assigned work site (${distanceMeters}m away).`
+        ? (action === 'check_out'
+            ? `Shift completed and checked out successfully at ${distanceMeters}m from site.`
+            : `Attendance check-in verified successfully! You are at the assigned work site (${distanceMeters}m away).`)
         : validationReason
+    };
+  }
+
+  public static async getTodayWorkerAttendance(
+    workerId: string,
+    _assignmentId?: string
+  ): Promise<{
+    date: string;
+    status: 'none' | 'checked_in' | 'completed_for_day';
+    checkInTime?: string;
+    checkOutTime?: string;
+    latitude?: number;
+    longitude?: number;
+    assignment_id?: string;
+  }> {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(`
+          SELECT * FROM worker_attendance
+          WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+            AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
+          ORDER BY attendance_timestamp DESC
+          LIMIT 1
+        `, [workerId]);
+
+        if (res.rows.length > 0) {
+          const r = res.rows[0];
+          const hasCheckedOut = Boolean(r.check_out_time || r.attendance_type === 'completed_for_day');
+          const hasCheckedIn = Boolean(r.check_in_time || r.attendance_type === 'check_in' || r.attendance_timestamp);
+          const cin = r.check_in_time || r.attendance_timestamp;
+          const cout = r.check_out_time;
+
+          return {
+            date: todayStr,
+            status: hasCheckedOut ? 'completed_for_day' : (hasCheckedIn ? 'checked_in' : 'none'),
+            checkInTime: cin ? new Date(cin).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
+            checkOutTime: cout ? new Date(cout).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
+            latitude: r.latitude ? parseFloat(r.latitude) : undefined,
+            longitude: r.longitude ? parseFloat(r.longitude) : undefined,
+            assignment_id: r.assignment_id
+          };
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getTodayWorkerAttendance]:', err.message);
+      }
+    }
+
+    // In-memory fallback
+    const memList: any[] = (store as any).workerAttendances || [];
+    const todayRec = memList.find((a: any) => {
+      const matchWorker = a.worker_id === workerId || (a.user_id && a.user_id === workerId);
+      const recDate = (a.attendance_timestamp || a.created_at || '').split('T')[0];
+      return matchWorker && recDate === todayStr;
+    });
+
+    if (todayRec) {
+      const isCompleted = todayRec.attendance_type === 'completed_for_day' || Boolean(todayRec.check_out_time);
+      const isCheckedIn = todayRec.attendance_type === 'check_in' || Boolean(todayRec.check_in_time || todayRec.attendance_timestamp);
+      const cin = todayRec.check_in_time || todayRec.attendance_timestamp;
+      const cout = todayRec.check_out_time;
+      return {
+        date: todayStr,
+        status: isCompleted ? 'completed_for_day' : (isCheckedIn ? 'checked_in' : 'none'),
+        checkInTime: cin ? new Date(cin).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
+        checkOutTime: cout ? new Date(cout).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : undefined,
+        latitude: todayRec.latitude,
+        longitude: todayRec.longitude,
+        assignment_id: todayRec.assignment_id
+      };
+    }
+
+    return {
+      date: todayStr,
+      status: 'none'
     };
   }
 
@@ -4184,6 +4335,25 @@ export class DbRepository {
           ORDER BY we.created_at ASC
         `, [assignmentId]);
 
+        const parseDbPhotos = (raw: any, fallbackPath?: string): string[] => {
+          if (!raw) return fallbackPath ? [fallbackPath] : [];
+          if (Array.isArray(raw)) return raw.filter(Boolean);
+          if (typeof raw === 'string') {
+            const tr = raw.trim();
+            if (tr.startsWith('[') && tr.endsWith(']')) {
+              try {
+                const arr = JSON.parse(tr);
+                if (Array.isArray(arr)) return arr.filter(Boolean);
+              } catch { }
+            }
+            if (tr.startsWith('{') && tr.endsWith('}')) {
+              return tr.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean);
+            }
+            return [tr];
+          }
+          return fallbackPath ? [fallbackPath] : [];
+        };
+
         return res.rows.map(r => ({
           id: r.id,
           assignment_id: r.assignment_id,
@@ -4191,7 +4361,7 @@ export class DbRepository {
           worker_name: r.worker_name,
           evidence_type: r.evidence_type,
           storage_path: r.storage_path,
-          photos: (Array.isArray(r.photos) && r.photos.length > 0) ? r.photos : (r.storage_path ? [r.storage_path] : []),
+          photos: parseDbPhotos(r.photos, r.storage_path),
           description: r.description,
           latitude: r.latitude ? parseFloat(r.latitude) : undefined,
           longitude: r.longitude ? parseFloat(r.longitude) : undefined,
@@ -4297,7 +4467,6 @@ export class DbRepository {
         const res = await pool.query(`
           INSERT INTO work_evidence (
             assignment_id, submitted_by, evidence_type, storage_path, description,
-            latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status
             latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status,
             photos
           )
@@ -5049,6 +5218,14 @@ export class DbRepository {
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS skills JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS attendance_today VARCHAR(150) DEFAULT 'Not Marked';
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS active_task_code VARCHAR(100);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_in_time TIMESTAMPTZ;
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_out_time TIMESTAMPTZ;
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS attendance_type VARCHAR(50) DEFAULT 'check_in';
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_in_latitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_in_longitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_out_latitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_out_longitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS attendance_date DATE DEFAULT CURRENT_DATE;
       `);
 
       // 2. Ensure worker_teams table exists and has VARCHAR ids + work_type
@@ -5684,9 +5861,21 @@ export class DbRepository {
                  (SELECT wa.task_code
                   FROM work_assignment_members wam
                   JOIN work_assignments wa ON wa.id = wam.assignment_id
-                  WHERE wam.worker_id = wp.id AND wa.status NOT IN ('verified_complete', 'closed')
+                  WHERE (wam.worker_id = wp.id OR wam.worker_id = wp.user_id) AND wa.status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')
                   ORDER BY wa.created_at DESC
-                  LIMIT 1) as live_active_task_code
+                  LIMIT 1) as live_active_task_code,
+                 (SELECT wa.complaint_number
+                  FROM work_assignment_members wam
+                  JOIN work_assignments wa ON wa.id = wam.assignment_id
+                  WHERE (wam.worker_id = wp.id OR wam.worker_id = wp.user_id) AND wa.status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')
+                  ORDER BY wa.created_at DESC
+                  LIMIT 1) as live_active_complaint_number,
+                 (SELECT wa.title
+                  FROM work_assignment_members wam
+                  JOIN work_assignments wa ON wa.id = wam.assignment_id
+                  WHERE (wam.worker_id = wp.id OR wam.worker_id = wp.user_id) AND wa.status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')
+                  ORDER BY wa.created_at DESC
+                  LIMIT 1) as live_active_task_title
           FROM worker_profiles wp
           JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
@@ -5720,6 +5909,7 @@ export class DbRepository {
             parsedSkills = ['Litter Abatement'];
           }
 
+          const isBusy = Boolean(r.live_active_complaint_number || r.live_active_task_code);
           return {
             id: r.id,
             user_id: r.user_id,
@@ -5727,14 +5917,18 @@ export class DbRepository {
             username: r.worker_username,
             plain_password: r.worker_plain_password,
             full_name: r.full_name,
+            name: r.full_name,
             phone: r.phone,
             email: r.email,
             designation: r.designation_label,
             primary_designation: r.designation_label,
             ward_number: r.ward_number || 3,
             ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
-            availability_status: r.availability_status || 'available',
+            is_busy: isBusy,
+            availability_status: isBusy ? 'busy' : 'available',
+            active_complaint_number: r.live_active_complaint_number || undefined,
             active_task_code: r.live_active_task_code || r.active_task_code || undefined,
+            active_task_title: r.live_active_task_title || undefined,
             experience_years: parseFloat(r.experience_years || '0'),
             skills: parsedSkills,
             attendance_today: r.attendance_today || 'Not Marked',
@@ -5748,7 +5942,22 @@ export class DbRepository {
     }
 
     // Fallback to in-memory store
-    let workers = store.workers || [];
+    let workers = (store.workers || []).map(w => {
+      const activeWa = (store.workAssignments || []).find((wa) =>
+        !['verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned'].includes(wa.status) &&
+        (wa.team_members || []).some((m) => m.worker_id === w.id || m.user_id === w.id || m.worker_id === w.user_id || m.user_id === w.user_id)
+      );
+      const isBusy = Boolean(activeWa);
+      return {
+        ...w,
+        name: w.full_name || w.name,
+        is_busy: isBusy,
+        availability_status: isBusy ? 'busy' : 'available',
+        active_complaint_number: activeWa ? activeWa.complaint_number : undefined,
+        active_task_code: activeWa ? activeWa.task_code : undefined,
+        active_task_title: activeWa ? activeWa.title : undefined
+      };
+    });
     if (filters?.availability && filters.availability !== 'all') {
       workers = workers.filter(w => w.availability_status === filters.availability);
     }
