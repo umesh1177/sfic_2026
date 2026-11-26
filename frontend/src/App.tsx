@@ -138,6 +138,9 @@ export const App: React.FC = () => {
     } else {
       setViewMode('citizen');
       setCurrentTab(tab);
+      if (tab === 'complaints') {
+        setComplaintsRefreshTrigger(Date.now());
+      }
     }
   };
 
@@ -342,6 +345,7 @@ export const App: React.FC = () => {
           {currentTab === 'complaints' && (
             <MyComplaints
               key={complaintsRefreshTrigger}
+              refreshTrigger={complaintsRefreshTrigger}
               onOpenReport={() => setCurrentTab('report')}
               lang={lang}
             />

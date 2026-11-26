@@ -3360,9 +3360,16 @@ export class WardOfficerController {
         complaint.resolved_image_url = after_photo_url;
       }
 
-      const sIdx = (store.complaints || []).findIndex(c => c.id === complaint.id);
-      if (sIdx !== -1) store.complaints[sIdx] = complaint;
-      else store.complaints.unshift(complaint);
+      let foundInStore = false;
+      (store.complaints || []).forEach((c, idx) => {
+        if (c.id === complaint.id || c.complaint_number === complaint.complaint_number) {
+          store.complaints[idx] = { ...c, ...complaint, status: 'resolved' };
+          foundInStore = true;
+        }
+      });
+      if (!foundInStore) {
+        store.complaints.unshift(complaint);
+      }
 
       await DbRepository.verifyCompleteAssignment(complaint.id, complaint.complaint_number);
 
@@ -3383,10 +3390,10 @@ export class WardOfficerController {
         note: review_notes || 'Ward Officer inspected evidence photos and verified 100% cleanliness clearance.'
       });
 
-      if (after_photo_url && isDbConnected() && DbRepository.isValidUUID(complaint.id)) {
+      if (isDbConnected()) {
         await pool.query(
-          `UPDATE complaints SET resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
-          [after_photo_url, complaint.id]
+          `UPDATE complaints SET status = 'resolved', resolved_image_url = COALESCE($1, resolved_image_url), resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2 OR complaint_number = $3`,
+          [after_photo_url || null, complaint.id, complaint.complaint_number || '']
         ).catch(() => { });
       }
 
@@ -3514,9 +3521,16 @@ export class WardOfficerController {
       (complaint as any).is_published_to_community = true;
       (complaint as any).work_done_photos = allAfterPhotos;
 
-      const sIdx = (store.complaints || []).findIndex(c => c.id === complaint.id);
-      if (sIdx !== -1) store.complaints[sIdx] = complaint;
-      else store.complaints.unshift(complaint);
+      let foundInStore = false;
+      (store.complaints || []).forEach((c, idx) => {
+        if (c.id === complaint.id || c.complaint_number === complaint.complaint_number) {
+          store.complaints[idx] = { ...c, ...complaint, status: 'resolved' };
+          foundInStore = true;
+        }
+      });
+      if (!foundInStore) {
+        store.complaints.unshift(complaint);
+      }
 
       await DbRepository.verifyCompleteAssignment(complaint.id, complaint.complaint_number);
 
@@ -3526,10 +3540,10 @@ export class WardOfficerController {
         note: `Verified complete & published to Posts feed (${completionTimestampLabel || 'Verified'}). ${postDesc}`
       });
 
-      if (isDbConnected() && DbRepository.isValidUUID(complaint.id)) {
+      if (isDbConnected()) {
         await pool.query(
-          `UPDATE complaints SET status = 'resolved', is_published_to_community = true, resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
-          [primaryAfterPhoto, complaint.id]
+          `UPDATE complaints SET status = 'resolved', is_published_to_community = true, resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2 OR complaint_number = $3`,
+          [primaryAfterPhoto, complaint.id, complaint.complaint_number || '']
         ).catch(() => { });
       }
 

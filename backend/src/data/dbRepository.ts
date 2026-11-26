@@ -63,18 +63,30 @@ export class DbRepository {
     const validId = this.isValidUUID(id) ? id : 'c0000000-0000-0000-0000-000000000001';
     if (isDbConnected()) {
       try {
-        await pool.query(
+        const checkPhone = phone || '+919876543210';
+        const existing = await pool.query(
+          `SELECT id FROM profiles WHERE id = $1 OR phone = $2 LIMIT 1`,
+          [validId, checkPhone]
+        );
+        if (existing.rows.length > 0) {
+          return existing.rows[0].id;
+        }
+
+        const insertRes = await pool.query(
           `INSERT INTO profiles (id, full_name, phone, email, address, locality, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-           ON CONFLICT (id) DO NOTHING`,
-          [validId, fullName || 'Citizen User', phone || '+919876543210', email || null, address || null, locality || 'Navsari']
+           ON CONFLICT (phone) DO UPDATE SET updated_at = NOW()
+           RETURNING id`,
+          [validId, fullName || 'Citizen User', checkPhone, email || null, address || null, locality || 'Navsari']
         );
+        const resolvedId = insertRes.rows[0]?.id || validId;
         await pool.query(
           `INSERT INTO user_roles (user_id, role)
            VALUES ($1, 'citizen')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'citizen'`,
-          [validId]
+          [resolvedId]
         ).catch(() => { });
+        return resolvedId;
       } catch (err: any) {
         console.warn('[DB REPO - ensureProfileExists warning]:', err.message);
       }
@@ -610,8 +622,12 @@ export class DbRepository {
         }
 
         if (params.status && params.status !== 'all') {
-          query += ` AND status = $${idx++}`;
-          values.push(params.status);
+          if (params.status === 'resolved') {
+            query += ` AND status IN ('resolved', 'verified_complete', 'closed')`;
+          } else {
+            query += ` AND status = $${idx++}`;
+            values.push(params.status);
+          }
         }
         if (params.category_id && params.category_id !== 'all') {
           query += ` AND category_id = $${idx++}`;
@@ -656,7 +672,13 @@ export class DbRepository {
         if (!matches) return false;
       }
 
-      if (params.status && params.status !== 'all' && c.status !== params.status) return false;
+      if (params.status && params.status !== 'all') {
+        if (params.status === 'resolved') {
+          if (!['resolved', 'verified_complete', 'closed'].includes(c.status)) return false;
+        } else if (c.status !== params.status) {
+          return false;
+        }
+      }
       if (params.category_id && params.category_id !== 'all' && c.category_id !== params.category_id) return false;
       if (params.search) {
         const q = params.search.toLowerCase();
@@ -671,10 +693,26 @@ export class DbRepository {
 
     const mergedMap = new Map<string, Complaint>();
     for (const sc of matchingStore) {
-      mergedMap.set(sc.complaint_number || sc.id, sc);
+      const key = sc.complaint_number || sc.id;
+      const existing = mergedMap.get(key);
+      if (!existing || (['resolved', 'verified_complete', 'closed'].includes(sc.status) && !['resolved', 'verified_complete', 'closed'].includes(existing.status))) {
+        mergedMap.set(key, sc);
+      }
     }
     for (const dc of dbMapped) {
-      mergedMap.set(dc.complaint_number || dc.id, dc);
+      const key = dc.complaint_number || dc.id;
+      const existing = mergedMap.get(key);
+      if (!existing) {
+        mergedMap.set(key, dc);
+      } else {
+        const isDbResolved = ['resolved', 'verified_complete', 'closed'].includes(dc.status);
+        const isMemResolved = ['resolved', 'verified_complete', 'closed'].includes(existing.status);
+        if (isDbResolved || !isMemResolved) {
+          mergedMap.set(key, { ...existing, ...dc, status: isDbResolved ? dc.status : existing.status });
+        } else {
+          mergedMap.set(key, { ...dc, ...existing });
+        }
+      }
     }
 
     const combined = Array.from(mergedMap.values()).sort(
@@ -783,41 +821,50 @@ export class DbRepository {
     newStatus: string,
     actorInfo?: { name: string; role: string; note: string; rejection_reason?: string }
   ): Promise<void> {
-    // 1. Update in-memory store
-    const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
-    if (complaint) {
-      complaint.status = newStatus as any;
-      complaint.updated_at = new Date().toISOString();
-      if (actorInfo?.rejection_reason) {
-        (complaint as any).rejection_reason = actorInfo.rejection_reason;
+    const isResolvedStatus = ['resolved', 'verified_complete', 'closed'].includes(newStatus);
+    const nowIso = new Date().toISOString();
+
+    // 1. Update in-memory store (update all matching instances to eliminate duplicate state)
+    let primaryComp = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+    const targetCompNum = primaryComp?.complaint_number;
+
+    (store.complaints || []).forEach(c => {
+      if (c.id === id || c.complaint_number === id || (targetCompNum && c.complaint_number === targetCompNum)) {
+        c.status = newStatus as any;
+        c.updated_at = nowIso;
+        if (isResolvedStatus) {
+          c.resolved_at = c.resolved_at || nowIso;
+        }
+        if (actorInfo?.rejection_reason) {
+          (c as any).rejection_reason = actorInfo.rejection_reason;
+        }
+        if (actorInfo) {
+          if (!c.activity_logs) c.activity_logs = [];
+          c.activity_logs.push({
+            id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            complaint_id: c.id,
+            status: newStatus as any,
+            note: actorInfo.note,
+            actor_name: actorInfo.name,
+            actor_role: actorInfo.role as any,
+            created_at: nowIso
+          });
+        }
       }
-      if (actorInfo) {
-        if (!complaint.activity_logs) complaint.activity_logs = [];
-        complaint.activity_logs.push({
-          id: `act-${Date.now()}`,
-          complaint_id: complaint.id,
-          status: newStatus as any,
-          note: actorInfo.note,
-          actor_name: actorInfo.name,
-          actor_role: actorInfo.role as any,
-          created_at: new Date().toISOString()
-        });
-      }
-    }
+    });
 
     // 2. Synchronize to PostgreSQL if connected
     if (isDbConnected()) {
       try {
-        const lookupId = complaint?.id || id;
-        const lookupNum = complaint?.complaint_number || id;
-        const isResolvedStatus = newStatus === 'resolved';
+        const lookupId = primaryComp?.id || id;
+        const lookupNum = primaryComp?.complaint_number || (id.startsWith('NMC-') ? id : '');
         const updateRes = this.isValidUUID(lookupId)
           ? await pool.query(
             `UPDATE complaints
                SET status = $1,
                    resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
                    updated_at = NOW()
-               WHERE id = $3 OR complaint_number = $4
+               WHERE id = $3 OR ($4 <> '' AND complaint_number = $4)
                RETURNING id`,
             [newStatus, isResolvedStatus, lookupId, lookupNum]
           )
@@ -828,7 +875,7 @@ export class DbRepository {
                    updated_at = NOW()
                WHERE complaint_number = $3
                RETURNING id`,
-            [newStatus, isResolvedStatus, lookupNum]
+            [newStatus, isResolvedStatus, lookupNum || id]
           );
 
         const dbComplaintId = updateRes.rows[0]?.id;

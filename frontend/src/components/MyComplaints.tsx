@@ -34,9 +34,10 @@ import { StatusProgressionStepper } from './common/StatusProgressionStepper.js';
 interface MyComplaintsProps {
   onOpenReport: () => void;
   lang: Language;
+  refreshTrigger?: number;
 }
 
-export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }) => {
+export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang, refreshTrigger }) => {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -94,7 +95,12 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
 
   useEffect(() => {
     fetchComplaints();
-  }, [selectedStatus, searchQuery]);
+    const handleFocus = () => {
+      fetchComplaints();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [selectedStatus, searchQuery, refreshTrigger]);
 
   const handleReopen = async (complaintId: string) => {
     if (!reopenReason.trim()) {
@@ -757,94 +763,112 @@ export const MyComplaints: React.FC<MyComplaintsProps> = ({ onOpenReport, lang }
       )}
 
       {/* Complaints Grid */}
-      {loading ? (
-        <div className="text-center py-12 text-xs font-bold text-slate-500">
-          {t.loading}
-        </div>
-      ) : complaints.length === 0 ? (
-        <div className="p-10 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
-          <div className="w-16 h-16 rounded-full bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto border border-emerald-100">
-            <ClipboardList className="w-8 h-8 text-[#095c54]" />
-          </div>
-          <h4 className="font-extrabold text-base text-[#0f2925]">{t.empty}</h4>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            You haven't logged any complaints under this filter. Tap below to report a civic sanitation issue in your ward.
-          </p>
-          <button onClick={onOpenReport} className="btn-primary-custom px-5 py-2.5 text-xs font-bold touch-press mt-2">
-            {t.action_report}
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {complaints.map(c => (
-            <div
-              key={c.id}
-              onClick={() => handleSelectComplaint(c)}
-              className="rounded-3xl border border-slate-200/90 bg-white shadow-xs hover:shadow-lg hover:border-[#095c54]/50 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden group"
-            >
-              <div>
-                {/* Photo Header & Status Badges */}
-                <div className="relative aspect-video bg-slate-100 overflow-hidden">
-                  <img
-                    src={c.image_url}
-                    alt={c.category_name}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <span className="px-2.5 py-1 rounded-xl bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono font-black shadow-sm">
-                      {c.complaint_number}
-                    </span>
-                  </div>
-                  <div className="absolute top-3 right-3">
-                    {getStatusBadge(c.status)}
-                  </div>
-                  <div className="absolute bottom-2.5 left-2.5">
-                    <span className="px-2.5 py-0.5 rounded-lg bg-[#095c54] text-white text-[10px] font-bold">
-                      Ward {c.location.ward_number}
-                    </span>
-                  </div>
-                </div>
+      {(() => {
+        const displayedComplaints = complaints.filter(c => {
+          if (selectedStatus === 'all') return true;
+          if (selectedStatus === 'resolved') {
+            return ['resolved', 'verified_complete', 'closed'].includes(c.status);
+          }
+          return c.status === selectedStatus;
+        });
 
-                {/* Card Content */}
-                <div className="p-4 sm:p-5 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-[#095c54]">
-                      {c.category_name}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {new Date(c.submitted_at).toLocaleDateString()}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-700 font-semibold line-clamp-2 leading-relaxed">
-                    {c.description}
-                  </p>
-
-                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-1">
-                    <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
-                    <span className="truncate">{c.location.address}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card Footer with Clear Action Button */}
-              <div className="p-4 sm:p-5 pt-0">
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    handleSelectComplaint(c);
-                  }}
-                  className="w-full py-2.5 rounded-2xl bg-slate-50 hover:bg-[#e6f4f1] text-[#095c54] border border-slate-200 group-hover:border-[#095c54]/30 text-xs font-black transition flex items-center justify-center gap-1.5"
-                >
-                  <span>{t.view_details}</span>
-                  <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-1" />
-                </button>
-              </div>
+        if (loading) {
+          return (
+            <div className="text-center py-12 text-xs font-bold text-slate-500">
+              {t.loading}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        }
+
+        if (displayedComplaints.length === 0) {
+          return (
+            <div className="p-10 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto border border-emerald-100">
+                <ClipboardList className="w-8 h-8 text-[#095c54]" />
+              </div>
+              <h4 className="font-extrabold text-base text-[#0f2925]">{t.empty}</h4>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                You haven't logged any complaints under this filter. Tap below to report a civic sanitation issue in your ward.
+              </p>
+              <button onClick={onOpenReport} className="btn-primary-custom px-5 py-2.5 text-xs font-bold touch-press mt-2">
+                {t.action_report}
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {displayedComplaints.map(c => (
+              <div
+                key={c.id}
+                onClick={() => handleSelectComplaint(c)}
+                className="rounded-3xl border border-slate-200/90 bg-white shadow-xs hover:shadow-lg hover:border-[#095c54]/50 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden group"
+              >
+                <div>
+                  {/* Photo Header & Status Badges */}
+                  <div className="relative aspect-video bg-slate-100 overflow-hidden">
+                    <img
+                      src={c.image_url}
+                      alt={c.category_name}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <span className="px-2.5 py-1 rounded-xl bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono font-black shadow-sm">
+                        {c.complaint_number}
+                      </span>
+                    </div>
+                    <div className="absolute top-3 right-3">
+                      {getStatusBadge(c.status)}
+                    </div>
+                    <div className="absolute bottom-2.5 left-2.5">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-[#095c54] text-white text-[10px] font-bold">
+                        Ward {c.location.ward_number}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card Content */}
+                  <div className="p-4 sm:p-5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-[#095c54]">
+                        {c.category_name}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {new Date(c.submitted_at).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-700 font-semibold line-clamp-2 leading-relaxed">
+                      {c.description}
+                    </p>
+
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-1">
+                      <MapPin className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+                      <span className="truncate">{c.location.address}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Footer with Clear Action Button */}
+                <div className="p-4 sm:p-5 pt-0">
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleSelectComplaint(c);
+                    }}
+                    className="w-full py-2.5 rounded-2xl bg-slate-50 hover:bg-[#e6f4f1] text-[#095c54] border border-slate-200 group-hover:border-[#095c54]/30 text-xs font-black transition flex items-center justify-center gap-1.5"
+                  >
+                    <span>{t.view_details}</span>
+                    <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-1" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 };
