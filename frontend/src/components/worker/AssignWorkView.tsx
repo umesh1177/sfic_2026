@@ -202,33 +202,16 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
               checkOutTime: checkOut
             };
             setDailyAttendance(rec);
-            try {
-              localStorage.setItem(attendanceStorageKey, JSON.stringify(rec));
-            } catch {}
             return;
           } else if (res.data.status === 'none') {
             // Task has NO attendance yet today - show fresh punch-in
             setDailyAttendance({ date: todayKey, status: 'none' });
-            try {
-              localStorage.removeItem(attendanceStorageKey);
-            } catch {}
             return;
           }
         }
       } catch {
-        // Fallback to local cache if network/offline
+        // Fallback to task attendance status if network issue
       }
-
-      try {
-        const saved = localStorage.getItem(attendanceStorageKey);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.date === todayKey) {
-            if (isMounted) setDailyAttendance(parsed);
-            return;
-          }
-        }
-      } catch {}
 
       if (currentTask?.my_attendance_status === 'present' || currentTask?.my_attendance_status === 'verified') {
         if (isMounted) {
@@ -484,9 +467,6 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
           : { ...dailyAttendance, status: 'completed_for_day', checkOutTime: serverCheckOut };
 
       setDailyAttendance(record);
-      try {
-        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
-      } catch {}
       setAttendanceSuccess(
         action === 'check_in'
           ? (allowAnywhere
