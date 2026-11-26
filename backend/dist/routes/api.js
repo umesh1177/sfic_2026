@@ -232,6 +232,8 @@ exports.apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, ward
 // ============================================================================
 exports.apiRouter.get('/admin/overview', softAuthenticate, adminController_js_1.AdminController.getOverview);
 exports.apiRouter.get('/admin/wards', softAuthenticate, adminController_js_1.AdminController.getWards);
+exports.apiRouter.put('/admin/wards/:id', softAuthenticate, adminController_js_1.AdminController.updateWard);
+exports.apiRouter.get('/admin/wards/:wardNumber/officer-history', softAuthenticate, adminController_js_1.AdminController.getWardOfficerHistory);
 exports.apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, adminController_js_1.AdminController.updateWardBoundary);
 exports.apiRouter.get('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.getCityBoundary);
 exports.apiRouter.put('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.updateCityBoundary);
@@ -240,6 +242,8 @@ exports.apiRouter.post('/admin/boundary-history/:id/restore', softAuthenticate, 
 exports.apiRouter.get('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.getWardOfficers);
 exports.apiRouter.post('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.createWardOfficer);
 exports.apiRouter.put('/admin/ward-officers/:id', softAuthenticate, adminController_js_1.AdminController.updateWardOfficer);
+exports.apiRouter.delete('/admin/ward-officers/:id', softAuthenticate, adminController_js_1.AdminController.deleteWardOfficer);
+exports.apiRouter.get('/admin/ward-officers/:officerId/ward-history', softAuthenticate, adminController_js_1.AdminController.getOfficerWardHistory);
 exports.apiRouter.get('/admin/workers', softAuthenticate, adminController_js_1.AdminController.getWorkers);
 exports.apiRouter.post('/admin/workers', softAuthenticate, adminController_js_1.AdminController.createWorker);
 exports.apiRouter.put('/admin/workers/:id', softAuthenticate, adminController_js_1.AdminController.updateWorker);

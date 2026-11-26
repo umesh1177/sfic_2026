@@ -83,7 +83,11 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
   const [addDesc, setAddDesc] = useState<string>('');
   const [addIcon, setAddIcon] = useState<string>('Trash2');
   const [addApprovalDays, setAddApprovalDays] = useState<number>(2);
+  const [addApprovalHours, setAddApprovalHours] = useState<number>(0);
+  const [addApprovalMinutes, setAddApprovalMinutes] = useState<number>(0);
   const [addWorkDays, setAddWorkDays] = useState<number>(5);
+  const [addWorkHours, setAddWorkHours] = useState<number>(0);
+  const [addWorkMinutes, setAddWorkMinutes] = useState<number>(0);
   const [savingAdd, setSavingAdd] = useState<boolean>(false);
 
   // Edit category fields
@@ -93,9 +97,24 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
   const [editDesc, setEditDesc] = useState<string>('');
   const [editIcon, setEditIcon] = useState<string>('Trash2');
   const [editApprovalDays, setEditApprovalDays] = useState<number>(2);
+  const [editApprovalHours, setEditApprovalHours] = useState<number>(0);
+  const [editApprovalMinutes, setEditApprovalMinutes] = useState<number>(0);
   const [editWorkDays, setEditWorkDays] = useState<number>(5);
+  const [editWorkHours, setEditWorkHours] = useState<number>(0);
+  const [editWorkMinutes, setEditWorkMinutes] = useState<number>(0);
   const [editIsActive, setEditIsActive] = useState<boolean>(true);
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
+
+  const formatSlaDuration = (d?: number, h?: number, m?: number, fallbackDays: number = 2) => {
+    const days = d !== undefined ? Number(d) : fallbackDays;
+    const hours = Number(h) || 0;
+    const mins = Number(m) || 0;
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (mins > 0) parts.push(`${mins}m`);
+    return parts.length > 0 ? parts.join(' ') : '0m';
+  };
 
   const fetchCategories = async () => {
     setLoading(true);
@@ -133,8 +152,12 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
     setEditNameHi(cat.category_name_hi || '');
     setEditDesc(cat.description || '');
     setEditIcon(cat.icon || 'Trash2');
-    setEditApprovalDays(cat.max_approval_days || 2);
-    setEditWorkDays(cat.max_work_days || 5);
+    setEditApprovalDays(cat.approval_sla_days !== undefined ? cat.approval_sla_days : (cat.max_approval_days || 2));
+    setEditApprovalHours(cat.approval_sla_hours || 0);
+    setEditApprovalMinutes(cat.approval_sla_minutes || 0);
+    setEditWorkDays(cat.work_sla_days !== undefined ? cat.work_sla_days : (cat.max_work_days || 5));
+    setEditWorkHours(cat.work_sla_hours || 0);
+    setEditWorkMinutes(cat.work_sla_minutes || 0);
     setEditIsActive(cat.is_active !== false);
     setEditModalOpen(true);
   };
@@ -155,6 +178,12 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         category_name_hi: addNameHi.trim() || addName.trim(),
         description: addDesc.trim(),
         icon: addIcon,
+        approval_sla_days: Number(addApprovalDays) || 0,
+        approval_sla_hours: Number(addApprovalHours) || 0,
+        approval_sla_minutes: Number(addApprovalMinutes) || 0,
+        work_sla_days: Number(addWorkDays) || 0,
+        work_sla_hours: Number(addWorkHours) || 0,
+        work_sla_minutes: Number(addWorkMinutes) || 0,
         max_approval_days: Number(addApprovalDays) || 2,
         max_work_days: Number(addWorkDays) || 5
       });
@@ -168,7 +197,11 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         setAddNameHi('');
         setAddDesc('');
         setAddApprovalDays(2);
+        setAddApprovalHours(0);
+        setAddApprovalMinutes(0);
         setAddWorkDays(5);
+        setAddWorkHours(0);
+        setAddWorkMinutes(0);
         if (res.data) {
           setCategories(prev => [res.data, ...prev]);
         }
@@ -194,8 +227,14 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
         category_name_hi: editNameHi.trim(),
         description: editDesc.trim(),
         icon: editIcon,
-        max_approval_days: Number(editApprovalDays),
-        max_work_days: Number(editWorkDays),
+        approval_sla_days: Number(editApprovalDays) || 0,
+        approval_sla_hours: Number(editApprovalHours) || 0,
+        approval_sla_minutes: Number(editApprovalMinutes) || 0,
+        work_sla_days: Number(editWorkDays) || 0,
+        work_sla_hours: Number(editWorkHours) || 0,
+        work_sla_minutes: Number(editWorkMinutes) || 0,
+        max_approval_days: Number(editApprovalDays) || 2,
+        max_work_days: Number(editWorkDays) || 5,
         is_active: editIsActive
       });
 
@@ -368,12 +407,12 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
                 <div className="flex items-center justify-between flex-wrap gap-1.5 text-xs">
                   <div className="flex items-center gap-1 text-amber-800 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] sm:text-[11px] font-bold">
                     <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                    <span>Approval: <strong className="font-black">{cat.max_approval_days || 2}d</strong></span>
+                    <span>Approval: <strong className="font-black">{formatSlaDuration(cat.approval_sla_days, cat.approval_sla_hours, cat.approval_sla_minutes, cat.max_approval_days)}</strong></span>
                   </div>
 
                   <div className="flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-1 rounded-xl border border-emerald-200 text-[10px] sm:text-[11px] font-bold">
                     <CalendarCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                    <span>Work: <strong className="font-black">{cat.max_work_days || 5}d</strong></span>
+                    <span>Work: <strong className="font-black">{formatSlaDuration(cat.work_sla_days, cat.work_sla_hours, cat.work_sla_minutes, cat.max_work_days)}</strong></span>
                   </div>
                 </div>
 
@@ -437,13 +476,13 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
 
                     <td className="py-3.5 px-4 text-center">
                       <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-black text-[11px]">
-                        {cat.max_approval_days || 2} Days
+                        {formatSlaDuration(cat.approval_sla_days, cat.approval_sla_hours, cat.approval_sla_minutes, cat.max_approval_days)}
                       </span>
                     </td>
 
                     <td className="py-3.5 px-4 text-center">
                       <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-black text-[11px]">
-                        {cat.max_work_days || 5} Days
+                        {formatSlaDuration(cat.work_sla_days, cat.work_sla_hours, cat.work_sla_minutes, cat.max_work_days)}
                       </span>
                     </td>
 
@@ -574,47 +613,106 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
                 </div>
               </div>
 
-              {/* SLA Configuration Inputs as requested */}
+              {/* SLA Configuration Inputs as requested (Days, Hours, Minutes) */}
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                <div className="text-xs font-black text-[#0f2925] flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#095c54]" />
-                  <span>SLA Rules & Deadline Configuration</span>
+                <div className="text-xs font-black text-[#0f2925] flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>Configured SLA Deadlines (Days, Hours, Minutes)</span>
+                  </div>
+                  <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    Live Breach Flagging
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Max Approval Days (SLA) *
+                <div className="space-y-3">
+                  {/* Approval SLA */}
+                  <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                    <label className="block text-xs font-black text-amber-900 mb-1.5">
+                      Max Approval SLA (Verification Deadline)
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      required
-                      value={addApprovalDays}
-                      onChange={e => setAddApprovalDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
-                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Days</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          value={addApprovalDays}
+                          onChange={e => setAddApprovalDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Hours</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={addApprovalHours}
+                          onChange={e => setAddApprovalHours(Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Minutes</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          value={addApprovalMinutes}
+                          onChange={e => setAddApprovalMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
                     <p className="text-[10px] text-amber-700 font-semibold mt-1">
-                      If deadline is missed, the Ward Officer is flagged to Admin.
+                      Target: {formatSlaDuration(addApprovalDays, addApprovalHours, addApprovalMinutes, 2)}. Exceeding flags Ward Officer.
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Max Work Days (Resolution) *
+                  {/* Work SLA */}
+                  <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                    <label className="block text-xs font-black text-emerald-900 mb-1.5">
+                      Max Work SLA (Field Resolution Deadline)
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={60}
-                      required
-                      value={addWorkDays}
-                      onChange={e => setAddWorkDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
-                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Days</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          value={addWorkDays}
+                          onChange={e => setAddWorkDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Hours</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={addWorkHours}
+                          onChange={e => setAddWorkHours(Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Minutes</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          value={addWorkMinutes}
+                          onChange={e => setAddWorkMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
                     <p className="text-[10px] text-slate-500 font-medium mt-1">
-                      Maximum allowed days for workforce to fully resolve this problem.
+                      Target: {formatSlaDuration(addWorkDays, addWorkHours, addWorkMinutes, 5)}. Exceeding flags problem as overdue.
                     </p>
                   </div>
                 </div>
@@ -705,45 +803,107 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ lang }) 
                 />
               </div>
 
-              {/* SLA Inputs */}
+              {/* SLA Inputs (Days, Hours, Minutes) */}
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                <div className="text-xs font-black text-[#0f2925] flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#095c54]" />
-                  <span>Configured SLAs</span>
+                <div className="text-xs font-black text-[#0f2925] flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>Configured SLAs (Days, Hours, Minutes)</span>
+                  </div>
+                  <span className="text-[10px] text-teal-700 font-bold bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
+                    Auto Sub-Day Monitoring
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Max Approval Days (SLA)
+                <div className="space-y-3">
+                  {/* Approval SLA */}
+                  <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                    <label className="block text-xs font-black text-amber-900 mb-1.5">
+                      Max Approval SLA (Verification Deadline)
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      required
-                      value={editApprovalDays}
-                      onChange={e => setEditApprovalDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
-                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Days</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          value={editApprovalDays}
+                          onChange={e => setEditApprovalDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Hours</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={editApprovalHours}
+                          onChange={e => setEditApprovalHours(Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Minutes</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          value={editApprovalMinutes}
+                          onChange={e => setEditApprovalMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
                     <p className="text-[10px] text-amber-700 font-semibold mt-1">
-                      Breach triggers Ward Officer flagging.
+                      Current Target: {formatSlaDuration(editApprovalDays, editApprovalHours, editApprovalMinutes, 2)}. Breach triggers officer flagging.
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Max Work Days (Resolution)
+                  {/* Work SLA */}
+                  <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                    <label className="block text-xs font-black text-emerald-900 mb-1.5">
+                      Max Work SLA (Field Resolution Deadline)
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={60}
-                      required
-                      value={editWorkDays}
-                      onChange={e => setEditWorkDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-[#095c54]"
-                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Days</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          value={editWorkDays}
+                          onChange={e => setEditWorkDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Hours</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={editWorkHours}
+                          onChange={e => setEditWorkHours(Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Minutes</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          value={editWorkMinutes}
+                          onChange={e => setEditWorkMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-medium mt-1">
+                      Current Target: {formatSlaDuration(editWorkDays, editWorkHours, editWorkMinutes, 5)}.
+                    </p>
                   </div>
                 </div>
               </div>

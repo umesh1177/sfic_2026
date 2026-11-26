@@ -12,8 +12,10 @@ import {
   WorkerProfile, WorkerDesignation, WorkerSkill, WorkAssignment,
   WorkAssignmentMember, WorkerAttendance, AttendanceException,
   WorkProgressUpdate, WorkEvidence, WorkCompletionReport,
-  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem
+  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem,
+  WardOfficerAssignmentHistory
 } from '../types/index.js';
+import { NAVSARI_WARDS } from '../utils/postgis.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -4205,7 +4207,7 @@ export class DbRepository {
     if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(workerId)) {
       try {
         if (action === 'check_out') {
-          // Update existing today's check-in row with check-out timestamp
+          // Update existing today's check-in row with check-out timestamp for this specific assignment
           const updRes = await pool.query(`
             UPDATE worker_attendance
             SET check_out_time = NOW(),
@@ -4213,9 +4215,10 @@ export class DbRepository {
                 check_out_latitude = $1,
                 check_out_longitude = $2
             WHERE (worker_id = $3 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $3))
+              AND (assignment_id = $4 OR assignment_id::text = $4::text)
               AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
             RETURNING *
-          `, [lat, lon, workerId]);
+          `, [lat, lon, workerId, assignmentId]);
 
           if (updRes.rows.length > 0) {
             attendanceRecord.id = updRes.rows[0].id;
@@ -4223,14 +4226,15 @@ export class DbRepository {
             attendanceRecord.check_out_time = updRes.rows[0].check_out_time ? new Date(updRes.rows[0].check_out_time).toISOString() : nowIso;
           }
         } else {
-          // Check if already checked in today
+          // Check if already checked in today for THIS specific assignment
           const checkExisting = await pool.query(`
             SELECT * FROM worker_attendance
             WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (assignment_id = $2 OR assignment_id::text = $2::text)
               AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
             ORDER BY attendance_timestamp DESC
             LIMIT 1
-          `, [workerId]);
+          `, [workerId, assignmentId]);
 
           if (checkExisting.rows.length > 0) {
             const row = checkExisting.rows[0];
@@ -4244,7 +4248,7 @@ export class DbRepository {
                   check_in_time: row.check_in_time,
                   check_out_time: row.check_out_time
                 },
-                message: "You have already completed check-in and check-out for today's shift."
+                message: "You have already completed check-in and check-out for today's shift on this assignment."
               };
             }
             return {
@@ -4255,7 +4259,7 @@ export class DbRepository {
                 attendance_type: 'check_in',
                 check_in_time: row.check_in_time || row.attendance_timestamp
               },
-              message: 'You have already checked in today for your shift.'
+              message: 'You have already checked in today for this assignment.'
             };
           }
 
@@ -4302,6 +4306,7 @@ export class DbRepository {
     const memList: any[] = (store as any).workerAttendances;
     const existingIdx = memList.findIndex((a: any) => 
       (a.worker_id === workerId || a.user_id === workerId) && 
+      (!assignmentId || a.assignment_id === assignmentId) &&
       (a.attendance_timestamp || a.created_at || '').startsWith(nowIso.split('T')[0])
     );
     if (existingIdx !== -1 && action === 'check_out') {
@@ -4331,14 +4336,14 @@ export class DbRepository {
         await pool.query(`
           UPDATE complaints
           SET allow_anywhere_attendance = $1, updated_at = NOW()
-          WHERE id = $2 OR complaint_number = $2
+          WHERE id::text = $2::text OR complaint_number = $2
         `, [allowAnywhere, complaintId]);
 
         await pool.query(`
           UPDATE work_assignments
           SET allow_anywhere_attendance = $1, updated_at = NOW()
           WHERE complaint_id = $2 OR complaint_number = $2 OR complaint_number = (
-            SELECT complaint_number FROM complaints WHERE id = $2 LIMIT 1
+            SELECT complaint_number FROM complaints WHERE id::text = $2::text LIMIT 1
           )
         `, [allowAnywhere, complaintId]);
         return true;
@@ -4359,7 +4364,7 @@ export class DbRepository {
   }
   public static async getTodayWorkerAttendance(
     workerId: string,
-    _assignmentId?: string
+    assignmentId?: string
   ): Promise<{
     date: string;
     status: 'none' | 'checked_in' | 'completed_for_day';
@@ -4380,17 +4385,33 @@ export class DbRepository {
     };
     if (isDbConnected()) {
       try {
-        const res = await pool.query(`
-          SELECT * FROM worker_attendance
-          WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
-            AND (
-              attendance_date = CURRENT_DATE
-              OR DATE(attendance_timestamp AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
-              OR DATE(attendance_timestamp) = CURRENT_DATE
-            )
-          ORDER BY attendance_timestamp DESC
-          LIMIT 1
-        `, [workerId]);
+        let res;
+        if (assignmentId && this.isValidUUID(assignmentId)) {
+          res = await pool.query(`
+            SELECT * FROM worker_attendance
+            WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (assignment_id = $2 OR assignment_id::text = $2::text)
+              AND (
+                attendance_date = CURRENT_DATE
+                OR DATE(attendance_timestamp AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+                OR DATE(attendance_timestamp) = CURRENT_DATE
+              )
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          `, [workerId, assignmentId]);
+        } else {
+          res = await pool.query(`
+            SELECT * FROM worker_attendance
+            WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (
+                attendance_date = CURRENT_DATE
+                OR DATE(attendance_timestamp AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+                OR DATE(attendance_timestamp) = CURRENT_DATE
+              )
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          `, [workerId]);
+        }
 
         if (res.rows.length > 0) {
           const r = res.rows[0];
@@ -4410,6 +4431,12 @@ export class DbRepository {
             longitude: r.longitude ? parseFloat(r.longitude) : undefined,
             assignment_id: r.assignment_id
           };
+        } else if (assignmentId) {
+          return {
+            date: todayStr,
+            status: 'none',
+            assignment_id: assignmentId
+          };
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - getTodayWorkerAttendance]:', err.message);
@@ -4420,8 +4447,9 @@ export class DbRepository {
     const memList: any[] = (store as any).workerAttendances || [];
     const todayRec = memList.find((a: any) => {
       const matchWorker = a.worker_id === workerId || (a.user_id && a.user_id === workerId);
+      const matchAssignment = !assignmentId || a.assignment_id === assignmentId;
       const recDate = (a.attendance_timestamp || a.created_at || '').split('T')[0];
-      return matchWorker && recDate === todayStr;
+      return matchWorker && matchAssignment && recDate === todayStr;
     });
 
     if (todayRec) {
@@ -4444,7 +4472,8 @@ export class DbRepository {
 
     return {
       date: todayStr,
-      status: 'none'
+      status: 'none',
+      assignment_id: assignmentId
     };
   }
 
@@ -5056,7 +5085,7 @@ export class DbRepository {
           await pool.query(`
             UPDATE work_assignments
             SET status = 'verified_complete', updated_at = NOW()
-            WHERE task_code = $1 OR complaint_id = $1 OR ($2 <> '' AND complaint_number = $2)
+            WHERE task_code = $1 OR complaint_id::text = $1::text OR ($2 <> '' AND complaint_number = $2)
           `, [assignmentOrComplaintId, complaintNumber || '']);
         }
       } catch (err: any) {
@@ -5595,6 +5624,23 @@ export class DbRepository {
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        CREATE TABLE IF NOT EXISTS ward_officer_assignment_history (
+          id VARCHAR(100) PRIMARY KEY,
+          ward_number INT NOT NULL,
+          ward_name VARCHAR(200) NOT NULL,
+          officer_id VARCHAR(100) NOT NULL,
+          officer_user_id VARCHAR(100),
+          officer_name VARCHAR(200) NOT NULL,
+          officer_phone VARCHAR(50),
+          officer_email VARCHAR(200),
+          designation VARCHAR(150),
+          assigned_at TIMESTAMPTZ DEFAULT NOW(),
+          relieved_at TIMESTAMPTZ,
+          status VARCHAR(50) DEFAULT 'active',
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
       `);
 
       // 3.6 Schema upgrades for Community Self-Registration, Verification Docs, Multi-Org Problem Policy, Evidence Metadata & Drive Certificates
@@ -5719,7 +5765,7 @@ export class DbRepository {
           assigned_wards: assignedWards,
           allowed_tabs: allowedTabs,
           is_active: row.is_active !== false,
-          cleanliness_score: 90.0,
+          cleanliness_score: 100.0,
           total_resolved: 0,
           created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
@@ -5890,6 +5936,259 @@ export class DbRepository {
     } catch (err: any) {
       console.error('[DB REPO ERROR - saveWardOfficerToDb]:', err.message);
     }
+  }
+
+  // =========================================================================
+  // WARD OFFICER ASSIGNMENT HISTORY & MANAGEMENT
+  // =========================================================================
+  public static async getWardOfficerHistory(wardNumber: number): Promise<WardOfficerAssignmentHistory[]> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          `SELECT * FROM ward_officer_assignment_history WHERE ward_number = $1 ORDER BY assigned_at DESC`,
+          [wardNumber]
+        );
+        if (res.rows && res.rows.length > 0) {
+          return res.rows.map(r => ({
+            id: r.id,
+            ward_number: Number(r.ward_number),
+            ward_name: r.ward_name,
+            officer_id: r.officer_id,
+            officer_user_id: r.officer_user_id,
+            officer_name: r.officer_name,
+            officer_phone: r.officer_phone,
+            officer_email: r.officer_email,
+            designation: r.designation,
+            assigned_at: new Date(r.assigned_at).toISOString(),
+            relieved_at: r.relieved_at ? new Date(r.relieved_at).toISOString() : null,
+            status: r.status,
+            notes: r.notes,
+            created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined
+          }));
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getWardOfficerHistory]:', err.message);
+      }
+    }
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    return memList.filter((h: any) => Number(h.ward_number) === Number(wardNumber));
+  }
+
+  public static async getOfficerWardHistory(officerId: string): Promise<WardOfficerAssignmentHistory[]> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          `SELECT * FROM ward_officer_assignment_history
+           WHERE officer_id = $1 OR officer_user_id = $1
+           ORDER BY assigned_at DESC`,
+          [officerId]
+        );
+        if (res.rows && res.rows.length > 0) {
+          return res.rows.map(r => ({
+            id: r.id,
+            ward_number: Number(r.ward_number),
+            ward_name: r.ward_name,
+            officer_id: r.officer_id,
+            officer_user_id: r.officer_user_id,
+            officer_name: r.officer_name,
+            officer_phone: r.officer_phone,
+            officer_email: r.officer_email,
+            designation: r.designation,
+            assigned_at: new Date(r.assigned_at).toISOString(),
+            relieved_at: r.relieved_at ? new Date(r.relieved_at).toISOString() : null,
+            status: r.status,
+            notes: r.notes,
+            created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined
+          }));
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getOfficerWardHistory]:', err.message);
+      }
+    }
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    return memList.filter((h: any) => h.officer_id === officerId || h.officer_user_id === officerId);
+  }
+
+  public static async recordWardOfficerAssignment(params: {
+    ward_number: number;
+    ward_name: string;
+    officer_id: string;
+    officer_user_id?: string;
+    officer_name: string;
+    officer_phone?: string;
+    officer_email?: string;
+    designation?: string;
+    notes?: string;
+  }): Promise<void> {
+    const id = `woh-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const nowIso = new Date().toISOString();
+
+    if (isDbConnected()) {
+      try {
+        // Relieve any existing active assignment for this ward
+        await pool.query(
+          `UPDATE ward_officer_assignment_history
+           SET relieved_at = NOW(), status = 'relieved', notes = 'Relieved on new officer appointment'
+           WHERE ward_number = $1 AND status = 'active'`,
+          [params.ward_number]
+        );
+
+        // Insert new active assignment
+        await pool.query(
+          `INSERT INTO ward_officer_assignment_history
+           (id, ward_number, ward_name, officer_id, officer_user_id, officer_name, officer_phone, officer_email, designation, assigned_at, status, notes, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'active', $10, NOW())`,
+          [
+            id,
+            params.ward_number,
+            params.ward_name,
+            params.officer_id,
+            params.officer_user_id || null,
+            params.officer_name,
+            params.officer_phone || null,
+            params.officer_email || null,
+            params.designation || 'Ward Officer',
+            params.notes || 'Assigned by Super Admin'
+          ]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - recordWardOfficerAssignment]:', err.message);
+      }
+    }
+
+    if (!(store as any).wardOfficerAssignmentHistory) {
+      (store as any).wardOfficerAssignmentHistory = [];
+    }
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory;
+    for (const h of memList) {
+      if (Number(h.ward_number) === Number(params.ward_number) && h.status === 'active') {
+        h.status = 'relieved';
+        h.relieved_at = nowIso;
+        h.notes = 'Relieved on new officer appointment';
+      }
+    }
+    memList.unshift({
+      id,
+      ward_number: params.ward_number,
+      ward_name: params.ward_name,
+      officer_id: params.officer_id,
+      officer_user_id: params.officer_user_id,
+      officer_name: params.officer_name,
+      officer_phone: params.officer_phone,
+      officer_email: params.officer_email,
+      designation: params.designation || 'Ward Officer',
+      assigned_at: nowIso,
+      status: 'active',
+      notes: params.notes || 'Assigned by Super Admin'
+    });
+  }
+
+  public static async relieveWardOfficerFromWard(wardNumber: number, officerId: string, notes?: string): Promise<void> {
+    const nowIso = new Date().toISOString();
+    if (isDbConnected()) {
+      try {
+        await pool.query(
+          `UPDATE ward_officer_assignment_history
+           SET relieved_at = NOW(), status = 'relieved', notes = COALESCE($3, notes)
+           WHERE ward_number = $1 AND (officer_id = $2 OR officer_user_id = $2) AND status = 'active'`,
+          [wardNumber, officerId, notes || 'Relieved from ward duties']
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - relieveWardOfficerFromWard]:', err.message);
+      }
+    }
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    for (const h of memList) {
+      if (Number(h.ward_number) === Number(wardNumber) && (h.officer_id === officerId || h.officer_user_id === officerId) && h.status === 'active') {
+        h.status = 'relieved';
+        h.relieved_at = nowIso;
+        h.notes = notes || 'Relieved from ward duties';
+      }
+    }
+  }
+
+  public static async deleteWardOfficerFromDb(officerId: string): Promise<boolean> {
+    const nowIso = new Date().toISOString();
+    const officer = store.wardOfficers.find(o => o.id === officerId || o.user_id === officerId);
+    if (!officer) return false;
+
+    const previousWards = [...(officer.assigned_wards || [])];
+
+    if (isDbConnected()) {
+      try {
+        // 1. Deactivate in ward_officer_assignments
+        await pool.query(
+          `UPDATE ward_officer_assignments SET is_active = false, assigned_wards = '[]'::jsonb, updated_at = NOW()
+           WHERE id = $1 OR user_id = $2`,
+          [officer.id, officer.user_id]
+        );
+
+        // 2. Deactivate Profile so they cannot log in
+        await pool.query(
+          `UPDATE profiles SET is_active = false, updated_at = NOW()
+           WHERE id = $1 OR phone = $2`,
+          [officer.user_id, officer.phone]
+        );
+
+        // 3. Deactivate auth profile so password check rejects login
+        await pool.query(
+          `UPDATE citizen_auth_profiles SET account_status = 'deactivated', updated_at = NOW()
+           WHERE user_id = $1 OR mobile_number = $2`,
+          [officer.user_id, officer.phone]
+        );
+
+        // 4. Close all active assignments in history
+        await pool.query(
+          `UPDATE ward_officer_assignment_history
+           SET relieved_at = NOW(), status = 'relieved', notes = 'Ward Officer account deleted by Super Admin'
+           WHERE (officer_id = $1 OR officer_user_id = $2) AND status = 'active'`,
+          [officer.id, officer.user_id]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteWardOfficerFromDb]:', err.message);
+      }
+    }
+
+    // In-memory sync
+    officer.is_active = false;
+    officer.assigned_wards = [];
+
+    const prof = store.profiles.find(p => p.id === officer.user_id || p.phone === officer.phone);
+    if (prof) prof.is_active = false;
+
+    const auth = store.authProfiles.find(a => a.user_id === officer.user_id || a.mobile_number === officer.phone);
+    if (auth) auth.account_status = 'suspended';
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    for (const h of memList) {
+      if ((h.officer_id === officer.id || h.officer_user_id === officer.user_id) && h.status === 'active') {
+        h.status = 'relieved';
+        h.relieved_at = nowIso;
+        h.notes = 'Ward Officer account deleted by Super Admin';
+      }
+    }
+
+    // Reflect in store.wards and NAVSARI_WARDS: if no other active officer serves this ward, mark Unassigned
+    for (const wNum of previousWards) {
+      const activeOfficersForWard = store.wardOfficers
+        .filter(o => o.is_active !== false && Array.isArray(o.assigned_wards) && o.assigned_wards.map(Number).includes(wNum));
+      const lead = activeOfficersForWard[0];
+      const w = store.wards.find(w => w.ward_number === wNum);
+      if (w) {
+        w.ward_officer_name = lead ? lead.full_name : 'Unassigned';
+        w.contact_phone = lead ? lead.phone : 'N/A';
+      }
+      const nw = NAVSARI_WARDS.find(w => w.ward_number === wNum);
+      if (nw) {
+        nw.ward_officer_name = lead ? lead.full_name : 'Unassigned';
+        nw.contact_phone = lead ? lead.phone : 'N/A';
+      }
+    }
+
+    return true;
   }
 
   // =========================================================================
@@ -7681,13 +7980,6 @@ export class DbRepository {
           `UPDATE activity_registrations
            SET attendance_status = 'absent', updated_at = NOW()
            WHERE activity_id = $1 AND (attendance_status IS NULL OR attendance_status = 'not_marked' OR attendance_status = '' OR attendance_status = 'registered')`,
-          [activityId]
-        ).catch(() => { });
-
-        await pool.query(
-          `UPDATE drive_registrations
-           SET attendance_status = 'absent'
-           WHERE drive_id = $1 AND (attendance_status IS NULL OR attendance_status = 'not_marked' OR attendance_status = '' OR attendance_status = 'registered')`,
           [activityId]
         ).catch(() => { });
 

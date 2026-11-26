@@ -54,6 +54,31 @@ export interface ComplaintCategory {
   is_active: boolean;
   max_approval_days?: number;
   max_work_days?: number;
+  approval_sla_days?: number;
+  approval_sla_hours?: number;
+  approval_sla_minutes?: number;
+  work_sla_days?: number;
+  work_sla_hours?: number;
+  work_sla_minutes?: number;
+  total_approval_sla_minutes?: number;
+  total_work_sla_minutes?: number;
+  created_at?: string;
+}
+
+export interface WardOfficerAssignmentHistory {
+  id: string;
+  ward_number: number;
+  ward_name: string;
+  officer_id: string;
+  officer_user_id?: string;
+  officer_name: string;
+  officer_phone?: string;
+  officer_email?: string;
+  designation?: string;
+  assigned_at: string;
+  relieved_at?: string | null;
+  status: 'active' | 'relieved' | 'transferred';
+  notes?: string;
   created_at?: string;
 }
 
@@ -914,6 +939,8 @@ export interface WardHotspot {
 }
 
 export interface WardCleanlinessScore {
+  ward_number?: number;
+  ward_name?: string;
   current_score: number;
   previous_score: number;
   monthly_trend: { month: string; score: number }[];

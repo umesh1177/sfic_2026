@@ -38,7 +38,7 @@ export const WardCleanlinessScoreView: React.FC = () => {
     return (
       <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0]">
         <RefreshCw className="w-8 h-8 text-[#095c54] animate-spin mx-auto" />
-        <p className="text-xs font-bold text-slate-500 mt-2">Computing Ward 3 Cleanliness Index...</p>
+        <p className="text-xs font-bold text-slate-500 mt-2">Computing Dynamic Cleanliness Index...</p>
       </div>
     );
   }
@@ -56,6 +56,9 @@ export const WardCleanlinessScoreView: React.FC = () => {
             <Award className="w-5 h-5 text-[#095c54]" />
             <span>Ward Cleanliness Score Index</span>
           </h2>
+          {scoreData.ward_name && (
+            <p className="text-xs font-bold text-slate-500 mt-0.5">{scoreData.ward_name}</p>
+          )}
         </div>
 
         <button

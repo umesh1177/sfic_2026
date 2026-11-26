@@ -260,6 +260,8 @@ apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, WardOfficerC
 // ============================================================================
 apiRouter.get('/admin/overview', softAuthenticate, AdminController.getOverview);
 apiRouter.get('/admin/wards', softAuthenticate, AdminController.getWards);
+apiRouter.put('/admin/wards/:id', softAuthenticate, AdminController.updateWard);
+apiRouter.get('/admin/wards/:wardNumber/officer-history', softAuthenticate, AdminController.getWardOfficerHistory);
 apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, AdminController.updateWardBoundary);
 apiRouter.get('/admin/city-boundary', softAuthenticate, AdminController.getCityBoundary);
 apiRouter.put('/admin/city-boundary', softAuthenticate, AdminController.updateCityBoundary);
@@ -269,6 +271,8 @@ apiRouter.post('/admin/boundary-history/:id/restore', softAuthenticate, AdminCon
 apiRouter.get('/admin/ward-officers', softAuthenticate, AdminController.getWardOfficers);
 apiRouter.post('/admin/ward-officers', softAuthenticate, AdminController.createWardOfficer);
 apiRouter.put('/admin/ward-officers/:id', softAuthenticate, AdminController.updateWardOfficer);
+apiRouter.delete('/admin/ward-officers/:id', softAuthenticate, AdminController.deleteWardOfficer);
+apiRouter.get('/admin/ward-officers/:officerId/ward-history', softAuthenticate, AdminController.getOfficerWardHistory);
 
 apiRouter.get('/admin/workers', softAuthenticate, AdminController.getWorkers);
 apiRouter.post('/admin/workers', softAuthenticate, AdminController.createWorker);

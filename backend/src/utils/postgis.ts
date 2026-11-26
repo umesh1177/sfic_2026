@@ -10,7 +10,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Near Lunsikui Ground, Navsari',
     ward_officer_name: 'Ramesh Patel',
     contact_phone: '+91 98251 01001',
-    cleanliness_score: 8.8,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9200, 20.9400],
       [72.9350, 20.9400],
@@ -27,7 +27,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Opp. Railway Station, Navsari',
     ward_officer_name: 'Dinesh Desai',
     contact_phone: '+91 98251 01002',
-    cleanliness_score: 7.9,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9350, 20.9400],
       [72.9500, 20.9400],
@@ -44,7 +44,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Dudhiya Talao Lake Complex, Navsari',
     ward_officer_name: 'Bhavesh Solanki',
     contact_phone: '+91 98251 01003',
-    cleanliness_score: 9.1,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9200, 20.9250],
       [72.9350, 20.9250],
@@ -61,7 +61,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Near Sayaji Library, Kaliawadi',
     ward_officer_name: 'Mitesh Naik',
     contact_phone: '+91 98251 01004',
-    cleanliness_score: 8.4,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9350, 20.9250],
       [72.9500, 20.9250],
@@ -78,7 +78,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Jalalpore Main Rd, Navsari',
     ward_officer_name: 'Kiritbhai Vashi',
     contact_phone: '+91 98251 01005',
-    cleanliness_score: 8.0,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9050, 20.9300],
       [72.9200, 20.9300],
@@ -95,7 +95,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Shantadevi Road Civic Center',
     ward_officer_name: 'Pravin Rathod',
     contact_phone: '+91 98251 01006',
-    cleanliness_score: 7.6,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9500, 20.9300],
       [72.9650, 20.9300],
@@ -112,7 +112,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'GIDC Office Sector 2, Navsari',
     ward_officer_name: 'Sunil Parekh',
     contact_phone: '+91 98251 01007',
-    cleanliness_score: 8.2,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9350, 20.9100],
       [72.9550, 20.9100],
@@ -129,7 +129,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Heritage Parsi Vad, Navsari',
     ward_officer_name: 'Cyrus Contractor',
     contact_phone: '+91 98251 01008',
-    cleanliness_score: 9.3,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9200, 20.9550],
       [72.9380, 20.9550],
@@ -146,7 +146,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Junathana Market Compound',
     ward_officer_name: 'Haresh Kansara',
     contact_phone: '+91 98251 01009',
-    cleanliness_score: 8.1,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9380, 20.9550],
       [72.9550, 20.9550],
@@ -163,7 +163,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Vejalpore Community Hall',
     ward_officer_name: 'Jagdish Ahir',
     contact_phone: '+91 98251 01010',
-    cleanliness_score: 8.5,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9500, 20.9150],
       [72.9700, 20.9150],
@@ -180,7 +180,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Sarbhan Chokdi Ward Center',
     ward_officer_name: 'Chetan Patel',
     contact_phone: '+91 98251 01011',
-    cleanliness_score: 8.7,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9000, 20.9100],
       [72.9200, 20.9100],
@@ -197,7 +197,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Eru Char Rasta, Near NAU Gate',
     ward_officer_name: 'Dr. Sanjay Chauhan',
     contact_phone: '+91 98251 01012',
-    cleanliness_score: 9.5,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.9000, 20.8900],
       [72.9300, 20.8900],
@@ -214,7 +214,7 @@ export const NAVSARI_WARDS: Ward[] = [
     office_address: 'Dandi Road Heritage Junction',
     ward_officer_name: 'Amit Tandel',
     contact_phone: '+91 98251 01013',
-    cleanliness_score: 9.2,
+    cleanliness_score: 100.0,
     boundary_coordinates: [
       [72.8800, 20.9200],
       [72.9050, 20.9200],

@@ -32,7 +32,35 @@ export class AdminController {
     return valid.length > 0 ? valid : [...ALL_WARD_OFFICER_TABS];
   }
   /**
-   * Helper to evaluate BOTH Approval Days SLA breaches AND Maximum Work Days SLA breaches
+   * Pure dynamic calculation of cleanliness score for every ward (1 to 13)
+   * Strictly based on real database complaints & SLA breaches (Zero static/fake seed scores).
+   * A ward with 0 complaints is pristine (100.0%).
+   */
+  public static computeDynamicWardScores(allComplaints: any[], allBreaches: any[] = []): Map<number, { score: number; total: number; resolved: number; active: number; breaches: number }> {
+    const wardMap = new Map<number, { score: number; total: number; resolved: number; active: number; breaches: number }>();
+    for (let w = 1; w <= 13; w++) {
+      const wardComps = allComplaints.filter(c => Number(c.location?.ward_number || c.ward_number || 0) === w);
+      const total = wardComps.length;
+      if (total === 0) {
+        // Zero complaints reported in this ward -> 100.0% clean
+        wardMap.set(w, { score: 100.0, total: 0, resolved: 0, active: 0, breaches: 0 });
+      } else {
+        const resolved = wardComps.filter(c => ['resolved', 'closed', 'verified_complete'].includes(c.status)).length;
+        const rejected = wardComps.filter(c => c.status === 'rejected').length;
+        const active = wardComps.filter(c => !['resolved', 'closed', 'rejected', 'verified_complete'].includes(c.status)).length;
+        const effective = Math.max(0, total - rejected);
+        const resRate = effective > 0 ? (resolved / effective) * 100 : 100;
+        const breaches = allBreaches.filter((b: any) => Number(b.ward_number) === w).length;
+        const penalty = active * 4 + breaches * 8;
+        const dynamicScore = Number(Math.max(10, Math.min(100, Math.round(0.7 * resRate + 0.3 * Math.max(0, 100 - penalty)))).toFixed(1));
+        wardMap.set(w, { score: dynamicScore, total, resolved, active, breaches });
+      }
+    }
+    return wardMap;
+  }
+
+  /**
+   * Helper to evaluate BOTH Approval Days/Hours/Minutes SLA breaches AND Maximum Work Days/Hours/Minutes SLA breaches
    * across live PostgreSQL + in-memory complaints and flag Ward Officers / Team Leaders.
    */
   public static async computeFlaggedOfficers(): Promise<Array<{
@@ -42,8 +70,12 @@ export class AdminController {
       category_name: string;
       submitted_at: string;
       days_pending: number;
+      minutes_pending: number;
+      overdue_duration_text: string;
       max_approval_days: number;
+      approval_sla_text?: string;
       max_work_days: number;
+      work_sla_text?: string;
       breach_type: 'approval_sla' | 'work_sla';
       team_leader_name?: string;
       team_name?: string;
@@ -79,6 +111,17 @@ export class AdminController {
       }
     };
 
+    const formatDuration = (totalMinutes: number): string => {
+      const d = Math.floor(totalMinutes / (24 * 60));
+      const h = Math.floor((totalMinutes % (24 * 60)) / 60);
+      const m = totalMinutes % 60;
+      const parts: string[] = [];
+      if (d > 0) parts.push(`${d}d`);
+      if (h > 0) parts.push(`${h}h`);
+      if (m > 0 || parts.length === 0) parts.push(`${m}m`);
+      return parts.join(' ');
+    };
+
     for (const complaint of allComplaints) {
       const st = String(complaint.status || '').toLowerCase();
       if (['resolved', 'closed', 'rejected', 'verified_complete'].includes(st)) continue;
@@ -88,22 +131,36 @@ export class AdminController {
           c.id === complaint.category_id ||
           c.category_name.toLowerCase() === String(complaint.category_name || '').toLowerCase()
       );
-      const maxApprovalDays = category?.max_approval_days ?? 2;
-      const maxWorkDays = category?.max_work_days ?? 3;
+
+      const approvalDays = category?.approval_sla_days ?? category?.max_approval_days ?? 2;
+      const approvalHours = category?.approval_sla_hours ?? 0;
+      const approvalMinutes = category?.approval_sla_minutes ?? 0;
+      const totalApprovalMinutes = (approvalDays * 24 + approvalHours) * 60 + approvalMinutes;
+
+      const workDays = category?.work_sla_days ?? category?.max_work_days ?? 3;
+      const workHours = category?.work_sla_hours ?? 0;
+      const workMinutes = category?.work_sla_minutes ?? 0;
+      const totalWorkMinutes = (workDays * 24 + workHours) * 60 + workMinutes;
+
       const wardNum = Number(complaint.location?.ward_number || complaint.ward_number || 3);
       const submittedTime = new Date(complaint.submitted_at || Date.now()).getTime();
-      const daysSinceSubmitted = Math.max(0, Math.floor((now - submittedTime) / (1000 * 60 * 60 * 24)));
+      const minutesSinceSubmitted = Math.max(0, Math.floor((now - submittedTime) / (1000 * 60)));
+      const daysSinceSubmitted = Math.floor(minutesSinceSubmitted / (24 * 60));
 
-      // 1. Maximum Approval Days SLA Breach
+      // 1. Approval SLA Breach Check (supports Days, Hours, Minutes!)
       if (st === 'submitted' || st === 'under_review') {
-        if (daysSinceSubmitted > maxApprovalDays) {
+        if (minutesSinceSubmitted > totalApprovalMinutes) {
+          const overdueMin = minutesSinceSubmitted - totalApprovalMinutes;
           attachBreach(complaint, {
             complaint_number: complaint.complaint_number,
             category_name: category?.category_name || complaint.category_name,
             submitted_at: complaint.submitted_at,
             days_pending: daysSinceSubmitted,
-            max_approval_days: maxApprovalDays,
-            max_work_days: maxWorkDays,
+            minutes_pending: minutesSinceSubmitted,
+            overdue_duration_text: `${formatDuration(overdueMin)} overdue`,
+            max_approval_days: approvalDays,
+            approval_sla_text: formatDuration(totalApprovalMinutes),
+            max_work_days: workDays,
             breach_type: 'approval_sla',
             status: complaint.status,
             ward_number: wardNum
@@ -112,7 +169,7 @@ export class AdminController {
         continue;
       }
 
-      // 2. Maximum Work Days SLA Breach (approved / assigned / in_progress / team_assigned / reopened)
+      // 2. Work SLA Breach Check (supports Days, Hours, Minutes!)
       const attempts = await DbRepository.getAssignmentsAndEvidenceForComplaint(
         complaint.id,
         complaint.complaint_number
@@ -121,16 +178,21 @@ export class AdminController {
       const workBaseTime = new Date(
         latestAttempt?.assigned_at || complaint.approved_at || complaint.submitted_at || Date.now()
       ).getTime();
-      const workDaysElapsed = Math.max(0, Math.floor((now - workBaseTime) / (1000 * 60 * 60 * 24)));
+      const workMinutesElapsed = Math.max(0, Math.floor((now - workBaseTime) / (1000 * 60)));
+      const workDaysElapsed = Math.floor(workMinutesElapsed / (24 * 60));
 
-      if (workDaysElapsed > maxWorkDays) {
+      if (workMinutesElapsed > totalWorkMinutes) {
+        const overdueMin = workMinutesElapsed - totalWorkMinutes;
         attachBreach(complaint, {
           complaint_number: complaint.complaint_number,
           category_name: category?.category_name || complaint.category_name,
           submitted_at: complaint.submitted_at,
           days_pending: workDaysElapsed,
-          max_approval_days: maxApprovalDays,
-          max_work_days: maxWorkDays,
+          minutes_pending: workMinutesElapsed,
+          overdue_duration_text: `${formatDuration(overdueMin)} overdue`,
+          max_approval_days: approvalDays,
+          max_work_days: workDays,
+          work_sla_text: formatDuration(totalWorkMinutes),
           breach_type: 'work_sla',
           team_leader_name: latestAttempt?.team_leader_name || (complaint as any).temporary_team_leader_name || undefined,
           team_name: latestAttempt?.team_name || (complaint as any).assigned_team_name || undefined,
@@ -164,9 +226,13 @@ export class AdminController {
       const activeComplaints = allComplaints.filter(c => !['resolved', 'closed', 'rejected', 'verified_complete'].includes(c.status)).length;
       const pendingApprovalComplaints = allComplaints.filter(c => c.status === 'submitted' || c.status === 'under_review').length;
 
-      // Calculate avg cleanliness score
-      const totalCleanliness = store.wards.reduce((acc, w) => acc + (w.cleanliness_score || 85), 0);
-      const avgCleanliness = (totalCleanliness / Math.max(1, store.wards.length)).toFixed(1);
+      // Calculate avg cleanliness score dynamically across all 13 wards
+      const dynamicWardScores = AdminController.computeDynamicWardScores(allComplaints, allBreaches);
+      let totalWardScore = 0;
+      for (let w = 1; w <= 13; w++) {
+        totalWardScore += dynamicWardScores.get(w)?.score ?? 100.0;
+      }
+      const avgCleanliness = (totalWardScore / 13).toFixed(1);
 
       // Top complaints by category
       const categoryCounts = store.categories.map(cat => ({
@@ -194,7 +260,7 @@ export class AdminController {
             approval_sla_breaches_count: approvalSlaBreaches,
             work_sla_breaches_count: workSlaBreaches,
             avg_cleanliness_score: parseFloat(avgCleanliness),
-            sla_compliance_rate: Math.max(0, Math.round(((totalComplaints - allBreaches.length) / Math.max(1, totalComplaints)) * 100))
+            sla_compliance_rate: totalComplaints > 0 ? Math.max(0, Math.round(((totalComplaints - allBreaches.length) / totalComplaints) * 100)) : 100
           },
           flagged_officers: flagged,
           category_breakdown: categoryCounts,
@@ -218,6 +284,10 @@ export class AdminController {
       for (const dc of dbComplaints) mergedComplaintsMap.set(dc.id, dc);
       const allComplaints = Array.from(mergedComplaintsMap.values());
 
+      const flagged = await AdminController.computeFlaggedOfficers().catch(() => []);
+      const allBreaches = flagged.flatMap(f => f.overdue_complaints);
+      const dynamicWardScores = AdminController.computeDynamicWardScores(allComplaints, allBreaches);
+
       const dbWorkers = await DbRepository.getWorkersList().catch(() => []);
       const wardHistoryRows = await DbRepository.getBoundaryHistory('ward').catch(() => []);
       const latestWardBoundaryByNum = new Map<number, [number, number][]>();
@@ -240,7 +310,7 @@ export class AdminController {
 
         const primaryOfficer = assignedOfficers[0];
         const activeComplaints = allComplaints.filter(
-          c => Number(c.location?.ward_number) === ward.ward_number && !['resolved', 'closed', 'rejected'].includes(c.status)
+          c => Number(c.location?.ward_number || c.ward_number) === ward.ward_number && !['resolved', 'closed', 'rejected', 'verified_complete'].includes(c.status)
         ).length;
 
         const wardDbWorkers = dbWorkers.filter((w: any) => Number(w.ward_number) === ward.ward_number);
@@ -259,10 +329,17 @@ export class AdminController {
         ward.ward_officer_name = resolvedOfficerName;
         ward.contact_phone = resolvedPhone;
 
+        const wardScoreInfo = dynamicWardScores.get(ward.ward_number) || { score: 100.0, total: 0, resolved: 0, active: 0, breaches: 0 };
+        ward.cleanliness_score = wardScoreInfo.score;
+
         return {
           ...ward,
           ward_officer_name: resolvedOfficerName,
           contact_phone: resolvedPhone,
+          cleanliness_score: wardScoreInfo.score,
+          total_complaints_count: wardScoreInfo.total,
+          active_complaints_count: wardScoreInfo.active,
+          resolved_complaints_count: wardScoreInfo.resolved,
           boundary_coordinates:
             latestWardBoundaryByNum.get(ward.ward_number) || overrides[ward.id] || ward.boundary_coordinates,
           assigned_officers: assignedOfficers.map(o => ({
@@ -273,12 +350,163 @@ export class AdminController {
             email: o.email,
             designation: o.designation
           })),
-          active_complaints_count: activeComplaints,
           total_workers_count: totalWorkers
         };
       });
 
       res.status(200).json({ success: true, data: enrichedWards });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * PUT /api/admin/wards/:id
+   * Super Admin edits ward details and assigns/replaces Ward Officer end-to-end
+   */
+  public static async updateWard(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const {
+        ward_name,
+        ward_name_gu,
+        office_address,
+        contact_phone,
+        officer_id
+      } = req.body;
+
+      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      const ward = store.wards.find(w => w.id === id || String(w.ward_number) === String(id));
+      if (!ward) {
+        res.status(404).json({ success: false, error: `Ward not found with identifier: ${id}` });
+        return;
+      }
+
+      if (ward_name) ward.ward_name = ward_name.trim();
+      if (ward_name_gu) ward.ward_name_gu = ward_name_gu.trim();
+      if (office_address) ward.office_address = office_address.trim();
+      if (contact_phone) ward.contact_phone = contact_phone.trim();
+
+      const nw = NAVSARI_WARDS.find(w => w.ward_number === ward.ward_number);
+      if (nw) {
+        if (ward_name) nw.ward_name = ward.ward_name;
+        if (ward_name_gu) nw.ward_name_gu = ward.ward_name_gu;
+        if (office_address) nw.office_address = ward.office_address;
+        if (contact_phone) nw.contact_phone = ward.contact_phone;
+      }
+
+      // If officer_id is supplied for replacement:
+      if (officer_id !== undefined) {
+        if (officer_id === '' || officer_id === 'unassigned' || officer_id === null) {
+          // Relieve any current officers from this ward
+          await DbRepository.relieveWardOfficerFromWard(ward.ward_number, '', 'Unassigned by Super Admin');
+          ward.ward_officer_name = 'Unassigned';
+          ward.contact_phone = contact_phone || 'N/A';
+          if (nw) {
+            nw.ward_officer_name = 'Unassigned';
+            nw.contact_phone = ward.contact_phone;
+          }
+          // Remove this ward from all officers
+          for (const o of store.wardOfficers) {
+            if (o.assigned_wards.includes(ward.ward_number)) {
+              o.assigned_wards = o.assigned_wards.filter(w => w !== ward.ward_number);
+              await DbRepository.saveWardOfficerToDb(o);
+            }
+          }
+        } else {
+          const targetOfficer = store.wardOfficers.find(o => o.id === officer_id || o.user_id === officer_id);
+          if (targetOfficer) {
+            // Relieve other officers previously assigned to this ward
+            for (const o of store.wardOfficers) {
+              if (o.id !== targetOfficer.id && o.assigned_wards.includes(ward.ward_number)) {
+                o.assigned_wards = o.assigned_wards.filter(w => w !== ward.ward_number);
+                await DbRepository.relieveWardOfficerFromWard(ward.ward_number, o.id, `Replaced by ${targetOfficer.full_name}`);
+                await DbRepository.saveWardOfficerToDb(o);
+              }
+            }
+
+            // Assign new officer
+            if (!targetOfficer.assigned_wards.includes(ward.ward_number)) {
+              targetOfficer.assigned_wards.push(ward.ward_number);
+              targetOfficer.assigned_wards.sort((a, b) => a - b);
+            }
+            targetOfficer.is_active = true;
+
+            await DbRepository.recordWardOfficerAssignment({
+              ward_number: ward.ward_number,
+              ward_name: ward.ward_name,
+              officer_id: targetOfficer.id,
+              officer_user_id: targetOfficer.user_id,
+              officer_name: targetOfficer.full_name,
+              officer_phone: targetOfficer.phone,
+              officer_email: targetOfficer.email,
+              designation: targetOfficer.designation,
+              notes: 'Assigned / replaced from Ward Management'
+            });
+
+            await DbRepository.saveWardOfficerToDb(targetOfficer);
+
+            ward.ward_officer_name = targetOfficer.full_name;
+            ward.contact_phone = targetOfficer.phone;
+            if (nw) {
+              nw.ward_officer_name = targetOfficer.full_name;
+              nw.contact_phone = targetOfficer.phone;
+            }
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Ward ${ward.ward_number} details updated successfully.`,
+        data: ward
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/admin/wards/:wardNumber/officer-history
+   */
+  public static async getWardOfficerHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const wardNumber = Number(req.params.wardNumber);
+      const history = await DbRepository.getWardOfficerHistory(wardNumber);
+      res.status(200).json({ success: true, data: history });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/admin/ward-officers/:officerId/ward-history
+   */
+  public static async getOfficerWardHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { officerId } = req.params;
+      const history = await DbRepository.getOfficerWardHistory(officerId);
+      res.status(200).json({ success: true, data: history });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * DELETE /api/admin/ward-officers/:id
+   */
+  public static async deleteWardOfficer(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const success = await DbRepository.deleteWardOfficerFromDb(id);
+      if (!success) {
+        res.status(404).json({ success: false, error: 'Ward Officer not found.' });
+        return;
+      }
+      res.status(200).json({
+        success: true,
+        message: 'Ward Officer deleted successfully. Their login credentials have been revoked and all assigned wards are updated to unassigned.'
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -556,16 +784,41 @@ export class AdminController {
       const flaggedData = await AdminController.computeFlaggedOfficers();
       const flaggedOfficerMap = new Map(flaggedData.map(f => [f.officer.id, f.overdue_complaints]));
 
+      const dbComplaints = await DbRepository.getComplaints({}).catch(() => []);
+      const mergedComplaintsMap = new Map<string, any>();
+      for (const sc of (store.complaints || [])) mergedComplaintsMap.set(sc.id, sc);
+      for (const dc of dbComplaints) mergedComplaintsMap.set(dc.id, dc);
+      const allComplaints = Array.from(mergedComplaintsMap.values());
+      const allBreaches = flaggedData.flatMap(f => f.overdue_complaints);
+      const dynamicWardScores = AdminController.computeDynamicWardScores(allComplaints, allBreaches);
+
       const officers = store.wardOfficers.map(officer => {
         const overdue = flaggedOfficerMap.get(officer.id) || [];
+        const assignedWards = Array.isArray(officer.assigned_wards) ? officer.assigned_wards.map(Number) : [];
+        let officerScore = 100.0;
+        let officerResolved = 0;
+        if (assignedWards.length > 0) {
+          let sum = 0;
+          for (const w of assignedWards) {
+            const info = dynamicWardScores.get(w);
+            sum += info?.score ?? 100.0;
+            officerResolved += info?.resolved ?? 0;
+          }
+          officerScore = Number((sum / assignedWards.length).toFixed(1));
+        }
+        officer.cleanliness_score = officerScore;
+        officer.total_resolved = officerResolved;
+
         return {
           ...officer,
+          cleanliness_score: officerScore,
+          total_resolved: officerResolved,
           flagged: overdue.length > 0,
           flagged_count: overdue.length,
           flagged_reasons: overdue.map(o =>
             o.breach_type === 'work_sla'
-              ? `Work Days SLA Breach: #${o.complaint_number} (${o.category_name}${o.team_leader_name ? ` · Leader: ${o.team_leader_name}` : ''}) active for ${o.days_pending} days (Max Work Days: ${o.max_work_days}d)`
-              : `Approval SLA Breach: #${o.complaint_number} (${o.category_name}) pending for ${o.days_pending} days (Max Approval Days: ${o.max_approval_days}d)`
+              ? `Work SLA Breach: #${o.complaint_number} (${o.category_name}${o.team_leader_name ? ` · Leader: ${o.team_leader_name}` : ''}) [${o.overdue_duration_text || `${o.days_pending}d`}] · Limit: ${o.work_sla_text || `${o.max_work_days}d`}`
+              : `Approval SLA Breach: #${o.complaint_number} (${o.category_name}) [${o.overdue_duration_text || `${o.days_pending}d`}] · Limit: ${o.approval_sla_text || `${o.max_approval_days}d`}`
           )
         };
       });
@@ -1081,13 +1334,29 @@ export class AdminController {
         description,
         icon,
         max_approval_days,
-        max_work_days
+        max_work_days,
+        approval_sla_days,
+        approval_sla_hours,
+        approval_sla_minutes,
+        work_sla_days,
+        work_sla_hours,
+        work_sla_minutes
       } = req.body;
 
       if (!category_name || !description) {
         res.status(400).json({ success: false, error: 'Category name and description are required.' });
         return;
       }
+
+      const appDays = approval_sla_days !== undefined ? Number(approval_sla_days) : (Number(max_approval_days) || 2);
+      const appHours = Number(approval_sla_hours) || 0;
+      const appMins = Number(approval_sla_minutes) || 0;
+      const totalAppMins = (appDays * 24 * 60) + (appHours * 60) + appMins;
+
+      const wrkDays = work_sla_days !== undefined ? Number(work_sla_days) : (Number(max_work_days) || 5);
+      const wrkHours = Number(work_sla_hours) || 0;
+      const wrkMins = Number(work_sla_minutes) || 0;
+      const totalWrkMins = (wrkDays * 24 * 60) + (wrkHours * 60) + wrkMins;
 
       const nextId = `cat-${String(store.categories.length + 1).padStart(2, '0')}`;
       const newCategory: ComplaintCategory = {
@@ -1098,8 +1367,16 @@ export class AdminController {
         description: description.trim(),
         icon: icon?.trim() || 'HelpCircle',
         is_active: true,
-        max_approval_days: Math.max(1, Number(max_approval_days) || 2),
-        max_work_days: Math.max(1, Number(max_work_days) || 5),
+        max_approval_days: Math.max(1, Math.ceil(totalAppMins / 1440) || 2),
+        max_work_days: Math.max(1, Math.ceil(totalWrkMins / 1440) || 5),
+        approval_sla_days: appDays,
+        approval_sla_hours: appHours,
+        approval_sla_minutes: appMins,
+        work_sla_days: wrkDays,
+        work_sla_hours: wrkHours,
+        work_sla_minutes: wrkMins,
+        total_approval_sla_minutes: totalAppMins,
+        total_work_sla_minutes: totalWrkMins,
         created_at: new Date().toISOString()
       };
 
@@ -1107,7 +1384,7 @@ export class AdminController {
 
       res.status(201).json({
         success: true,
-        message: `Complaint Category "${newCategory.category_name}" added successfully with SLA: ${newCategory.max_approval_days} days approval / ${newCategory.max_work_days} days resolution.`,
+        message: `Complaint Category "${newCategory.category_name}" added successfully with SLA: ${appDays}d ${appHours}h ${appMins}m approval / ${wrkDays}d ${wrkHours}h ${wrkMins}m work.`,
         data: newCategory
       });
     } catch (err: any) {
@@ -1129,6 +1406,12 @@ export class AdminController {
         icon,
         max_approval_days,
         max_work_days,
+        approval_sla_days,
+        approval_sla_hours,
+        approval_sla_minutes,
+        work_sla_days,
+        work_sla_hours,
+        work_sla_minutes,
         is_active
       } = req.body;
 
@@ -1143,13 +1426,40 @@ export class AdminController {
       if (category_name_hi) category.category_name_hi = category_name_hi.trim();
       if (description) category.description = description.trim();
       if (icon) category.icon = icon.trim();
-      if (max_approval_days !== undefined) category.max_approval_days = Math.max(1, Number(max_approval_days));
-      if (max_work_days !== undefined) category.max_work_days = Math.max(1, Number(max_work_days));
+
+      const appDays = approval_sla_days !== undefined ? Number(approval_sla_days) : (category.approval_sla_days ?? category.max_approval_days ?? 2);
+      const appHours = approval_sla_hours !== undefined ? Number(approval_sla_hours) : (category.approval_sla_hours ?? 0);
+      const appMins = approval_sla_minutes !== undefined ? Number(approval_sla_minutes) : (category.approval_sla_minutes ?? 0);
+      const totalAppMins = (appDays * 24 * 60) + (appHours * 60) + appMins;
+
+      const wrkDays = work_sla_days !== undefined ? Number(work_sla_days) : (category.work_sla_days ?? category.max_work_days ?? 5);
+      const wrkHours = work_sla_hours !== undefined ? Number(work_sla_hours) : (category.work_sla_hours ?? 0);
+      const wrkMins = work_sla_minutes !== undefined ? Number(work_sla_minutes) : (category.work_sla_minutes ?? 0);
+      const totalWrkMins = (wrkDays * 24 * 60) + (wrkHours * 60) + wrkMins;
+
+      category.approval_sla_days = appDays;
+      category.approval_sla_hours = appHours;
+      category.approval_sla_minutes = appMins;
+      category.total_approval_sla_minutes = totalAppMins;
+      category.max_approval_days = Math.max(1, Math.ceil(totalAppMins / 1440) || 2);
+
+      category.work_sla_days = wrkDays;
+      category.work_sla_hours = wrkHours;
+      category.work_sla_minutes = wrkMins;
+      category.total_work_sla_minutes = totalWrkMins;
+      category.max_work_days = Math.max(1, Math.ceil(totalWrkMins / 1440) || 5);
+
+      if (max_approval_days !== undefined && approval_sla_days === undefined) {
+        category.max_approval_days = Math.max(1, Number(max_approval_days));
+      }
+      if (max_work_days !== undefined && work_sla_days === undefined) {
+        category.max_work_days = Math.max(1, Number(max_work_days));
+      }
       if (is_active !== undefined) category.is_active = Boolean(is_active);
 
       res.status(200).json({
         success: true,
-        message: `Category "${category.category_name}" updated successfully.`,
+        message: `Category "${category.category_name}" updated successfully (SLA: ${appDays}d ${appHours}h ${appMins}m / ${wrkDays}d ${wrkHours}h ${wrkMins}m).`,
         data: category
       });
     } catch (err: any) {
@@ -1731,18 +2041,20 @@ export class AdminController {
         100,
         50 + (dbCommunities || []).length * 10 + completedDrives * 15 + Math.max(0, (dbCommunityProblems || []).length - openCommunityProblems) * 10
       );
-      const dynamicCleanlinessScore = Number(
-        Math.min(
-          100,
-          Math.max(
-            0,
-            0.4 * resolutionRatePct +
-              0.25 * slaCompliancePct +
-              0.2 * hotspotControlScore +
-              0.15 * participationScore
-          )
-        ).toFixed(1)
-      );
+      const dynamicCleanlinessScore = totalComplaints === 0
+        ? 100.0
+        : Number(
+            Math.min(
+              100,
+              Math.max(
+                0,
+                0.4 * resolutionRatePct +
+                  0.25 * slaCompliancePct +
+                  0.2 * hotspotControlScore +
+                  0.15 * participationScore
+              )
+            ).toFixed(1)
+          );
       const cleanlinessGrade =
         dynamicCleanlinessScore >= 90
           ? 'A+'
@@ -1770,6 +2082,13 @@ export class AdminController {
           title: 'Active SLA Escalation Required',
           detail: `Ward ${wardNumber} currently has ${totalSlaBreaches} overdue complaint${totalSlaBreaches === 1 ? '' : 's'} (${approvalSlaBreaches} approval breach${approvalSlaBreaches === 1 ? '' : 'es'}, ${workSlaBreaches} work deadline breach${workSlaBreaches === 1 ? '' : 'es'}). Immediate officer intervention is recommended.`,
           metric: `${slaCompliancePct}% SLA`
+        });
+      } else if (totalComplaints === 0) {
+        executiveInsights.push({
+          type: 'positive',
+          title: 'Pristine Cleanliness Record',
+          detail: `Ward ${wardNumber} currently has 0 civic complaints filed. The ward is maintained in pristine condition with 100% cleanliness score.`,
+          metric: '100% Clean'
         });
       } else {
         executiveInsights.push({

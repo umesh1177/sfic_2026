@@ -1512,6 +1512,26 @@ class ApiService {
     }>('/admin/wards');
   }
 
+  async updateWard(id: string, data: {
+    ward_name?: string;
+    ward_name_gu?: string;
+    office_address?: string;
+    contact_phone?: string;
+    assigned_officer_id?: string | null;
+    officer_id?: string | null;
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>(`/admin/wards/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getWardOfficerHistory(wardNumber: number) {
+    return this.request<{ success: boolean; data: import('../types/index.js').WardOfficerAssignmentHistory[] }>(
+      `/admin/wards/${wardNumber}/officer-history`
+    );
+  }
+
   async updateWardBoundary(wardId: string, boundary_coordinates: [number, number][], location_summary?: string) {
     return this.request<{ success: boolean; message: string; data: any }>(`/admin/wards/${wardId}/boundary`, {
       method: 'PUT',
@@ -1606,6 +1626,18 @@ class ApiService {
     });
   }
 
+  async deleteWardOfficer(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/admin/ward-officers/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getOfficerWardHistory(officerId: string) {
+    return this.request<{ success: boolean; data: import('../types/index.js').WardOfficerAssignmentHistory[] }>(
+      `/admin/ward-officers/${officerId}/ward-history`
+    );
+  }
+
   async getAdminWorkers() {
     return this.request<{
       success: boolean; data: Array<{
@@ -1673,8 +1705,14 @@ class ApiService {
     category_name_hi?: string;
     description: string;
     icon: string;
-    max_approval_days: number;
-    max_work_days: number;
+    max_approval_days?: number;
+    max_work_days?: number;
+    approval_sla_days?: number;
+    approval_sla_hours?: number;
+    approval_sla_minutes?: number;
+    work_sla_days?: number;
+    work_sla_hours?: number;
+    work_sla_minutes?: number;
   }) {
     return this.request<{ success: boolean; message: string; data: import('../types/index.js').ComplaintCategory }>('/admin/categories', {
       method: 'POST',
@@ -1690,6 +1728,12 @@ class ApiService {
     icon?: string;
     max_approval_days?: number;
     max_work_days?: number;
+    approval_sla_days?: number;
+    approval_sla_hours?: number;
+    approval_sla_minutes?: number;
+    work_sla_days?: number;
+    work_sla_hours?: number;
+    work_sla_minutes?: number;
     is_active?: boolean;
   }) {
     return this.request<{ success: boolean; message: string; data: import('../types/index.js').ComplaintCategory }>(`/admin/categories/${id}`, {

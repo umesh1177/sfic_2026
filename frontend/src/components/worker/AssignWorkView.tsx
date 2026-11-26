@@ -182,28 +182,38 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
   useEffect(() => {
     let isMounted = true;
+    setDailyAttendance({ date: todayKey, status: 'none' });
     const fetchTodayAttendance = async () => {
       try {
         const res = await api.getWorkerTodayAttendance(currentTask?.id);
-        if (isMounted && res?.data && res.data.status && res.data.status !== 'none') {
-          const checkIn = res.data.rawCheckInTime
-            ? formatTimeIST(res.data.rawCheckInTime)
-            : (res.data.checkInTime ? formatTimeIST(res.data.checkInTime) : undefined);
-          const checkOut = res.data.rawCheckOutTime
-            ? formatTimeIST(res.data.rawCheckOutTime)
-            : (res.data.checkOutTime ? formatTimeIST(res.data.checkOutTime) : undefined);
+        if (isMounted && res?.data) {
+          if (res.data.status && res.data.status !== 'none') {
+            const checkIn = res.data.rawCheckInTime
+              ? formatTimeIST(res.data.rawCheckInTime)
+              : (res.data.checkInTime ? formatTimeIST(res.data.checkInTime) : undefined);
+            const checkOut = res.data.rawCheckOutTime
+              ? formatTimeIST(res.data.rawCheckOutTime)
+              : (res.data.checkOutTime ? formatTimeIST(res.data.checkOutTime) : undefined);
 
-          const rec: DailyAttendanceRecord = {
-            date: res.data.date || todayKey,
-            status: res.data.status,
-            checkInTime: checkIn,
-            checkOutTime: checkOut
-          };
-          setDailyAttendance(rec);
-          try {
-            localStorage.setItem(attendanceStorageKey, JSON.stringify(rec));
-          } catch {}
-          return;
+            const rec: DailyAttendanceRecord = {
+              date: res.data.date || todayKey,
+              status: res.data.status,
+              checkInTime: checkIn,
+              checkOutTime: checkOut
+            };
+            setDailyAttendance(rec);
+            try {
+              localStorage.setItem(attendanceStorageKey, JSON.stringify(rec));
+            } catch {}
+            return;
+          } else if (res.data.status === 'none') {
+            // Task has NO attendance yet today - show fresh punch-in
+            setDailyAttendance({ date: todayKey, status: 'none' });
+            try {
+              localStorage.removeItem(attendanceStorageKey);
+            } catch {}
+            return;
+          }
         }
       } catch {
         // Fallback to local cache if network/offline
