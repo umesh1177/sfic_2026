@@ -1,5 +1,8 @@
-# Lightweight Render Free-Tier requirements (fits comfortably in 512MB RAM & fast cold boot)
-# Uses Pillow + NumPy visual feature extraction + Online k-NN incremental trainer + relevance gate
+# Render Free-Tier requirements for PyTorch CPU + OpenCV Headless + FastAPI
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2.0
+torchvision>=0.17.0
+opencv-python-headless>=4.9.0
 fastapi==0.115.6
 uvicorn==0.34.0
 pydantic==2.10.4

@@ -7,7 +7,13 @@ Techniques adapted from Image_Classification_Project:
   3. Dynamic aspect-ratio preserving resizing to 224x224
 """
 
-import cv2
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+    cv2 = None
+
 import numpy as np
 from PIL import Image
 from typing import Tuple, Optional
@@ -15,6 +21,8 @@ from typing import Tuple, Optional
 
 def apply_median_filter(img_np: np.ndarray, kernel_size: int = 3) -> np.ndarray:
     """Applies median blur to eliminate camera speckles while preserving sharp waste edges."""
+    if not HAS_CV2 or cv2 is None:
+        return img_np
     if kernel_size % 2 == 0:
         kernel_size += 1
     return cv2.medianBlur(img_np, kernel_size)
@@ -25,6 +33,8 @@ def apply_clahe(img_np: np.ndarray, clip_limit: float = 2.0, grid_size: Tuple[in
     Applies CLAHE on the L (Luminance) channel in LAB color space.
     Normalizes deep shadows and blown-out bright sunlight in Indian outdoor scenes.
     """
+    if not HAS_CV2 or cv2 is None:
+        return img_np
     try:
         lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
         l, a, b = cv2.split(lab)
@@ -50,6 +60,10 @@ def preprocess_cv_image(
         img_rgb = Image.fromarray(image).convert("RGB")
     else:
         img_rgb = image.convert("RGB")
+
+    if not HAS_CV2 or cv2 is None:
+        return img_rgb.resize(target_size, Image.Resampling.BILINEAR)
+
     arr = np.array(img_rgb)
 
     if use_median:

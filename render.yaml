@@ -1,11 +1,12 @@
 # Render Blueprint for Swachh Setu / My Clean Navsari (SFIC 2026)
-# Deploy all services with 1 click: Render Dashboard -> New -> Blueprint -> select this repo & branch (`umesh`)
+# Deploy all services with 1 click: Render Dashboard -> New -> Blueprint -> select this repo & branch (`kirtan`)
 
 databases:
   - name: swachh-setu-db
     plan: free
     databaseName: my_clean_navsari
     user: swachh_admin
+    postgresMajorVersion: "16"
 
 services:
   # 1. Node.js + Express + PostgreSQL Backend API
@@ -19,7 +20,7 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
-        value: 22.20.0
+        value: 20.19.0
       - key: NODE_ENV
         value: production
       - key: DB_SSL
@@ -36,7 +37,7 @@ services:
           name: swachh-setu-ml
           property: hostport
 
-  # 2. FastAPI AI/ML Microservice (Lightweight Pillow + NumPy + Online k-NN for Render 512MB Free Tier)
+  # 2. FastAPI AI/ML Microservice (EfficientNet-B0 + Continual Prototype Memory)
   - type: web
     name: swachh-setu-ml
     runtime: python
@@ -49,7 +50,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DISABLE_TORCH
-        value: "true"
+        value: "false"
 
   # 3. React + Vite + Tailwind Static Frontend
   - type: web
@@ -64,12 +65,12 @@ services:
         destination: /index.html
     envVars:
       - key: NODE_VERSION
-        value: 22.20.0
+        value: 20.19.0
       - key: VITE_API_URL
         fromService:
           type: web
           name: swachh-setu-backend
-          property: host
+          property: url
       - key: VITE_MAP_TILE_URL
         value: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
       - key: VITE_MAP_SUBDOMAINS
