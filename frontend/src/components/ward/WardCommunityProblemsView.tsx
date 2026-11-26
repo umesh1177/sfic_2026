@@ -16,7 +16,8 @@ import {
   RotateCcw,
   Wrench,
   Sparkles,
-  Flag
+  Flag,
+  ExternalLink
 } from 'lucide-react';
 import { CommunityProblem } from '../../types/index.js';
 import { api } from '../../services/api.js';
@@ -66,7 +67,8 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
   const [title, setTitle] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [locationName, setLocationName] = useState<string>('');
-  const [address, setAddress] = useState<string>(`Ward ${wardNumber}, Navsari Municipal Area`);
+  const [address, setAddress] = useState<string>('');
+  const [locationUrl, setLocationUrl] = useState<string>('');
   const [latitude, setLatitude] = useState<number>(20.9470);
   const [longitude, setLongitude] = useState<number>(72.9280);
   const [actionPlan, setActionPlan] = useState<string>('');
@@ -81,6 +83,26 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
   const [imageUrl, setImageUrl] = useState<string>(
     'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80'
   );
+
+  const handleLocationUrlChange = (val: string) => {
+    setLocationUrl(val);
+    if (!val.trim()) return;
+    // Extract coordinates from Google Maps URLs or direct lat,lng format
+    const atMatch = val.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const qMatch = val.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const llMatch = val.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const plainMatch = val.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+
+    const match = atMatch || qMatch || llMatch || plainMatch;
+    if (match) {
+      const parsedLat = parseFloat(match[1]);
+      const parsedLng = parseFloat(match[2]);
+      if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+        setLatitude(parsedLat);
+        setLongitude(parsedLng);
+      }
+    }
+  };
 
   const fetchProblems = async () => {
     setLoading(true);
@@ -97,7 +119,6 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
   };
 
   useEffect(() => {
-    setAddress(`Ward ${wardNumber}, Navsari Municipal Area`);
     fetchProblems();
   }, [wardNumber]);
 
@@ -140,17 +161,21 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
         estimated_volunteers_needed: volunteersNeeded,
         suggested_equipment: selectedEquipment,
         image_url: imageUrl.trim(),
+        location_url: locationUrl.trim() || undefined,
         allow_multiple_orgs: allowMultipleOrgs
       });
 
       if (res.success) {
+        if (res.data) {
+          setProblems(prev => [res.data, ...prev]);
+        }
         setSuccessMsg(`Civic problem published for Ward ${wardNumber} organizations!`);
         setIsCreateOpen(false);
         setTitle('');
         setDescription('');
         setActionPlan('');
         setLocationName('');
-        fetchProblems();
+        await fetchProblems();
         setTimeout(() => setSuccessMsg(null), 5000);
       }
     } catch (err: any) {
@@ -164,7 +189,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
     try {
       await api.reopenWardCommunityProblem(id);
       setSuccessMsg('Problem reopened for community organizations.');
-      fetchProblems();
+      await fetchProblems();
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Could not reopen problem.');
@@ -177,6 +202,7 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
       await api.deleteWardCommunityProblem(id);
       setProblems(prev => prev.filter(p => p.id !== id));
       setSuccessMsg('Problem removed.');
+      await fetchProblems();
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Could not remove problem.');
@@ -303,22 +329,67 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
               </div>
             </div>
 
-            {/* Multi-Org Collaboration Policy */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-xs font-extrabold text-[#0f2925] block">
-                  Allow Multiple Organizations on This Problem
+            {/* Single vs Multiple Organization Assignment Option */}
+            <div className="space-y-2">
+              <label className="text-xs font-extrabold text-[#0f2925] flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#095c54]" />
+                  <span>Organization Assignment Policy</span>
                 </span>
-                <span className="text-[11px] text-slate-500">
-                  When enabled, multiple organizations can run drives on this site simultaneously.
-                </span>
+                <span className="text-[10px] text-slate-500 font-bold">Select Problem Mode</span>
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAllowMultipleOrgs(false)}
+                  className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 ${
+                    !allowMultipleOrgs
+                      ? 'bg-amber-50/80 border-amber-500 ring-2 ring-amber-500/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                    !allowMultipleOrgs ? 'border-amber-600' : 'border-slate-300'
+                  }`}>
+                    {!allowMultipleOrgs && <span className="w-2 h-2 rounded-full bg-amber-600" />}
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                      <span>🔒 Single Organization</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-amber-200/80 text-amber-900 font-black">Exclusive</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 block mt-1 leading-snug">
+                      Only 1 organization can take this problem. Once their drive is approved, this problem will <strong>disappear for all other organizations</strong>.
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAllowMultipleOrgs(true)}
+                  className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 ${
+                    allowMultipleOrgs
+                      ? 'bg-emerald-50/80 border-[#095c54] ring-2 ring-[#095c54]/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                    allowMultipleOrgs ? 'border-[#095c54]' : 'border-slate-300'
+                  }`}>
+                    {allowMultipleOrgs && <span className="w-2 h-2 rounded-full bg-[#095c54]" />}
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <span>👥 Multiple Organizations</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-emerald-200/80 text-emerald-900 font-black">Open</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 block mt-1 leading-snug">
+                      Allows multiple organizations to send drive requests on this site simultaneously even after approvals.
+                    </span>
+                  </div>
+                </button>
               </div>
-              <input
-                type="checkbox"
-                checked={allowMultipleOrgs}
-                onChange={e => setAllowMultipleOrgs(e.target.checked)}
-                className="w-4 h-4 accent-[#095c54] cursor-pointer shrink-0"
-              />
             </div>
 
             {/* Equipment Chips */}
@@ -374,29 +445,57 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
             <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-3">
               <label className="text-xs font-extrabold text-[#0f2925] flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-[#095c54]" />
-                <span>Location &amp; Landmark (Ward {wardNumber})</span>
+                <span>Location &amp; Landmark</span>
               </label>
               <input
                 type="text"
-                placeholder="Landmark / Spot Name"
+                placeholder="Landmark / Spot Name (e.g. Near Dudhiya Talao Lake Gate)"
                 value={locationName}
                 onChange={e => setLocationName(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
               />
               <input
                 type="text"
-                placeholder="Full Street Address"
+                placeholder="Street / Area Address"
                 value={address}
                 onChange={e => setAddress(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54]"
               />
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                  <span className="flex items-center gap-1 text-[#095c54]">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Location URL / Direct Coordinates</span>
+                  </span>
+                  {locationUrl && (
+                    <a
+                      href={locationUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-teal-700 underline font-semibold flex items-center gap-0.5"
+                    >
+                      <span>Preview Link</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Paste Google Maps URL or coordinates (e.g. https://maps.google.com/?q=20.9470,72.9280)"
+                  value={locationUrl}
+                  onChange={e => handleLocationUrlChange(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:border-[#095c54] bg-[#f8faf9]"
+                />
+              </div>
               <div className="rounded-2xl overflow-hidden border border-slate-200">
                 <MiniMapLocationPicker
                   initialLat={latitude}
                   initialLng={longitude}
+                  hideWardBanner={true}
                   onLocationChange={(lat, lng) => {
                     setLatitude(lat);
                     setLongitude(lng);
+                    setLocationUrl(`https://www.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}`);
                   }}
                 />
               </div>
@@ -657,10 +756,23 @@ export const WardCommunityProblemsView: React.FC<WardCommunityProblemsViewProps>
 
                     <div className="absolute bottom-3 left-3 right-3 text-white">
                       <h3 className="text-base font-black leading-snug line-clamp-1">{problem.title}</h3>
-                      <p className="text-[11px] text-white/90 flex items-center gap-1 mt-0.5 truncate">
-                        <MapPin className="w-3 h-3 shrink-0 text-emerald-300" />
-                        <span className="truncate">{problem.location_name || problem.address}</span>
-                      </p>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className="text-[11px] text-white/90 flex items-center gap-1 truncate">
+                          <MapPin className="w-3 h-3 shrink-0 text-emerald-300" />
+                          <span className="truncate">{problem.location_name || problem.address}</span>
+                        </p>
+                        {((problem as any).location_url || (problem.latitude && problem.longitude)) && (
+                          <a
+                            href={(problem as any).location_url || `https://www.google.com/maps?q=${problem.latitude},${problem.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-emerald-300 hover:text-white underline font-bold shrink-0 flex items-center gap-0.5 bg-black/40 px-2 py-0.5 rounded-lg backdrop-blur-xs"
+                          >
+                            <span>Open Map</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
 

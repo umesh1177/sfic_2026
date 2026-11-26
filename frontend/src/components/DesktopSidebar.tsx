@@ -14,7 +14,8 @@ import {
   Volume2,
   Globe,
   Wrench,
-  Building2
+  Building2,
+  ShieldCheck
 } from 'lucide-react';
 import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile } from '../types/index.js';
@@ -45,7 +46,8 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
     { id: 'home', label: t.nav_home, icon: Home },
     { id: 'complaints', label: t.nav_complaints, icon: FileText, badge: unreadCount > 0 ? unreadCount : undefined },
     { id: 'drives', label: t.nav_drives, icon: Users },
-    { id: 'rewards', label: t.nav_rewards, icon: Award },
+    { id: 'certificates', label: t.nav_certificates || 'Certificates', icon: Award },
+    { id: 'rewards', label: t.nav_rewards, icon: Trophy },
     { id: 'notifications', label: t.nav_notifications, icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },
     { id: 'support', label: t.nav_support, icon: Headphones },
     { id: 'profile', label: t.nav_profile, icon: User }
@@ -141,10 +143,10 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
                 ) : user.role === 'community_head' ? (
                   <span className="flex items-center gap-1"><Building2 className="w-3 h-3 text-[#047857] shrink-0" /> Community Head</span>
                 ) : (
-                  <>
-                    <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
-                    <span>120 Karma Pts</span>
-                  </>
+                  <span className="flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-[#047857] shrink-0" />
+                    <span>Verified Citizen</span>
+                  </span>
                 )}
               </p>
             </div>

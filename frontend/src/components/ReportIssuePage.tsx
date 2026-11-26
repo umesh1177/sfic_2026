@@ -29,7 +29,8 @@ import {
   AlertCircle,
   Volume2,
   MousePointerClick,
-  FileText
+  FileText,
+  Users
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
@@ -67,10 +68,6 @@ function MapCenterController({ center }: { center: [number, number] }) {
 function MapMoveListener({ onLocationChanged }: { onLocationChanged: (lat: number, lng: number) => void }) {
   const map = useMapEvents({
     dragend() {
-      const c = map.getCenter();
-      onLocationChanged(c.lat, c.lng);
-    },
-    zoomend() {
       const c = map.getCenter();
       onLocationChanged(c.lat, c.lng);
     },
@@ -311,7 +308,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 
   // 3. Location & Map State (Uber/Rapido style)
   const [selectedWardNumber, setSelectedWardNumber] = useState<number>(3);
-  const [showLocationMapAndWard, setShowLocationMapAndWard] = useState<boolean>(false);
+  const [isManualWardSelected, setIsManualWardSelected] = useState<boolean>(false);
   const [mapCenter, setMapCenter] = useState<[number, number]>(MAP_CONFIG.center);
   const [address, setAddress] = useState<string>('Detecting location...');
   const [landmark, setLandmark] = useState<string>('');
@@ -352,11 +349,8 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
 
   const handleWardChange = (wardNum: number) => {
     setSelectedWardNumber(wardNum);
-    const wardInfo = NAVSARI_WARDS_LIST.find(w => w.number === wardNum);
-    if (wardInfo) {
-      setMapCenter(wardInfo.center);
-      setAddress(`${wardInfo.name.split(' - ')[1]}, Navsari`);
-    }
+    setIsManualWardSelected(true);
+    // User requirement: Selecting ward does NOT change the map location; map coordinates stay strictly based on citizen's current location pin.
   };
 
   // 4. Real Speech-To-Text State
@@ -372,11 +366,11 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     isSafe: true
   });
 
-  // 6. Short-Range Duplicate Detection State
+  // 6. Short-Range Duplicate Detection State (200m radius monitoring)
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState<boolean>(false);
   const [dismissedDuplicates, setDismissedDuplicates] = useState<boolean>(false);
-  const [upvotedComplaintId, setUpvotedComplaintId] = useState<string | null>(null);
+  const [upvotedComplaintIds, setUpvotedComplaintIds] = useState<string[]>([]);
 
   // 7. Status & Success State
   const [loading, setLoading] = useState<boolean>(false);
@@ -412,48 +406,131 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     setAddress('Near Station Road, Navsari Civic Area');
   };
 
-  // Fetch GPS location automatically on mount
-  const fetchCurrentLocation = () => {
+  const applyLocation = (lat: number, lng: number, isRealFix = true) => {
+    setMapCenter([lat, lng]);
+    if (!isManualWardSelected) {
+      const detected = detectWardFromCoordinates(lat, lng);
+      setSelectedWardNumber(detected);
+    }
+    reverseGeocode(lat, lng);
+    setIsGpsLoading(false);
+    setGpsError(null);
+    try {
+      sessionStorage.setItem(
+        'swachhsetu_live_gps',
+        JSON.stringify({ lat, lng, isRealGps: isRealFix, updatedAt: Date.now() })
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const fallbackToIpLocation = async () => {
+    try {
+      const res = await fetch('https://freeipapi.com/api/json');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.latitude && data.longitude) {
+          applyLocation(Number(data.latitude), Number(data.longitude), true);
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const res2 = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client');
+      if (res2.ok) {
+        const data2 = await res2.json();
+        if (data2.latitude && data2.longitude) {
+          applyLocation(Number(data2.latitude), Number(data2.longitude), true);
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // If completely unable to locate, notify citizen and set pin
+    setIsGpsLoading(false);
+    setGpsError('Could not acquire automatic GPS. Drag or tap on the map to set your exact location.');
+    applyLocation(20.9325, 72.9280, false);
+  };
+
+  // Fetch GPS location automatically on mount with robust multi-step fallback
+  const fetchCurrentLocation = (forceRefresh = false) => {
     setIsGpsLoading(true);
     setGpsError(null);
 
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser. Please tap on the map to set your location.');
-      setIsGpsLoading(false);
+    // If we already have a real verified GPS fix from this session and not forced, preview it immediately
+    try {
+      const cachedStr = sessionStorage.getItem('swachhsetu_live_gps');
+      if (cachedStr && !forceRefresh) {
+        const cached = JSON.parse(cachedStr);
+        if (cached.lat && cached.lng && cached.isRealGps && Date.now() - (cached.updatedAt || 0) < 300000) {
+          setMapCenter([cached.lat, cached.lng]);
+          if (!isManualWardSelected) {
+            const detected = detectWardFromCoordinates(cached.lat, cached.lng);
+            setSelectedWardNumber(detected);
+          }
+          reverseGeocode(cached.lat, cached.lng);
+          setIsGpsLoading(false);
+          // Continue to query fresh live position in background
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      fallbackToIpLocation();
       return;
     }
 
+    // Step 1: Try high accuracy GPS (mobile phone with GPS hardware)
     navigator.geolocation.getCurrentPosition(
       pos => {
-        const { latitude, longitude } = pos.coords;
-        setMapCenter([latitude, longitude]);
-        const detected = detectWardFromCoordinates(latitude, longitude);
-        setSelectedWardNumber(detected);
-        reverseGeocode(latitude, longitude);
-        setIsGpsLoading(false);
+        applyLocation(Number(pos.coords.latitude.toFixed(6)), Number(pos.coords.longitude.toFixed(6)), true);
       },
-      err => {
-        setIsGpsLoading(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          setGpsError('Location access is disabled. Please enable GPS permissions or drag the map below.');
-        } else {
-          setGpsError('Could not detect exact GPS position. Tap or drag the map to select the location.');
-        }
-        reverseGeocode(mapCenter[0], mapCenter[1]);
+      _errHigh => {
+        // Step 2: Fallback to standard accuracy (network/Wi-Fi on laptop or desktop)
+        navigator.geolocation.getCurrentPosition(
+          posLow => {
+            applyLocation(Number(posLow.coords.latitude.toFixed(6)), Number(posLow.coords.longitude.toFixed(6)), true);
+          },
+          _errFinal => {
+            // Step 3: IP Geolocation fallback before falling back to default
+            fallbackToIpLocation();
+          },
+          { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   };
 
   useEffect(() => {
     fetchCurrentLocation();
-  }, []);
+
+    const handleLocationUpdate = (e: any) => {
+      if (e.detail?.lat && e.detail?.lng) {
+        applyLocation(e.detail.lat, e.detail.lng, true);
+      }
+    };
+    window.addEventListener('swachhsetu-location-update', handleLocationUpdate);
+    return () => {
+      window.removeEventListener('swachhsetu-location-update', handleLocationUpdate);
+    };
+  }, [isManualWardSelected]);
 
   // Handle map movement / center update
   const handleMapLocationChanged = (lat: number, lng: number) => {
     setMapCenter([lat, lng]);
-    const detected = detectWardFromCoordinates(lat, lng);
-    setSelectedWardNumber(detected);
+    if (!isManualWardSelected) {
+      const detected = detectWardFromCoordinates(lat, lng);
+      setSelectedWardNumber(detected);
+    }
     reverseGeocode(lat, lng);
   };
 
@@ -602,18 +679,25 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     return () => clearTimeout(timer);
   }, [mapCenter, selectedCategoryId, dismissedDuplicates]);
 
-  // Handle Upvoting existing duplicate complaint
+  // Handle Raising count on existing duplicate complaint within 200m
   const handleUpvoteDuplicate = async (complaintId: string) => {
     try {
-      await api.toggleFollow(complaintId);
-      setUpvotedComplaintId(complaintId);
+      const res = await api.raiseComplaintCount(complaintId);
+      setUpvotedComplaintIds(prev => [...prev, complaintId]);
+      setDuplicateMatches(prev =>
+        prev.map(d =>
+          d.id === complaintId
+            ? { ...d, followers_count: res.followers_count || (d.followers_count || 1) + 1 }
+            : d
+        )
+      );
       confetti({
         particleCount: 50,
-        spread: 50,
+        spread: 60,
         origin: { y: 0.6 }
       });
     } catch {
-      setUpvotedComplaintId(complaintId);
+      setUpvotedComplaintIds(prev => [...prev, complaintId]);
     }
   };
 
@@ -1397,221 +1481,260 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           </div>
 
           {/* ======================================================== */}
-          {/* SECTION 3: SHORT-RANGE DUPLICATE DETECTION ALERT         */}
+          {/* SECTION 3: SHORT-RANGE DUPLICATE DETECTION (200M RADIUS)  */}
           {/* ======================================================== */}
           {duplicateMatches.length > 0 && !dismissedDuplicates && (
-            <div className="p-4 rounded-2xl bg-[#fffbeb] border border-[#fde68a] space-y-3 animate-fadeIn">
+            <div className="p-4 sm:p-5 rounded-3xl bg-amber-50/90 border border-amber-300 space-y-3.5 animate-fadeIn shadow-xs">
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-[#fef3c7] text-[#d97706]">
-                    <AlertTriangle className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-2xl bg-amber-100 text-amber-700 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-[#92400e]">
-                      Similar Issue Found Nearby ({duplicateMatches[0].distance_meters}m away)
+                    <h4 className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-2">
+                      <span>{duplicateMatches.length} Civic Issue{duplicateMatches.length > 1 ? 's' : ''} Found Nearby</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black uppercase">
+                        Within 200m Radius
+                      </span>
                     </h4>
-                    <p className="text-[11px] text-[#78350f]">
-                      A citizen has already logged a report for this spot. You can upvote it to escalate priority!
+                    <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5 font-medium leading-relaxed">
+                      Citizens have already reported civic issues around this spot. If your problem is the same, simply <strong>Increase Count (+1)</strong> to escalate priority instead of submitting a duplicate!
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setDismissedDuplicates(true)}
-                  className="text-slate-400 hover:text-slate-600 p-1"
-                  title="Dismiss duplicate alert"
+                  className="text-amber-600 hover:text-amber-900 p-1.5 rounded-xl hover:bg-amber-100 transition shrink-0"
+                  title="Dismiss and submit new complaint"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Duplicate Card Preview */}
-              <div className="p-3 rounded-xl bg-white border border-[#fde68a] flex items-center gap-3">
-                <img
-                  src={duplicateMatches[0].image_url}
-                  alt="Existing duplicate"
-                  className="w-14 h-14 rounded-xl object-cover shrink-0 border border-[#e2e8f0]"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e]">
-                      {duplicateMatches[0].complaint_number}
-                    </span>
-                    <span className="text-[10px] font-bold text-[#10b981] capitalize">
-                      ● {duplicateMatches[0].status}
-                    </span>
-                  </div>
-                  <p className="text-xs font-semibold text-[#0f2925] truncate mt-1">
-                    {duplicateMatches[0].description}
-                  </p>
-                  <span className="text-[10px] text-[#64748b]">
-                    Category: {duplicateMatches[0].category_name}
-                  </span>
-                </div>
+              {/* Duplicate Cards List */}
+              <div className="space-y-2.5">
+                {duplicateMatches.map(dup => {
+                  const isUpvoted = upvotedComplaintIds.includes(dup.id);
+                  return (
+                    <div
+                      key={dup.id}
+                      className="p-3.5 rounded-2xl bg-white border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        {dup.image_url ? (
+                          <img
+                            src={dup.image_url}
+                            alt={dup.complaint_number}
+                            className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 bg-slate-100"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center shrink-0 text-[#095c54]">
+                            <MapPin className="w-6 h-6" />
+                          </div>
+                        )}
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-black text-[#095c54] bg-[#e6f4f1] border border-[#a7f3d0] px-2 py-0.5 rounded-md">
+                              {dup.complaint_number}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                              {dup.distance_meters}m away
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 capitalize">
+                              ● {dup.status}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-[#0f2925] truncate">
+                            {dup.description || dup.category_name}
+                          </p>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium flex-wrap">
+                            <span>Category: <strong className="text-slate-700">{dup.category_name}</strong></span>
+                            {dup.landmark && (
+                              <>
+                                <span>·</span>
+                                <span className="truncate">{dup.landmark}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Raise Count Button & Metric */}
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <div className="px-2.5 py-1.5 rounded-xl bg-teal-50 border border-teal-200 text-center">
+                          <span className="text-[10px] font-black uppercase text-teal-700 block">Raise Count</span>
+                          <span className="text-xs font-black text-[#095c54] flex items-center justify-center gap-1">
+                            <Users className="w-3 h-3" />
+                            <span>{dup.followers_count || 1}</span>
+                          </span>
+                        </div>
+
+                        {isUpvoted ? (
+                          <div className="py-2 px-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-black flex items-center gap-1.5 shadow-2xs">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Count Raised (+1)</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleUpvoteDuplicate(dup.id)}
+                            className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                            <span>Increase Count (+1)</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Actions: Upvote or Proceed Anyway */}
-              <div className="flex items-center gap-2.5 pt-1">
-                {upvotedComplaintId === duplicateMatches[0].id ? (
-                  <div className="py-2 px-3 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-black flex items-center gap-1.5 border border-[#a7f3d0]">
-                    <Check className="w-3.5 h-3.5" /> Upvoted & Followed (+1 Priority)
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleUpvoteDuplicate(duplicateMatches[0].id)}
-                    className="btn-primary-custom py-2 px-3 text-xs font-extrabold flex items-center gap-1.5"
-                  >
-                    <ThumbsUp className="w-3.5 h-3.5" />
-                    <span>Upvote Existing Issue (+1)</span>
-                  </button>
-                )}
+              {/* Footer Info & Dismiss */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-amber-200/80 text-xs text-amber-900">
+                <span className="text-[11px] font-semibold text-amber-800">
+                  💡 When this issue is resolved by NMC, all citizens who raised count will be notified automatically.
+                </span>
                 <button
                   type="button"
                   onClick={() => setDismissedDuplicates(true)}
-                  className="btn-outline-custom py-2 px-3 text-xs font-bold text-[#64748b]"
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-slate-700 font-bold text-xs border border-amber-300 transition self-start sm:self-auto shrink-0"
                 >
-                  Submit Separate Report
+                  My Issue Is Different (Proceed)
                 </button>
               </div>
             </div>
           )}
 
           {/* ======================================================== */}
-          {/* SECTION 4 (BOTTOM): CHECKBOX TOGGLE FOR MAP & WARD NO    */}
+          {/* SECTION 4 (BOTTOM): MUNICIPAL WARD & INTERACTIVE MAP     */}
           {/* ======================================================== */}
           <div className="space-y-3">
-            {/* Checkbox Toggle Div: "Show location in map and ward no" */}
-            <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#f8faf9] hover:bg-[#e6f4f1]/60 border border-[#b8e0d7] cursor-pointer transition select-none">
-              <div className="flex items-center gap-3 min-w-0">
-                <input
-                  type="checkbox"
-                  checked={showLocationMapAndWard}
-                  onChange={e => setShowLocationMapAndWard(e.target.checked)}
-                  className="w-4 h-4 rounded accent-[#095c54] cursor-pointer shrink-0"
-                />
-                <div className="min-w-0">
-                  <span className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-[#095c54] shrink-0" />
-                    <span>Show location in map and ward no</span>
+            {/* Target Municipal Ward Selector */}
+            <div className="p-3.5 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase text-[#095c54] tracking-wider">
+                    Target Municipal Ward *
                   </span>
-                  <span className="text-[11px] text-[#64748b] font-medium block mt-0.5 truncate">
-                    {showLocationMapAndWard
-                      ? 'Showing interactive map pin and municipal ward selector'
-                      : `Auto-detected: Ward ${selectedWardNumber} · Check to view map or change ward`}
-                  </span>
+                  {isManualWardSelected ? (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-[#047857] text-[10px] font-black border border-emerald-300">
+                      ✓ Manually Selected
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">
+                      Auto-detected from GPS pin
+                    </span>
+                  )}
                 </div>
+                <p className="text-[11px] text-[#64748b] font-medium mt-0.5">
+                  {isManualWardSelected
+                    ? 'Manually selected. Map pin remains fixed at your current GPS location.'
+                    : 'Auto-detected from your map pin. You can manually change the ward anytime.'}
+                </p>
               </div>
-              <span
-                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider shrink-0 border ${
-                  showLocationMapAndWard
-                    ? 'bg-[#095c54] text-white border-[#095c54]'
-                    : 'bg-white text-[#095c54] border-[#b8e0d7]'
-                }`}
-              >
-                {showLocationMapAndWard ? 'Shown' : 'Hidden'}
-              </span>
-            </label>
 
-            {/* Show Ward Selection & Map View ONLY when checkbox is checked */}
-            {showLocationMapAndWard && (
-              <div className="space-y-2.5 animate-fadeIn">
-                {/* Municipal Ward Selector */}
-                <div className="p-3 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-black uppercase text-[#095c54] block tracking-wider">
-                      Target Municipal Ward *
-                    </span>
-                    <span className="text-[11px] text-[#64748b] font-medium">
-                      Auto-centers map and dispatches to that ward's officer
-                    </span>
-                  </div>
-                  <select
-                    value={selectedWardNumber}
-                    onChange={e => handleWardChange(Number(e.target.value))}
-                    className="text-xs font-bold text-[#0f2925] bg-[#f8faf9] border border-[#cbd5e1] rounded-xl px-3 py-2 outline-none focus:border-[#095c54] cursor-pointer"
-                  >
-                    {NAVSARI_WARDS_LIST.map(w => (
-                      <option key={w.number} value={w.number}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* GPS Notification if Location is Disabled */}
-                {gpsError && (
-                  <div className="p-3 rounded-2xl bg-[#fef3c7] border border-[#fde68a] text-xs font-bold text-[#92400e] flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#d97706]" />
-                      <span>{gpsError}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={fetchCurrentLocation}
-                      className="px-2.5 py-1 rounded-xl bg-white border border-[#d97706] text-[11px] font-black text-[#92400e] hover:bg-[#fffbeb] shrink-0"
-                    >
-                      Turn On GPS
-                    </button>
-                  </div>
-                )}
-
-                {/* Interactive Uber/Rapido Map with Center Target Pin */}
-                <div className="relative rounded-2xl overflow-hidden border border-[#b8e0d7] shadow-md h-60 sm:h-64 bg-slate-100">
-                  <MapContainer
-                    center={mapCenter}
-                    zoom={16}
-                    minZoom={4}
-                    maxZoom={19}
-                    scrollWheelZoom={true}
-                    style={{ height: '100%', width: '100%', zIndex: 10 }}
-                  >
-                    <MapCenterController center={mapCenter} />
-                    <MapMoveListener onLocationChanged={handleMapLocationChanged} />
-
-                    {/* Clean CartoDB / OSM Tiles */}
-                    <TileLayer
-                      url={MAP_CONFIG.tileProvider.url}
-                      attribution={MAP_CONFIG.tileProvider.attribution}
-                      subdomains={MAP_CONFIG.tileProvider.subdomains}
-                      maxZoom={19}
-                    />
-                  </MapContainer>
-
-                  {/* Fixed Uber-Style Center Pin with Pulse */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[20] pointer-events-none flex flex-col items-center">
-                    <div className="relative">
-                      <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center shadow-2xl border-2 border-white font-black text-sm uber-pin-bounce">
-                        <MapPin className="w-5 h-5 text-white fill-white/20" />
-                      </div>
-                      <div className="gps-pulse-ring"></div>
-                    </div>
-                    {/* Pin Tip */}
-                    <div className="w-2 h-2 bg-[#095c54] rotate-45 -mt-1 shadow-sm"></div>
-                  </div>
-
-                  {/* Floating "Locate Me" GPS Button */}
+              <div className="flex items-center gap-2 shrink-0">
+                <select
+                  value={selectedWardNumber}
+                  onChange={e => handleWardChange(Number(e.target.value))}
+                  className="text-xs font-bold text-[#0f2925] bg-[#f8faf9] border border-[#cbd5e1] rounded-xl px-3 py-2 outline-none focus:border-[#095c54] cursor-pointer"
+                >
+                  {NAVSARI_WARDS_LIST.map(w => (
+                    <option key={w.number} value={w.number}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+                {isManualWardSelected && (
                   <button
                     type="button"
-                    onClick={fetchCurrentLocation}
-                    disabled={isGpsLoading}
-                    className="absolute bottom-3 right-3 z-[20] bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-lg border border-[#b8e0d7] text-[#095c54] hover:bg-[#e6f4f1] transition disabled:opacity-50"
-                    title="Detect current GPS location"
+                    onClick={() => {
+                      setIsManualWardSelected(false);
+                      const detected = detectWardFromCoordinates(mapCenter[0], mapCenter[1]);
+                      setSelectedWardNumber(detected);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#e6f4f1] text-[#095c54] text-[11px] font-extrabold border border-[#b8e0d7] hover:bg-[#d0ece6] transition"
+                    title="Reset to automatically detect ward from map pin"
                   >
-                    {isGpsLoading ? (
-                      <RefreshCw className="w-5 h-5 animate-spin text-[#095c54]" />
-                    ) : (
-                      <Compass className="w-5 h-5 text-[#095c54]" />
-                    )}
+                    Auto-detect
                   </button>
+                )}
+              </div>
+            </div>
 
-                  {/* Floating Instructions */}
-                  <div className="absolute top-2.5 left-2.5 z-[20] bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-[10px] font-semibold pointer-events-none">
-                    Pin set at map center
-                  </div>
+            {/* GPS Notification if Location is Disabled */}
+            {gpsError && (
+              <div className="p-3 rounded-2xl bg-[#fef3c7] border border-[#fde68a] text-xs font-bold text-[#92400e] flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#d97706]" />
+                  <span>{gpsError}</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => fetchCurrentLocation(true)}
+                  className="px-2.5 py-1 rounded-xl bg-white border border-[#d97706] text-[11px] font-black text-[#92400e] hover:bg-[#fffbeb] shrink-0"
+                >
+                  Retry GPS
+                </button>
               </div>
             )}
+
+            {/* Interactive Uber/Rapido Map with Center Target Pin */}
+            <div className="relative rounded-2xl overflow-hidden border border-[#b8e0d7] shadow-md h-60 sm:h-64 bg-slate-100">
+              <MapContainer
+                center={mapCenter}
+                zoom={16}
+                minZoom={4}
+                maxZoom={19}
+                scrollWheelZoom={true}
+                style={{ height: '100%', width: '100%', zIndex: 10 }}
+              >
+                <MapCenterController center={mapCenter} />
+                <MapMoveListener onLocationChanged={handleMapLocationChanged} />
+
+                {/* Clean CartoDB / OSM Tiles */}
+                <TileLayer
+                  url={MAP_CONFIG.tileProvider.url}
+                  attribution={MAP_CONFIG.tileProvider.attribution}
+                  subdomains={MAP_CONFIG.tileProvider.subdomains}
+                  maxZoom={19}
+                />
+              </MapContainer>
+
+              {/* Fixed Uber-Style Center Pin with Pulse */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[20] pointer-events-none flex flex-col items-center">
+                <div className="relative">
+                  <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center shadow-2xl border-2 border-white font-black text-sm uber-pin-bounce">
+                    <MapPin className="w-5 h-5 text-white fill-white/20" />
+                  </div>
+                  <div className="gps-pulse-ring"></div>
+                </div>
+                {/* Pin Tip */}
+                <div className="w-2 h-2 bg-[#095c54] rotate-45 -mt-1 shadow-sm"></div>
+              </div>
+
+              {/* Floating "Locate Me" GPS Button */}
+              <button
+                type="button"
+                onClick={() => fetchCurrentLocation(true)}
+                disabled={isGpsLoading}
+                className="absolute bottom-3 right-3 z-[20] bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-lg border border-[#b8e0d7] text-[#095c54] hover:bg-[#e6f4f1] transition disabled:opacity-50"
+                title="Detect current GPS location"
+              >
+                {isGpsLoading ? (
+                  <RefreshCw className="w-5 h-5 animate-spin text-[#095c54]" />
+                ) : (
+                  <Compass className="w-5 h-5 text-[#095c54]" />
+                )}
+              </button>
+
+              {/* Floating Instructions */}
+              <div className="absolute top-2.5 left-2.5 z-[20] bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-[10px] font-semibold pointer-events-none">
+                Pin set at map center
+              </div>
+            </div>
 
             {/* Readable Address Card (NO raw coordinates shown to user) */}
             <div className="p-3.5 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">

@@ -138,7 +138,7 @@ export class DrivesController {
 
       res.status(200).json({
         success: true,
-        message: '✓ Attendance verified and marked present! 150 Civic Karma points awarded.',
+        message: '✓ Attendance verified and marked present! Official participation certificate issued.',
         data: result
       });
     } catch (err: any) {

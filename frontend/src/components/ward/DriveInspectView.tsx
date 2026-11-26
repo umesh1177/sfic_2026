@@ -21,6 +21,13 @@ import {
   Sparkles,
   Scale,
   Wrench,
+  CheckCheck,
+  ThumbsUp,
+  ThumbsDown,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
   X
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
@@ -69,6 +76,13 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
   const [completing, setCompleting] = useState<boolean>(false);
   const [issuingCerts, setIssuingCerts] = useState<boolean>(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [certOption, setCertOption] = useState<'all' | 'present_only'>('all');
+  const [actionEvId, setActionEvId] = useState<string | null>(null);
+  const [rejectingEvId, setRejectingEvId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState<string>('');
+  const [activePhotoIdx, setActivePhotoIdx] = useState<Record<string, number>>({});
+  const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 
   const isCompleted =
     activity.event_status === 'completed' || activity.evidence_status === 'verified_complete';
@@ -143,17 +157,62 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
     }
   };
 
+  const handleVerifyEvidence = async (evidenceId: string, status: 'verified' | 'rejected', notes?: string) => {
+    setActionEvId(evidenceId);
+    setActionMsg(null);
+    try {
+      await api.verifyDriveEvidence(activity.id, evidenceId, status, notes);
+      setEvidenceList(prev =>
+        prev.map(ev =>
+          ev.id === evidenceId
+            ? { ...ev, verification_status: status, verification_notes: notes || null }
+            : ev
+        )
+      );
+      setActionMsg({
+        type: 'success',
+        text: `Evidence photo successfully marked as ${status.toUpperCase()}!`
+      });
+      setRejectingEvId(null);
+      setRejectNote('');
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message || 'Failed to update evidence status.' });
+    } finally {
+      setActionEvId(null);
+    }
+  };
+
+  const handleVerifyAllEvidence = async () => {
+    setActionEvId('all');
+    setActionMsg(null);
+    try {
+      const res = await api.verifyAllDriveEvidence(activity.id, 'verified');
+      setEvidenceList(prev =>
+        prev.map(ev => ({ ...ev, verification_status: 'verified' }))
+      );
+      setActionMsg({
+        type: 'success',
+        text: res.message || 'All evidence items marked as VERIFIED!'
+      });
+      confetti({ particleCount: 45, spread: 65, origin: { y: 0.6 } });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message || 'Failed to verify all evidence.' });
+    } finally {
+      setActionEvId(null);
+    }
+  };
+
   const handleIssueCertificates = async () => {
     setIssuingCerts(true);
     setActionMsg(null);
     try {
-      const res = await api.issueDriveCertificates(activity.id);
+      const res = await api.issueDriveCertificates(activity.id, certOption);
       if (res.data && res.data.length > 0) {
         setCertificates(res.data);
       }
       setActionMsg({
         type: 'success',
-        text: res.message || 'Official QR-verified certificates generated and sent to Community Head & all participated citizens!'
+        text: res.message || 'Official QR-verified certificates generated and sent to Community Head & volunteers!'
       });
       confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
     } catch (err: any) {
@@ -318,6 +377,17 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
       {/* ================================================================= */}
       {activeTab === 'details' && (
         <div className="space-y-6">
+          {(activity.requires_attendance === false || activity.is_nmc_official_drive === true) && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <span className="font-black text-emerald-950 block">🏛️ Official NMC Civic Rally / Public Awareness Drive</span>
+                <span className="text-[11px] text-emerald-800">
+                  Duty attendance check-in was waived for this public campaign. Citizens and groups participate freely without mandatory attendance tracking.
+                </span>
+              </div>
+            </div>
+          )}
           {/* Present / Absent / Total KPI Strip */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
@@ -586,12 +656,25 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                   Chronological Before, During, and After photographic proof and impact details submitted by the Community Head.
                 </p>
               </div>
-              {isCompleted && (
-                <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black flex items-center gap-1.5 self-start sm:self-auto">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Drive Verified &amp; Completed</span>
-                </span>
-              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {!isCompleted && evidenceList.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={actionEvId === 'all'}
+                    onClick={handleVerifyAllEvidence}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition disabled:opacity-50"
+                  >
+                    <CheckCheck className="w-4 h-4 text-emerald-200" />
+                    <span>{actionEvId === 'all' ? 'Verifying All...' : 'Verify All Evidence'}</span>
+                  </button>
+                )}
+                {isCompleted && (
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black flex items-center gap-1.5 self-start sm:self-auto">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Drive Verified &amp; Completed</span>
+                  </span>
+                )}
+              </div>
             </div>
 
             {evidenceList.length === 0 ? (
@@ -607,18 +690,42 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 {evidenceList.map((ev, idx) => {
                   const stage = ev.evidence_type || ev.stage || 'before';
                   const meta = ev.review_metadata || {};
-                  const hasMeta = Object.keys(meta).some(k => meta[k] !== undefined && meta[k] !== null && meta[k] !== '');
+                  const hasMeta = Object.keys(meta).some(k => meta[k] !== undefined && meta[k] !== null && meta[k] !== '' && k !== 'photos' && k !== 'total_photos' && k !== 'photo_index');
+                  const evIdKey = String(ev.id || idx);
+                  const evPhotos: string[] = Array.isArray(meta?.photos) && meta.photos.length > 0
+                    ? meta.photos
+                    : [ev.storage_path || ev.image_url].filter(Boolean);
+                  const currentPhotoIdx = activePhotoIdx[evIdKey] || 0;
+                  const displayedPhoto = evPhotos[currentPhotoIdx] || ev.storage_path || ev.image_url;
 
                   return (
                     <div
                       key={ev.id || idx}
-                      className="rounded-2xl border border-slate-200 bg-[#f7f9f8] overflow-hidden flex flex-col justify-between"
+                      className="rounded-2xl border border-slate-200 bg-[#f7f9f8] overflow-hidden flex flex-col justify-between shadow-xs"
                     >
                       <div>
-                        <div className="px-4 py-3 bg-white border-b border-slate-200/70 flex items-center justify-between gap-2">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${getStageBadge(stage)}`}>
-                            {String(stage).toUpperCase()} STAGE
-                          </span>
+                        <div className="px-4 py-3 bg-white border-b border-slate-200/70 flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${getStageBadge(stage)}`}>
+                              {String(stage).toUpperCase()} STAGE
+                            </span>
+                            {ev.verification_status === 'verified' || ev.submission_status === 'verified' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Verified
+                              </span>
+                            ) : ev.verification_status === 'rejected' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                Rejected
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                Pending Review
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {ev.created_at
@@ -627,13 +734,88 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                           </span>
                         </div>
 
-                        <div className="aspect-video bg-slate-100 overflow-hidden">
+                        {/* Interactive Photo Carousel / Multi-Photo Viewer */}
+                        <div className="relative aspect-video bg-slate-900 overflow-hidden group select-none">
                           <img
-                            src={ev.storage_path || ev.image_url}
+                            src={displayedPhoto}
                             alt={ev.caption || stage}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover cursor-pointer transition duration-300 group-hover:scale-102"
+                            onClick={() => setLightboxPhoto(displayedPhoto)}
+                            title="Click to view full photo"
                           />
+
+                          {/* Photo Counter Badge if multiple photos */}
+                          {evPhotos.length > 1 && (
+                            <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/80 text-white text-[11px] font-black flex items-center gap-1.5 backdrop-blur-xs shadow">
+                              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Photo {currentPhotoIdx + 1} of {evPhotos.length}</span>
+                            </div>
+                          )}
+
+                          {/* Prev / Next Buttons */}
+                          {evPhotos.length > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePhotoIdx(prev => ({
+                                    ...prev,
+                                    [evIdKey]: (currentPhotoIdx - 1 + evPhotos.length) % evPhotos.length
+                                  }));
+                                }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/90 transition shadow-md"
+                                title="Previous Photo"
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePhotoIdx(prev => ({
+                                    ...prev,
+                                    [evIdKey]: (currentPhotoIdx + 1) % evPhotos.length
+                                  }));
+                                }}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/90 transition shadow-md"
+                                title="Next Photo"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setLightboxPhoto(displayedPhoto)}
+                            className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[10px] font-black flex items-center gap-1.5 opacity-90 hover:opacity-100 hover:bg-black/90 transition shadow"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Click to Zoom</span>
+                          </button>
                         </div>
+
+                        {/* Thumbnail Strip for Multi-Photo Evidence */}
+                        {evPhotos.length > 1 && (
+                          <div className="px-3.5 py-2.5 bg-slate-100 border-b border-slate-200/80 flex items-center gap-2 overflow-x-auto">
+                            {evPhotos.map((p, pIdx) => (
+                              <img
+                                key={pIdx}
+                                src={p}
+                                alt={`Thumb ${pIdx + 1}`}
+                                className={`w-12 h-12 object-cover rounded-lg border-2 cursor-pointer transition shrink-0 ${
+                                  currentPhotoIdx === pIdx
+                                    ? 'border-[#095c54] ring-2 ring-[#095c54]/30 scale-105'
+                                    : 'border-white opacity-70 hover:opacity-100'
+                                }`}
+                                onClick={() => setActivePhotoIdx(prev => ({ ...prev, [evIdKey]: pIdx }))}
+                                title={`View Photo ${pIdx + 1}`}
+                              />
+                            ))}
+                          </div>
+                        )}
 
                         <div className="p-4 space-y-3">
                           <div>
@@ -695,7 +877,95 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                             </div>
                           )}
                         </div>
+
+                        {/* Rejection Remarks Warning if rejected */}
+                        {ev.verification_status === 'rejected' && ev.verification_notes && (
+                          <div className="mx-4 mb-3 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block text-[10px] uppercase font-black text-rose-900">Rejection Reason:</strong>
+                              <span>{ev.verification_notes}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Verify / Reject Action Footer */}
+                      {!isCompleted && (
+                        <div className="p-3 bg-white border-t border-slate-200/80">
+                          {rejectingEvId === ev.id ? (
+                            <div className="space-y-2">
+                              <label className="block text-[10px] font-black uppercase text-rose-900">
+                                Specify Rejection Reason / Correction Required:
+                              </label>
+                              <input
+                                type="text"
+                                value={rejectNote}
+                                onChange={e => setRejectNote(e.target.value)}
+                                placeholder="e.g. Unclear site photo, waste not fully bagged, wrong spot..."
+                                className="w-full px-3 py-1.5 text-xs rounded-xl border border-rose-300 outline-none focus:border-rose-600 bg-rose-50/30"
+                              />
+                              <div className="flex items-center justify-end gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => { setRejectingEvId(null); setRejectNote(''); }}
+                                  className="px-2.5 py-1 text-xs font-bold text-slate-500 hover:text-slate-800"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionEvId === ev.id}
+                                  onClick={() => handleVerifyEvidence(ev.id, 'rejected', rejectNote)}
+                                  className="px-3.5 py-1 text-xs font-extrabold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs"
+                                >
+                                  Confirm Reject
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                {ev.verification_status === 'verified'
+                                  ? 'Status: Verified'
+                                  : ev.verification_status === 'rejected'
+                                  ? 'Status: Flagged for Correction'
+                                  : 'Action Required:'}
+                              </span>
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={actionEvId === ev.id}
+                                  onClick={() => { setRejectingEvId(ev.id); setRejectNote(ev.verification_notes || ''); }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1 ${
+                                    ev.verification_status === 'rejected'
+                                      ? 'bg-rose-600 text-white shadow-xs'
+                                      : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                  }`}
+                                  title="Reject or flag evidence with notes"
+                                >
+                                  <ThumbsDown className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionEvId === ev.id}
+                                  onClick={() => handleVerifyEvidence(ev.id, 'verified')}
+                                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1 ${
+                                    ev.verification_status === 'verified'
+                                      ? 'bg-emerald-600 text-white shadow-xs'
+                                      : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                  }`}
+                                  title="Verify evidence photo"
+                                >
+                                  <ThumbsUp className="w-3.5 h-3.5" />
+                                  <span>{actionEvId === ev.id ? 'Saving...' : 'Verify'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -766,11 +1036,70 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 )}
                 <span>
                   {certificates.length > 0
-                    ? `Sync / Issue Missing Certificates (${certificates.length} Issued)`
-                    : 'Generate & Issue Certificates to All Participants'}
+                    ? `Sync / Re-Issue Certificates (${certificates.length} Issued)`
+                    : 'Generate & Issue Certificates'}
                 </span>
               </button>
             </div>
+
+            {/* Scope Selection Card before issuing */}
+            {isCompleted && (
+              <div className="p-4 rounded-2xl bg-[#f7fbf9] border border-[#cde6df] space-y-2.5">
+                <label className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5 uppercase tracking-wider">
+                  <Award className="w-4 h-4 text-amber-500" />
+                  <span>Certificate Issuance Scope &amp; Eligibility:</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label
+                    className={`p-3 rounded-xl border cursor-pointer flex items-start gap-2.5 transition ${
+                      certOption === 'all'
+                        ? 'bg-white border-[#095c54] shadow-xs ring-1 ring-[#095c54]'
+                        : 'bg-white/60 border-slate-200 hover:bg-white'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="certOption"
+                      checked={certOption === 'all'}
+                      onChange={() => setCertOption('all')}
+                      className="mt-0.5 text-[#095c54] focus:ring-[#095c54]"
+                    />
+                    <div>
+                      <span className="block text-xs font-black text-[#0f2925]">
+                        Issue for All Enrolled Volunteers ({registrations.length})
+                      </span>
+                      <span className="block text-[11px] text-slate-500 mt-0.5">
+                        Present volunteers stamped <strong className="text-emerald-700">PRESENT</strong>; absent volunteers stamped <strong className="text-rose-700">ABSENT</strong>.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`p-3 rounded-xl border cursor-pointer flex items-start gap-2.5 transition ${
+                      certOption === 'present_only'
+                        ? 'bg-white border-[#095c54] shadow-xs ring-1 ring-[#095c54]'
+                        : 'bg-white/60 border-slate-200 hover:bg-white'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="certOption"
+                      checked={certOption === 'present_only'}
+                      onChange={() => setCertOption('present_only')}
+                      className="mt-0.5 text-[#095c54] focus:ring-[#095c54]"
+                    />
+                    <div>
+                      <span className="block text-xs font-black text-[#0f2925]">
+                        Issue Only for Present Volunteers ({presentCount > 0 ? presentCount : 1})
+                      </span>
+                      <span className="block text-[11px] text-slate-500 mt-0.5">
+                        Awards only confirmed volunteers who checked in (omits absent registrants).
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            )}
 
             {!isCompleted && (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex items-center justify-between gap-3 flex-wrap">
@@ -808,6 +1137,15 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                             <span className="text-[9px] font-black uppercase text-slate-500">
                               {cert.recipient_role === 'community_head' ? 'Head' : 'Citizen'}
                             </span>
+                            {cert.attendance_status === 'absent' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                Absent
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {cert.recipient_role === 'community_head' ? 'Organizer' : 'Present'}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <button
@@ -832,6 +1170,7 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                           <th className="py-3 px-4">Certificate Code</th>
                           <th className="py-3 px-4">Recipient Name</th>
                           <th className="py-3 px-4">Role</th>
+                          <th className="py-3 px-4">Attendance</th>
                           <th className="py-3 px-4">Issued Date</th>
                           <th className="py-3 px-4 text-right">Action</th>
                         </tr>
@@ -863,8 +1202,23 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                                     : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                 }`}
                               >
-                                {cert.recipient_role === 'community_head' ? 'Community Head' : 'Participated Citizen'}
+                                {cert.recipient_role === 'community_head' ? 'Community Head' : 'Citizen Volunteer'}
                               </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              {cert.attendance_status === 'absent' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                  Absent
+                                </span>
+                              ) : cert.recipient_role === 'community_head' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200">
+                                  Organizer
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  Present
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-slate-600 font-medium">
                               {cert.issued_at
@@ -945,6 +1299,30 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 </div>
               )
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Full-Screen Lightbox Modal for Inspection */}
+      {lightboxPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightboxPhoto(null)}
+        >
+          <div className="relative max-w-5xl max-h-[92vh] bg-black rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center">
+            <img
+              src={lightboxPhoto}
+              alt="Enlarged Evidence Inspection"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              onClick={e => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setLightboxPhoto(null)}
+              className="absolute top-4 right-4 p-2.5 rounded-full bg-black/75 text-white hover:bg-rose-600 transition shadow-lg"
+              title="Close inspection"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
       )}

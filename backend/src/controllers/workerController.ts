@@ -213,6 +213,17 @@ export class WorkerController {
   // =========================================================================
   // 4. GPS Geofence-Validated Attendance
   // =========================================================================
+  public static async getTodayAttendance(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { workerId } = await WorkerController.getWorkerIdFromRequest(req);
+      const assignmentId = req.query.assignment_id as string | undefined;
+      const todayAttendance = await DbRepository.getTodayWorkerAttendance(workerId, assignmentId);
+      res.status(200).json({ success: true, data: todayAttendance });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   public static async markAttendance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { workerId, workerName } = await WorkerController.getWorkerIdFromRequest(req);
@@ -220,7 +231,8 @@ export class WorkerController {
         assignment_id,
         latitude,
         longitude,
-        gps_accuracy_meters
+        gps_accuracy_meters,
+        action = 'check_in'
       } = req.body;
 
       if (!assignment_id || latitude === undefined || longitude === undefined) {
@@ -231,30 +243,42 @@ export class WorkerController {
         return;
       }
 
+      // Check if assignment was reassigned to another squad
+      const assignment = (store.workAssignments || []).find(wa => wa.id === assignment_id);
+      if (assignment && (assignment.status === 'reassigned' || assignment.status === 'cancelled')) {
+        res.status(403).json({
+          success: false,
+          error: 'Your squad has been replaced by another team for this complaint. You are no longer authorized to record attendance for this task.'
+        });
+        return;
+      }
+
       const result = await DbRepository.recordWorkerAttendance(
         assignment_id,
         workerId,
         parseFloat(latitude),
         parseFloat(longitude),
-        gps_accuracy_meters ? parseFloat(gps_accuracy_meters) : 12.0
+        gps_accuracy_meters ? parseFloat(gps_accuracy_meters) : 12.0,
+        action === 'check_out' ? 'check_out' : 'check_in'
       );
 
       if (result.attendance) {
         recordAttendanceForAssignment(assignment_id, result.attendance);
-        const assignment = (store.workAssignments || []).find(wa => wa.id === assignment_id);
         if (assignment) {
-          assignment.my_attendance_status = 'verified';
-          if (assignment.status === 'assigned') assignment.status = 'in_progress';
+          if (action === 'check_in') {
+            assignment.my_attendance_status = 'verified';
+            if (assignment.status === 'assigned') assignment.status = 'in_progress';
+          }
           if (assignment.team_members) {
             const mem = assignment.team_members.find((m: any) => m.worker_id === workerId);
             if (mem) {
-              mem.assignment_status = 'present';
+              mem.assignment_status = action === 'check_out' ? 'completed' : 'present';
               mem.attendance_timestamp = new Date().toISOString();
               mem.validation_status = result.attendance?.validation_status || 'verified_match';
             }
           }
         }
-        if (result.success) {
+        if (result.success && action === 'check_in') {
           await WorkerController.syncLinkedComplaintStatus(
             assignment_id,
             'in_progress',
@@ -370,33 +394,51 @@ export class WorkerController {
       const {
         stage, // 'before' | 'during' | 'after'
         photo_url,
+        photos,
         latitude,
         longitude,
         description,
         gps_accuracy
       } = req.body;
 
-      if (!stage || !photo_url) {
+      const photoList: string[] = Array.isArray(photos) && photos.length > 0
+        ? photos
+        : (photo_url ? [photo_url] : []);
+
+      if (!stage || photoList.length === 0) {
         res.status(400).json({
           success: false,
-          error: 'stage (before|during|after) and photo_url are required'
+          error: 'stage (before|during|after) and at least one photo (photos array or photo_url) are required'
+        });
+        return;
+      }
+
+      // Check if assignment was reassigned to another squad
+      const assignment = (store.workAssignments || []).find(wa => wa.id === id);
+      if (assignment && (assignment.status === 'reassigned' || assignment.status === 'cancelled')) {
+        res.status(403).json({
+          success: false,
+          error: 'Your squad has been replaced by another team for this complaint. You are no longer authorized to submit evidence for this task.'
         });
         return;
       }
 
       const normalizedStage = String(stage).toLowerCase() as 'before' | 'during' | 'after';
+      const primaryPhoto = photoList[0];
       const evidence = await DbRepository.addWorkEvidence(
         id,
         workerId,
         normalizedStage,
-        photo_url,
+        primaryPhoto,
         description || `${normalizedStage.toUpperCase()} photographic verification evidence`,
         latitude ? parseFloat(latitude) : undefined,
         longitude ? parseFloat(longitude) : undefined,
-        gps_accuracy ? parseFloat(gps_accuracy) : undefined
+        gps_accuracy ? parseFloat(gps_accuracy) : undefined,
+        photoList
       );
 
       if (evidence) {
+        evidence.photos = photoList;
         recordEvidenceForAssignment(id, evidence);
         const assignment = (store.workAssignments || []).find(wa => wa.id === id);
         if (assignment) {

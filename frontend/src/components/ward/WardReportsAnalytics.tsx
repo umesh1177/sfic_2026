@@ -39,22 +39,23 @@ export const WardReportsAnalytics: React.FC = () => {
 
   const handleExportCsv = () => {
     if (!reportData) return;
+    const resolvedWardName = reportData.ward_name || `Ward ${reportData.ward_number || 3}`;
     const rows = [
       ['Metric', 'Value'],
-      ['Ward', 'Ward 3 - Dudhiya Talao'],
+      ['Ward', resolvedWardName],
       ['Report Type', reportType],
-      ['Total Complaints Analyzed', reportData.summary?.total_complaints_analyzed || 42],
-      ['Resolution Rate (%)', reportData.summary?.resolution_rate_pct || 90.5],
-      ['Average Resolution (Hours)', reportData.summary?.avg_resolution_hours || 24.8],
-      ['Worker Attendance Rate (%)', reportData.summary?.worker_attendance_rate_pct || 96.2],
-      ['Waste Cleared (Tonnes)', reportData.summary?.total_waste_cleared_tonnes || 14.8]
+      ['Total Complaints Analyzed', reportData.summary?.total_complaints_analyzed ?? 0],
+      ['Resolution Rate (%)', `${reportData.summary?.resolution_rate_pct ?? 100}%`],
+      ['Average Resolution (Hours)', reportData.summary?.avg_resolution_hours ?? 0],
+      ['Worker Attendance Rate (%)', `${reportData.summary?.worker_attendance_rate_pct ?? 100}%`],
+      ['Waste Cleared (Tonnes)', reportData.summary?.total_waste_cleared_tonnes ?? 0]
     ];
 
     const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.join(',')).join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Ward3_${reportType}_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Ward_${reportData.ward_number || 3}_${reportType}_report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

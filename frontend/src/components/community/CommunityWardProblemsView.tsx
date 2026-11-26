@@ -11,7 +11,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Building,
-  HeartHandshake
+  HeartHandshake,
+  ExternalLink
 } from 'lucide-react';
 import { CommunityProblem, Community } from '../../types/index.js';
 import { api } from '../../services/api.js';
@@ -121,21 +122,39 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
             <div key={i} className="h-64 bg-slate-100 rounded-3xl animate-pulse" />
           ))}
         </div>
-      ) : problems.length === 0 ? (
-        <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-black text-[#0f2925]">No Pending Civic Problems for Action</h3>
-          <p className="text-sm text-slate-500 max-w-md mx-auto">
-            Your Ward Officer has not posted any unresolved community problems at this moment. You can still initiate your own independent cleanliness drives under the Activities tab!
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {problems.map(prob => {
-            const isClaimedByMe = prob.claimed_by_community_id === community?.id;
-            return (
+      ) : (() => {
+        // Single vs Multi-Org visibility filter:
+        // If single organization and claimed by another community after approval, hide it from other communities!
+        const visibleProblems = problems.filter(prob => {
+          const isSingleOrg = (prob as any).allow_multiple_orgs === false;
+          const isClaimedByOther = (prob.status === 'claimed' || prob.status === 'in_progress' || prob.status === 'resolved') &&
+            prob.claimed_by_community_id &&
+            prob.claimed_by_community_id !== community?.id;
+          if (isSingleOrg && isClaimedByOther) {
+            return false;
+          }
+          return true;
+        });
+
+        if (visibleProblems.length === 0) {
+          return (
+            <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-sm space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#095c54] flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-lg font-black text-[#0f2925]">No Pending Civic Problems for Action</h3>
+              <p className="text-sm text-slate-500 max-w-md mx-auto">
+                Your Ward Officer has not posted any unresolved community problems at this moment. You can still initiate your own independent cleanliness drives under the Activities tab!
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {visibleProblems.map(prob => {
+              const isClaimedByMe = prob.claimed_by_community_id === community?.id;
+              return (
               <div
                 key={prob.id}
                 className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between"
@@ -173,10 +192,23 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
                       <h3 className="text-base sm:text-lg font-black leading-tight drop-shadow-sm">
                         {prob.title}
                       </h3>
-                      <p className="text-xs text-emerald-100 flex items-center gap-1 mt-1 truncate">
-                        <MapPin className="w-3.5 h-3.5 shrink-0" />
-                        {prob.location_name} · {prob.address}
-                      </p>
+                      <div className="flex items-center justify-between gap-2 mt-1">
+                        <p className="text-xs text-emerald-100 flex items-center gap-1 truncate">
+                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{prob.location_name} · {prob.address}</span>
+                        </p>
+                        {((prob as any).location_url || (prob.latitude && prob.longitude)) && (
+                          <a
+                            href={(prob as any).location_url || `https://www.google.com/maps?q=${prob.latitude},${prob.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-emerald-300 hover:text-white underline font-bold shrink-0 flex items-center gap-0.5 bg-black/40 px-2 py-0.5 rounded-lg backdrop-blur-xs"
+                          >
+                            <span>Open Map</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -273,7 +305,8 @@ export const CommunityWardProblemsView: React.FC<CommunityWardProblemsViewProps>
             );
           })}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

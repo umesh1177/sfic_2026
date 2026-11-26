@@ -23,7 +23,15 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
   onLocationUpdate
 }) => {
   const [status, setStatus] = useState<'checking' | 'active' | 'off' | 'denied' | 'unsupported'>('checking');
-  const [coords, setCoords] = useState<LiveCoordinates | null>(null);
+  const [coords, setCoords] = useState<LiveCoordinates | null>(() => {
+    try {
+      const cached = sessionStorage.getItem('swachhsetu_live_gps');
+      if (cached) return JSON.parse(cached);
+    } catch {
+      // ignore
+    }
+    return null;
+  });
   const [errorDetail, setErrorDetail] = useState<string>('');
   const [showModalPrompt, setShowModalPrompt] = useState<boolean>(false);
   const [retrying, setRetrying] = useState<boolean>(false);
@@ -31,11 +39,11 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
   const lastUpdateRef = useRef<number>(0);
 
   const publishLocation = useCallback(
-    (pos: GeolocationPosition) => {
+    (pos: GeolocationPosition | { coords: { latitude: number; longitude: number; accuracy?: number } }) => {
       const next: LiveCoordinates = {
         lat: Number(pos.coords.latitude.toFixed(6)),
         lng: Number(pos.coords.longitude.toFixed(6)),
-        accuracy: Math.round(pos.coords.accuracy || 0),
+        accuracy: Math.round(pos.coords.accuracy || 20),
         updatedAt: Date.now()
       };
       lastUpdateRef.current = next.updatedAt;
@@ -56,25 +64,46 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
     [onLocationUpdate]
   );
 
+  const applyNavsariDefaultLocation = useCallback(() => {
+    const navsariDefault = {
+      coords: {
+        latitude: 20.9325,
+        longitude: 72.9280,
+        accuracy: 25
+      }
+    };
+    publishLocation(navsariDefault);
+    sessionStorage.setItem('swachhsetu_loc_dismissed', 'true');
+    setShowModalPrompt(false);
+  }, [publishLocation]);
+
   const handleGeoError = useCallback((err: GeolocationPositionError) => {
     if (err.code === err.PERMISSION_DENIED) {
       setStatus('denied');
       setErrorDetail('Location permission is blocked in your browser. Please allow location access in site settings.');
     } else if (err.code === err.POSITION_UNAVAILABLE) {
       setStatus('off');
-      setErrorDetail('Device GPS / Location services appear to be turned OFF. Please enable Location on your device.');
+      setErrorDetail('Device GPS / Location services appear to be turned OFF or unavailable.');
     } else {
       setStatus('off');
-      setErrorDetail('Unable to acquire GPS signal. Please turn ON your device Location and retry.');
+      setErrorDetail('Unable to acquire GPS signal. Please turn ON your device Location or use Navsari default.');
     }
-    setShowModalPrompt(true);
+    const dismissed = sessionStorage.getItem('swachhsetu_loc_dismissed');
+    if (!dismissed) {
+      setShowModalPrompt(true);
+    }
+  }, []);
+
+  const dismissModal = useCallback(() => {
+    sessionStorage.setItem('swachhsetu_loc_dismissed', 'true');
+    setShowModalPrompt(false);
   }, []);
 
   const startMonitoring = useCallback(() => {
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
       setStatus('unsupported');
       setErrorDetail('Geolocation is not supported by this browser.');
-      setShowModalPrompt(true);
+      applyNavsariDefaultLocation();
       return;
     }
 
@@ -84,35 +113,81 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
       watchIdRef.current = null;
     }
 
-    // Immediate startup check
+    // Step 1: Try standard accuracy with cached positions allowed (instant on Windows / laptops / mobile)
     navigator.geolocation.getCurrentPosition(
       pos => {
         publishLocation(pos);
         setRetrying(false);
       },
-      err => {
-        handleGeoError(err);
-        setRetrying(false);
+      _errLow => {
+        // Step 2: Try high accuracy GPS (satellite fix)
+        navigator.geolocation.getCurrentPosition(
+          posHigh => {
+            publishLocation(posHigh);
+            setRetrying(false);
+          },
+          async _errHigh => {
+            // Step 3: IP Geolocation fallback before falling back to municipal center
+            try {
+              const res = await fetch('https://freeipapi.com/api/json');
+              if (res.ok) {
+                const data = await res.json();
+                if (data.latitude && data.longitude) {
+                  publishLocation({
+                    coords: {
+                      latitude: Number(data.latitude),
+                      longitude: Number(data.longitude),
+                      accuracy: 500
+                    }
+                  });
+                  setRetrying(false);
+                  return;
+                }
+              }
+            } catch {}
+
+            // Auto fallback: always activate Navsari default so user is never stuck in endless modal loop
+            applyNavsariDefaultLocation();
+            setRetrying(false);
+          },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 600000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
     );
 
-    // Continuous monitoring during every activity
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      pos => {
-        publishLocation(pos);
-      },
-      err => {
-        handleGeoError(err);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  }, [publishLocation, handleGeoError]);
+    // Continuous monitoring during civic activities (with graceful timeout)
+    try {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        pos => {
+          publishLocation(pos);
+        },
+        _err => {
+          // Silent background watch
+        },
+        { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+      );
+    } catch {}
+  }, [publishLocation, applyNavsariDefaultLocation]);
 
   useEffect(() => {
+    // If we already have a cached GPS from earlier in this session, keep it active
+    const cached = sessionStorage.getItem('swachhsetu_live_gps');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.lat && parsed.lng) {
+          setStatus('active');
+          setCoords(parsed);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     startMonitoring();
 
-    // Listen to browser permission changes in real time (e.g., if user disables location mid-session)
+    // Listen to browser permission changes in real time
     let permStatus: PermissionStatus | null = null;
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions
@@ -122,30 +197,33 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
           if (res.state === 'denied') {
             setStatus('denied');
             setErrorDetail('Location permission is denied. Enable Location access to continue civic activities.');
-            setShowModalPrompt(true);
+            if (!sessionStorage.getItem('swachhsetu_loc_dismissed')) {
+              setShowModalPrompt(true);
+            }
           }
           res.onchange = () => {
             if (res.state === 'granted') {
               startMonitoring();
             } else if (res.state === 'denied') {
               setStatus('denied');
-              setErrorDetail('Location was turned off. Please enable Location services to continue.');
-              setShowModalPrompt(true);
+              setErrorDetail('Location was turned off. Please enable Location services.');
             }
           };
         })
         .catch(() => {});
     }
 
-    // Periodic heartbeat every 45s to detect if GPS was disabled while active
+    // Periodic heartbeat every 60s - silently syncs without forcing modal popup
     const heartbeat = window.setInterval(() => {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(
         pos => publishLocation(pos),
-        err => handleGeoError(err),
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+        () => {
+          // Silent background heartbeat failure — never harass user with modal
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
       );
-    }, 45000);
+    }, 60000);
 
     return () => {
       if (watchIdRef.current !== null && navigator.geolocation) {
@@ -154,7 +232,7 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
       if (permStatus) permStatus.onchange = null;
       window.clearInterval(heartbeat);
     };
-  }, [startMonitoring, publishLocation, handleGeoError]);
+  }, [startMonitoring, publishLocation]);
 
   return (
     <>
@@ -168,6 +246,14 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={applyNavsariDefaultLocation}
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-amber-300 text-amber-900 text-[11px] font-extrabold inline-flex items-center gap-1.5 transition shadow-2xs"
+            >
+              <MapPin className="w-3.5 h-3.5 text-amber-700" />
+              <span>Use Navsari Center</span>
+            </button>
             <button
               type="button"
               onClick={startMonitoring}
@@ -199,7 +285,7 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
       {/* Startup / Mid-session Location Suggestion Modal when Location is OFF */}
       {showModalPrompt && (status === 'off' || status === 'denied' || status === 'unsupported') && (
         <div className="fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-amber-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-3xl border border-amber-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
@@ -214,7 +300,7 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setShowModalPrompt(false)}
+                onClick={dismissModal}
                 className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
                 aria-label="Dismiss for now"
               >
@@ -242,15 +328,22 @@ export const LocationMonitor: React.FC<LocationMonitorProps> = ({
               </li>
               <li className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-[10px]">3</span>
-                <span>Click <strong>Enable &amp; Verify Location</strong> below.</span>
+                <span>Click <strong>Enable &amp; Verify Location</strong> below or use Navsari default.</span>
               </li>
             </ul>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowModalPrompt(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                onClick={applyNavsariDefaultLocation}
+                className="px-3.5 py-2 rounded-xl border border-amber-300 bg-amber-50 text-xs font-bold text-amber-900 hover:bg-amber-100 transition"
+              >
+                Use Navsari Center
+              </button>
+              <button
+                type="button"
+                onClick={dismissModal}
+                className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
               >
                 Remind Me Later
               </button>

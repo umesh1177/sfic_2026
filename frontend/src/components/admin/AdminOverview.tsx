@@ -52,15 +52,15 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
 
   const summary = data?.summary || {
     total_wards: 13,
-    total_officers: 4,
-    total_workers: 24,
+    total_officers: 0,
+    total_workers: 0,
     total_complaints: 0,
     active_complaints: 0,
     resolved_complaints: 0,
     pending_approval_complaints: 0,
     flagged_officers_count: 0,
-    avg_cleanliness_score: 90.2,
-    sla_compliance_rate: 94
+    avg_cleanliness_score: 100.0,
+    sla_compliance_rate: 100
   };
 
   const flaggedOfficers = data?.flagged_officers || [];
@@ -261,13 +261,19 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ lang, onNavigateTa
               <p className="text-xs text-slate-500 font-semibold">Weighted average score across all 13 NMC Wards</p>
             </div>
             <div className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-black text-xs border border-emerald-200">
-              Grade A+
+              {Number(summary.avg_cleanliness_score || 100) >= 90
+                ? 'Grade A+'
+                : Number(summary.avg_cleanliness_score || 100) >= 80
+                ? 'Grade A'
+                : Number(summary.avg_cleanliness_score || 100) >= 70
+                ? 'Grade B+'
+                : 'Grade B'}
             </div>
           </div>
           <div className="flex items-baseline gap-3">
-            <span className="text-4xl font-black text-[#095c54]">{summary.avg_cleanliness_score}%</span>
+            <span className="text-4xl font-black text-[#095c54]">{Number(summary.avg_cleanliness_score || 100).toFixed(1)}%</span>
             <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5" /> +2.4% vs last month
+              <TrendingUp className="w-3.5 h-3.5" /> Real-time Civic Index
             </span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-3 mt-4 overflow-hidden">

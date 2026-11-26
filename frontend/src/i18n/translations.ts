@@ -20,6 +20,7 @@ export interface AppTranslations {
   nav_drives: string;
   nav_challenges: string;
   nav_rewards: string;
+  nav_certificates: string;
   nav_support: string;
   nav_notifications: string;
   nav_profile: string;
@@ -256,6 +257,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_drives: 'Cleanliness Drives',
     nav_challenges: 'Community Challenges',
     nav_rewards: 'Posts',
+    nav_certificates: 'Certificates',
     nav_support: 'Feedback & Support',
     nav_notifications: 'Notifications',
     nav_profile: 'My Profile',
@@ -306,7 +308,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_report_short: 'Report',
     hero_card_title: 'Keep Navsari Clean & Green',
     hero_card_desc: 'Spot garbage, overflowing bins, or open drains? Report instantly for 24-hr resolution.',
-    hero_karma: 'Civic Karma',
+    hero_karma: 'Civic Activity',
     hero_level: 'Level 2 Active Citizen',
     quick_actions: 'Quick Actions',
     action_report: 'Report Issue',
@@ -326,11 +328,11 @@ export const translations: Record<Language, AppTranslations> = {
     action_drives_title: 'Cleanliness Drives',
     action_drives_sub: 'Join Volunteer Action',
     action_challenges_title: 'Civic Challenges',
-    action_challenges_sub: 'Earn Karma & Badges',
+    action_challenges_sub: 'Volunteer Action & Badges',
     nearby_issues_title: 'Recent Reports in Navsari',
     ward_scores_title: 'Ward Cleanliness Leaderboard',
     community_impact_title: 'Your Civic Impact',
-    points_earned: 'Civic Karma Points',
+    points_earned: 'Civic Contributions',
 
     // Report
     report_title: 'Report a Cleanliness Issue',
@@ -489,6 +491,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_drives: 'સફાઈ અભિયાન',
     nav_challenges: 'સામુદાયિક પડકારો',
     nav_rewards: 'સ્વચ્છતા પોસ્ટ્સ',
+    nav_certificates: 'પ્રમાણપત્રો',
     nav_support: 'પ્રતિસાદ અને સહાય',
     nav_notifications: 'સૂચનાઓ',
     nav_profile: 'મારી પ્રોફાઇલ',
@@ -539,7 +542,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_report_short: 'ફરિયાદ',
     hero_card_title: 'નવસારીને સ્વચ્છ અને સુંદર બનાવો',
     hero_card_desc: 'કચરાના ઢગલા કે ગટર ઉભરાવાની સમસ્યા? ૨૪ કલાકમાં નિકાલ માટે તુરંત ફરિયાદ નોંધાવો.',
-    hero_karma: 'નાગરિક કર્મ',
+    hero_karma: 'નાગરિક પ્રવૃત્તિ',
     hero_level: 'લેવલ ૨ સક્રિય નાગરિક',
     quick_actions: 'ઝડપી સેવાઓ',
     action_report: 'સ્વચ્છતા ફરિયાદ કરો',
@@ -722,6 +725,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_drives: 'स्वच्छता अभियान',
     nav_challenges: 'सामुदायिक चुनौतियां',
     nav_rewards: 'स्वच्छता पोस्ट्स',
+    nav_certificates: 'प्रमाणपत्र',
     nav_support: 'प्रतिक्रिया व सहायता',
     nav_notifications: 'सूचनाएं',
     nav_profile: 'मेरी प्रोफ़ाइल',
@@ -772,7 +776,7 @@ export const translations: Record<Language, AppTranslations> = {
     nav_report_short: 'रिपोर्ट',
     hero_card_title: 'नवसारी को स्वच्छ और सुंदर बनाएं',
     hero_card_desc: 'कचरे के ढेर या जलभराव की समस्या? २४ घंटे में समाधान के लिए तुरंत शिकायत दर्ज करें।',
-    hero_karma: 'नागरिक कर्म',
+    hero_karma: 'नागरिक गतिविधि',
     hero_level: 'लेवल २ सक्रिय नागरिक',
     quick_actions: 'त्वरित कार्य',
     action_report: 'स्वच्छता समस्या दर्ज करें',

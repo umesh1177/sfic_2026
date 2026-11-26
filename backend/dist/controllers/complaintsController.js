@@ -97,36 +97,81 @@ class ComplaintsController {
     }
     /**
      * POST /api/complaints/check-duplicates
+     * Monitors active complaints within 200 meters of the citizen's GPS coordinates
      */
     static async checkDuplicates(req, res) {
         try {
             const { latitude, longitude, category_id } = req.body;
             const lat = Number(latitude);
             const lng = Number(longitude);
+            const citizenId = req.user?.id;
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                res.status(200).json({ success: true, data: { has_duplicates: false, duplicates: [] } });
+                return;
+            }
             const allComplaints = await dbRepository_js_1.DbRepository.getComplaints();
-            // Find active complaints within 120 meters
-            const nearbyDuplicates = allComplaints.filter(c => {
-                if (c.status === 'resolved' || c.status === 'rejected')
+            // Find active complaints within 200 meters radius
+            const nearbyMatches = allComplaints.filter(c => {
+                const st = String(c.status || '').toLowerCase();
+                if (['resolved', 'closed', 'rejected', 'verified_complete'].includes(st))
                     return false;
-                const dist = (0, postgis_js_1.calculateDistanceMeters)(lat, lng, c.location.latitude, c.location.longitude);
-                return dist <= 120 && (!category_id || c.category_id === category_id);
-            }).map(c => ({
-                id: c.id,
-                complaint_number: c.complaint_number,
-                category_name: c.category_name,
-                description: c.description,
-                image_url: c.image_url,
-                distance_meters: Math.round((0, postgis_js_1.calculateDistanceMeters)(lat, lng, c.location.latitude, c.location.longitude)),
-                status: c.status,
-                submitted_at: c.submitted_at
-            }));
+                const cLat = Number(c.location?.latitude);
+                const cLng = Number(c.location?.longitude);
+                if (!Number.isFinite(cLat) || !Number.isFinite(cLng))
+                    return false;
+                const dist = (0, postgis_js_1.calculateDistanceMeters)(lat, lng, cLat, cLng);
+                return dist <= 200;
+            }).map(c => {
+                const cLat = Number(c.location?.latitude);
+                const cLng = Number(c.location?.longitude);
+                const dist = Math.round((0, postgis_js_1.calculateDistanceMeters)(lat, lng, cLat, cLng));
+                return {
+                    id: c.id,
+                    complaint_number: c.complaint_number,
+                    category_id: c.category_id,
+                    category_name: c.category_name,
+                    description: c.description,
+                    landmark: c.location?.landmark || c.landmark || '',
+                    address: c.location?.address || c.address || '',
+                    image_url: c.image_url,
+                    distance_meters: dist,
+                    status: c.status,
+                    followers_count: Number(c.followers_count || c.upvotes_count || 1),
+                    upvotes_count: Number(c.upvotes_count || c.followers_count || 1),
+                    submitted_at: c.submitted_at,
+                    matches_category: Boolean(category_id && c.category_id === category_id)
+                };
+            });
+            // Sort: matching category first, then closest distance
+            nearbyMatches.sort((a, b) => {
+                if (a.matches_category && !b.matches_category)
+                    return -1;
+                if (!a.matches_category && b.matches_category)
+                    return 1;
+                return a.distance_meters - b.distance_meters;
+            });
             res.status(200).json({
                 success: true,
                 data: {
-                    has_duplicates: nearbyDuplicates.length > 0,
-                    duplicates: nearbyDuplicates
+                    has_duplicates: nearbyMatches.length > 0,
+                    duplicates: nearbyMatches.slice(0, 5)
                 }
             });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    /**
+     * POST /api/complaints/:id/raise-count
+     * Increases the endorse/raise count on an existing civic issue within 200m radius
+     */
+    static async raiseCount(req, res) {
+        try {
+            const { id } = req.params;
+            const citizenId = req.user?.id || 'c0000000-0000-0000-0000-000000000001';
+            const result = await dbRepository_js_1.DbRepository.raiseComplaintCount(id, citizenId);
+            res.status(200).json(result);
         }
         catch (err) {
             res.status(500).json({ success: false, error: err.message });

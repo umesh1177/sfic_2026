@@ -21,6 +21,7 @@ interface MiniMapLocationPickerProps {
   initialLng: number;
   onLocationChange: (lat: number, lng: number, ward: any, addressSnippet?: string) => void;
   onValidityChange?: (isValid: boolean) => void;
+  hideWardBanner?: boolean;
 }
 
 // Controller to animate map view
@@ -46,12 +47,20 @@ export const MiniMapLocationPicker: React.FC<MiniMapLocationPickerProps> = ({
   initialLat,
   initialLng,
   onLocationChange,
-  onValidityChange
+  onValidityChange,
+  hideWardBanner = false
 }) => {
   const [position, setPosition] = useState<[number, number]>([initialLat, initialLng]);
   const [detectedWard, setDetectedWard] = useState<any>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialLat !== position[0] || initialLng !== position[1]) {
+      setPosition([initialLat, initialLng]);
+      validateAndNotify(initialLat, initialLng);
+    }
+  }, [initialLat, initialLng]);
 
   // Custom marker pin
   const pinIcon = L.divIcon({
@@ -223,23 +232,25 @@ export const MiniMapLocationPicker: React.FC<MiniMapLocationPickerProps> = ({
       </div>
 
       {/* PostGIS Ward identification outcome banner */}
-      {detectedWard ? (
-        <div className="p-2.5 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-xs font-bold text-[#047857] flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-[#10b981] shrink-0" />
-            <span>
-              Ward {detectedWard.ward_number}: {detectedWard.ward_name} ({detectedWard.ward_name_gu})
+      {!hideWardBanner && (
+        detectedWard ? (
+          <div className="p-2.5 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-xs font-bold text-[#047857] flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-[#10b981] shrink-0" />
+              <span>
+                Ward {detectedWard.ward_number}: {detectedWard.ward_name} ({detectedWard.ward_name_gu})
+              </span>
+            </div>
+            <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-[#10b981] text-white">
+              NMC Verified
             </span>
           </div>
-          <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-[#10b981] text-white">
-            NMC Verified
-          </span>
-        </div>
-      ) : (
-        <div className="p-2.5 rounded-xl bg-[#fee2e2] border border-[#fca5a5] text-xs font-bold text-[#b91c1c] flex items-center gap-1.5">
-          <AlertTriangle className="w-4 h-4 text-[#dc2626] shrink-0" />
-          <span>{errorMsg || 'Location rejected: Coordinates outside Navsari boundary'}</span>
-        </div>
+        ) : (
+          <div className="p-2.5 rounded-xl bg-[#fee2e2] border border-[#fca5a5] text-xs font-bold text-[#b91c1c] flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4 text-[#dc2626] shrink-0" />
+            <span>{errorMsg || 'Location rejected: Coordinates outside Navsari boundary'}</span>
+          </div>
+        )
       )}
     </div>
   );

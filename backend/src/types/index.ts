@@ -84,6 +84,31 @@ export interface ComplaintCategory {
   is_active: boolean;
   max_approval_days?: number; // SLA: Max days to approve before officer is flagged
   max_work_days?: number;     // SLA: Max days to resolve problem
+  approval_sla_days?: number;
+  approval_sla_hours?: number;
+  approval_sla_minutes?: number;
+  work_sla_days?: number;
+  work_sla_hours?: number;
+  work_sla_minutes?: number;
+  total_approval_sla_minutes?: number;
+  total_work_sla_minutes?: number;
+  created_at?: string;
+}
+
+export interface WardOfficerAssignmentHistory {
+  id: string;
+  ward_number: number;
+  ward_name: string;
+  officer_id: string;
+  officer_user_id?: string;
+  officer_name: string;
+  officer_phone?: string;
+  officer_email?: string;
+  designation?: string;
+  assigned_at: string;
+  relieved_at?: string | null;
+  status: 'active' | 'relieved' | 'transferred';
+  notes?: string;
   created_at?: string;
 }
 
@@ -183,6 +208,7 @@ export interface Complaint {
   upvotes_count?: number;
   updated_at?: string;
   resolved_image_url?: string;
+  allow_anywhere_attendance?: boolean;
 }
 
 export interface CleanlinessDrive {
@@ -222,6 +248,12 @@ export interface CleanlinessDrive {
   checkin_longitude?: number;
   checkin_distance_meters?: number;
   checkin_at?: string;
+  requires_attendance?: boolean;
+  is_nmc_official_drive?: boolean;
+  is_unlimited_capacity?: boolean;
+  location_url?: string;
+  problem_latitude?: number;
+  problem_longitude?: number;
 }
 
 export interface Challenge {
@@ -325,6 +357,7 @@ export interface CommunityRecognitionPost {
   achievement_stats: string;
   image_url: string;
   before_image_url?: string;
+  before_photos?: string[];
   after_image_url?: string;
   after_photos?: string[];
   participating_communities?: string[];
@@ -350,6 +383,7 @@ export type ActivityApprovalStatus =
   | 'ward_approved'
   | 'nmc_admin_review'
   | 'nmc_admin_approved'
+  | 'approved'
   | 'changes_requested'
   | 'rejected';
 
@@ -445,6 +479,8 @@ export interface CommunityActivity {
   evidence_status: ActivityEvidenceStatus;
   registered_count?: number;
   verified_participants_count?: number;
+  requires_attendance?: boolean;
+  is_nmc_official_drive?: boolean;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -663,15 +699,20 @@ export interface WorkAssignmentMember {
   worker_phone: string;
   designation_name: string;
   temporary_leader: boolean;
-  assignment_status: 'assigned' | 'acknowledged' | 'present' | 'absent' | 'reassigned';
+  assignment_status: 'assigned' | 'acknowledged' | 'present' | 'absent' | 'reassigned' | 'completed';
   attendance_timestamp?: string;
   validation_status?: string;
   distance_from_assignment_meters?: number;
+  user_id?: string;
 }
 
 export interface WorkAssignment {
   id: string;
   task_code: string;
+  complaint_id?: string;
+  complaint_number?: string;
+  team_id?: string;
+  team_name?: string;
   title: string;
   description: string;
   category: string;
@@ -701,7 +742,8 @@ export interface WorkAssignment {
     | 'changes_requested'
     | 'verified_complete'
     | 'closed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'reassigned';
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -715,6 +757,7 @@ export interface WorkAssignment {
   my_attendance_status?: string;
   has_before_evidence?: boolean;
   has_after_evidence?: boolean;
+  allow_anywhere_attendance?: boolean;
 }
 
 export interface WorkerAttendance {
@@ -730,6 +773,12 @@ export interface WorkerAttendance {
   validation_status: 'verified_match' | 'location_mismatch' | 'poor_accuracy' | 'exception_approved' | 'exception_rejected';
   validation_reason?: string;
   attendance_method: 'gps' | 'manual_exception';
+  attendance_type?: 'check_in' | 'completed_for_day';
+  check_in_time?: string;
+  check_out_time?: string;
+  check_out_latitude?: number;
+  check_out_longitude?: number;
+  attendance_date?: string;
   approved_by?: string;
   created_at: string;
 }
@@ -781,6 +830,9 @@ export interface WorkEvidence {
   ai_analysis_result?: any;
   review_status: 'submitted' | 'verified' | 'changes_requested' | 'rejected';
   review_comments?: string;
+  photos?: string[];
+  officer_verified?: boolean;
+  officer_reviewed_at?: string;
   created_at: string;
 }
 
@@ -952,6 +1004,8 @@ export interface WardHotspot {
 }
 
 export interface WardCleanlinessScore {
+  ward_number?: number;
+  ward_name?: string;
   current_score: number;
   previous_score: number;
   monthly_trend: { month: string; score: number }[];
@@ -1059,6 +1113,8 @@ export interface CommunityProblem {
   estimated_volunteers_needed: number;
   suggested_equipment: string[];
   image_url?: string;
+  location_url?: string;
+  allow_multiple_orgs?: boolean;
   status: 'open' | 'requests_received' | 'claimed' | 'in_progress' | 'resolved';
   claimed_by_community_id?: string;
   claimed_by_community_name?: string;

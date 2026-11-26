@@ -61,9 +61,12 @@ export const FeedbackSupport: React.FC<FeedbackSupportProps> = ({ lang }) => {
       setShowNewTicketModal(false);
       setSubject('');
       setDescription('');
+      if (res.data) {
+        setTickets(prev => [res.data, ...prev]);
+        setSelectedTicket(res.data);
+      }
       setActionSuccess('Support ticket lodged! Ward Helpdesk will respond.');
-      fetchTickets();
-      setSelectedTicket(res.data);
+      await fetchTickets();
     } catch (err: any) {
       alert(err.message);
     }
@@ -74,9 +77,14 @@ export const FeedbackSupport: React.FC<FeedbackSupportProps> = ({ lang }) => {
 
     try {
       const res = await api.replySupportTicket(selectedTicket.id, replyMessage);
-      selectedTicket.messages.push(res.data);
+      if (res.data && selectedTicket) {
+        setSelectedTicket({
+          ...selectedTicket,
+          messages: [...(selectedTicket.messages || []), res.data]
+        });
+      }
       setReplyMessage('');
-      fetchTickets();
+      await fetchTickets();
     } catch (err: any) {
       alert(err.message);
     }

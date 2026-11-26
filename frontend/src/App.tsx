@@ -5,6 +5,7 @@ import { MobileBottomNavigation } from './components/MobileBottomNavigation.js';
 import { DashboardHome } from './components/DashboardHome.js';
 import { MyComplaints } from './components/MyComplaints.js';
 import { CleanlinessDrives } from './components/CleanlinessDrives.js';
+import { CitizenCertificatesView } from './components/CitizenCertificatesView.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
 import { MyProfile } from './components/MyProfile.js';
@@ -44,6 +45,7 @@ export const App: React.FC = () => {
   const [categories, setCategories] = useState<ComplaintCategory[]>([]);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [complaintsRefreshTrigger, setComplaintsRefreshTrigger] = useState<number>(0);
 
   const t = translations[lang];
 
@@ -142,6 +144,7 @@ export const App: React.FC = () => {
   const handleComplaintSubmitted = (newComplaint: Complaint) => {
     // Refresh dashboard stats
     api.getDashboard().then(res => setDashboardData(res.data)).catch(() => {});
+    setComplaintsRefreshTrigger(Date.now());
   };
 
   // 1. Loading screen while checking authentication token
@@ -338,6 +341,7 @@ export const App: React.FC = () => {
 
           {currentTab === 'complaints' && (
             <MyComplaints
+              key={complaintsRefreshTrigger}
               onOpenReport={() => setCurrentTab('report')}
               lang={lang}
             />
@@ -345,6 +349,15 @@ export const App: React.FC = () => {
 
           {currentTab === 'drives' && (
             <CleanlinessDrives lang={lang} />
+          )}
+
+          {currentTab === 'certificates' && (
+            <CitizenCertificatesView
+              lang={lang}
+              user={user}
+              onBack={() => setCurrentTab('home')}
+              onExploreDrives={() => setCurrentTab('drives')}
+            />
           )}
 
           {(currentTab === 'rewards' || currentTab === 'posts') && (

@@ -72,8 +72,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     {
       id: 'notif-04',
       user_id: 'c0000000-0000-0000-0000-000000000001',
-      title: 'Civic Karma Reward: +50 Points Added',
-      message: 'Your report was verified by the Ward Officer with 5-star accuracy. You earned +50 Civic Karma points!',
+      title: 'Civic Report Verified: 5-Star Resolution',
+      message: 'Your report was verified by the Ward Officer with 5-star accuracy. Thank you for keeping Navsari clean!',
       notification_type: 'reward_earned',
       reference_id: 'rew-01',
       is_read: true,
@@ -178,7 +178,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       case 'drive_reminder':
         return { label: 'Cleanliness Drive', bg: 'bg-[#eff6ff] text-[#1d4ed8]' };
       case 'reward_earned':
-        return { label: 'Karma Reward', bg: 'bg-[#ecfdf5] text-[#047857]' };
+        return { label: 'Resolution Notice', bg: 'bg-[#ecfdf5] text-[#047857]' };
       default:
         return { label: 'Notice', bg: 'bg-[#f1f5f9] text-[#475569]' };
     }

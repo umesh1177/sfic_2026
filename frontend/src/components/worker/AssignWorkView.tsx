@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Briefcase,
   MapPin,
+  Globe,
   Clock,
   Calendar,
   User,
@@ -89,11 +90,15 @@ interface SubmittedEvidence {
   id?: string;
   stage: 'before' | 'during' | 'after';
   photo_url: string;
+  photos?: string[];
   description: string;
   dateLabel: string;
   timeLabel: string;
   distance: number;
   aiCategory?: string;
+  review_status?: 'submitted' | 'verified' | 'rejected' | 'pending';
+  officer_verified?: boolean;
+  officer_notes?: string;
 }
 
 interface DailyAttendanceRecord {
@@ -140,6 +145,13 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
   const [activeTab, setActiveTab] = useState<'work_info' | 'attendance' | 'evidence_submission' | 'evidence_history'>('work_info');
 
+  // Requirement: Only Team Leader can access evidence submission and evidence log/history
+  useEffect(() => {
+    if (!currentTask?.is_temporary_leader && (activeTab === 'evidence_submission' || activeTab === 'evidence_history')) {
+      setActiveTab('work_info');
+    }
+  }, [currentTask?.is_temporary_leader, activeTab]);
+
   // Geolocation state
   const [deviceCoords, setDeviceCoords] = useState<{
     lat: number;
@@ -148,8 +160,19 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   } | null>(null);
   const [locating, setLocating] = useState<boolean>(false);
 
-  // Attendance states
-  const todayKey = new Date().toISOString().split('T')[0];
+  const formatTimeIST = (timeVal?: string | Date | null): string | undefined => {
+    if (!timeVal) return undefined;
+    try {
+      const d = new Date(timeVal);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      }
+    } catch {}
+    return String(timeVal);
+  };
+
+  // Attendance states (Synchronized with Indian Standard Time)
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
   const attendanceStorageKey = `worker_attendance_${profile?.id || 'worker'}_${currentTask?.id || 'task'}_${todayKey}`;
 
   const [dailyAttendance, setDailyAttendance] = useState<DailyAttendanceRecord>({
@@ -158,23 +181,73 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   });
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(attendanceStorageKey);
-      if (saved) {
-        setDailyAttendance(JSON.parse(saved));
-        return;
+    let isMounted = true;
+    setDailyAttendance({ date: todayKey, status: 'none' });
+    const fetchTodayAttendance = async () => {
+      try {
+        const res = await api.getWorkerTodayAttendance(currentTask?.id);
+        if (isMounted && res?.data) {
+          if (res.data.status && res.data.status !== 'none') {
+            const checkIn = res.data.rawCheckInTime
+              ? formatTimeIST(res.data.rawCheckInTime)
+              : (res.data.checkInTime ? formatTimeIST(res.data.checkInTime) : undefined);
+            const checkOut = res.data.rawCheckOutTime
+              ? formatTimeIST(res.data.rawCheckOutTime)
+              : (res.data.checkOutTime ? formatTimeIST(res.data.checkOutTime) : undefined);
+
+            const rec: DailyAttendanceRecord = {
+              date: res.data.date || todayKey,
+              status: res.data.status,
+              checkInTime: checkIn,
+              checkOutTime: checkOut
+            };
+            setDailyAttendance(rec);
+            try {
+              localStorage.setItem(attendanceStorageKey, JSON.stringify(rec));
+            } catch {}
+            return;
+          } else if (res.data.status === 'none') {
+            // Task has NO attendance yet today - show fresh punch-in
+            setDailyAttendance({ date: todayKey, status: 'none' });
+            try {
+              localStorage.removeItem(attendanceStorageKey);
+            } catch {}
+            return;
+          }
+        }
+      } catch {
+        // Fallback to local cache if network/offline
       }
-    } catch {}
-    if (currentTask?.my_attendance_status === 'present' || currentTask?.my_attendance_status === 'verified') {
-      setDailyAttendance({
-        date: todayKey,
-        status: 'checked_in',
-        checkInTime: 'Verified On-Site'
-      });
-    } else {
-      setDailyAttendance({ date: todayKey, status: 'none' });
-    }
-  }, [attendanceStorageKey, currentTask?.my_attendance_status, todayKey]);
+
+      try {
+        const saved = localStorage.getItem(attendanceStorageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.date === todayKey) {
+            if (isMounted) setDailyAttendance(parsed);
+            return;
+          }
+        }
+      } catch {}
+
+      if (currentTask?.my_attendance_status === 'present' || currentTask?.my_attendance_status === 'verified') {
+        if (isMounted) {
+          setDailyAttendance({
+            date: todayKey,
+            status: 'checked_in',
+            checkInTime: 'Verified On-Site'
+          });
+        }
+      } else {
+        if (isMounted) {
+          setDailyAttendance({ date: todayKey, status: 'none' });
+        }
+      }
+    };
+
+    fetchTodayAttendance();
+    return () => { isMounted = false; };
+  }, [attendanceStorageKey, currentTask?.id, currentTask?.my_attendance_status, todayKey]);
 
   const [submittingAttendance, setSubmittingAttendance] = useState<boolean>(false);
   const [attendanceSuccess, setAttendanceSuccess] = useState<string | null>(null);
@@ -182,19 +255,13 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
 
   // Evidence states
   const [evidenceStage, setEvidenceStage] = useState<'before' | 'during' | 'after'>('before');
-  const [evidencePreview, setEvidencePreview] = useState<string>('');
+  const [evidencePreviews, setEvidencePreviews] = useState<string[]>([]);
   const [evidenceDescription, setEvidenceDescription] = useState<string>('');
   const [isListeningSpeech, setIsListeningSpeech] = useState<boolean>(false);
   const [speechLang, setSpeechLang] = useState<'gu-IN' | 'hi-IN' | 'en-IN'>('gu-IN');
   const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  const [aiValidating, setAiValidating] = useState<boolean>(false);
-  const [aiResult, setAiResult] = useState<{
-    category: string;
-    confidence: number;
-    isCleanlinessValid: boolean;
-  } | null>(null);
   const [uploadingEvidence, setUploadingEvidence] = useState<boolean>(false);
   const [evidenceSuccess, setEvidenceSuccess] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
@@ -258,20 +325,47 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       try {
         const res = await api.getWorkEvidence(currentTask.id);
         if (res.data && res.data.length > 0) {
-          const mapped: SubmittedEvidence[] = res.data.map((e: any) => {
+          const rawList = res.data || [];
+          const groupedMap = new Map<string, SubmittedEvidence>();
+
+          rawList.forEach((e: any) => {
             const dt = new Date(e.device_capture_timestamp || e.created_at || Date.now());
-            return {
-              id: e.id,
-              stage: (String(e.evidence_type || e.stage || 'during').toLowerCase() as any),
-              photo_url: e.storage_path || e.photo_url,
-              description: e.description || `${(e.evidence_type || 'Work').toUpperCase()} evidence recorded.`,
-              dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-              timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-              distance: Math.round(e.distance_from_assignment_meters || e.gps_accuracy || 10),
-              aiCategory: 'Sanitation Verification'
-            };
+            const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+            const stage = (String(e.evidence_type || e.stage || 'during').toLowerCase() as any);
+            const rawPhotos: string[] = Array.isArray(e.photos) && e.photos.length > 0 ? e.photos : (e.storage_path ? [e.storage_path] : []);
+
+            // Key by batch (same stage + same 90-second window + description snippet) to group multi-photo submissions
+            const timeBucket = Math.floor(dt.getTime() / (1000 * 90));
+            const groupKey = `${stage}-${timeBucket}-${(e.description || '').slice(0, 20)}`;
+
+            if (groupedMap.has(groupKey)) {
+              const existing = groupedMap.get(groupKey)!;
+              rawPhotos.forEach(p => {
+                if (p && !existing.photos?.includes(p)) {
+                  existing.photos?.push(p);
+                }
+              });
+              if (e.review_status) existing.review_status = e.review_status;
+              if (e.officer_verified) existing.officer_verified = e.officer_verified;
+            } else {
+              groupedMap.set(groupKey, {
+                id: e.id,
+                stage: stage,
+                photo_url: rawPhotos[0] || e.storage_path || '',
+                photos: rawPhotos.length > 0 ? rawPhotos : [e.storage_path || ''],
+                description: e.description || `${(e.evidence_type || 'Work').toUpperCase()} evidence recorded.`,
+                dateLabel: dateStr,
+                timeLabel: timeStr,
+                distance: Math.round(e.distance_from_assignment_meters || e.gps_accuracy || 10),
+                aiCategory: 'Sanitation Verification',
+                review_status: e.review_status || 'submitted',
+                officer_verified: Boolean(e.officer_verified || e.review_status === 'verified'),
+                officer_notes: e.review_comments || e.officer_notes
+              });
+            }
           });
-          setSubmittedEvidences(mapped);
+          setSubmittedEvidences(Array.from(groupedMap.values()));
         } else {
           setSubmittedEvidences([]);
         }
@@ -312,7 +406,8 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     taskCoords[0],
     taskCoords[1]
   );
-  const isWithinGeofence = distanceToTask <= GEOFENCE_LIMIT_METERS;
+  const allowAnywhere = Boolean(currentTask.allow_anywhere_attendance);
+  const isWithinGeofence = allowAnywhere || distanceToTask <= GEOFENCE_LIMIT_METERS;
 
   const isEvidenceSubmitted =
     submittedEvidences.length > 0 ||
@@ -335,6 +430,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
   const handlePunchAttendance = async (action: 'check_in' | 'check_out') => {
     setAttendanceError(null);
     setAttendanceSuccess(null);
+
+    if (currentTask.status === 'reassigned') {
+      setAttendanceError('This task was reassigned to another squad by the Ward Officer. You are no longer assigned to this task.');
+      return;
+    }
 
     if (!isWithinGeofence) {
       setAttendanceError(
@@ -359,27 +459,42 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     }
 
     setSubmittingAttendance(true);
-    const nowTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const nowTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
     try {
-      await api.markWorkerAttendance({
+      const res = await api.markWorkerAttendance({
         assignment_id: currentTask.id,
         latitude: userCoords[0],
         longitude: userCoords[1],
-        gps_accuracy_meters: deviceCoords?.accuracy || 8
+        gps_accuracy_meters: deviceCoords?.accuracy || 8,
+        action
       });
+
+      const serverAtt: any = res?.data;
+      const serverCheckIn = serverAtt?.check_in_time
+        ? formatTimeIST(serverAtt.check_in_time)
+        : (serverAtt?.attendance_timestamp ? formatTimeIST(serverAtt.attendance_timestamp) : nowTime);
+      const serverCheckOut = serverAtt?.check_out_time
+        ? formatTimeIST(serverAtt.check_out_time)
+        : nowTime;
 
       const record: DailyAttendanceRecord =
         action === 'check_in'
-          ? { date: todayKey, status: 'checked_in', checkInTime: nowTime }
-          : { ...dailyAttendance, status: 'completed_for_day', checkOutTime: nowTime };
+          ? { date: todayKey, status: 'checked_in', checkInTime: serverCheckIn }
+          : { ...dailyAttendance, status: 'completed_for_day', checkOutTime: serverCheckOut };
 
       setDailyAttendance(record);
-      localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
+      try {
+        localStorage.setItem(attendanceStorageKey, JSON.stringify(record));
+      } catch {}
       setAttendanceSuccess(
         action === 'check_in'
-          ? `Check-In verified at ${nowTime} (${distanceToTask}m from site).`
-          : `Check-Out verified at ${nowTime}. Shift attendance completed.`
+          ? (allowAnywhere
+              ? `Check-In verified at ${serverCheckIn} (Remote attendance authorized by Ward Officer). Stored in municipal records.`
+              : `Check-In verified at ${serverCheckIn} (${distanceToTask}m from site). Stored in municipal records.`)
+          : (allowAnywhere
+              ? `Check-Out verified at ${serverCheckOut} (Remote clearance). Shift attendance completed and saved to database.`
+              : `Check-Out verified at ${serverCheckOut}. Shift attendance completed and saved to database.`)
       );
       confetti({ particleCount: 25, spread: 50, origin: { y: 0.7 } });
       if (onRefresh) onRefresh();
@@ -471,46 +586,28 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     if (ctx) {
       ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
       const b64 = canvas.toDataURL('image/jpeg', 0.85);
-      setEvidencePreview(b64);
-      validateCapturedImage(b64);
+      setEvidencePreviews(prev => [...prev, b64]);
       closeLiveCamera();
     }
   };
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const b64 = reader.result as string;
-      setEvidencePreview(b64);
-      await validateCapturedImage(b64, file.name, file.size);
-    };
-    reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+    fileList.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const b64 = reader.result as string;
+        setEvidencePreviews(prev => [...prev, b64]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
   };
 
-  const validateCapturedImage = async (b64: string, fileName?: string, fileSize?: number) => {
-    setAiValidating(true);
-    setAiResult(null);
-    setEvidenceError(null);
-    try {
-      const mlRes = await api.classifyImage(fileName || 'evidence.jpg', fileSize || 500000, evidenceDescription, b64);
-      if (mlRes?.data) {
-        setAiResult({
-          category: mlRes.data.predicted_category_name || 'Municipal Sanitation Evidence',
-          confidence: mlRes.data.confidence || 0.95,
-          isCleanlinessValid: (mlRes.data.confidence || 0.95) >= 0.7
-        });
-      }
-    } catch {
-      setAiResult({
-        category: 'Municipal Sanitation Evidence',
-        confidence: 0.95,
-        isCleanlinessValid: true
-      });
-    } finally {
-      setAiValidating(false);
-    }
+  const handleRemovePhoto = (index: number) => {
+    setEvidencePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUploadStageEvidence = async () => {
@@ -518,8 +615,23 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     setEvidenceError(null);
     setEvidenceSuccess(null);
 
-    if (!evidencePreview) {
-      setEvidenceError('Please capture or select a photo first.');
+    if (currentTask.status === 'reassigned') {
+      setEvidenceError('This task was reassigned to another squad by the Ward Officer. You are no longer authorized to submit evidence.');
+      return;
+    }
+
+    // Validation: Team Leader cannot submit evidence if not checked in or after check-out
+    if (dailyAttendance.status === 'none') {
+      setEvidenceError('Attendance Check-In Required: You must punch in your duty attendance at the site first before submitting field evidence.');
+      return;
+    }
+    if (dailyAttendance.status === 'completed_for_day') {
+      setEvidenceError("Duty Shift Closed: You have already checked out for today. Evidence submission is closed until tomorrow's shift.");
+      return;
+    }
+
+    if (evidencePreviews.length === 0) {
+      setEvidenceError('Please capture or select at least one photo for evidence.');
       return;
     }
 
@@ -543,9 +655,11 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       evidenceDescription.trim() ||
       `${evidenceStage.toUpperCase()} site cleanup evidence recorded at ${currentTask.location_name || currentTask.address}.`;
 
+    const primaryPhoto = evidencePreviews[0];
     const evidencePayload = {
       stage: evidenceStage,
-      photo_url: evidencePreview,
+      photo_url: primaryPhoto,
+      photos: evidencePreviews,
       description: descToSave,
       latitude: userCoords[0],
       longitude: userCoords[1],
@@ -555,7 +669,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
     const saveOfflineWorkEvidence = async () => {
       await enqueueOfflineSubmission(
         'worker_evidence',
-        `${evidenceStage.toUpperCase()} Evidence — ${currentTask.task_code || currentTask.title}`,
+        `${evidenceStage.toUpperCase()} Evidence (${evidencePreviews.length} photos) — ${currentTask.task_code || currentTask.title}`,
         evidencePayload,
         { assignmentId: currentTask.id, stage: evidenceStage }
       );
@@ -565,18 +679,17 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         {
           id: `offline-wev-${Date.now()}`,
           stage: evidenceStage,
-          photo_url: evidencePreview,
+          photo_url: primaryPhoto,
           description: `${descToSave} [Saved Offline — Pending Auto-Sync]`,
           dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-          timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
           distance: distanceToTask,
-          aiCategory: aiResult?.category || 'Queued Offline'
+          aiCategory: 'Queued Offline'
         }
       ]);
       setEvidenceSuccess('No internet detected — Evidence saved locally on your device and will automatically sync to the server when internet returns!');
-      setEvidencePreview('');
+      setEvidencePreviews([]);
       setEvidenceDescription('');
-      setAiResult(null);
     };
 
     try {
@@ -591,19 +704,18 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
       const newEv: SubmittedEvidence = {
         id: res?.data?.id,
         stage: evidenceStage,
-        photo_url: evidencePreview,
+        photo_url: primaryPhoto,
         description: descToSave,
         dateLabel: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        timeLabel: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
         distance: distanceToTask,
-        aiCategory: aiResult?.category || 'Sanitation Verification'
+        aiCategory: 'Field Team Evidence'
       };
 
       setSubmittedEvidences(prev => [...prev, newEv]);
-      setEvidenceSuccess(`${evidenceStage.toUpperCase()} evidence submitted and synced to Ward Officer.`);
-      setEvidencePreview('');
+      setEvidenceSuccess(`${evidenceStage.toUpperCase()} evidence (${evidencePreviews.length} photo${evidencePreviews.length > 1 ? 's' : ''}) submitted and synced to Ward Officer.`);
+      setEvidencePreviews([]);
       setEvidenceDescription('');
-      setAiResult(null);
       confetti({ particleCount: 30, spread: 50 });
       if (onRefresh) onRefresh();
     } catch (err: any) {
@@ -879,8 +991,10 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
         {[
           { id: 'work_info', label: 'Work Overview', icon: Briefcase },
           { id: 'attendance', label: 'Duty Attendance', icon: Clock },
-          { id: 'evidence_submission', label: 'Submit Evidence', icon: Camera },
-          { id: 'evidence_history', label: `Evidence Log (${submittedEvidences.length})`, icon: FileCheck2 }
+          ...(Boolean(currentTask?.is_temporary_leader) ? [
+            { id: 'evidence_submission', label: 'Submit Evidence', icon: Camera },
+            { id: 'evidence_history', label: `Evidence Log (${submittedEvidences.length})`, icon: FileCheck2 }
+          ] : [])
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -1104,34 +1218,53 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </button>
           </div>
 
-          <div
-            className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
-              isWithinGeofence
-                ? 'bg-[#f0f7f5] border-[#cde6df] text-[#0f2925]'
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              {isWithinGeofence ? (
-                <CheckCircle2 className="w-4 h-4 text-[#095c54] shrink-0" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              )}
-              <div>
-                <p className="font-semibold">
-                  {isWithinGeofence
-                    ? `Inside Work Zone (~${distanceToTask}m from pin)`
-                    : `Outside Work Zone (~${distanceToTask}m away)`}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
-                  {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E
-                </p>
+          {allowAnywhere ? (
+            <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <Globe className="w-4 h-4 text-emerald-700 shrink-0 animate-pulse" />
+                <div>
+                  <p className="font-bold text-emerald-900">
+                    Ward Officer Remote Clearance Enabled
+                  </p>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">
+                    You can punch check-in/check-out and upload field evidence from anywhere (~${distanceToTask}m from site). 150m restriction bypassed.
+                  </p>
+                </div>
               </div>
+              <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-emerald-200 text-emerald-900 border border-emerald-300 shrink-0">
+                Anywhere Allowed
+              </span>
             </div>
-            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-white border border-slate-200 shrink-0">
-              {isWithinGeofence ? 'Verified' : 'Out of Range'}
-            </span>
-          </div>
+          ) : (
+            <div
+              className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                isWithinGeofence
+                  ? 'bg-[#f0f7f5] border-[#cde6df] text-[#0f2925]'
+                  : 'bg-rose-50 border-rose-200 text-rose-900'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {isWithinGeofence ? (
+                  <CheckCircle2 className="w-4 h-4 text-[#095c54] shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold">
+                    {isWithinGeofence
+                      ? `Inside Work Zone (~${distanceToTask}m from pin)`
+                      : `Outside Work Zone (~${distanceToTask}m away)`}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                    {userCoords[0].toFixed(5)}° N, {userCoords[1].toFixed(5)}° E
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-white border border-slate-200 shrink-0">
+                {isWithinGeofence ? 'Verified' : 'Out of Range'}
+              </span>
+            </div>
+          )}
 
           {attendanceSuccess && (
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2">
@@ -1172,53 +1305,65 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </div>
           </div>
 
-          {dailyAttendance.status === 'none' && (
-            <button
-              onClick={() => handlePunchAttendance('check_in')}
-              disabled={submittingAttendance || !isWithinGeofence}
-              className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
-            >
-              {submittingAttendance ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Recording Check-In...</span>
-                </>
-              ) : (
-                <>
-                  <LocateFixed className="w-4 h-4" />
-                  <span>Mark Duty Check-In</span>
-                </>
+          {currentTask.status === 'reassigned' ? (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Squad Replaced: The Ward Officer has reassigned this complaint to another team. You are no longer authorized to submit attendance or evidence.</span>
+            </div>
+          ) : (
+            <>
+              {dailyAttendance.status === 'none' && (
+                <button
+                  onClick={() => handlePunchAttendance('check_in')}
+                  disabled={submittingAttendance || !isWithinGeofence}
+                  className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                >
+                  {submittingAttendance ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Recording Check-In...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LocateFixed className="w-4 h-4" />
+                      <span>Mark Duty Check-In</span>
+                    </>
+                  )}
+                </button>
               )}
-            </button>
-          )}
 
-          {dailyAttendance.status === 'checked_in' && (
-            <button
-              onClick={() => handlePunchAttendance('check_out')}
-              disabled={submittingAttendance || !isWithinGeofence}
-              className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
-            >
-              {submittingAttendance ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Recording Check-Out...</span>
-                </>
-              ) : (
-                <>
-                  <Clock className="w-4 h-4" />
-                  <span>Mark Duty Check-Out</span>
-                </>
+              {dailyAttendance.status === 'checked_in' && (
+                <button
+                  onClick={() => handlePunchAttendance('check_out')}
+                  disabled={submittingAttendance || !isWithinGeofence}
+                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                >
+                  {submittingAttendance ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Recording Check-Out...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4" />
+                      <span>Mark Duty Check-Out</span>
+                    </>
+                  )}
+                </button>
               )}
-            </button>
+            </>
           )}
 
           {dailyAttendance.status === 'completed_for_day' && (
-            <div className="p-4 rounded-xl bg-[#f0f7f5] border border-[#cde6df] text-center space-y-1">
+            <div className="p-4 rounded-xl bg-[#f0f7f5] border border-[#cde6df] text-center space-y-2">
               <CheckCheck className="w-5 h-5 text-[#095c54] mx-auto" />
-              <p className="text-xs font-bold text-[#0f2925]">Today's Attendance Completed</p>
+              <p className="text-xs font-bold text-[#0f2925]">Today's Shift Attendance Completed</p>
               <p className="text-[11px] text-slate-600">
                 Checked in at <strong>{dailyAttendance.checkInTime}</strong> and checked out at <strong>{dailyAttendance.checkOutTime}</strong>.
               </p>
+              <div className="pt-2 border-t border-[#cde6df]/70 text-[11px] text-slate-500 font-medium">
+                1 check-in and 1 check-out limit reached for today. Next duty check-in unlocks on the next calendar day.
+              </div>
             </div>
           )}
         </div>
@@ -1285,31 +1430,66 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left: Photo Capture */}
-              <div className="space-y-2.5">
-                <label className="text-xs font-semibold text-slate-700 block">
-                  Photo Evidence ({evidenceStage.toUpperCase()} Stage) *
-                </label>
+              {/* Left: Multi-Photo Capture & Thumbnails */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 block">
+                    Photo Evidence ({evidenceStage.toUpperCase()} Stage) *
+                  </label>
+                  <span className="text-[11px] font-bold text-[#095c54]">
+                    {evidencePreviews.length} Photo{evidencePreviews.length !== 1 ? 's' : ''} Added
+                  </span>
+                </div>
 
-                {evidencePreview ? (
-                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-[4/3]">
-                    <img src={evidencePreview} alt="Evidence preview" className="w-full h-full object-cover" />
-                    <div className="absolute bottom-2 left-2 right-2 bg-black/70 backdrop-blur-xs px-2.5 py-1.5 rounded-lg text-white text-[10px] flex items-center justify-between">
-                      <span className="font-semibold uppercase">{evidenceStage} Stage</span>
-                      <span className="font-mono opacity-85">
-                        {userCoords[0].toFixed(4)}, {userCoords[1].toFixed(4)}
-                      </span>
+                {evidencePreviews.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2.5 max-h-72 overflow-y-auto p-1">
+                      {evidencePreviews.map((photo, pIdx) => (
+                        <div key={pIdx} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-[4/3] group shadow-2xs">
+                          <img src={photo} alt={`Evidence #${pIdx + 1}`} className="w-full h-full object-cover" />
+                          <div className="absolute bottom-1.5 left-1.5 bg-black/75 backdrop-blur-xs px-2 py-0.5 rounded text-white text-[9px] font-bold">
+                            #{pIdx + 1} {evidenceStage.toUpperCase()}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(pIdx)}
+                            className="absolute top-1.5 right-1.5 p-1 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white shadow-xs transition"
+                            title="Remove this photo"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEvidencePreview('');
-                        setAiResult(null);
-                      }}
-                      className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[11px] font-semibold hover:bg-black/90 transition"
-                    >
-                      Retake
-                    </button>
+
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      <label className="px-3 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>+ Add More Photos</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handlePhotoSelect}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={openLiveCamera}
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition inline-flex items-center gap-1.5"
+                      >
+                        <Video className="w-3.5 h-3.5 text-[#095c54]" />
+                        <span>Take Live Photo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEvidencePreviews([])}
+                        className="px-2.5 py-1.5 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-semibold transition ml-auto"
+                      >
+                        Clear All
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="border border-dashed border-slate-300 rounded-xl bg-slate-50/70 p-6 flex flex-col items-center justify-center text-center aspect-[4/3] space-y-3">
@@ -1317,19 +1497,19 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                       <Camera className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-[#0f2925]">Capture or Upload Site Photo</p>
+                      <p className="text-xs font-semibold text-[#0f2925]">Capture or Upload Multiple Site Photos</p>
                       <p className="text-[11px] text-slate-500 mt-0.5 max-w-xs">
-                        GPS coordinates and timestamp are attached automatically.
+                        Team leaders can select multiple photos at once. GPS and timestamps attached automatically.
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap justify-center pt-1">
                       <label className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1.5">
                         <Camera className="w-3.5 h-3.5" />
-                        <span>Upload / Camera</span>
+                        <span>Upload Photos</span>
                         <input
                           type="file"
+                          multiple
                           accept="image/*"
-                          capture="environment"
                           onChange={handlePhotoSelect}
                           className="hidden"
                         />
@@ -1347,7 +1527,7 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                 )}
               </div>
 
-              {/* Right: Notes + Voice + AI + Submit */}
+              {/* Right: Notes + Voice + Attendance Check + Submit */}
               <div className="space-y-4 flex flex-col justify-between">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -1404,44 +1584,56 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
                   )}
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-[#095c54]" />
-                      <span>AI Photo Verification</span>
-                    </span>
-                    {aiValidating ? (
-                      <span className="text-[11px] font-medium text-[#095c54]">Checking...</span>
-                    ) : aiResult ? (
-                      <span className="text-[11px] font-semibold text-[#095c54]">
-                        {Math.round(aiResult.confidence * 100)}% Match
-                      </span>
-                    ) : (
-                      <span className="text-[11px] text-slate-400">Waiting for photo</span>
-                    )}
+                {/* Duty Attendance Gate Check */}
+                {dailyAttendance.status === 'none' && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Check-In Required Before Submitting Evidence</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800">
+                      You must punch in duty attendance in the <strong>Attendance tab</strong> first. Field evidence cannot be uploaded without active on-site check-in.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-500">
-                    {aiResult
-                      ? `Detected: ${aiResult.category}. Ready for submission.`
-                      : 'Automatically checks photo authenticity and geofence alignment.'}
-                  </p>
-                </div>
+                )}
+
+                {dailyAttendance.status === 'completed_for_day' && (
+                  <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-300 text-slate-700 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>Duty Shift Completed for Today</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600">
+                      You have already checked out today. Evidence submission is closed and will reopen upon next day's check-in.
+                    </p>
+                  </div>
+                )}
+
+                {dailyAttendance.status === 'checked_in' && (
+                  <div className="p-3 rounded-xl bg-[#f0f7f5] border border-[#cde6df] text-[#095c54] text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#095c54] shrink-0" />
+                    <span className="font-semibold">Duty Shift Active · Checked in at {dailyAttendance.checkInTime}</span>
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={handleUploadStageEvidence}
-                  disabled={uploadingEvidence || !evidencePreview || !isWithinGeofence}
+                  disabled={uploadingEvidence || evidencePreviews.length === 0 || !isWithinGeofence || dailyAttendance.status !== 'checked_in'}
                   className="w-full py-3 bg-[#095c54] hover:bg-[#074741] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
                 >
                   {uploadingEvidence ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Uploading Evidence...</span>
+                      <span>Uploading {evidencePreviews.length} Photos...</span>
                     </>
                   ) : (
                     <>
                       <UploadCloud className="w-4 h-4" />
-                      <span>Submit {evidenceStage.toUpperCase()} Evidence</span>
+                      <span>
+                        Submit {evidenceStage.toUpperCase()} Evidence
+                        {evidencePreviews.length > 0 ? ` (${evidencePreviews.length} photo${evidencePreviews.length > 1 ? 's' : ''})` : ''}
+                      </span>
                     </>
                   )}
                 </button>
@@ -1567,25 +1759,79 @@ export const AssignWorkView: React.FC<AssignWorkViewProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {submittedEvidences.map((ev, idx) => (
-                <div key={ev.id || idx} className="rounded-xl border border-slate-200/80 bg-white overflow-hidden flex flex-col">
-                  <div className="h-44 bg-slate-100 relative">
-                    <img src={ev.photo_url} alt={ev.stage} className="w-full h-full object-cover" />
-                    <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-white/95 text-[#0f2925] text-[10px] font-bold uppercase shadow-2xs border border-slate-200/60">
-                      {ev.stage}
-                    </span>
-                  </div>
-                  <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
-                    <p className="text-xs text-slate-700 leading-relaxed line-clamp-3">
-                      {ev.description}
-                    </p>
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>{ev.dateLabel} · {ev.timeLabel}</span>
-                      <span className="font-semibold text-[#095c54]">~{ev.distance}m GPS</span>
+              {submittedEvidences.map((ev, idx) => {
+                const photos = Array.isArray(ev.photos) && ev.photos.length > 0 ? ev.photos : [ev.photo_url];
+                const isVerified = ev.officer_verified || ev.review_status === 'verified';
+                const isRejected = ev.review_status === 'rejected';
+
+                return (
+                  <div key={ev.id || idx} className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden flex flex-col shadow-2xs hover:shadow-sm transition">
+                    {/* Multi-Photo Grid or Single Photo Header */}
+                    <div className="relative bg-slate-900 overflow-hidden">
+                      {photos.length === 1 ? (
+                        <div className="h-48 relative">
+                          <img src={photos[0]} alt={ev.stage} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className={`grid gap-1 p-1 bg-slate-900 ${photos.length === 2 ? 'grid-cols-2 h-48' : 'grid-cols-3 h-48'}`}>
+                          {photos.map((ph, pIdx) => (
+                            <div key={pIdx} className="relative h-full overflow-hidden rounded-lg bg-slate-800">
+                              <img src={ph} alt={`Evidence #${pIdx + 1}`} className="w-full h-full object-cover" />
+                              <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold">
+                                #{pIdx + 1}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Top Badges */}
+                      <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap z-10">
+                        <span className="px-2 py-0.5 rounded-md bg-white/95 text-[#0f2925] text-[10px] font-black uppercase shadow-2xs border border-slate-200/60">
+                          {ev.stage}
+                        </span>
+                        {photos.length > 1 && (
+                          <span className="px-2 py-0.5 rounded-md bg-black/75 text-white text-[10px] font-bold backdrop-blur-xs">
+                            {photos.length} Photos
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Verification Status Badge */}
+                      <div className="absolute top-2.5 right-2.5 z-10">
+                        {isVerified ? (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-black tracking-wide shadow-md flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Verified by Officer
+                          </span>
+                        ) : isRejected ? (
+                          <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white text-[10px] font-black tracking-wide shadow-md flex items-center gap-1">
+                            <X className="w-3 h-3" /> Rejected by Officer
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black tracking-wide shadow-md flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> Pending Review
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between">
+                      <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                        {ev.description}
+                      </p>
+                      {ev.officer_notes && (
+                        <p className={`text-[11px] p-2 rounded-xl border ${isRejected ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                          <strong>Officer Note:</strong> {ev.officer_notes}
+                        </p>
+                      )}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>{ev.dateLabel} · {ev.timeLabel}</span>
+                        <span className="font-semibold text-[#095c54]">~{ev.distance}m GPS</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

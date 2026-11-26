@@ -129,7 +129,7 @@ class DrivesController {
             const result = await dbRepository_js_1.DbRepository.markDriveAttendance(id, citizenId, latitude, longitude);
             res.status(200).json({
                 success: true,
-                message: '✓ Attendance verified and marked present! 150 Civic Karma points awarded.',
+                message: '✓ Attendance verified and marked present! Official participation certificate issued.',
                 data: result
             });
         }

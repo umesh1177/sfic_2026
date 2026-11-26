@@ -15,10 +15,13 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  Building2
+  Building2,
+  Trash2,
+  History,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../../services/api.js';
-import { WardOfficerRecord } from '../../types/index.js';
+import { WardOfficerRecord, WardOfficerAssignmentHistory } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
 
 interface WardOfficerManagementProps {
@@ -58,6 +61,15 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
   const [selectedOfficer, setSelectedOfficer] = useState<any | null>(null);
 
   const [addModalOpen, setAddModalOpen] = useState<boolean>(false);
+
+  // Officer Ward History Modal
+  const [historyModalOfficer, setHistoryModalOfficer] = useState<any | null>(null);
+  const [officerWardHistory, setOfficerWardHistory] = useState<WardOfficerAssignmentHistory[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+
+  // Officer Delete Confirmation Modal
+  const [officerToDelete, setOfficerToDelete] = useState<any | null>(null);
+  const [deletingOfficer, setDeletingOfficer] = useState<boolean>(false);
 
   // Form states for update
   const [editName, setEditName] = useState<string>('');
@@ -158,6 +170,54 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
     });
   };
 
+  const formatDateTime = (iso?: string | null) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const openHistoryModal = async (officer: any) => {
+    setHistoryModalOfficer(officer);
+    setLoadingHistory(true);
+    setOfficerWardHistory([]);
+    try {
+      const res = await api.getOfficerWardHistory(officer.id);
+      if (res.success && res.data) {
+        setOfficerWardHistory(res.data);
+      }
+    } catch (err: any) {
+      console.error('Failed to load officer ward history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleDeleteOfficer = async () => {
+    if (!officerToDelete) return;
+    setDeletingOfficer(true);
+    setError(null);
+    try {
+      const res = await api.deleteWardOfficer(officerToDelete.id);
+      if (res.success) {
+        setSuccessMessage(res.message || `Ward Officer ${officerToDelete.full_name} deleted successfully.`);
+        setTimeout(() => setSuccessMessage(null), 4000);
+        setOfficerToDelete(null);
+        await fetchOfficers();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete Ward Officer.');
+    } finally {
+      setDeletingOfficer(false);
+    }
+  };
+
   const handleToggleWardInNew = (wardNum: number) => {
     setNewAssignedWards(prev => {
       if (prev.includes(wardNum)) {
@@ -191,10 +251,13 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
 
       const res = await api.updateWardOfficer(selectedOfficer.id, payload);
       if (res.success) {
+        if (res.data) {
+          setOfficers(prev => prev.map(o => o.id === selectedOfficer.id ? { ...o, ...res.data } : o));
+        }
         setSuccessMessage(`Ward Officer ${editName} updated successfully.`);
         setTimeout(() => setSuccessMessage(null), 4000);
         setEditModalOpen(false);
-        fetchOfficers();
+        await fetchOfficers();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to update officer.');
@@ -225,6 +288,9 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
 
       const res = await api.createWardOfficer(payload);
       if (res.success) {
+        if (res.data) {
+          setOfficers(prev => [res.data, ...prev]);
+        }
         setSuccessMessage(`Officer ${newName} created successfully. They can now login with ${newPhone}.`);
         setTimeout(() => setSuccessMessage(null), 4000);
         setAddModalOpen(false);
@@ -235,7 +301,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
         setNewPassword('');
         setNewAssignedWards([1]);
         setNewAllowedTabs([...ALL_TAB_IDS]);
-        fetchOfficers();
+        await fetchOfficers();
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create officer.');
@@ -299,7 +365,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
 
       {/* 2. Officers List: Compact Mobile Cards + Desktop Table */}
       <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
-        {/* Mobile Card View (< md) — Zero Horizontal Scroll */}
+        {/* Mobile Card View (< md) — Zero Horizontal Scroll, Full Touch Optimization */}
         <div className="md:hidden divide-y divide-slate-100">
           {loading && officers.length === 0 ? (
             <div className="py-10 text-center text-slate-400 text-xs font-bold">
@@ -318,15 +384,21 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                   : ALL_TAB_IDS;
               const isFull = tabs.length >= ALL_TAB_IDS.length;
               return (
-                <div key={officer.id} className="p-3 space-y-2">
+                <div key={officer.id} className="p-4 space-y-3 bg-white hover:bg-slate-50/50 transition">
+                  {/* Top Bar: Officer Avatar, Name, and Status */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                         {officer.full_name?.slice(0, 2).toUpperCase() || 'WO'}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-black text-[#0f2925] text-xs truncate">{officer.full_name}</div>
-                        <div className="text-[10px] text-[#095c54] font-bold truncate">{officer.phone} · {officer.designation}</div>
+                        <div className="font-black text-[#0f2925] text-sm truncate">{officer.full_name}</div>
+                        <div className="text-[11px] text-[#095c54] font-bold truncate flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{officer.phone}</span>
+                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-500 font-medium">{officer.designation}</span>
+                        </div>
                       </div>
                     </div>
                     {officer.flagged ? (
@@ -340,25 +412,45 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1">
+                  {/* Ward Chips and Access Badge */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     {officer.assigned_wards?.map((wNum: number) => (
-                      <span key={wNum} className="px-1.5 py-0.5 rounded bg-teal-50 text-[#095c54] font-black text-[10px] border border-teal-200">
+                      <span key={wNum} className="px-2 py-0.5 rounded-md bg-teal-50 text-[#095c54] font-black text-[10px] border border-teal-200">
                         Ward {wNum}
                       </span>
                     ))}
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold border ${isFull ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${isFull ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
                       {isFull ? 'Full Access' : `${tabs.length}/${ALL_TAB_IDS.length} Tabs`}
+                    </span>
+                    <span className="ml-auto text-[11px] font-black text-emerald-800">
+                      Score: {typeof officer.cleanliness_score === 'number' ? `${officer.cleanliness_score.toFixed(1)}%` : '100.0%'}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] font-black text-emerald-700">Score: {officer.cleanliness_score || 90.0}%</span>
+                  {/* Mobile Actions Toolbar */}
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => openHistoryModal(officer)}
+                      className="py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition"
+                      title="View Ward History"
+                    >
+                      <History className="w-3.5 h-3.5 text-slate-500" />
+                      <span>History</span>
+                    </button>
                     <button
                       onClick={() => handleOpenEdit(officer)}
-                      className="px-3 py-1.5 bg-[#095c54] text-white rounded-xl font-bold text-[11px] flex items-center gap-1"
+                      className="py-2 px-2 bg-[#095c54] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition shadow-2xs"
                     >
-                      <Edit className="w-3 h-3" />
-                      <span>Update / Allocate</span>
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Update</span>
+                    </button>
+                    <button
+                      onClick={() => setOfficerToDelete(officer)}
+                      className="py-2 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1 border border-rose-200 transition"
+                      title="Delete Officer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Delete</span>
                     </button>
                   </div>
                 </div>
@@ -367,19 +459,19 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
           )}
         </div>
 
-        {/* Desktop Table View (>= md) */}
+        {/* Desktop Table View (>= md) with Dedicated Column Widths */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Officer Name</th>
-                <th className="py-3.5 px-4">Contact Phone</th>
-                <th className="py-3.5 px-4">Email</th>
-                <th className="py-3.5 px-4">Assigned Wards</th>
-                <th className="py-3.5 px-4 text-center">Cleanliness Score</th>
-                <th className="py-3.5 px-4 text-center">SLA Status</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+              <tr className="bg-slate-50/90 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                <th className="py-3.5 px-4 min-w-[200px]">Officer Name</th>
+                <th className="py-3.5 px-4 min-w-[140px] whitespace-nowrap">Contact Phone</th>
+                <th className="py-3.5 px-4 min-w-[170px]">Email</th>
+                <th className="py-3.5 px-4 min-w-[210px]">Assigned Wards &amp; Access</th>
+                <th className="py-3.5 px-4 min-w-[120px] text-center whitespace-nowrap">Cleanliness Score</th>
+                <th className="py-3.5 px-4 min-w-[110px] text-center whitespace-nowrap">SLA Status</th>
+                <th className="py-3.5 px-4 min-w-[90px] text-center whitespace-nowrap">Status</th>
+                <th className="py-3.5 px-4 min-w-[230px] text-right whitespace-nowrap pr-6">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
@@ -400,20 +492,20 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                 paginatedOfficers.map(officer => (
                   <tr key={officer.id} className="hover:bg-slate-50/80 transition">
                     {/* Name */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                           {officer.full_name?.slice(0, 2).toUpperCase() || 'WO'}
                         </div>
                         <div>
-                          <div className="font-black text-[#0f2925] text-sm">{officer.full_name}</div>
+                          <div className="font-black text-[#0f2925] text-sm leading-tight">{officer.full_name}</div>
                           <div className="text-[11px] text-slate-500 font-medium">{officer.designation}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Phone */}
-                    <td className="py-3.5 px-4 font-bold text-[#095c54]">
+                    <td className="py-3.5 px-4 font-bold text-[#095c54] whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
                         <span>{officer.phone}</span>
@@ -421,16 +513,16 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Email */}
-                    <td className="py-3.5 px-4 text-slate-600 font-medium truncate max-w-[160px]">
+                    <td className="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">
                       <div className="flex items-center gap-1.5" title={officer.email}>
                         <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate">{officer.email || 'N/A'}</span>
+                        <span className="truncate max-w-[170px]">{officer.email || '—'}</span>
                       </div>
                     </td>
 
                     {/* Assigned Wards (Multi-ward chips) & Dashboard Tab Access */}
                     <td className="py-3.5 px-4">
-                      <div className="flex flex-wrap gap-1.5 max-w-[220px]">
+                      <div className="flex flex-wrap gap-1 max-w-[210px]">
                         {officer.assigned_wards?.map((wNum: number) => (
                           <span
                             key={wNum}
@@ -464,12 +556,14 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Cleanliness Score */}
-                    <td className="py-3.5 px-4 text-center font-black text-emerald-700">
-                      {officer.cleanliness_score || 90.0}%
+                    <td className="py-3.5 px-4 text-center font-black text-emerald-700 whitespace-nowrap">
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-mono text-xs border border-emerald-200">
+                        {typeof officer.cleanliness_score === 'number' ? `${officer.cleanliness_score.toFixed(1)}%` : '100.0%'}
+                      </span>
                     </td>
 
                     {/* SLA Status */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       {officer.flagged ? (
                         <span
                           className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-black text-[10px] border border-red-300"
@@ -487,12 +581,12 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Status */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <span
-                        className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                        className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
                           officer.is_active !== false
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
                         }`}
                       >
                         {officer.is_active !== false ? 'Active' : 'Inactive'}
@@ -500,14 +594,33 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => handleOpenEdit(officer)}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-[#095c54] hover:text-white rounded-xl text-slate-700 font-bold text-xs transition flex items-center gap-1.5 ml-auto"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                        <span>Update / Allocate</span>
-                      </button>
+                    <td className="py-3.5 px-4 text-right pr-6 whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openHistoryModal(officer)}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition flex items-center gap-1 border border-slate-200"
+                          title="View Past Ward Assignments"
+                        >
+                          <History className="w-3.5 h-3.5 text-slate-500" />
+                          <span>History</span>
+                        </button>
+                        <button
+                          onClick={() => handleOpenEdit(officer)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-[#095c54] hover:text-white text-slate-700 rounded-xl font-bold text-xs transition flex items-center gap-1.5 border border-slate-200"
+                          title="Update Details & Allocate Wards"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Update</span>
+                        </button>
+                        <button
+                          onClick={() => setOfficerToDelete(officer)}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition flex items-center gap-1 border border-rose-200"
+                          title="Delete / Deactivate Officer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -960,6 +1073,169 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Officer Ward Assignment History Modal */}
+      {historyModalOfficer && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-xl border border-slate-100 relative animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setHistoryModalOfficer(null)}
+              className="absolute right-4 top-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-[#095c54] flex items-center justify-center border border-teal-200 shrink-0">
+                <History className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#0f2925]">
+                  Ward Assignment History — {historyModalOfficer.full_name}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {historyModalOfficer.phone} · {historyModalOfficer.designation || 'Ward Officer'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {loadingHistory ? (
+                <div className="py-12 text-center text-slate-400 text-xs font-bold">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#095c54]" />
+                  Loading officer&apos;s ward assignment history...
+                </div>
+              ) : officerWardHistory.length === 0 ? (
+                <div className="py-8 px-4 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-500 text-xs font-medium">
+                  No historical ward assignments recorded for this officer yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                        <th className="py-3 px-3.5">Ward # &amp; Name</th>
+                        <th className="py-3 px-3.5">Assigned Date</th>
+                        <th className="py-3 px-3.5">Relieved Date</th>
+                        <th className="py-3 px-3.5 text-center">Status</th>
+                        <th className="py-3 px-3.5">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {officerWardHistory.map((h, idx) => (
+                        <tr key={h.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3 px-3.5 font-bold text-[#0f2925]">
+                            <span className="px-2 py-0.5 rounded-md bg-teal-50 text-[#095c54] font-black text-[11px] border border-teal-200 mr-1.5">
+                              Ward {h.ward_number}
+                            </span>
+                            <span className="text-slate-600">{h.ward_name || ''}</span>
+                          </td>
+                          <td className="py-3 px-3.5 text-slate-600 font-medium whitespace-nowrap">
+                            {formatDateTime(h.assigned_at)}
+                          </td>
+                          <td className="py-3 px-3.5 text-slate-600 font-medium whitespace-nowrap">
+                            {h.relieved_at ? formatDateTime(h.relieved_at) : (
+                              <span className="text-emerald-700 font-black">Currently Active</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3.5 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                h.status === 'active'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              {h.status === 'active' ? 'Active' : 'Relieved'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 text-slate-500 text-[11px]">
+                            {h.notes || 'Routine municipal ward assignment'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setHistoryModalOfficer(null)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Delete Ward Officer Confirmation Modal */}
+      {officerToDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-slate-100 relative animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setOfficerToDelete(null)}
+              className="absolute right-4 top-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-rose-950">
+                  Delete &amp; Deactivate Ward Officer?
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  This action immediately revokes login authorization.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 my-4 text-xs text-slate-600">
+              <p>
+                Are you sure you want to delete <strong className="text-slate-900">{officerToDelete.full_name}</strong> ({officerToDelete.phone})?
+              </p>
+              <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 text-rose-900 text-xs space-y-1.5">
+                <div className="font-extrabold flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Administrative Implications:</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-rose-800">
+                  <li>Officer credentials will be deactivated immediately (<code className="font-mono">is_active = false</code>).</li>
+                  <li>All assigned wards ({officerToDelete.assigned_wards?.join(', ') || 'None'}) will be marked as <strong>Unassigned</strong> in Ward Management.</li>
+                  <li>Officer assignment history and audit logs will remain preserved for legal compliance.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setOfficerToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteOfficer}
+                disabled={deletingOfficer}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {deletingOfficer ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Delete Officer</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

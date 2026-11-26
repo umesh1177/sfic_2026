@@ -42,7 +42,8 @@ import {
   Truck,
   Wrench,
   Sparkle,
-  Award
+  Award,
+  Edit3
 } from 'lucide-react';
 import { CommunityActivity, ActivityRegistration, ActivityQuestion, ActivityEvidence, CommunityProblem } from '../../types/index.js';
 import { api } from '../../services/api.js';
@@ -104,7 +105,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
   // Evidence Upload State per Activity
   const [evidenceStage, setEvidenceStage] = useState<Record<string, 'before' | 'during' | 'after'>>({});
   const [evidenceCaption, setEvidenceCaption] = useState<Record<string, string>>({});
-  const [evidenceImage, setEvidenceImage] = useState<Record<string, string>>({});
+  const [evidenceImages, setEvidenceImages] = useState<Record<string, string[]>>({});
   const [evidenceAiStatus, setEvidenceAiStatus] = useState<Record<string, string>>({});
   const [uploadingEvidence, setUploadingEvidence] = useState<Record<string, boolean>>({});
   const [evidenceGps, setEvidenceGps] = useState<Record<string, { lat: number; lng: number; accuracy?: number }>>({});
@@ -194,8 +195,11 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const b64 = canvas.toDataURL('image/jpeg', 0.85);
       const actId = cameraActivityId;
-      setEvidenceImage(prev => ({ ...prev, [actId]: b64 }));
-      setEvidenceAiStatus(prev => ({ ...prev, [actId]: '✓ Live camera photo captured & verified' }));
+      setEvidenceImages(prev => ({
+        ...prev,
+        [actId]: [...(prev[actId] || []), b64]
+      }));
+      setEvidenceAiStatus(prev => ({ ...prev, [actId]: '✓ Live camera photo captured & added' }));
       closeLiveCamera();
     }
   };
@@ -322,6 +326,80 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     waitlist_allowed: true,
     save_as_draft: false
   });
+
+  // Edit Approved Activity Modal State (Update start/end datetime & description fields only)
+  const [editingApprovedAct, setEditingApprovedAct] = useState<CommunityActivity | null>(null);
+  const [editApprovedForm, setEditApprovedForm] = useState({
+    proposed_start_at: '',
+    proposed_end_at: '',
+    short_description: '',
+    detailed_description: ''
+  });
+  const [submittingApprovedEdit, setSubmittingApprovedEdit] = useState<boolean>(false);
+  const [approvedEditError, setApprovedEditError] = useState<string>('');
+
+  const formatForDateTimeInput = (isoStr?: string): string => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const toISTIso = (val: string): string => {
+    if (!val) return '';
+    if (val.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(val)) return val;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(val)) {
+      return `${val.slice(0, 16)}:00+05:30`;
+    }
+    return new Date(val).toISOString();
+  };
+
+  const handleOpenEditModal = (act: CommunityActivity) => {
+    setEditingApprovedAct(act);
+    setApprovedEditError('');
+    setEditApprovedForm({
+      proposed_start_at: formatForDateTimeInput(act.proposed_start_at),
+      proposed_end_at: formatForDateTimeInput(act.proposed_end_at),
+      short_description: act.short_description || '',
+      detailed_description: act.detailed_description || act.short_description || ''
+    });
+  };
+
+  const handleSaveApprovedEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingApprovedAct) return;
+    if (!editApprovedForm.proposed_start_at) {
+      setApprovedEditError('Start date & time is required');
+      return;
+    }
+    if (!editApprovedForm.short_description.trim()) {
+      setApprovedEditError('Short description is required');
+      return;
+    }
+
+    setSubmittingApprovedEdit(true);
+    setApprovedEditError('');
+    try {
+      await api.updateCommunityActivity(editingApprovedAct.id, {
+        proposed_start_at: toISTIso(editApprovedForm.proposed_start_at),
+        proposed_end_at: editApprovedForm.proposed_end_at ? toISTIso(editApprovedForm.proposed_end_at) : undefined,
+        short_description: editApprovedForm.short_description.trim(),
+        detailed_description: editApprovedForm.detailed_description.trim() || editApprovedForm.short_description.trim()
+      });
+
+      setEditingApprovedAct(null);
+      setActionMessage({
+        type: 'success',
+        text: `Cleanliness Drive "${editingApprovedAct.title}" updated successfully!`
+      });
+      onRefreshActivities();
+    } catch (err: any) {
+      setApprovedEditError(err.message || 'Failed to update activity schedule & details');
+    } finally {
+      setSubmittingApprovedEdit(false);
+    }
+  };
 
   // Counts for each filter section (Completed drives move cleanly out of Approved Drives into Completed)
   const statusCounts = {
@@ -652,57 +730,60 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
     }
   };
 
-  const handleEvidenceImageSelected = (activityId: string, file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setActionMessage({ type: 'error', text: 'Please select a valid image file.' });
+  const handleEvidenceImagesSelected = (activityId: string, files: FileList | File[]) => {
+    const fileList = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (fileList.length === 0) {
+      setActionMessage({ type: 'error', text: 'Please select valid image files.' });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async e => {
-      const b64 = e.target?.result as string;
-      setEvidenceImage(prev => ({ ...prev, [activityId]: b64 }));
-      setEvidenceAiStatus(prev => ({ ...prev, [activityId]: 'Validating photo with AI...' }));
+    setEvidenceAiStatus(prev => ({
+      ...prev,
+      [activityId]: `Processing & validating ${fileList.length} photo${fileList.length > 1 ? 's' : ''}...`
+    }));
 
-      try {
-        // AI image verification check
-        const res = await api.aiCheckEvidenceQuality(b64);
-        if (res.data?.passes_quality) {
-          setEvidenceAiStatus(prev => ({
+    fileList.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = async e => {
+        const b64 = e.target?.result as string;
+        if (b64) {
+          setEvidenceImages(prev => ({
             ...prev,
-            [activityId]: `✓ Verified by AI: Genuine Cleanliness Drive Photo (${res.data.feedback_message || 'Civic quality verified'})`
-          }));
-        } else {
-          setEvidenceAiStatus(prev => ({
-            ...prev,
-            [activityId]: '✓ Photo accepted (JPEG, verified civic evidence)'
+            [activityId]: [...(prev[activityId] || []), b64]
           }));
         }
-      } catch {
-        setEvidenceAiStatus(prev => ({
-          ...prev,
-          [activityId]: '✓ Photo accepted (Clear civic evidence visual)'
-        }));
-      }
-    };
-    reader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    setEvidenceAiStatus(prev => ({
+      ...prev,
+      [activityId]: `✓ ${fileList.length} photo${fileList.length > 1 ? 's' : ''} added & ready for submission`
+    }));
+  };
+
+  const handleRemoveEvidenceImage = (activityId: string, index: number) => {
+    setEvidenceImages(prev => ({
+      ...prev,
+      [activityId]: (prev[activityId] || []).filter((_, i) => i !== index)
+    }));
   };
 
   const handleUploadEvidence = async (act: CommunityActivity) => {
     const activityId = act.id;
-    const img = evidenceImage[activityId];
+    const photos = evidenceImages[activityId] || [];
     const caption = evidenceCaption[activityId] || '';
     const stage = evidenceStage[activityId] || 'before';
     const gps = evidenceGps[activityId];
     const meta = getAfterMeta(activityId);
 
-    if (!img) {
-      setActionMessage({ type: 'error', text: 'Please capture a live photo or select an image from your device.' });
+    if (photos.length === 0) {
+      setActionMessage({ type: 'error', text: 'Please capture a live photo or select at least one image from your device.' });
       return;
     }
 
     if (!caption.trim()) {
-      setActionMessage({ type: 'error', text: 'Please enter a description for this evidence photo.' });
+      setActionMessage({ type: 'error', text: 'Please enter a description for this evidence submission.' });
       return;
     }
 
@@ -733,13 +814,15 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
             waste_disposal_details: meta.waste_disposal_details.trim(),
             equipment_used: meta.equipment_used.trim(),
             disinfection_status: meta.disinfection_status,
-            challenges_notes: meta.challenges_notes.trim()
+            challenges_notes: meta.challenges_notes.trim(),
+            photos: photos
           }
-        : undefined;
+        : { photos: photos };
 
     const evidencePayload = {
-      storage_path: img,
-      image_url: img,
+      photos: photos,
+      storage_path: photos[0],
+      image_url: photos[0],
       evidence_type: stage,
       stage,
       caption: caption.trim(),
@@ -765,8 +848,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
           activity_id: activityId,
           stage,
           evidence_type: stage,
-          image_url: img,
-          storage_path: img,
+          image_url: photos[0],
+          storage_path: photos[0],
           caption: `${caption.trim()} [Saved Offline — Pending Sync]`,
           review_metadata: reviewMetadata,
           uploaded_by_name: 'Community Head',
@@ -774,7 +857,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
           created_at: new Date().toISOString()
         };
         setEvidenceMap(prev => ({ ...prev, [activityId]: [offlineEv, ...(prev[activityId] || [])] }));
-        setEvidenceImage(prev => ({ ...prev, [activityId]: '' }));
+        setEvidenceImages(prev => ({ ...prev, [activityId]: [] }));
         setEvidenceCaption(prev => ({ ...prev, [activityId]: '' }));
         setEvidenceAiStatus(prev => ({ ...prev, [activityId]: '' }));
         setActionMessage({
@@ -791,8 +874,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         activity_id: activityId,
         stage,
         evidence_type: stage,
-        image_url: img,
-        storage_path: img,
+        image_url: photos[0],
+        storage_path: photos[0],
         caption: caption.trim(),
         review_metadata: reviewMetadata,
         uploaded_by_name: 'Community Head',
@@ -805,8 +888,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         [activityId]: [newEvidence, ...(prev[activityId] || [])]
       }));
 
-      // Reset photo & caption (keep after metadata visible or reset cleanly)
-      setEvidenceImage(prev => ({ ...prev, [activityId]: '' }));
+      // Reset photos & caption
+      setEvidenceImages(prev => ({ ...prev, [activityId]: [] }));
       setEvidenceCaption(prev => ({ ...prev, [activityId]: '' }));
       setEvidenceAiStatus(prev => ({ ...prev, [activityId]: '' }));
 
@@ -814,8 +897,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         type: 'success',
         text:
           stage === 'after'
-            ? 'After-drive completion evidence & Ward Officer review report submitted successfully!'
-            : `${stage.toUpperCase()} stage evidence photo & description uploaded and synced to Ward Officer!`
+            ? `${photos.length} After-drive completion evidence photo${photos.length > 1 ? 's' : ''} & review report submitted successfully!`
+            : `${photos.length} ${stage.toUpperCase()} stage evidence photo${photos.length > 1 ? 's' : ''} uploaded and synced to Ward Officer!`
       });
       onRefreshActivities();
     } catch (err: any) {
@@ -826,7 +909,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
           evidencePayload,
           { activityId, stage }
         );
-        setEvidenceImage(prev => ({ ...prev, [activityId]: '' }));
+        setEvidenceImages(prev => ({ ...prev, [activityId]: [] }));
         setEvidenceCaption(prev => ({ ...prev, [activityId]: '' }));
         setEvidenceAiStatus(prev => ({ ...prev, [activityId]: '' }));
         setActionMessage({
@@ -978,8 +1061,8 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
         detailed_description: wizardForm.detailed_description,
         volunteer_instructions: wizardForm.volunteer_instructions,
         equipment_needed: wizardForm.equipment_needed,
-        proposed_start_at: wizardForm.proposed_start_at || new Date(Date.now() + 86400000 * 3).toISOString(),
-        proposed_end_at: wizardForm.proposed_end_at || new Date(Date.now() + 86400000 * 3 + 10800000).toISOString(),
+        proposed_start_at: wizardForm.proposed_start_at ? toISTIso(wizardForm.proposed_start_at) : new Date(Date.now() + 86400000 * 3).toISOString(),
+        proposed_end_at: wizardForm.proposed_end_at ? toISTIso(wizardForm.proposed_end_at) : new Date(Date.now() + 86400000 * 3 + 10800000).toISOString(),
         target_area: wizardForm.target_area,
         meeting_point: wizardForm.meeting_point || wizardForm.target_area,
         latitude: wizardForm.latitude,
@@ -1166,15 +1249,31 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => handleOpenActivityDetails(act)}
-            className="btn-primary-custom px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs hover:shadow transition shrink-0"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>View Details</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {isApproved && !lifecycle.isCompleted && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenEditModal(act);
+                }}
+                className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold flex items-center gap-1.5 transition"
+                title="Edit schedule and description"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                <span>Edit</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleOpenActivityDetails(act)}
+              className="btn-primary-custom px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs hover:shadow transition shrink-0"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>View Details</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1866,6 +1965,18 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                         <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
                         <span>{act.target_area}</span>
                       </p>
+                      {isApproved && !lifecycle.isCompleted && (
+                        <div className="pt-1 flex sm:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(act)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[11px] font-extrabold transition shadow-2xs hover:border-amber-300"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Edit Schedule &amp; Details</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2211,145 +2322,162 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                     {/* Sub-Tab 3: Team-Leader-Style Evidence Submission & Extended After-Stage Review */}
                     {currentSubTab === 'evidence' && (
                       <div className="p-5 sm:p-6 space-y-6 animate-fadeIn">
-                        {lifecycle.isCompleted && (
-                          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 text-xs">
-                              <Award className="w-5 h-5 text-emerald-600 shrink-0" />
-                              <div>
-                                <p className="font-black text-emerald-900">Drive Verified Complete by Ward Officer</p>
-                                <p className="text-emerald-700 font-medium">
-                                  All submitted evidence has been reviewed and approved. Check the Certificates tab for your QR-verified NMC certificates.
-                                </p>
-                              </div>
+                        {lifecycle.isCompleted ? (
+                          <div className="p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-center space-y-3">
+                            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto shadow-xs">
+                              <CheckCircle2 className="w-6 h-6" />
                             </div>
-                          </div>
-                        )}
-
-                        {/* Evidence Upload Form (Sanitation Team Leader Style) */}
-                        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-5">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                            <div>
-                              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                                <Camera className="w-4 h-4 text-[#095c54]" />
-                                <span>Submit Field Cleanliness Evidence</span>
-                              </h3>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
-                                Capture Before, During, and After stage proof with GPS & Voice-to-Text. The After stage includes full Ward Officer completion review fields.
+                            <div className="space-y-1">
+                              <h4 className="text-sm font-black text-emerald-950">Evidence Submission Closed</h4>
+                              <p className="text-xs text-emerald-800 max-w-lg mx-auto">
+                                This cleanliness drive has been officially verified and marked complete by the Ward Officer. Further evidence uploads and edits are disabled. All verified records are archived in the history below.
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => captureEvidenceGps(act)}
-                              disabled={capturingGps[act.id]}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition shrink-0 ${
-                                evidenceGps[act.id]
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                              }`}
-                            >
-                              <Crosshair className="w-3.5 h-3.5 text-[#095c54]" />
-                              {capturingGps[act.id]
-                                ? 'Locating GPS...'
-                                : evidenceGps[act.id]
-                                ? `GPS Tagged (${evidenceGps[act.id].lat.toFixed(4)}, ${evidenceGps[act.id].lng.toFixed(4)})`
-                                : 'Tag Live GPS Location'}
-                            </button>
                           </div>
-
-                          {/* Step 1: Clean Segmented Stage Selector Pills */}
-                          <div className="space-y-1.5">
-                            <label className="block text-[11px] font-black text-slate-600 uppercase tracking-wider">
-                              1. Select Evidence Stage
-                            </label>
-                            <div className="grid grid-cols-3 gap-2">
-                              {([
-                                { id: 'before', label: 'Before Drive', sub: 'Initial site state' },
-                                { id: 'during', label: 'During Drive', sub: 'Volunteers in action' },
-                                { id: 'after', label: 'After Completion', sub: 'Final review report' }
-                              ] as const).map(st => {
-                                const active = currentStage === st.id;
-                                return (
-                                  <button
-                                    key={st.id}
-                                    type="button"
-                                    onClick={() => setEvidenceStage(prev => ({ ...prev, [act.id]: st.id }))}
-                                    className={`p-3 rounded-xl border text-left transition ${
-                                      active
-                                        ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
-                                        : 'bg-slate-50/70 text-slate-700 border-slate-200 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    <p className="text-xs font-black">{st.label}</p>
-                                    <p className={`text-[10px] mt-0.5 ${active ? 'text-emerald-200' : 'text-slate-500'}`}>
-                                      {st.sub}
-                                    </p>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Step 2: Live Camera OR Gallery Upload + Preview */}
-                          <div className="space-y-2">
-                            <label className="block text-[11px] font-black text-slate-600 uppercase tracking-wider">
-                              2. Capture or Upload Photograph *
-                            </label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        ) : (
+                          /* Evidence Upload Form (Sanitation Team Leader Style) */
+                          <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-5">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                              <div>
+                                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                  <Camera className="w-4 h-4 text-[#095c54]" />
+                                  <span>Submit Field Cleanliness Evidence</span>
+                                </h3>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  Capture Before, During, and After stage proof with GPS & Voice-to-Text. The After stage includes full Ward Officer completion review fields.
+                                </p>
+                              </div>
                               <button
                                 type="button"
-                                onClick={() => openLiveCamera(act.id)}
-                                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#e6f4f1] border border-[#99f6e4] text-[#095c54] font-extrabold text-xs hover:bg-[#d1fae5] transition"
+                                onClick={() => captureEvidenceGps(act)}
+                                disabled={capturingGps[act.id]}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition shrink-0 ${
+                                  evidenceGps[act.id]
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
                               >
-                                <Camera className="w-4 h-4" />
-                                <span>Open Live Camera</span>
+                                <Crosshair className="w-3.5 h-3.5 text-[#095c54]" />
+                                {capturingGps[act.id]
+                                  ? 'Locating GPS...'
+                                  : evidenceGps[act.id]
+                                  ? `GPS Tagged (${evidenceGps[act.id].lat.toFixed(4)}, ${evidenceGps[act.id].lng.toFixed(4)})`
+                                  : 'Tag Live GPS Location'}
                               </button>
-
-                              <label className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-extrabold text-xs hover:bg-slate-100 cursor-pointer transition">
-                                <Upload className="w-4 h-4 text-[#095c54]" />
-                                <span>Upload Photo from Device</span>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={e => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      handleEvidenceImageSelected(act.id, e.target.files[0]);
-                                    }
-                                  }}
-                                />
-                              </label>
                             </div>
 
-                            {evidenceImage[act.id] && (
-                              <div className="flex items-center justify-between gap-3 p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <img
-                                    src={evidenceImage[act.id]}
-                                    alt="Preview"
-                                    className="w-16 h-16 object-cover rounded-lg border border-slate-200 shrink-0"
-                                  />
-                                  <div className="space-y-0.5 text-xs min-w-0">
-                                    <span className="font-black text-slate-900 block">
-                                      {currentStage.toUpperCase()} Photo Ready
-                                    </span>
-                                    <span className="text-emerald-700 font-bold block truncate">
-                                      {evidenceAiStatus[act.id] || '✓ Clear civic photo attached'}
-                                    </span>
-                                  </div>
-                                </div>
+                            {/* Step 1: Clean Segmented Stage Selector Pills */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[11px] font-black text-slate-600 uppercase tracking-wider">
+                                1. Select Evidence Stage
+                              </label>
+                              <div className="grid grid-cols-3 gap-2">
+                                {([
+                                  { id: 'before', label: 'Before Drive', sub: 'Initial site state' },
+                                  { id: 'during', label: 'During Drive', sub: 'Volunteers in action' },
+                                  { id: 'after', label: 'After Completion', sub: 'Final review report' }
+                                ] as const).map(st => {
+                                  const active = currentStage === st.id;
+                                  return (
+                                    <button
+                                      key={st.id}
+                                      type="button"
+                                      onClick={() => setEvidenceStage(prev => ({ ...prev, [act.id]: st.id }))}
+                                      className={`p-3 rounded-xl border text-left transition ${
+                                        active
+                                          ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
+                                          : 'bg-slate-50/70 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      <p className="text-xs font-black">{st.label}</p>
+                                      <p className={`text-[10px] mt-0.5 ${active ? 'text-emerald-200' : 'text-slate-500'}`}>
+                                        {st.sub}
+                                      </p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Step 2: Live Camera OR Gallery Upload + Multi-Photo Preview */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="block text-[11px] font-black text-slate-600 uppercase tracking-wider">
+                                  2. Capture or Upload Photographs *
+                                </label>
+                                {(evidenceImages[act.id] || []).length > 0 && (
+                                  <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    {evidenceImages[act.id].length} Photo{evidenceImages[act.id].length > 1 ? 's' : ''} Attached
+                                  </span>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setEvidenceImage(prev => ({ ...prev, [act.id]: '' }));
-                                    setEvidenceAiStatus(prev => ({ ...prev, [act.id]: '' }));
-                                  }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                  onClick={() => openLiveCamera(act.id)}
+                                  className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#e6f4f1] border border-[#99f6e4] text-[#095c54] font-extrabold text-xs hover:bg-[#d1fae5] transition"
                                 >
-                                  <X className="w-4 h-4" />
+                                  <Camera className="w-4 h-4" />
+                                  <span>Open Live Camera</span>
                                 </button>
+
+                                <label className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-extrabold text-xs hover:bg-slate-100 cursor-pointer transition">
+                                  <Upload className="w-4 h-4 text-[#095c54]" />
+                                  <span>Upload Photos from Device (Multiple)</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    onChange={e => {
+                                      if (e.target.files && e.target.files.length > 0) {
+                                        handleEvidenceImagesSelected(act.id, e.target.files);
+                                      }
+                                    }}
+                                  />
+                                </label>
                               </div>
-                            )}
-                          </div>
+
+                              {(evidenceImages[act.id] || []).length > 0 && (
+                                <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2.5">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-black text-slate-900">
+                                      Attached Photos ({evidenceImages[act.id].length}) for {currentStage.toUpperCase()} Stage
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEvidenceImages(prev => ({ ...prev, [act.id]: [] }))}
+                                      className="text-[11px] text-rose-600 hover:text-rose-700 font-bold hover:underline"
+                                    >
+                                      Clear All
+                                    </button>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+                                    {evidenceImages[act.id].map((photo, pIdx) => (
+                                      <div key={pIdx} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-900 group shadow-xs">
+                                        <img src={photo} alt={`Evidence #${pIdx + 1}`} className="w-full h-full object-cover" />
+                                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold">
+                                          #{pIdx + 1}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveEvidenceImage(act.id, pIdx)}
+                                          className="absolute top-1 right-1 p-1 rounded-full bg-rose-600 text-white hover:bg-rose-700 transition shadow"
+                                          title="Remove photo"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <p className="text-[11px] text-emerald-700 font-bold truncate">
+                                    {evidenceAiStatus[act.id] || `✓ ${evidenceImages[act.id].length} civic photo${evidenceImages[act.id].length > 1 ? 's' : ''} attached and ready`}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
 
                           {/* Step 3: Voice-to-Text Description */}
                           <div className="space-y-1.5">
@@ -2567,6 +2695,7 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                             </button>
                           </div>
                         </div>
+                        )}
 
                         {/* Chronological Submitted Evidence History */}
                         <div className="space-y-3">
@@ -2594,14 +2723,18 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                 const stageTag = (ev.stage || ev.evidence_type || 'during').toLowerCase();
                                 const imgSrc = ev.image_url || ev.storage_path;
                                 const rm = ev.review_metadata && typeof ev.review_metadata === 'object' ? ev.review_metadata : null;
+                                const evPhotos: string[] = Array.isArray(rm?.photos) && rm.photos.length > 0
+                                  ? rm.photos
+                                  : [imgSrc].filter(Boolean);
+
                                 return (
                                   <div
                                     key={ev.id}
                                     className="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-xs flex flex-col"
                                   >
-                                    <div className="relative h-44 bg-slate-100">
+                                    <div className="relative h-48 bg-slate-100 overflow-hidden">
                                       <img
-                                        src={imgSrc}
+                                        src={evPhotos[0] || imgSrc}
                                         alt="Evidence"
                                         className="w-full h-full object-cover"
                                       />
@@ -2616,6 +2749,12 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                       >
                                         {stageTag}
                                       </span>
+                                      {evPhotos.length > 1 && (
+                                        <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-slate-900/80 text-white text-[10px] font-black flex items-center gap-1 shadow">
+                                          <Camera className="w-3 h-3" />
+                                          {evPhotos.length} Photos
+                                        </span>
+                                      )}
                                       <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-slate-900/75 text-white text-[10px] font-bold">
                                         {new Date(ev.created_at).toLocaleString('en-IN', {
                                           day: '2-digit',
@@ -2625,6 +2764,23 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                         })}
                                       </span>
                                     </div>
+
+                                    {/* Multi-Photo Thumbnail Strip if multiple photos */}
+                                    {evPhotos.length > 1 && (
+                                      <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto">
+                                        {evPhotos.map((p, pIdx) => (
+                                          <img
+                                            key={pIdx}
+                                            src={p}
+                                            alt={`Thumb ${pIdx + 1}`}
+                                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer hover:border-[#095c54] transition"
+                                            onClick={() => window.open(p, '_blank')}
+                                            title="Click to view full photo"
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+
                                     <div className="p-3.5 text-xs space-y-2 flex-1">
                                       <p className="text-slate-800 font-semibold leading-relaxed">
                                         {ev.caption || ev.description}
@@ -2664,6 +2820,33 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
                                           )}
                                         </div>
                                       )}
+
+                                      {/* Ward Officer Verification Status Flag */}
+                                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                                        {ev.verification_status === 'verified' || ev.submission_status === 'verified' ? (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                            <span>Verified by Ward Officer</span>
+                                          </span>
+                                        ) : ev.verification_status === 'rejected' ? (
+                                          <div className="space-y-1 w-full">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase">
+                                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                                              <span>Rejected by Ward Officer</span>
+                                            </span>
+                                            {ev.verification_notes && (
+                                              <p className="text-[11px] text-rose-800 font-semibold bg-rose-50/70 p-2 rounded-lg border border-rose-100">
+                                                <strong>Officer Remarks:</strong> {ev.verification_notes}
+                                              </p>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black uppercase">
+                                            <Clock className="w-3 h-3 text-amber-600" />
+                                            <span>Pending Ward Officer Review</span>
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 );
@@ -2786,6 +2969,127 @@ export const ActivityManagement: React.FC<ActivityManagementProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Edit Approved Cleanliness Drive Modal (Only updates proposed start/end time and descriptions) */}
+      {editingApprovedAct && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase text-[#095c54] bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  Approved Drive Update
+                </span>
+                <h3 className="text-base font-black text-[#0f2925] mt-1">
+                  Edit Drive Schedule &amp; Description
+                </h3>
+                <p className="text-xs text-slate-500 font-semibold truncate max-w-md">
+                  {editingApprovedAct.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingApprovedAct(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <span>
+                As this cleanliness drive is already approved, only the <strong>schedule timings</strong> and <strong>description/briefing</strong> can be modified. Location, ward, and core objectives remain locked.
+              </span>
+            </div>
+
+            {approvedEditError && (
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{approvedEditError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveApprovedEdit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>Start Date &amp; Time *</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editApprovedForm.proposed_start_at}
+                    onChange={e => setEditApprovedForm({ ...editApprovedForm, proposed_start_at: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-[#095c54]" />
+                    <span>End Date &amp; Time</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editApprovedForm.proposed_end_at}
+                    onChange={e => setEditApprovedForm({ ...editApprovedForm, proposed_end_at: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Short Public Description *
+                </label>
+                <input
+                  type="text"
+                  value={editApprovedForm.short_description}
+                  onChange={e => setEditApprovedForm({ ...editApprovedForm, short_description: e.target.value })}
+                  placeholder="Brief summary displayed on cleanliness drive cards..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Detailed Briefing / Volunteer Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  value={editApprovedForm.detailed_description}
+                  onChange={e => setEditApprovedForm({ ...editApprovedForm, detailed_description: e.target.value })}
+                  placeholder="Detailed context, route details, volunteer tasks, etc..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingApprovedAct(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-extrabold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingApprovedEdit}
+                  className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {submittingApprovedEdit ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>Save Updated Details</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

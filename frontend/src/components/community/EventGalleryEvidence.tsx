@@ -43,6 +43,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   // Upload Form State
   const [uploadStage, setUploadStage] = useState<'before' | 'during' | 'after'>('after');
   const [imageUrl, setImageUrl] = useState<string>('');
+  const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [caption, setCaption] = useState<string>('');
   const [aiQualityFeedback, setAiQualityFeedback] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
@@ -145,6 +146,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   }, [currentActivityId]);
 
   const currentActivity = activities.find(a => a.id === currentActivityId);
+  const isCompleted = currentActivity?.event_status === 'completed' || currentActivity?.evidence_status === 'verified_complete';
 
   // Separate stages
   const beforePhotos = evidenceList.filter(e => e.stage === 'before');
@@ -182,7 +184,8 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   // Upload Evidence
   const handleUploadEvidence = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentActivityId || !imageUrl.trim()) return;
+    const allPhotos = [...(uploadedPhotos || []), ...(imageUrl.trim() ? [imageUrl.trim()] : [])];
+    if (!currentActivityId || allPhotos.length === 0) return;
 
     if (caption.trim()) {
       const abuse = checkTextForAbuse(caption);
@@ -199,14 +202,19 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
     setStatusMessage(null);
     try {
       const res = await api.uploadActivityEvidence(currentActivityId, {
-        image_url: imageUrl.trim(),
+        image_url: allPhotos[0],
+        photos: allPhotos,
         stage: uploadStage,
         caption: caption.trim()
       });
 
       if (res.success) {
-        setStatusMessage({ type: 'success', text: `Photo uploaded successfully to "${uploadStage.toUpperCase()}" stage!` });
+        setStatusMessage({
+          type: 'success',
+          text: `${allPhotos.length} photo${allPhotos.length > 1 ? 's' : ''} uploaded successfully to "${uploadStage.toUpperCase()}" stage!`
+        });
         setImageUrl('');
+        setUploadedPhotos([]);
         setCaption('');
         setAiQualityFeedback(null);
         loadEvidence(currentActivityId);
@@ -235,7 +243,7 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
   const handleSubmitEvidenceForReview = async () => {
     if (!currentActivityId) return;
     const confirm = window.confirm(
-      'Are you sure you want to officially submit this completion evidence for Ward Officer verification and civic points reward?'
+      'Are you sure you want to officially submit this completion evidence for Ward Officer verification?'
     );
     if (!confirm) return;
 
@@ -273,14 +281,21 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={handleSubmitEvidenceForReview}
-          disabled={submittingReview || evidenceList.length === 0}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold shadow-md transition disabled:opacity-50 active:scale-95"
-        >
-          <Send className="w-4 h-4" />
-          <span>{submittingReview ? 'Submitting...' : 'Submit Evidence for Verification'}</span>
-        </button>
+        {isCompleted ? (
+          <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-black shadow-xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>Drive Verified Complete by Ward Officer</span>
+          </span>
+        ) : (
+          <button
+            onClick={handleSubmitEvidenceForReview}
+            disabled={submittingReview || evidenceList.length === 0}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold shadow-md transition disabled:opacity-50 active:scale-95"
+          >
+            <Send className="w-4 h-4" />
+            <span>{submittingReview ? 'Submitting...' : 'Submit Evidence for Verification'}</span>
+          </button>
+        )}
       </div>
 
       {statusMessage && (
@@ -424,88 +439,166 @@ export const EventGalleryEvidence: React.FC<EventGalleryEvidenceProps> = ({
 
       {/* PHOTO UPLOAD & EVIDENCE GALLERY */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Upload Form (5 cols on lg) */}
-        <form
-          onSubmit={handleUploadEvidence}
-          className="lg:col-span-5 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4"
-        >
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Camera className="w-4 h-4 text-[#095c54]" />
-            <h2 className="text-sm font-extrabold text-slate-900">Add Evidence Photograph</h2>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700">Activity Stage *</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['before', 'during', 'after'] as const).map(st => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setUploadStage(st)}
-                  className={`py-2 rounded-xl text-xs font-bold capitalize transition ${
-                    uploadStage === st
-                      ? 'bg-[#095c54] text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+        {isCompleted ? (
+          <div className="lg:col-span-5 bg-white p-6 rounded-3xl border border-emerald-200 shadow-sm space-y-4 text-center">
+            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto shadow-xs">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-base font-black text-emerald-950">Evidence Submission Closed</h2>
+              <p className="text-xs text-emerald-800 leading-relaxed max-w-sm mx-auto">
+                This cleanliness drive has been officially verified and marked complete by the Ward Officer. Further evidence uploads or edits are disabled. All verified documentation is archived in the gallery.
+              </p>
             </div>
           </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700">Image URL / Captured Photo *</label>
-            <input
-              type="url"
-              value={imageUrl}
-              onChange={e => setImageUrl(e.target.value)}
-              placeholder="https://images.unsplash.com/..."
-              required
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700">Caption / Area Focus</label>
-            <input
-              type="text"
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              placeholder="e.g. North bank post-cleanup"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
-            />
-          </div>
-
-          {/* AI Quality Check Trigger */}
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={handleRunAiQualityCheck}
-              disabled={checkingAiQuality || !imageUrl.trim()}
-              className="w-full py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-[#095c54] text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{checkingAiQuality ? 'Running AI Vision check...' : 'Test AI Image Quality'}</span>
-            </button>
-          </div>
-
-          {aiQualityFeedback && (
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-snug">
-              {aiQualityFeedback}
+        ) : (
+          /* Upload Form (5 cols on lg) */
+          <form
+            onSubmit={handleUploadEvidence}
+            className="lg:col-span-5 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-[#095c54]" />
+                <h2 className="text-sm font-extrabold text-slate-900">Add Evidence Photographs</h2>
+              </div>
+              {uploadedPhotos.length > 0 && (
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  {uploadedPhotos.length} selected
+                </span>
+              )}
             </div>
-          )}
 
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={uploading || !imageUrl.trim()}
-              className="w-full py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold shadow transition disabled:opacity-50"
-            >
-              {uploading ? 'Uploading...' : 'Save to Gallery'}
-            </button>
-          </div>
-        </form>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Activity Stage *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['before', 'during', 'after'] as const).map(st => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setUploadStage(st)}
+                    className={`py-2 rounded-xl text-xs font-bold capitalize transition ${
+                      uploadStage === st
+                        ? 'bg-[#095c54] text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* File Upload Button Supporting Multiple Photos */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Upload Photos from Device (Multiple)</label>
+              <label className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 font-extrabold text-xs hover:bg-slate-100 cursor-pointer transition">
+                <Upload className="w-4 h-4 text-[#095c54]" />
+                <span>Select Photos from Device</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={e => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+                      files.forEach(f => {
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          const b64 = ev.target?.result as string;
+                          if (b64) setUploadedPhotos(prev => [...prev, b64]);
+                        };
+                        reader.readAsDataURL(f);
+                      });
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Attached Photos Preview Grid */}
+            {uploadedPhotos.length > 0 && (
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-900">{uploadedPhotos.length} Photos Attached</span>
+                  <button
+                    type="button"
+                    onClick={() => setUploadedPhotos([])}
+                    className="text-[11px] text-rose-600 hover:text-rose-700 font-bold"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {uploadedPhotos.map((p, idx) => (
+                    <div key={idx} className="relative aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-900 group">
+                      <img src={p} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setUploadedPhotos(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-1 right-1 p-1 rounded-full bg-rose-600 text-white shadow hover:bg-rose-700"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Or Paste Single Image URL</label>
+              <input
+                type="url"
+                value={imageUrl}
+                onChange={e => setImageUrl(e.target.value)}
+                placeholder="https://images.unsplash.com/..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Caption / Area Focus</label>
+              <input
+                type="text"
+                value={caption}
+                onChange={e => setCaption(e.target.value)}
+                placeholder="e.g. North bank post-cleanup"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-medium text-slate-900 outline-none"
+              />
+            </div>
+
+            {/* AI Quality Check Trigger */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={handleRunAiQualityCheck}
+                disabled={checkingAiQuality || (!imageUrl.trim() && uploadedPhotos.length === 0)}
+                className="w-full py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-[#095c54] text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{checkingAiQuality ? 'Running AI Vision check...' : 'Test AI Image Quality'}</span>
+              </button>
+            </div>
+
+            {aiQualityFeedback && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-snug">
+                {aiQualityFeedback}
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={uploading || (!imageUrl.trim() && uploadedPhotos.length === 0)}
+                className="w-full py-2.5 rounded-2xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-bold shadow transition disabled:opacity-50"
+              >
+                {uploading ? 'Uploading...' : 'Save to Gallery'}
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Gallery Thumbnails List (7 cols on lg) */}
         <div className="lg:col-span-7 space-y-4">

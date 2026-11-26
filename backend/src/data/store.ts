@@ -15,6 +15,7 @@ import {
   WorkAssignment,
   CommunityProblem,
   WardOfficerRecord,
+  WardOfficerAssignmentHistory,
   AdminBoundarySettings,
   CommunityRegistrationRequest,
   SimulatedSms,
@@ -68,6 +69,7 @@ export interface DataStore {
   recognitionPosts: CommunityRecognitionPost[];
   communityProblems: CommunityProblem[];
   wardOfficers: WardOfficerRecord[];
+  wardOfficerAssignmentHistory?: WardOfficerAssignmentHistory[];
   adminBoundarySettings: AdminBoundarySettings;
   communityRegistrationRequests: CommunityRegistrationRequest[];
   smsMessages: SimulatedSms[];
@@ -1868,8 +1870,8 @@ export const initialWardOfficers: WardOfficerRecord[] = [
     designation: 'Senior Ward Officer',
     assigned_wards: [3],
     is_active: true,
-    cleanliness_score: 91.4,
-    total_resolved: 42,
+    cleanliness_score: 100.0,
+    total_resolved: 0,
     created_at: '2026-10-15T09:00:00Z'
   },
   {
@@ -1881,8 +1883,8 @@ export const initialWardOfficers: WardOfficerRecord[] = [
     designation: 'Ward Officer',
     assigned_wards: [8],
     is_active: true,
-    cleanliness_score: 88.7,
-    total_resolved: 38,
+    cleanliness_score: 100.0,
+    total_resolved: 0,
     created_at: '2026-10-15T09:00:00Z'
   },
   {
@@ -1894,8 +1896,8 @@ export const initialWardOfficers: WardOfficerRecord[] = [
     designation: 'Ward Officer',
     assigned_wards: [1, 2],
     is_active: true,
-    cleanliness_score: 93.1,
-    total_resolved: 29,
+    cleanliness_score: 100.0,
+    total_resolved: 0,
     created_at: '2026-10-15T09:00:00Z'
   },
   {
@@ -1907,8 +1909,8 @@ export const initialWardOfficers: WardOfficerRecord[] = [
     designation: 'Ward Officer',
     assigned_wards: [4, 5],
     is_active: true,
-    cleanliness_score: 89.5,
-    total_resolved: 33,
+    cleanliness_score: 100.0,
+    total_resolved: 0,
     created_at: '2026-10-15T09:00:00Z'
   }
 ];
@@ -1958,6 +1960,93 @@ const initialSmsMessages: SimulatedSms[] = [
   }
 ];
 
+export const initialWardOfficerHistory: WardOfficerAssignmentHistory[] = [
+  {
+    id: 'woh-01',
+    ward_number: 3,
+    ward_name: 'Dudhiya Talao - Ashapuri',
+    officer_id: 'wo-01',
+    officer_user_id: 'w0000000-0000-0000-0000-000000000003',
+    officer_name: 'Ramesh Patel',
+    officer_phone: '+919825130003',
+    officer_email: 'ramesh.patel@navsarimunicipal.gov.in',
+    designation: 'Senior Ward Officer',
+    assigned_at: '2026-10-15T09:00:00Z',
+    status: 'active',
+    notes: 'Initial municipal deployment as Lead Ward Officer'
+  },
+  {
+    id: 'woh-02',
+    ward_number: 8,
+    ward_name: 'Madhumati - Parsi Wad',
+    officer_id: 'wo-02',
+    officer_user_id: 'w0000000-0000-0000-0000-000000000008',
+    officer_name: 'Cyrus Contractor',
+    officer_phone: '+919825130008',
+    officer_email: 'cyrus.contractor@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_at: '2026-10-15T09:00:00Z',
+    status: 'active',
+    notes: 'Initial municipal deployment'
+  },
+  {
+    id: 'woh-03',
+    ward_number: 1,
+    ward_name: 'Lunsikui - Tower Road',
+    officer_id: 'wo-03',
+    officer_user_id: 'w0000000-0000-0000-0000-000000000001',
+    officer_name: 'Bhavin Desai',
+    officer_phone: '+919825130001',
+    officer_email: 'bhavin.desai@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_at: '2026-10-15T09:00:00Z',
+    status: 'active',
+    notes: 'Initial municipal deployment'
+  },
+  {
+    id: 'woh-04',
+    ward_number: 2,
+    ward_name: 'Station Road - Fuwara',
+    officer_id: 'wo-03',
+    officer_user_id: 'w0000000-0000-0000-0000-000000000001',
+    officer_name: 'Bhavin Desai',
+    officer_phone: '+919825130001',
+    officer_email: 'bhavin.desai@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_at: '2026-10-15T09:00:00Z',
+    status: 'active',
+    notes: 'Secondary ward allocation'
+  },
+  {
+    id: 'woh-05',
+    ward_number: 4,
+    ward_name: 'Kaliawadi - Sayaji Road',
+    officer_id: 'wo-04',
+    officer_user_id: 'w0000000-0000-0000-0000-000000000004',
+    officer_name: 'Jignesh Shah',
+    officer_phone: '+919825130004',
+    officer_email: 'jignesh.shah@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_at: '2026-10-15T09:00:00Z',
+    status: 'active',
+    notes: 'Initial municipal deployment'
+  },
+  {
+    id: 'woh-06',
+    ward_number: 5,
+    ward_name: 'Jalalpore Gateway - Chhapra',
+    officer_id: 'wo-04',
+    officer_user_id: 'w0000000-0000-0000-0000-000000000004',
+    officer_name: 'Jignesh Shah',
+    officer_phone: '+919825130004',
+    officer_email: 'jignesh.shah@navsarimunicipal.gov.in',
+    designation: 'Ward Officer',
+    assigned_at: '2026-10-15T09:00:00Z',
+    status: 'active',
+    notes: 'Secondary ward allocation'
+  }
+];
+
 export const store: DataStore = {
   wardOfficers: initialWardOfficers,
   adminBoundarySettings: {
@@ -1966,7 +2055,7 @@ export const store: DataStore = {
     ward_boundary_overrides: {},
     last_updated: new Date().toISOString()
   },
-  profiles: initialProfiles,
+  profiles: initialProfiles.filter(p => p.role === 'super_admin' || p.role === 'nmc_admin' || p.role === 'ward_officer'),
   authProfiles: [
     {
       id: 'auth-admin-01',
@@ -1994,50 +2083,6 @@ export const store: DataStore = {
       id: 'auth-w4-shah',
       user_id: 'w0000000-0000-0000-0000-000000000004',
       mobile_number: '+919825130004',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-01',
-      user_id: defaultCitizenId,
-      mobile_number: '+919876543210',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s', // Default hashed pass 'Admin@123'
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-99',
-      user_id: 'c0000000-0000-0000-0000-000000000099',
-      mobile_number: '+919825100099',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-w1',
-      user_id: 'f1000000-0000-0000-0000-000000000001',
-      mobile_number: '+919825120001',
-      password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
-      mobile_verified: true,
-      verification_completed_at: '2026-10-15T09:00:00Z',
-      account_status: 'active',
-      created_at: '2026-10-15T09:00:00Z',
-      updated_at: '2026-10-15T09:00:00Z'
-    },
-    {
-      id: 'auth-w2',
-      user_id: 'f1000000-0000-0000-0000-000000000002',
-      mobile_number: '+919825120002',
       password_hash: '$2a$10$eO0V4rLhQ5s79m8/L9K6UuO.qXoR8nU6s5q9h9K6UuO.qXoR8nU6s',
       mobile_verified: true,
       verification_completed_at: '2026-10-15T09:00:00Z',
@@ -2108,5 +2153,6 @@ export const store: DataStore = {
   recognitionPosts: initialRecognitionPosts,
   communityProblems: initialCommunityProblems,
   communityRegistrationRequests: initialCommunityRegistrationRequests,
-  smsMessages: initialSmsMessages
+  smsMessages: initialSmsMessages,
+  wardOfficerAssignmentHistory: initialWardOfficerHistory
 };

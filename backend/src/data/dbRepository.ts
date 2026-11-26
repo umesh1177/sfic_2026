@@ -12,8 +12,10 @@ import {
   WorkerProfile, WorkerDesignation, WorkerSkill, WorkAssignment,
   WorkAssignmentMember, WorkerAttendance, AttendanceException,
   WorkProgressUpdate, WorkEvidence, WorkCompletionReport,
-  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem
+  WorkReviewLog, WorkerDashboardSummary, CommunityProblem, WardApprovalItem,
+  WardOfficerAssignmentHistory
 } from '../types/index.js';
+import { NAVSARI_WARDS } from '../utils/postgis.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -29,6 +31,22 @@ export class DbRepository {
   public static isValidUUID(id?: string | null): boolean {
     if (!id || typeof id !== 'string') return false;
     return UUID_REGEX.test(id.trim());
+  }
+
+  /**
+   * Normalizes datetime strings to explicit Indian Standard Time (+05:30)
+   * Prevents UTC auto-shifting on Render / PostgreSQL TIMESTAMPTZ columns
+   */
+  public static normalizeDateWithIST(val: any): string | null {
+    if (!val) return null;
+    const s = String(val).trim();
+    if (!s) return null;
+    if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+      return `${s.slice(0, 16)}:00+05:30`;
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? s : d.toISOString();
   }
 
   /**
@@ -56,7 +74,7 @@ export class DbRepository {
            VALUES ($1, 'citizen')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'citizen'`,
           [validId]
-        ).catch(() => {});
+        ).catch(() => { });
       } catch (err: any) {
         console.warn('[DB REPO - ensureProfileExists warning]:', err.message);
       }
@@ -113,7 +131,7 @@ export class DbRepository {
            VALUES ($1, $2)
            ON CONFLICT (user_id, role) DO UPDATE SET role = EXCLUDED.role`,
           [validId, roleToAssign]
-        ).catch(() => {});
+        ).catch(() => { });
 
         const authId = randomUUID();
         await pool.query(
@@ -299,14 +317,14 @@ export class DbRepository {
           const resolvedRole = matchedByCommUsername
             ? 'community_head'
             : matchedByWorkerUsername
-            ? 'worker'
-            : (row.role || row.latest_user_role || 'citizen');
+              ? 'worker'
+              : (row.role || row.latest_user_role || 'citizen');
 
           const plainPass = matchedByCommUsername
             ? (row.auth_plain_password || row.comm_plain_password || row.plain_password)
             : matchedByWorkerUsername
-            ? (row.auth_plain_password || row.worker_plain_password || row.plain_password)
-            : (row.auth_plain_password || row.plain_password || row.comm_plain_password || row.worker_plain_password);
+              ? (row.auth_plain_password || row.worker_plain_password || row.plain_password)
+              : (row.auth_plain_password || row.plain_password || row.comm_plain_password || row.worker_plain_password);
 
           const profile: any = {
             id: row.id,
@@ -316,8 +334,8 @@ export class DbRepository {
             username: matchedByCommUsername
               ? row.comm_username
               : matchedByWorkerUsername
-              ? (row.worker_username || row.worker_code)
-              : (row.username || row.comm_username || row.worker_username || row.worker_code),
+                ? (row.worker_username || row.worker_code)
+                : (row.username || row.comm_username || row.worker_username || row.worker_code),
             plain_password: plainPass,
             avatar_url: row.avatar_url,
             preferred_language: row.preferred_language || 'en',
@@ -795,23 +813,23 @@ export class DbRepository {
         const isResolvedStatus = newStatus === 'resolved';
         const updateRes = this.isValidUUID(lookupId)
           ? await pool.query(
-              `UPDATE complaints
+            `UPDATE complaints
                SET status = $1,
                    resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
                    updated_at = NOW()
                WHERE id = $3 OR complaint_number = $4
                RETURNING id`,
-              [newStatus, isResolvedStatus, lookupId, lookupNum]
-            )
+            [newStatus, isResolvedStatus, lookupId, lookupNum]
+          )
           : await pool.query(
-              `UPDATE complaints
+            `UPDATE complaints
                SET status = $1,
                    resolved_at = CASE WHEN $2::boolean THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
                    updated_at = NOW()
                WHERE complaint_number = $3
                RETURNING id`,
-              [newStatus, isResolvedStatus, lookupNum]
-            );
+            [newStatus, isResolvedStatus, lookupNum]
+          );
 
         const dbComplaintId = updateRes.rows[0]?.id;
         if (actorInfo && dbComplaintId) {
@@ -819,7 +837,7 @@ export class DbRepository {
             `INSERT INTO complaint_activity_logs (complaint_id, status, note, actor_name, actor_role)
              VALUES ($1, $2, $3, $4, $5)`,
             [dbComplaintId, newStatus, actorInfo.note, actorInfo.name, actorInfo.role]
-          ).catch(() => {});
+          ).catch(() => { });
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - updateComplaintStatus]:', err.message);
@@ -993,6 +1011,84 @@ export class DbRepository {
     return { is_following: true, followers_count: 1 };
   }
 
+  public static async raiseComplaintCount(complaintId: string, citizenId: string): Promise<{ success: boolean; followers_count: number; message: string }> {
+    const validCitizenId = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
+    let newCount = 1;
+    if (isDbConnected()) {
+      try {
+        const check = await pool.query(
+          'SELECT id FROM complaint_followers WHERE complaint_id::text = $1::text AND citizen_id::text = $2::text',
+          [String(complaintId), validCitizenId]
+        );
+        if (check.rows.length === 0) {
+          await pool.query(
+            'INSERT INTO complaint_followers (complaint_id, citizen_id) VALUES ($1, $2)',
+            [complaintId, validCitizenId]
+          );
+          await pool.query(
+            'UPDATE complaints SET followers_count = COALESCE(followers_count, 0) + 1, upvotes_count = COALESCE(upvotes_count, 0) + 1 WHERE id::text = $1::text',
+            [String(complaintId)]
+          );
+        }
+        const countRes = await pool.query('SELECT followers_count FROM complaints WHERE id::text = $1::text', [String(complaintId)]);
+        newCount = Number(countRes.rows[0]?.followers_count || 1);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - raiseComplaintCount]:', err.message);
+      }
+    }
+
+    const c = store.complaints.find(comp => comp.id === complaintId);
+    if (c) {
+      c.followers_count = (c.followers_count || 0) + 1;
+      c.upvotes_count = c.followers_count;
+      newCount = c.followers_count;
+    }
+
+    return {
+      success: true,
+      followers_count: newCount,
+      message: 'Count increased successfully! You will receive live status notifications for this complaint.'
+    };
+  }
+
+  public static async getComplaintFollowerIds(complaintId: string): Promise<string[]> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          'SELECT citizen_id FROM complaint_followers WHERE complaint_id::text = $1::text',
+          [String(complaintId)]
+        );
+        return res.rows.map(r => r.citizen_id).filter(Boolean);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getComplaintFollowerIds]:', err.message);
+      }
+    }
+    return [];
+  }
+
+  public static async notifyComplaintFollowers(
+    complaintId: string,
+    title: string,
+    message: string,
+    excludeCitizenId?: string
+  ): Promise<void> {
+    try {
+      const followerIds = await this.getComplaintFollowerIds(complaintId);
+      for (const fId of followerIds) {
+        if (excludeCitizenId && fId === excludeCitizenId) continue;
+        await this.createNotification(
+          fId,
+          title,
+          message,
+          complaintId,
+          'complaint_resolved'
+        ).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - notifyComplaintFollowers]:', err.message);
+    }
+  }
+
   public static async addEvidence(complaintId: string, actorName: string, note?: string): Promise<boolean> {
     if (isDbConnected()) {
       try {
@@ -1013,7 +1109,7 @@ export class DbRepository {
   // 2. CLEANLINESS DRIVES: FETCH & REGISTER
   // =========================================================================
 
-    public static async getDrives(citizenId?: string): Promise<CleanlinessDrive[]> {
+  public static async getDrives(citizenId?: string): Promise<CleanlinessDrive[]> {
     if (isDbConnected()) {
       try {
         const res = await pool.query('SELECT * FROM cleanliness_drives ORDER BY start_time ASC');
@@ -1037,20 +1133,29 @@ export class DbRepository {
           organiser_name: r.organiser_name,
           status: r.status,
           banner_url: r.banner_url || r.banner_path,
-          max_volunteers: r.max_volunteers,
+          max_volunteers: r.max_volunteers !== undefined && r.max_volunteers !== null ? Number(r.max_volunteers) : 50,
           registered_volunteers_count: r.registered_volunteers_count || 0,
           is_registered: registeredDriveIds.has(r.id),
           latitude: 20.9470,
           longitude: 72.9280,
-          attendance_status: registeredDriveIds.has(r.id) ? 'registered' : undefined
+          requires_attendance: (r as any).requires_attendance !== false,
+          is_nmc_official_drive: (r as any).is_nmc_official_drive === true,
+          is_unlimited_capacity: Number(r.max_volunteers) === 0,
+          attendance_status: (r.status === 'completed' && registeredDriveIds.has(r.id))
+            ? 'absent'
+            : (registeredDriveIds.has(r.id) ? 'registered' : undefined)
         }));
 
         // Also retrieve published & approved community activities so citizens can discover and register
         const actRes = await pool.query(`
           SELECT 
             a.id, a.title, COALESCE(a.short_description, a.detailed_description, '') as description,
-            a.ward_id, a.ward_name, COALESCE(a.address, a.landmark, 'Navsari') as location_name,
-            a.latitude, a.longitude,
+            a.ward_id, a.ward_name, COALESCE(a.address, a.landmark, cp.location_name, 'Navsari') as location_name,
+            COALESCE(NULLIF(a.latitude, 0), NULLIF(cp.latitude, 0), 20.9470) as latitude,
+            COALESCE(NULLIF(a.longitude, 0), NULLIF(cp.longitude, 0), 72.9280) as longitude,
+            cp.latitude as problem_latitude,
+            cp.longitude as problem_longitude,
+            cp.location_url as location_url,
             a.proposed_start_at as start_time, a.proposed_end_at as end_time,
             a.proposed_start_at as registration_deadline,
             COALESCE(c.community_name, 'Community Organization') as organiser_name,
@@ -1060,10 +1165,13 @@ export class DbRepository {
             COALESCE(a.registration_status, 'open') as registration_status,
             COALESCE(a.cover_image_path, 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80') as banner_url,
             COALESCE(a.maximum_participants, 50) as max_volunteers,
+            COALESCE(a.requires_attendance, TRUE) as requires_attendance,
+            COALESCE(a.is_nmc_official_drive, FALSE) as is_nmc_official_drive,
             COALESCE((SELECT COUNT(*) FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.registration_status <> 'cancelled'), 0) as registered_volunteers_count,
             (SELECT ar.attendance_status FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.citizen_id = $1 AND ar.registration_status <> 'cancelled' LIMIT 1) as my_attendance_status
           FROM community_activities a
           LEFT JOIN communities c ON c.id = a.community_id
+          LEFT JOIN community_problems cp ON (cp.id::text = a.linked_problem_id::text OR cp.linked_activity_id::text = a.id::text)
           WHERE a.approval_status IN ('approved', 'ward_approved', 'nmc_admin_approved') AND a.publication_status IN ('published', 'approved')
         `, [citizenId && this.isValidUUID(citizenId) ? citizenId : '00000000-0000-0000-0000-000000000000']);
 
@@ -1078,29 +1186,60 @@ export class DbRepository {
           presentActIds = new Set(actRegRes.rows.filter(r => r.attendance_status === 'present').map(r => r.activity_id));
         }
 
-        const communityDrives: CleanlinessDrive[] = actRes.rows.map(r => ({
-          id: r.id,
-          title: r.title,
-          description: r.description,
-          ward_id: r.ward_id,
-          ward_name: r.ward_name,
-          location_name: r.location_name,
-          latitude: parseFloat(r.latitude) || 20.9470,
-          longitude: parseFloat(r.longitude) || 72.9280,
-          start_time: r.start_time,
-          end_time: r.end_time,
-          registration_deadline: r.registration_deadline,
-          organiser_name: r.organiser_name,
-          lead_person: r.lead_person,
-          contact_phone: r.contact_phone,
-          status: r.status,
-          registration_status: r.registration_status,
-          banner_url: r.banner_url,
-          max_volunteers: parseInt(r.max_volunteers, 10) || 50,
-          registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
-          is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
-          attendance_status: r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined)
-        } as any));
+        const communityDrives: CleanlinessDrive[] = actRes.rows.map(r => {
+          let resolvedLat = parseFloat(r.latitude) || 20.9470;
+          let resolvedLng = parseFloat(r.longitude) || 72.9280;
+
+          // If location_url contains coordinates, parse and resolve them
+          if (r.location_url) {
+            const atMatch = r.location_url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+            const qMatch = r.location_url.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+            const plainMatch = r.location_url.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+            const m = atMatch || qMatch || plainMatch;
+            if (m) {
+              const uLat = parseFloat(m[1]);
+              const uLng = parseFloat(m[2]);
+              if (!isNaN(uLat) && !isNaN(uLng)) {
+                resolvedLat = uLat;
+                resolvedLng = uLng;
+              }
+            }
+          }
+
+          return {
+            id: r.id,
+            title: r.title,
+            description: r.description,
+            ward_id: r.ward_id,
+            ward_name: r.ward_name,
+            location_name: r.location_name,
+            latitude: resolvedLat,
+            longitude: resolvedLng,
+            problem_latitude: r.problem_latitude ? parseFloat(r.problem_latitude) : undefined,
+            problem_longitude: r.problem_longitude ? parseFloat(r.problem_longitude) : undefined,
+            location_url: r.location_url || undefined,
+            start_time: r.start_time,
+            end_time: r.end_time,
+            registration_deadline: r.registration_deadline,
+            organiser_name: r.organiser_name,
+            lead_person: r.lead_person,
+            contact_phone: r.contact_phone,
+            status: r.status,
+            registration_status: r.registration_status,
+            banner_url: r.banner_url,
+            max_volunteers: (r.max_volunteers !== undefined && r.max_volunteers !== null && !isNaN(parseInt(r.max_volunteers, 10)))
+              ? parseInt(r.max_volunteers, 10)
+              : 50,
+            is_unlimited_capacity: parseInt(r.max_volunteers, 10) === 0,
+            registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
+            is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
+            requires_attendance: r.requires_attendance !== false,
+            is_nmc_official_drive: r.is_nmc_official_drive === true,
+            attendance_status: (r.status === 'completed' && !presentActIds.has(r.id) && registeredActIds.has(r.id))
+              ? 'absent'
+              : (r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined))
+          } as any;
+        });
 
         const combined = [...communityDrives];
         for (const sd of standardDrives) {
@@ -1165,7 +1304,7 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
               [driveId]
-            ).catch(() => {});
+            ).catch(() => { });
             return {
               success: false,
               error: `Registration limit reached (${currentCount}/${maxCap} volunteers). Registrations are now closed.`,
@@ -1194,13 +1333,13 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
               [driveId]
-            ).catch(() => {});
+            ).catch(() => { });
           }
 
           await pool.query(
             `UPDATE cleanliness_drives SET registered_volunteers_count = $1 WHERE id = $2`,
             [newCount, driveId]
-          ).catch(() => {});
+          ).catch(() => { });
 
           return {
             success: true,
@@ -1275,12 +1414,12 @@ export class DbRepository {
     const validCitizenId = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
     if (isDbConnected()) {
       try {
-        await pool.query('DELETE FROM drive_registrations WHERE drive_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => {});
-        await pool.query('DELETE FROM activity_registrations WHERE activity_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => {});
+        await pool.query('DELETE FROM drive_registrations WHERE drive_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => { });
+        await pool.query('DELETE FROM activity_registrations WHERE activity_id = $1 AND citizen_id = $2', [driveId, validCitizenId]).catch(() => { });
         await pool.query(
           `UPDATE cleanliness_drives SET registered_volunteers_count = GREATEST(0, registered_volunteers_count - 1) WHERE id = $1`,
           [driveId]
-        ).catch(() => {});
+        ).catch(() => { });
         return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - cancelDriveRegistration]:', err.message);
@@ -1313,7 +1452,7 @@ export class DbRepository {
           UPDATE activity_registrations
           SET attendance_status = 'present', checked_in_at = NOW()
           WHERE activity_id = $1 AND citizen_id = $2
-        `, [driveId, validCitizenId]).catch(() => {});
+        `, [driveId, validCitizenId]).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - markDriveAttendance]:', err.message);
       }
@@ -1629,6 +1768,7 @@ export class DbRepository {
     achievement_stats: string;
     image_url: string;
     before_image_url?: string;
+    before_photos?: string[];
     after_image_url?: string;
     after_photos?: string[];
     participating_communities?: string[];
@@ -1641,13 +1781,14 @@ export class DbRepository {
       try {
         const afterPhotosJson = data.after_photos ? JSON.stringify(data.after_photos) : null;
         const verifiedFlag = data.is_verified_nmc !== undefined ? data.is_verified_nmc : true;
+        const beforePhotosJson = data.before_photos ? JSON.stringify(data.before_photos) : null;
         const res = await pool.query(
           `INSERT INTO community_recognition_posts (
             author_name, author_role, is_verified_nmc, ward_number, ward_name,
             hero_name, hero_role, badge_title, title, description,
             achievement_stats, image_url, likes_count, comments_count,
-            before_image_url, after_image_url, after_photos
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, 0, $13, $14, $15)
+            before_image_url, after_image_url, after_photos, before_photos
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, 0, $13, $14, $15, $16)
           RETURNING *`,
           [
             data.author_name,
@@ -1664,9 +1805,37 @@ export class DbRepository {
             data.image_url,
             data.before_image_url || null,
             data.after_image_url || null,
-            afterPhotosJson
+            afterPhotosJson,
+            beforePhotosJson
           ]
-        );
+        ).catch(async () => {
+          // Fallback if before_photos column not yet in DB
+          return pool.query(
+            `INSERT INTO community_recognition_posts (
+              author_name, author_role, is_verified_nmc, ward_number, ward_name,
+              hero_name, hero_role, badge_title, title, description,
+              achievement_stats, image_url, likes_count, comments_count,
+              before_image_url, after_image_url, after_photos
+            ) VALUES ($1, $2, true, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0, $12, $13, $14)
+            RETURNING *`,
+            [
+              data.author_name,
+              data.author_role,
+              data.ward_number,
+              data.ward_name,
+              data.hero_name,
+              data.hero_role,
+              data.badge_title,
+              data.title,
+              data.description,
+              data.achievement_stats,
+              data.image_url,
+              data.before_image_url || null,
+              data.after_image_url || null,
+              afterPhotosJson
+            ]
+          );
+        });
         const r = res.rows[0];
         const postObj: any = {
           id: r.id,
@@ -1684,6 +1853,7 @@ export class DbRepository {
           achievement_stats: r.achievement_stats,
           image_url: r.image_url,
           before_image_url: r.before_image_url || data.before_image_url,
+          before_photos: r.before_photos || data.before_photos || (r.before_image_url ? [r.before_image_url] : []),
           after_image_url: r.after_image_url || data.after_image_url,
           after_photos: r.after_photos || data.after_photos,
           participating_communities: data.participating_communities,
@@ -1705,7 +1875,7 @@ export class DbRepository {
     }
 
     // Fallback store
-    const newPost: CommunityRecognitionPost = {
+    const newPost: any = {
       id: `post-${Date.now()}`,
       author_name: data.author_name,
       author_role: data.author_role,
@@ -1721,6 +1891,7 @@ export class DbRepository {
       achievement_stats: data.achievement_stats,
       image_url: data.image_url,
       before_image_url: data.before_image_url,
+      before_photos: data.before_photos || (data.before_image_url ? [data.before_image_url] : []),
       after_image_url: data.after_image_url,
       after_photos: data.after_photos,
       participating_communities: data.participating_communities,
@@ -2004,15 +2175,42 @@ export class DbRepository {
         const linkedProbRaw = (data as any).linked_problem_id;
         const linkedProblemId = this.isValidUUID(linkedProbRaw) ? linkedProbRaw : null;
 
+        let actLat = data.latitude;
+        let actLng = data.longitude;
+        if (linkedProblemId) {
+          try {
+            const probRes = await pool.query(
+              'SELECT latitude, longitude, location_url, address, location_name FROM community_problems WHERE id::text = $1::text',
+              [linkedProblemId]
+            );
+            if (probRes.rows.length > 0) {
+              const pRow = probRes.rows[0];
+              if (pRow.latitude && (!actLat || actLat === 20.9470)) {
+                actLat = parseFloat(pRow.latitude);
+              }
+              if (pRow.longitude && (!actLng || actLng === 72.9280)) {
+                actLng = parseFloat(pRow.longitude);
+              }
+            }
+          } catch (e: any) {
+            console.error('[createCommunityActivity] error querying linked problem:', e.message);
+          }
+        }
+
+        const normStart = this.normalizeDateWithIST(data.proposed_start_at) || new Date(Date.now() + 86400000).toISOString();
+        const normEnd = this.normalizeDateWithIST(data.proposed_end_at) || new Date(Date.now() + 86400000 + 10800000).toISOString();
+        const isNmcOfficial = (data as any).is_nmc_official_drive === true;
+        const requiresAttendance = (data as any).requires_attendance !== false;
+
         const values = [
-          data.community_id || 'b0000000-0000-0000-0000-000000000001',
+          data.community_id || (isNmcOfficial ? 'b0000000-0000-0000-0000-000000000099' : 'b0000000-0000-0000-0000-000000000001'),
           data.title || 'Untitled Community Activity',
           data.short_description || 'Cleanliness drive in Navsari',
           data.detailed_description || 'Comprehensive cleanliness activity with volunteer participation.',
-          data.activity_category || (data as any).activity_type || 'Public Area Cleaning',
+          data.activity_category || (data as any).activity_type || (isNmcOfficial ? 'Public Awareness Rally' : 'Public Area Cleaning'),
           JSON.stringify(data.objectives || []),
           JSON.stringify(data.expected_outcomes || []),
-          data.instructions || (data as any).volunteer_instructions || 'Report on time with safety gloves.',
+          data.instructions || (data as any).volunteer_instructions || (isNmcOfficial ? 'Open to all citizens and families. Gather at starting point.' : 'Report on time with safety gloves.'),
           JSON.stringify(data.equipment_requirements || (data as any).equipment_needed || []),
           data.safety_guidelines || 'Follow team supervisor instructions.',
           JSON.stringify(data.faq || []),
@@ -2020,21 +2218,23 @@ export class DbRepository {
           data.ward_id || `ward-${String(data.ward_number || 3).padStart(2, '0')}`,
           data.ward_number || 3,
           data.ward_name || `Ward ${data.ward_number || 3}`,
-          data.latitude || 20.9470,
-          data.longitude || 72.9280,
+          actLat || 20.9470,
+          actLng || 72.9280,
           data.address || (data as any).target_area || 'Navsari Municipal Area',
           data.landmark || (data as any).meeting_point || null,
-          data.proposed_start_at || new Date(Date.now() + 86400000).toISOString(),
-          data.proposed_end_at || new Date(Date.now() + 86400000 + 10800000).toISOString(),
+          normStart,
+          normEnd,
           data.registration_open_at || new Date().toISOString(),
-          data.registration_close_at || new Date(Date.now() + 86400000).toISOString(),
-          data.maximum_participants || (data as any).max_capacity || 50,
+          data.registration_close_at || normStart,
+          data.maximum_participants !== undefined && data.maximum_participants !== null
+            ? Number(data.maximum_participants)
+            : ((data as any).max_capacity !== undefined ? Number((data as any).max_capacity) : (isNmcOfficial ? 200 : 50)),
           data.minimum_participants || 10,
           data.waiting_list_enabled ?? true,
           data.registration_requires_approval ?? false,
-          data.publication_status || 'draft',
-          data.approval_status || 'draft',
-          data.registration_status || 'not_open',
+          data.publication_status || (isNmcOfficial ? 'published' : 'draft'),
+          data.approval_status || (isNmcOfficial ? 'approved' : 'draft'),
+          data.registration_status || (isNmcOfficial ? 'open' : 'not_open'),
           data.event_status || 'upcoming',
           data.evidence_status || 'not_submitted',
           this.isValidUUID(data.created_by) ? data.created_by : 'c0000000-0000-0000-0000-000000000099',
@@ -2043,6 +2243,46 @@ export class DbRepository {
 
         const res = await pool.query(query, values);
         const mapped = this.mapActivityRow(res.rows[0]);
+
+        // Explicitly set flags
+        mapped.requires_attendance = requiresAttendance;
+        mapped.is_nmc_official_drive = isNmcOfficial;
+        await pool.query(
+          `UPDATE community_activities SET requires_attendance = $1, is_nmc_official_drive = $2 WHERE id = $3`,
+          [requiresAttendance, isNmcOfficial, mapped.id]
+        ).catch(() => {});
+
+        // If approved or NMC official, immediately upsert to cleanliness_drives
+        if (mapped.approval_status === 'approved' || isNmcOfficial) {
+          const wardId = mapped.ward_id || `ward-0${mapped.ward_number || 3}`;
+          const locName = mapped.address || mapped.landmark || 'Navsari Civic Area';
+          const orgName = isNmcOfficial ? 'Navsari Municipal Corporation (NMC)' : (mapped.community_name || 'Community Action Team');
+          await pool.query(`
+            INSERT INTO cleanliness_drives (
+              id, title, description, ward_id, ward_name, location_name, latitude, longitude,
+              start_time, end_time, registration_deadline, organiser_name, lead_person, contact_phone,
+              status, banner_url, max_volunteers, requires_attendance, is_nmc_official_drive
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16, $17, $18)
+            ON CONFLICT (id) DO UPDATE SET
+              title = EXCLUDED.title,
+              description = EXCLUDED.description,
+              ward_name = EXCLUDED.ward_name,
+              organiser_name = EXCLUDED.organiser_name,
+              start_time = EXCLUDED.start_time,
+              end_time = EXCLUDED.end_time,
+              requires_attendance = EXCLUDED.requires_attendance,
+              is_nmc_official_drive = EXCLUDED.is_nmc_official_drive,
+              status = 'upcoming'
+          `, [
+            mapped.id, mapped.title, mapped.short_description || mapped.detailed_description,
+            wardId, mapped.ward_name, locName,
+            Number(mapped.latitude) || 20.9470, Number(mapped.longitude) || 72.9280,
+            normStart, normEnd, normStart, orgName, orgName,
+            '+919825100000', mapped.cover_image_path, mapped.maximum_participants,
+            requiresAttendance, isNmcOfficial
+          ]).catch(err => console.warn('[DB REPO NOTICE - cleanliness_drives immediate sync]:', err.message));
+        }
+
         if (!store.communityActivities) store.communityActivities = [];
         store.communityActivities.unshift(mapped);
         return mapped;
@@ -2129,6 +2369,9 @@ export class DbRepository {
           ? Math.max(1, parseInt(String(rawMax), 10))
           : null;
 
+        const normStart = data.proposed_start_at ? this.normalizeDateWithIST(data.proposed_start_at) : null;
+        const normEnd = data.proposed_end_at ? this.normalizeDateWithIST(data.proposed_end_at) : null;
+
         await pool.query(`
           UPDATE community_activities SET
             title = COALESCE($1, title),
@@ -2161,19 +2404,36 @@ export class DbRepository {
           data.safety_guidelines || null,
           data.cover_image_path || null,
           parsedMax,
-          data.proposed_start_at || null,
-          data.proposed_end_at || null,
+          normStart,
+          normEnd,
           data.address || null,
           data.landmark || null,
           id
         ]);
+
+        // Sync start_time, end_time & description to cleanliness_drives
+        if (normStart || normEnd || data.short_description || data.detailed_description) {
+          const desc = data.short_description || data.detailed_description;
+          await pool.query(`
+            UPDATE cleanliness_drives SET
+              start_time = COALESCE($1, start_time),
+              end_time = COALESCE($2, end_time),
+              description = COALESCE($3, description)
+            WHERE id::text = $4::text
+          `, [
+            normStart || null,
+            normEnd || null,
+            desc || null,
+            id
+          ]).catch(() => { });
+        }
 
         // Sync max_volunteers & auto-close/reopen registration_status based on current count
         if (parsedMax !== null) {
           await pool.query(
             `UPDATE cleanliness_drives SET max_volunteers = $1 WHERE id = $2`,
             [parsedMax, id]
-          ).catch(() => {});
+          ).catch(() => { });
 
           const cntRes = await pool.query(
             `SELECT COUNT(*) FROM activity_registrations WHERE activity_id = $1 AND registration_status <> 'cancelled'`,
@@ -2185,13 +2445,13 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET registration_status = 'closed', updated_at = NOW() WHERE id = $1`,
               [id]
-            ).catch(() => {});
+            ).catch(() => { });
           } else if (existing.registration_status === 'closed' && existing.event_status !== 'completed') {
             // Reopen automatically if organizer raised the limit above current enrollment
             await pool.query(
               `UPDATE community_activities SET registration_status = 'open', updated_at = NOW() WHERE id = $1`,
               [id]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
 
@@ -2273,7 +2533,7 @@ export class DbRepository {
           prev.approval_status,
           updates.approval_status || prev.approval_status,
           actionDesc
-        ]).catch(() => {});
+        ]).catch(() => { });
 
         return this.getActivityById(id);
       } catch (err: any) {
@@ -2853,7 +3113,7 @@ export class DbRepository {
             `Question Answered: ${q.activity_title}`,
             `The Community Head has answered your question regarding "${q.activity_title}": "${responseText.slice(0, 100)}..."`,
             q.activity_id
-          ]).catch(() => {});
+          ]).catch(() => { });
 
           const r = res.rows[0];
           return {
@@ -3006,7 +3266,7 @@ export class DbRepository {
             INSERT INTO activity_announcement_recipients (announcement_id, citizen_id, registration_id, delivery_status)
             VALUES ($1, $2, $3, 'delivered')
             ON CONFLICT (announcement_id, citizen_id) DO NOTHING
-          `, [an.id, cit.citizen_id, cit.reg_id]).catch(() => {});
+          `, [an.id, cit.citizen_id, cit.reg_id]).catch(() => { });
 
           await pool.query(`
             INSERT INTO notifications (user_id, title, message, notification_type, reference_id, is_read)
@@ -3016,7 +3276,7 @@ export class DbRepository {
             `📢 ${data.title}`,
             data.message,
             data.activity_id
-          ]).catch(() => {});
+          ]).catch(() => { });
         }
 
         return {
@@ -3082,6 +3342,9 @@ export class DbRepository {
           review_metadata: r.review_metadata || {},
           evidence_version: r.evidence_version || 1,
           submission_status: r.submission_status,
+          verification_status: r.verification_status || (r.submission_status === 'verified' ? 'verified' : 'submitted'),
+          verification_notes: r.verification_notes || null,
+          verified_at: r.verified_at || null,
           created_at: r.created_at
         }));
       } catch (err: any) {
@@ -3132,12 +3395,12 @@ export class DbRepository {
             await pool.query(
               `UPDATE community_activities SET evidence_status = 'submitted', updated_at = NOW() WHERE id = $1 AND COALESCE(evidence_status, '') <> 'verified_complete'`,
               [data.activity_id]
-            ).catch(() => {});
+            ).catch(() => { });
           } else {
             await pool.query(
               `UPDATE community_activities SET event_status = CASE WHEN event_status = 'upcoming' THEN 'ongoing' ELSE event_status END, updated_at = NOW() WHERE id = $1`,
               [data.activity_id]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
 
@@ -3232,8 +3495,8 @@ export class DbRepository {
           decision === 'approved'
             ? 'verified_complete'
             : decision === 'rejected'
-            ? 'rejected'
-            : 'changes_requested';
+              ? 'rejected'
+              : 'changes_requested';
 
         const statusUpdates: Record<string, string> = { evidence_status: nextEvidenceStatus };
         if (decision === 'approved') {
@@ -3251,10 +3514,10 @@ export class DbRepository {
         if (decision === 'approved') {
           await pool.query(`
             UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1
-          `, [activityId]).catch(() => {});
+          `, [activityId]).catch(() => { });
           await pool.query(`
             UPDATE cleanliness_drives SET status = 'completed' WHERE id = $1
-          `, [activityId]).catch(() => {});
+          `, [activityId]).catch(() => { });
         }
 
         return true;
@@ -3263,6 +3526,100 @@ export class DbRepository {
       }
     }
     return false;
+  }
+
+  public static async verifyDriveEvidence(
+    activityId: string,
+    evidenceId: string,
+    status: 'verified' | 'rejected',
+    notes?: string,
+    officerName?: string
+  ): Promise<{ success: boolean; evidence?: any; message: string }> {
+    if (!isDbConnected()) {
+      return { success: false, message: 'Database not connected.' };
+    }
+    try {
+      const submissionStatus = status === 'verified' ? 'verified' : 'rejected';
+      const res = await pool.query(
+        `UPDATE activity_evidence
+         SET verification_status = $1::text,
+             submission_status = $2::text,
+             verification_notes = $3::text,
+             verified_at = CURRENT_TIMESTAMP
+         WHERE id::text = $4::text AND activity_id::text = $5::text
+         RETURNING *`,
+        [status, submissionStatus, notes || null, String(evidenceId), String(activityId)]
+      );
+      if (res.rows.length === 0) {
+        return { success: false, message: 'Evidence item not found.' };
+      }
+      const updated = res.rows[0];
+
+      // Notify community head
+      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id::text = $1::text`, [String(activityId)]).catch(() => ({ rows: [] as any[] }));
+      if (actRes.rows[0]?.created_by) {
+        await this.createNotification(
+          actRes.rows[0].created_by,
+          `Drive Evidence ${status === 'verified' ? 'Verified' : 'Flagged / Rejected'}`,
+          `Ward Officer ${officerName || 'Official'} marked evidence as ${status.toUpperCase()} for "${actRes.rows[0].title}". ${notes ? `Remarks: ${notes}` : ''}`,
+          activityId,
+          'drive_evidence_reviewed'
+        ).catch(() => {});
+      }
+
+      return {
+        success: true,
+        evidence: updated,
+        message: `Evidence successfully marked as ${status.toUpperCase()}`
+      };
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - verifyDriveEvidence]:', err.message);
+      return { success: false, message: err.message };
+    }
+  }
+
+  public static async verifyAllDriveEvidence(
+    activityId: string,
+    status: 'verified' | 'rejected',
+    notes?: string,
+    officerName?: string
+  ): Promise<{ success: boolean; updatedCount: number; message: string }> {
+    if (!isDbConnected()) {
+      return { success: false, updatedCount: 0, message: 'Database not connected.' };
+    }
+    try {
+      const submissionStatus = status === 'verified' ? 'verified' : 'rejected';
+      const res = await pool.query(
+        `UPDATE activity_evidence
+         SET verification_status = $1::text,
+             submission_status = $2::text,
+             verification_notes = $3::text,
+             verified_at = CURRENT_TIMESTAMP
+         WHERE activity_id::text = $4::text
+         RETURNING id`,
+        [status, submissionStatus, notes || null, String(activityId)]
+      );
+
+      const actRes = await pool.query(`SELECT created_by, title FROM community_activities WHERE id::text = $1::text`, [String(activityId)]).catch(() => ({ rows: [] as any[] }));
+      if (actRes.rows[0]?.created_by) {
+        await this.createNotification(
+          actRes.rows[0].created_by,
+          `All Drive Evidence ${status === 'verified' ? 'Verified' : 'Flagged'}`,
+          `Ward Officer ${officerName || 'Official'} reviewed all ${res.rows.length} evidence uploads for "${actRes.rows[0].title}". Status: ${status.toUpperCase()}.`,
+          activityId,
+          'drive_evidence_reviewed'
+        ).catch(() => {});
+      }
+
+      return {
+        success: true,
+        updatedCount: res.rows.length,
+        message: `All ${res.rows.length} evidence photo(s) marked as ${status.toUpperCase()}`
+      };
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - verifyAllDriveEvidence]:', err.message);
+      return { success: false, updatedCount: 0, message: err.message };
+    }
   }
 
   // =========================================================================
@@ -3463,6 +3820,8 @@ export class DbRepository {
       evidence_status: r.evidence_status || 'not_submitted',
       registered_count: r.registered_count ? parseInt(r.registered_count) : 0,
       verified_participants_count: r.verified_participants_count ? parseInt(r.verified_participants_count) : 0,
+      requires_attendance: r.requires_attendance !== false,
+      is_nmc_official_drive: r.is_nmc_official_drive === true,
       created_by: r.created_by,
       created_at: r.created_at,
       updated_at: r.updated_at
@@ -3665,9 +4024,11 @@ export class DbRepository {
                   WHERE lm.assignment_id = wa.id AND lm.temporary_leader = TRUE
                   LIMIT 1) as temporary_leader_id,
                  EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'before') as has_before_evidence,
-                 EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'after') as has_after_evidence
+                 EXISTS(SELECT 1 FROM work_evidence we WHERE we.assignment_id = wa.id AND we.evidence_type = 'after') as has_after_evidence,
+                 COALESCE(wa.allow_anywhere_attendance, c.allow_anywhere_attendance, false) as allow_anywhere_attendance
           FROM work_assignments wa
           JOIN work_assignment_members wam ON wam.assignment_id = wa.id
+          LEFT JOIN complaints c ON c.id = wa.complaint_id OR c.complaint_number = wa.complaint_number
           WHERE (
             wam.worker_id = $1
             OR wam.worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1)
@@ -3722,7 +4083,8 @@ export class DbRepository {
             complaint_id: r.complaint_id || undefined,
             complaint_number: r.complaint_number || undefined,
             team_id: r.team_id || undefined,
-            team_name: r.team_name || undefined
+            team_name: r.team_name || undefined,
+            allow_anywhere_attendance: Boolean(r.allow_anywhere_attendance)
           } as any;
         }));
       } catch (err: any) {
@@ -3750,7 +4112,8 @@ export class DbRepository {
           ...a,
           is_temporary_leader: isLeader,
           temporary_leader_name: a.temporary_leader_name || (isLeader ? 'You (Team Leader)' : 'Team Leader'),
-          my_attendance_status: a.my_attendance_status || 'assigned'
+          my_attendance_status: a.my_attendance_status || 'assigned',
+          allow_anywhere_attendance: Boolean(a.allow_anywhere_attendance || (store.complaints || []).find((c: any) => c.id === a.complaint_id || c.complaint_number === a.complaint_number)?.allow_anywhere_attendance)
         };
       });
 
@@ -3992,27 +4355,36 @@ export class DbRepository {
     workerId: string,
     lat: number,
     lon: number,
-    accuracy: number
+    accuracy: number,
+    action: 'check_in' | 'check_out' = 'check_in'
   ): Promise<{ success: boolean; attendance: WorkerAttendance; message: string }> {
     let taskLat = 20.9485;
     let taskLon = 72.9260;
-    let geofenceRadius = 100;
+    let geofenceRadius = 150;
+    let allowAnywhere = false;
 
     if (isDbConnected() && this.isValidUUID(assignmentId)) {
       try {
         const taskRes = await pool.query(`
-          SELECT latitude, longitude, attendance_radius_meters, title
-          FROM work_assignments WHERE id = $1
+          SELECT wa.latitude, wa.longitude, wa.attendance_radius_meters, wa.title,
+                 COALESCE(wa.allow_anywhere_attendance, c.allow_anywhere_attendance, false) as allow_anywhere
+          FROM work_assignments wa
+          LEFT JOIN complaints c ON c.id = wa.complaint_id OR c.complaint_number = wa.complaint_number
+          WHERE wa.id = $1
         `, [assignmentId]);
         if (taskRes.rows.length > 0) {
           taskLat = parseFloat(taskRes.rows[0].latitude);
           taskLon = parseFloat(taskRes.rows[0].longitude);
-          geofenceRadius = parseInt(taskRes.rows[0].attendance_radius_meters || '100', 10);
+          geofenceRadius = parseInt(taskRes.rows[0].attendance_radius_meters || '150', 10);
+          if (taskRes.rows[0].allow_anywhere) allowAnywhere = true;
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - fetch task coords]:', err.message);
       }
     }
+
+    const memWa = (store.workAssignments || []).find((wa: any) => wa.id === assignmentId);
+    if (memWa && memWa.allow_anywhere_attendance) allowAnywhere = true;
 
     // 1. Calculate distance from assigned work location
     const distanceMeters = this.calculateHaversineDistanceMeters(lat, lon, taskLat, taskLon);
@@ -4021,7 +4393,10 @@ export class DbRepository {
     let validationStatus: 'verified_match' | 'location_mismatch' | 'poor_accuracy' = 'verified_match';
     let validationReason = `GPS location matched within ${distanceMeters}m (radius: ${geofenceRadius}m).`;
 
-    if (accuracy > 65) {
+    if (allowAnywhere) {
+      validationStatus = 'verified_match';
+      validationReason = `Remote attendance authorized by Ward Officer (${distanceMeters}m from site). Geofence bypassed.`;
+    } else if (accuracy > 65) {
       validationStatus = 'poor_accuracy';
       validationReason = `GPS accuracy of ${accuracy}m is too poor to verify presence. Please move to an open area and retry.`;
     } else if (distanceMeters > geofenceRadius) {
@@ -4030,12 +4405,13 @@ export class DbRepository {
     }
 
     const isMatch = validationStatus === 'verified_match';
+    const nowIso = new Date().toISOString();
 
     const attendanceRecord: WorkerAttendance = {
       id: `att-${Date.now()}`,
       assignment_id: assignmentId,
       worker_id: workerId,
-      attendance_timestamp: new Date().toISOString(),
+      attendance_timestamp: nowIso,
       latitude: lat,
       longitude: lon,
       gps_accuracy: accuracy,
@@ -4044,40 +4420,102 @@ export class DbRepository {
       validation_status: validationStatus,
       validation_reason: validationReason,
       attendance_method: 'gps',
-      created_at: new Date().toISOString()
+      attendance_type: action === 'check_out' ? 'completed_for_day' : 'check_in',
+      check_in_time: action === 'check_in' ? nowIso : undefined,
+      check_out_time: action === 'check_out' ? nowIso : undefined,
+      created_at: nowIso
     };
 
     if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(workerId)) {
       try {
-        const ins = await pool.query(`
-          INSERT INTO worker_attendance (
-            assignment_id, worker_id, attendance_timestamp, latitude, longitude,
-            gps_accuracy, distance_from_assignment_meters, geofence_radius_meters,
-            validation_status, validation_reason, attendance_method
-          )
-          VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, 'gps')
-          RETURNING *
-        `, [
-          assignmentId, workerId, lat, lon, accuracy,
-          distanceMeters, geofenceRadius, validationStatus, validationReason
-        ]);
+        if (action === 'check_out') {
+          // Update existing today's check-in row with check-out timestamp for this specific assignment
+          const updRes = await pool.query(`
+            UPDATE worker_attendance
+            SET check_out_time = NOW(),
+                attendance_type = 'completed_for_day',
+                check_out_latitude = $1,
+                check_out_longitude = $2
+            WHERE (worker_id = $3 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $3))
+              AND (assignment_id = $4 OR assignment_id::text = $4::text)
+              AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
+            RETURNING *
+          `, [lat, lon, workerId, assignmentId]);
 
-        if (ins.rows.length > 0) {
-          attendanceRecord.id = ins.rows[0].id;
-        }
+          if (updRes.rows.length > 0) {
+            attendanceRecord.id = updRes.rows[0].id;
+            attendanceRecord.check_in_time = updRes.rows[0].check_in_time ? new Date(updRes.rows[0].check_in_time).toISOString() : updRes.rows[0].attendance_timestamp;
+            attendanceRecord.check_out_time = updRes.rows[0].check_out_time ? new Date(updRes.rows[0].check_out_time).toISOString() : nowIso;
+          }
+        } else {
+          // Check if already checked in today for THIS specific assignment
+          const checkExisting = await pool.query(`
+            SELECT * FROM worker_attendance
+            WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (assignment_id = $2 OR assignment_id::text = $2::text)
+              AND (attendance_date = CURRENT_DATE OR DATE(attendance_timestamp) = CURRENT_DATE)
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          `, [workerId, assignmentId]);
 
-        if (isMatch) {
-          await pool.query(`
-            UPDATE work_assignment_members
-            SET assignment_status = 'present'
-            WHERE assignment_id = $1 AND worker_id = $2
-          `, [assignmentId, workerId]);
+          if (checkExisting.rows.length > 0) {
+            const row = checkExisting.rows[0];
+            if (row.check_out_time || row.attendance_type === 'completed_for_day') {
+              return {
+                success: false,
+                attendance: {
+                  ...attendanceRecord,
+                  id: row.id,
+                  attendance_type: 'completed_for_day',
+                  check_in_time: row.check_in_time,
+                  check_out_time: row.check_out_time
+                },
+                message: "You have already completed check-in and check-out for today's shift on this assignment."
+              };
+            }
+            return {
+              success: false,
+              attendance: {
+                ...attendanceRecord,
+                id: row.id,
+                attendance_type: 'check_in',
+                check_in_time: row.check_in_time || row.attendance_timestamp
+              },
+              message: 'You have already checked in today for this assignment.'
+            };
+          }
 
-          await pool.query(`
-            UPDATE work_assignments
-            SET status = 'in_progress', updated_at = NOW()
-            WHERE id = $1 AND status = 'assigned'
-          `, [assignmentId]);
+          const ins = await pool.query(`
+            INSERT INTO worker_attendance (
+              assignment_id, worker_id, attendance_timestamp, latitude, longitude,
+              gps_accuracy, distance_from_assignment_meters, geofence_radius_meters,
+              validation_status, validation_reason, attendance_method, attendance_type,
+              check_in_time, check_in_latitude, check_in_longitude, attendance_date
+            )
+            VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, 'gps', 'check_in', NOW(), $3, $4, CURRENT_DATE)
+            RETURNING *
+          `, [
+            assignmentId, workerId, lat, lon, accuracy,
+            distanceMeters, geofenceRadius, validationStatus, validationReason
+          ]);
+
+          if (ins.rows.length > 0) {
+            attendanceRecord.id = ins.rows[0].id;
+          }
+
+          if (isMatch) {
+            await pool.query(`
+              UPDATE work_assignment_members
+              SET assignment_status = 'present'
+              WHERE assignment_id = $1 AND worker_id = $2
+            `, [assignmentId, workerId]);
+
+            await pool.query(`
+              UPDATE work_assignments
+              SET status = 'in_progress', updated_at = NOW()
+              WHERE id = $1 AND status = 'assigned'
+            `, [assignmentId]);
+          }
         }
       } catch (err: any) {
         console.error('[DB REPO ERROR - recordWorkerAttendance]:', err.message);
@@ -4087,14 +4525,177 @@ export class DbRepository {
     if (!(store as any).workerAttendances) {
       (store as any).workerAttendances = [];
     }
-    (store as any).workerAttendances.unshift(attendanceRecord);
+    const memList: any[] = (store as any).workerAttendances;
+    const existingIdx = memList.findIndex((a: any) => 
+      (a.worker_id === workerId || a.user_id === workerId) && 
+      (!assignmentId || a.assignment_id === assignmentId) &&
+      (a.attendance_timestamp || a.created_at || '').startsWith(nowIso.split('T')[0])
+    );
+    if (existingIdx !== -1 && action === 'check_out') {
+      memList[existingIdx].check_out_time = nowIso;
+      memList[existingIdx].attendance_type = 'completed_for_day';
+      memList[existingIdx].check_out_latitude = lat;
+      memList[existingIdx].check_out_longitude = lon;
+    } else if (existingIdx === -1) {
+      memList.unshift(attendanceRecord);
+    }
 
     return {
       success: isMatch,
       attendance: attendanceRecord,
       message: isMatch
-        ? `Attendance verified successfully! You are at the assigned work site (${distanceMeters}m away).`
+        ? (action === 'check_out'
+            ? `Shift completed and checked out successfully at ${distanceMeters}m from site.`
+            : `Attendance check-in verified successfully! You are at the assigned work site (${distanceMeters}m away).`)
         : validationReason
+    };
+  }
+
+
+  public static async setComplaintGeofenceOverride(complaintId: string, allowAnywhere: boolean): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`
+          UPDATE complaints
+          SET allow_anywhere_attendance = $1, updated_at = NOW()
+          WHERE id::text = $2::text OR complaint_number = $2
+        `, [allowAnywhere, complaintId]);
+
+        await pool.query(`
+          UPDATE work_assignments
+          SET allow_anywhere_attendance = $1, updated_at = NOW()
+          WHERE complaint_id = $2 OR complaint_number = $2 OR complaint_number = (
+            SELECT complaint_number FROM complaints WHERE id::text = $2::text LIMIT 1
+          )
+        `, [allowAnywhere, complaintId]);
+        return true;
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - setComplaintGeofenceOverride]:', err.message);
+      }
+    }
+
+    const c = (store as any).complaints?.find((comp: any) => comp.id === complaintId || comp.complaint_number === complaintId);
+    if (c) {
+      c.allow_anywhere_attendance = allowAnywhere;
+    }
+    const was = (store.workAssignments || []).filter(wa => wa.complaint_id === complaintId || wa.complaint_number === complaintId || (c && wa.complaint_number === c.complaint_number));
+    for (const wa of was) {
+      (wa as any).allow_anywhere_attendance = allowAnywhere;
+    }
+    return true;
+  }
+  public static async getTodayWorkerAttendance(
+    workerId: string,
+    assignmentId?: string
+  ): Promise<{
+    date: string;
+    status: 'none' | 'checked_in' | 'completed_for_day';
+    checkInTime?: string;
+    checkOutTime?: string;
+    rawCheckInTime?: string;
+    rawCheckOutTime?: string;
+    latitude?: number;
+    longitude?: number;
+    assignment_id?: string;
+  }> {
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const formatIST = (val: any) => {
+      if (!val) return undefined;
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return undefined;
+      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+    };
+    if (isDbConnected()) {
+      try {
+        let res;
+        if (assignmentId && this.isValidUUID(assignmentId)) {
+          res = await pool.query(`
+            SELECT * FROM worker_attendance
+            WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (assignment_id = $2 OR assignment_id::text = $2::text)
+              AND (
+                attendance_date = CURRENT_DATE
+                OR DATE(attendance_timestamp AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+                OR DATE(attendance_timestamp) = CURRENT_DATE
+              )
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          `, [workerId, assignmentId]);
+        } else {
+          res = await pool.query(`
+            SELECT * FROM worker_attendance
+            WHERE (worker_id = $1 OR worker_id IN (SELECT id FROM worker_profiles WHERE user_id = $1))
+              AND (
+                attendance_date = CURRENT_DATE
+                OR DATE(attendance_timestamp AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+                OR DATE(attendance_timestamp) = CURRENT_DATE
+              )
+            ORDER BY attendance_timestamp DESC
+            LIMIT 1
+          `, [workerId]);
+        }
+
+        if (res.rows.length > 0) {
+          const r = res.rows[0];
+          const hasCheckedOut = Boolean(r.check_out_time || r.attendance_type === 'completed_for_day');
+          const hasCheckedIn = Boolean(r.check_in_time || r.attendance_type === 'check_in' || r.attendance_timestamp);
+          const cin = r.check_in_time || r.attendance_timestamp;
+          const cout = r.check_out_time;
+
+          return {
+            date: todayStr,
+            status: hasCheckedOut ? 'completed_for_day' : (hasCheckedIn ? 'checked_in' : 'none'),
+            checkInTime: formatIST(cin),
+            checkOutTime: formatIST(cout),
+            rawCheckInTime: cin ? new Date(cin).toISOString() : undefined,
+            rawCheckOutTime: cout ? new Date(cout).toISOString() : undefined,
+            latitude: r.latitude ? parseFloat(r.latitude) : undefined,
+            longitude: r.longitude ? parseFloat(r.longitude) : undefined,
+            assignment_id: r.assignment_id
+          };
+        } else if (assignmentId) {
+          return {
+            date: todayStr,
+            status: 'none',
+            assignment_id: assignmentId
+          };
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getTodayWorkerAttendance]:', err.message);
+      }
+    }
+
+    // In-memory fallback
+    const memList: any[] = (store as any).workerAttendances || [];
+    const todayRec = memList.find((a: any) => {
+      const matchWorker = a.worker_id === workerId || (a.user_id && a.user_id === workerId);
+      const matchAssignment = !assignmentId || a.assignment_id === assignmentId;
+      const recDate = (a.attendance_timestamp || a.created_at || '').split('T')[0];
+      return matchWorker && matchAssignment && recDate === todayStr;
+    });
+
+    if (todayRec) {
+      const isCompleted = todayRec.attendance_type === 'completed_for_day' || Boolean(todayRec.check_out_time);
+      const isCheckedIn = todayRec.attendance_type === 'check_in' || Boolean(todayRec.check_in_time || todayRec.attendance_timestamp);
+      const cin = todayRec.check_in_time || todayRec.attendance_timestamp;
+      const cout = todayRec.check_out_time;
+      return {
+        date: todayStr,
+        status: isCompleted ? 'completed_for_day' : (isCheckedIn ? 'checked_in' : 'none'),
+        checkInTime: formatIST(cin),
+        checkOutTime: formatIST(cout),
+        rawCheckInTime: cin ? new Date(cin).toISOString() : undefined,
+        rawCheckOutTime: cout ? new Date(cout).toISOString() : undefined,
+        latitude: todayRec.latitude,
+        longitude: todayRec.longitude,
+        assignment_id: todayRec.assignment_id
+      };
+    }
+
+    return {
+      date: todayStr,
+      status: 'none',
+      assignment_id: assignmentId
     };
   }
 
@@ -4140,7 +4741,7 @@ export class DbRepository {
             $1,
             FALSE
           )
-        `, [validAssignment]).catch(() => {});
+        `, [validAssignment]).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - createAttendanceException]:', err.message);
       }
@@ -4238,6 +4839,25 @@ export class DbRepository {
           ORDER BY we.created_at ASC
         `, [assignmentId]);
 
+        const parseDbPhotos = (raw: any, fallbackPath?: string): string[] => {
+          if (!raw) return fallbackPath ? [fallbackPath] : [];
+          if (Array.isArray(raw)) return raw.filter(Boolean);
+          if (typeof raw === 'string') {
+            const tr = raw.trim();
+            if (tr.startsWith('[') && tr.endsWith(']')) {
+              try {
+                const arr = JSON.parse(tr);
+                if (Array.isArray(arr)) return arr.filter(Boolean);
+              } catch { }
+            }
+            if (tr.startsWith('{') && tr.endsWith('}')) {
+              return tr.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean);
+            }
+            return [tr];
+          }
+          return fallbackPath ? [fallbackPath] : [];
+        };
+
         return res.rows.map(r => ({
           id: r.id,
           assignment_id: r.assignment_id,
@@ -4245,6 +4865,7 @@ export class DbRepository {
           worker_name: r.worker_name,
           evidence_type: r.evidence_type,
           storage_path: r.storage_path,
+          photos: parseDbPhotos(r.photos, r.storage_path),
           description: r.description,
           latitude: r.latitude ? parseFloat(r.latitude) : undefined,
           longitude: r.longitude ? parseFloat(r.longitude) : undefined,
@@ -4276,7 +4897,8 @@ export class DbRepository {
     description: string,
     lat?: number,
     lon?: number,
-    accuracy?: number
+    accuracy?: number,
+    photos?: string[]
   ): Promise<WorkEvidence> {
     const validAssignment = this.isValidUUID(assignmentId) ? assignmentId : randomUUID();
     let validWorker = this.isValidUUID(workerId) ? workerId : 'f2000000-0000-0000-0000-000000000001';
@@ -4299,7 +4921,7 @@ export class DbRepository {
           validWorker = wpRes.rows[0].id;
           workerName = wpRes.rows[0].full_name || workerName;
         }
-      } catch {}
+      } catch { }
     }
 
     if (lat && lon) {
@@ -4315,7 +4937,7 @@ export class DbRepository {
             taskLon = parseFloat(taskRes.rows[0].longitude);
             evidenceRadius = parseInt(taskRes.rows[0].evidence_radius_meters || '150', 10);
           }
-        } catch {}
+        } catch { }
       }
 
       distanceMeters = this.calculateHaversineDistanceMeters(lat, lon, taskLat, taskLon);
@@ -4323,13 +4945,15 @@ export class DbRepository {
     }
 
     const nowIso = new Date().toISOString();
+    const photoArray = Array.isArray(photos) && photos.length > 0 ? photos : (storagePath ? [storagePath] : []);
     const evidence: WorkEvidence = {
       id: `ev-${Date.now()}`,
       assignment_id: validAssignment,
       submitted_by: validWorker,
       worker_name: workerName,
       evidence_type: evidenceType,
-      storage_path: storagePath,
+      storage_path: storagePath || (photoArray[0] || ''),
+      photos: photoArray,
       description: description.trim(),
       latitude: lat,
       longitude: lon,
@@ -4347,16 +4971,31 @@ export class DbRepository {
         const res = await pool.query(`
           INSERT INTO work_evidence (
             assignment_id, submitted_by, evidence_type, storage_path, description,
-            latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status
+            latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status,
+            photos
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           RETURNING *
         `, [
-          validAssignment, validWorker, evidenceType, storagePath, description.trim(),
-          lat || null, lon || null, accuracy || null, distanceMeters || null, locationStatus
-        ]);
+          validAssignment, validWorker, evidenceType, storagePath || (photoArray[0] || ''), description.trim(),
+          lat || null, lon || null, accuracy || null, distanceMeters || null, locationStatus,
+          photoArray
+        ]).catch(async () => {
+          // Fallback if photos column doesn't exist yet
+          return pool.query(`
+            INSERT INTO work_evidence (
+              assignment_id, submitted_by, evidence_type, storage_path, description,
+              latitude, longitude, gps_accuracy, distance_from_assignment_meters, location_validation_status
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING *
+          `, [
+            validAssignment, validWorker, evidenceType, storagePath || (photoArray[0] || ''), description.trim(),
+            lat || null, lon || null, accuracy || null, distanceMeters || null, locationStatus
+          ]);
+        });
 
-        if (res.rows.length > 0) {
+        if (res && res.rows && res.rows.length > 0) {
           evidence.id = res.rows[0].id;
           evidence.created_at = res.rows[0].created_at ? new Date(res.rows[0].created_at).toISOString() : nowIso;
           evidence.device_capture_timestamp = res.rows[0].device_capture_timestamp ? new Date(res.rows[0].device_capture_timestamp).toISOString() : nowIso;
@@ -4406,6 +5045,132 @@ export class DbRepository {
     }
     if (validAssignment === 'a1000000-0000-0000-0000-000000000002') {
       return validWorker === 'f2000000-0000-0000-0000-000000000002';
+    }
+    return true;
+  }
+
+  public static async verifyWorkEvidence(assignmentId: string, evidenceIds?: string[]): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        if (evidenceIds && evidenceIds.length > 0) {
+          const validIds = evidenceIds.filter(id => this.isValidUUID(id));
+          if (validIds.length > 0) {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'verified' WHERE id = ANY($1::uuid[]) OR assignment_id = $2`,
+              [validIds, assignmentId]
+            );
+          } else {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'verified' WHERE assignment_id = $1`,
+              [assignmentId]
+            );
+          }
+        } else {
+          await pool.query(
+            `UPDATE work_evidence SET review_status = 'verified' WHERE assignment_id = $1`,
+            [assignmentId]
+          );
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - verifyWorkEvidence]:', err.message);
+      }
+    }
+    if ((store as any).workEvidence) {
+      for (const ev of (store as any).workEvidence) {
+        if (ev.assignment_id === assignmentId || (evidenceIds && evidenceIds.includes(ev.id))) {
+          ev.review_status = 'verified';
+        }
+      }
+    }
+    return true;
+  }
+
+  public static async rejectWorkEvidence(assignmentId: string, evidenceIds?: string[], reason?: string): Promise<boolean> {
+    const comments = reason || 'Rejected by Ward Officer upon inspection';
+    if (isDbConnected()) {
+      try {
+        if (evidenceIds && evidenceIds.length > 0) {
+          const validIds = evidenceIds.filter(id => this.isValidUUID(id));
+          if (validIds.length > 0) {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'rejected', review_comments = $2 WHERE id = ANY($1::uuid[]) OR assignment_id = $3`,
+              [validIds, comments, assignmentId]
+            );
+          } else {
+            await pool.query(
+              `UPDATE work_evidence SET review_status = 'rejected', review_comments = $2 WHERE assignment_id = $1`,
+              [assignmentId, comments]
+            );
+          }
+        } else {
+          await pool.query(
+            `UPDATE work_evidence SET review_status = 'rejected', review_comments = $2 WHERE assignment_id = $1`,
+            [assignmentId, comments]
+          );
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - rejectWorkEvidence]:', err.message);
+      }
+    }
+    if ((store as any).workEvidence) {
+      for (const ev of (store as any).workEvidence) {
+        if (ev.assignment_id === assignmentId || (evidenceIds && evidenceIds.includes(ev.id))) {
+          ev.review_status = 'rejected';
+          ev.review_comments = comments;
+        }
+      }
+    }
+    return true;
+  }
+
+  public static async addWorkerToWorkAssignment(assignmentId: string, worker: any): Promise<boolean> {
+    if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(worker.id)) {
+      try {
+        await pool.query(`
+          INSERT INTO work_assignment_members (assignment_id, worker_id, temporary_leader, assignment_status)
+          VALUES ($1, $2, false, 'assigned')
+          ON CONFLICT (assignment_id, worker_id) DO NOTHING
+        `, [assignmentId, worker.id]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - addWorkerToWorkAssignment]:', err.message);
+      }
+    }
+    const assignment = (store.workAssignments || []).find(a => a.id === assignmentId);
+    if (assignment) {
+      if (!assignment.team_members) assignment.team_members = [];
+      const exists = assignment.team_members.some((m: any) => m.worker_id === worker.id || m.id === worker.id);
+      if (!exists) {
+        assignment.team_members.push({
+          id: `wam-${Date.now()}-${worker.id}`,
+          assignment_id: assignmentId,
+          worker_id: worker.id,
+          user_id: worker.user_id,
+          worker_code: worker.worker_code,
+          worker_name: worker.full_name,
+          worker_phone: worker.phone,
+          designation_name: worker.designation,
+          temporary_leader: false,
+          assignment_status: 'assigned'
+        });
+      }
+    }
+    return true;
+  }
+
+  public static async removeWorkerFromWorkAssignment(assignmentId: string, workerId: string): Promise<boolean> {
+    if (isDbConnected() && this.isValidUUID(assignmentId) && this.isValidUUID(workerId)) {
+      try {
+        await pool.query(`
+          DELETE FROM work_assignment_members
+          WHERE assignment_id = $1 AND worker_id = $2
+        `, [assignmentId, workerId]);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - removeWorkerFromWorkAssignment]:', err.message);
+      }
+    }
+    const assignment = (store.workAssignments || []).find(a => a.id === assignmentId);
+    if (assignment && assignment.team_members) {
+      assignment.team_members = assignment.team_members.filter((m: any) => m.worker_id !== workerId && m.id !== workerId);
     }
     return true;
   }
@@ -4505,7 +5270,7 @@ export class DbRepository {
             $1,
             FALSE
           )
-        `, [validAssignment]).catch(() => {});
+        `, [validAssignment]).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - submitWorkCompletionReport]:', err.message);
       }
@@ -4542,7 +5307,7 @@ export class DbRepository {
           await pool.query(`
             UPDATE work_assignments
             SET status = 'verified_complete', updated_at = NOW()
-            WHERE task_code = $1 OR complaint_id = $1 OR ($2 <> '' AND complaint_number = $2)
+            WHERE task_code = $1 OR complaint_id::text = $1::text OR ($2 <> '' AND complaint_number = $2)
           `, [assignmentOrComplaintId, complaintNumber || '']);
         }
       } catch (err: any) {
@@ -4599,6 +5364,11 @@ export class DbRepository {
             assignment_id: a.assignment_id,
             worker_id: a.worker_id,
             attendance_timestamp: a.attendance_timestamp ? new Date(a.attendance_timestamp).toISOString() : new Date().toISOString(),
+            check_in_time: a.check_in_time ? new Date(a.check_in_time).toISOString() : (a.attendance_timestamp ? new Date(a.attendance_timestamp).toISOString() : undefined),
+            check_out_time: a.check_out_time ? new Date(a.check_out_time).toISOString() : undefined,
+            check_out_latitude: a.check_out_latitude ? parseFloat(a.check_out_latitude) : undefined,
+            check_out_longitude: a.check_out_longitude ? parseFloat(a.check_out_longitude) : undefined,
+            attendance_type: a.attendance_type || (a.check_out_time ? 'completed_for_day' : 'check_in'),
             latitude: parseFloat(a.latitude),
             longitude: parseFloat(a.longitude),
             gps_accuracy: parseFloat(a.gps_accuracy || '10'),
@@ -4696,8 +5466,8 @@ export class DbRepository {
     const attendanceStatus = recentAttendance.length > 0 && isVerifiedRec(recentAttendance[0])
       ? 'Checked-in (GPS Verified)'
       : verifiedAssignmentIds.size > 0
-      ? 'Checked-in (Verified)'
-      : 'Attendance Pending';
+        ? 'Checked-in (Verified)'
+        : 'Attendance Pending';
 
     let onTimeRate = 0;
     if (assignments.length > 0) {
@@ -4957,6 +5727,14 @@ export class DbRepository {
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS skills JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS attendance_today VARCHAR(150) DEFAULT 'Not Marked';
         ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS active_task_code VARCHAR(100);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_in_time TIMESTAMPTZ;
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_out_time TIMESTAMPTZ;
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS attendance_type VARCHAR(50) DEFAULT 'check_in';
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_in_latitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_in_longitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_out_latitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS check_out_longitude NUMERIC(10, 7);
+        ALTER TABLE worker_attendance ADD COLUMN IF NOT EXISTS attendance_date DATE DEFAULT CURRENT_DATE;
       `);
 
       // 2. Ensure worker_teams table exists and has VARCHAR ids + work_type
@@ -4983,6 +5761,8 @@ export class DbRepository {
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS complaint_number VARCHAR(60);
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_id VARCHAR(100);
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_name VARCHAR(150);
+        ALTER TABLE complaints ADD COLUMN IF NOT EXISTS allow_anywhere_attendance BOOLEAN DEFAULT false;
+        ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS allow_anywhere_attendance BOOLEAN DEFAULT false;
       `);
 
       // 2B. Auto-heal any worker profiles whose profiles row exists (role='worker') without a worker_profiles row
@@ -5010,11 +5790,13 @@ export class DbRepository {
           mw.plain_password || 'Worker@123',
           mw.ward_number,
           `Ward ${mw.ward_number}`
-        ]).catch(() => {});
+        ]).catch(() => { });
       }
 
       // 3. Ensure communities enhancements
       await pool.query(`
+        ALTER TABLE work_evidence ADD COLUMN IF NOT EXISTS photos TEXT[];
+        ALTER TABLE community_recognition_posts ADD COLUMN IF NOT EXISTS before_photos JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE communities ALTER COLUMN created_by DROP NOT NULL;
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS head_name VARCHAR(150);
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
@@ -5064,6 +5846,23 @@ export class DbRepository {
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        CREATE TABLE IF NOT EXISTS ward_officer_assignment_history (
+          id VARCHAR(100) PRIMARY KEY,
+          ward_number INT NOT NULL,
+          ward_name VARCHAR(200) NOT NULL,
+          officer_id VARCHAR(100) NOT NULL,
+          officer_user_id VARCHAR(100),
+          officer_name VARCHAR(200) NOT NULL,
+          officer_phone VARCHAR(50),
+          officer_email VARCHAR(200),
+          designation VARCHAR(150),
+          assigned_at TIMESTAMPTZ DEFAULT NOW(),
+          relieved_at TIMESTAMPTZ,
+          status VARCHAR(50) DEFAULT 'active',
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
       `);
 
       // 3.6 Schema upgrades for Community Self-Registration, Verification Docs, Multi-Org Problem Policy, Evidence Metadata & Drive Certificates
@@ -5074,15 +5873,25 @@ export class DbRepository {
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS registered_via VARCHAR(50) DEFAULT 'ward_officer';
         ALTER TABLE communities ADD COLUMN IF NOT EXISTS description TEXT;
-      `).catch(() => {});
+      `).catch(() => { });
 
       await pool.query(`
         ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS allow_multiple_orgs BOOLEAN DEFAULT TRUE;
-      `).catch(() => {});
+        ALTER TABLE community_problems ADD COLUMN IF NOT EXISTS location_url TEXT;
+        ALTER TABLE community_activities ADD COLUMN IF NOT EXISTS is_nmc_official_drive BOOLEAN DEFAULT FALSE;
+        ALTER TABLE community_activities ADD COLUMN IF NOT EXISTS requires_attendance BOOLEAN DEFAULT TRUE;
+        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS is_nmc_official_drive BOOLEAN DEFAULT FALSE;
+        ALTER TABLE cleanliness_drives ADD COLUMN IF NOT EXISTS requires_attendance BOOLEAN DEFAULT TRUE;
+      `).catch(() => { });
 
       await pool.query(`
         ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS review_metadata JSONB DEFAULT '{}'::jsonb;
-      `).catch(() => {});
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verification_status VARCHAR(30) DEFAULT 'submitted';
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verification_notes TEXT;
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+        ALTER TABLE activity_evidence ADD COLUMN IF NOT EXISTS verified_by UUID;
+        ALTER TABLE drive_certificates ADD COLUMN IF NOT EXISTS attendance_status VARCHAR(30) DEFAULT 'present';
+      `).catch(() => { });
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS drive_certificates (
@@ -5105,7 +5914,7 @@ export class DbRepository {
           verification_url TEXT,
           issued_at TIMESTAMPTZ DEFAULT NOW()
         );
-      `).catch(() => {});
+      `).catch(() => { });
 
       // 4. Synchronize memory store from database on startup so state is 100% unified
       await this.syncWardOfficersFromDb();
@@ -5149,7 +5958,7 @@ export class DbRepository {
   public static async syncWardOfficersFromDb(): Promise<void> {
     if (!isDbConnected()) return;
     try {
-      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => {});
+      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => { });
 
       const res = await pool.query(`
         SELECT woa.*, a.password_hash, a.plain_password
@@ -5178,7 +5987,7 @@ export class DbRepository {
           assigned_wards: assignedWards,
           allowed_tabs: allowedTabs,
           is_active: row.is_active !== false,
-          cleanliness_score: 90.0,
+          cleanliness_score: 100.0,
           total_resolved: 0,
           created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
@@ -5299,7 +6108,7 @@ export class DbRepository {
       await pool.query(
         `INSERT INTO user_roles (user_id, role) VALUES ($1, 'ward_officer') ON CONFLICT (user_id) DO UPDATE SET role = 'ward_officer'`,
         [resolvedUserId]
-      ).catch(() => {});
+      ).catch(() => { });
 
       // 3. Upsert password in citizen_auth_profiles if provided
       if (passwordHash) {
@@ -5312,11 +6121,11 @@ export class DbRepository {
              plain_password = COALESCE(EXCLUDED.plain_password, citizen_auth_profiles.plain_password),
              updated_at = NOW()`,
           [resolvedUserId, officer.phone, passwordHash, plainPassword || null]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       // 4. Upsert into ward_officer_assignments (including allowed_tabs RBAC)
-      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => {});
+      await pool.query(`ALTER TABLE ward_officer_assignments ADD COLUMN IF NOT EXISTS allowed_tabs JSONB`).catch(() => { });
       const allowedTabsJson =
         Array.isArray(officer.allowed_tabs) && officer.allowed_tabs.length > 0
           ? JSON.stringify(officer.allowed_tabs)
@@ -5352,6 +6161,259 @@ export class DbRepository {
   }
 
   // =========================================================================
+  // WARD OFFICER ASSIGNMENT HISTORY & MANAGEMENT
+  // =========================================================================
+  public static async getWardOfficerHistory(wardNumber: number): Promise<WardOfficerAssignmentHistory[]> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          `SELECT * FROM ward_officer_assignment_history WHERE ward_number = $1 ORDER BY assigned_at DESC`,
+          [wardNumber]
+        );
+        if (res.rows && res.rows.length > 0) {
+          return res.rows.map(r => ({
+            id: r.id,
+            ward_number: Number(r.ward_number),
+            ward_name: r.ward_name,
+            officer_id: r.officer_id,
+            officer_user_id: r.officer_user_id,
+            officer_name: r.officer_name,
+            officer_phone: r.officer_phone,
+            officer_email: r.officer_email,
+            designation: r.designation,
+            assigned_at: new Date(r.assigned_at).toISOString(),
+            relieved_at: r.relieved_at ? new Date(r.relieved_at).toISOString() : null,
+            status: r.status,
+            notes: r.notes,
+            created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined
+          }));
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getWardOfficerHistory]:', err.message);
+      }
+    }
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    return memList.filter((h: any) => Number(h.ward_number) === Number(wardNumber));
+  }
+
+  public static async getOfficerWardHistory(officerId: string): Promise<WardOfficerAssignmentHistory[]> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          `SELECT * FROM ward_officer_assignment_history
+           WHERE officer_id = $1 OR officer_user_id = $1
+           ORDER BY assigned_at DESC`,
+          [officerId]
+        );
+        if (res.rows && res.rows.length > 0) {
+          return res.rows.map(r => ({
+            id: r.id,
+            ward_number: Number(r.ward_number),
+            ward_name: r.ward_name,
+            officer_id: r.officer_id,
+            officer_user_id: r.officer_user_id,
+            officer_name: r.officer_name,
+            officer_phone: r.officer_phone,
+            officer_email: r.officer_email,
+            designation: r.designation,
+            assigned_at: new Date(r.assigned_at).toISOString(),
+            relieved_at: r.relieved_at ? new Date(r.relieved_at).toISOString() : null,
+            status: r.status,
+            notes: r.notes,
+            created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined
+          }));
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getOfficerWardHistory]:', err.message);
+      }
+    }
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    return memList.filter((h: any) => h.officer_id === officerId || h.officer_user_id === officerId);
+  }
+
+  public static async recordWardOfficerAssignment(params: {
+    ward_number: number;
+    ward_name: string;
+    officer_id: string;
+    officer_user_id?: string;
+    officer_name: string;
+    officer_phone?: string;
+    officer_email?: string;
+    designation?: string;
+    notes?: string;
+  }): Promise<void> {
+    const id = `woh-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const nowIso = new Date().toISOString();
+
+    if (isDbConnected()) {
+      try {
+        // Relieve any existing active assignment for this ward
+        await pool.query(
+          `UPDATE ward_officer_assignment_history
+           SET relieved_at = NOW(), status = 'relieved', notes = 'Relieved on new officer appointment'
+           WHERE ward_number = $1 AND status = 'active'`,
+          [params.ward_number]
+        );
+
+        // Insert new active assignment
+        await pool.query(
+          `INSERT INTO ward_officer_assignment_history
+           (id, ward_number, ward_name, officer_id, officer_user_id, officer_name, officer_phone, officer_email, designation, assigned_at, status, notes, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'active', $10, NOW())`,
+          [
+            id,
+            params.ward_number,
+            params.ward_name,
+            params.officer_id,
+            params.officer_user_id || null,
+            params.officer_name,
+            params.officer_phone || null,
+            params.officer_email || null,
+            params.designation || 'Ward Officer',
+            params.notes || 'Assigned by Super Admin'
+          ]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - recordWardOfficerAssignment]:', err.message);
+      }
+    }
+
+    if (!(store as any).wardOfficerAssignmentHistory) {
+      (store as any).wardOfficerAssignmentHistory = [];
+    }
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory;
+    for (const h of memList) {
+      if (Number(h.ward_number) === Number(params.ward_number) && h.status === 'active') {
+        h.status = 'relieved';
+        h.relieved_at = nowIso;
+        h.notes = 'Relieved on new officer appointment';
+      }
+    }
+    memList.unshift({
+      id,
+      ward_number: params.ward_number,
+      ward_name: params.ward_name,
+      officer_id: params.officer_id,
+      officer_user_id: params.officer_user_id,
+      officer_name: params.officer_name,
+      officer_phone: params.officer_phone,
+      officer_email: params.officer_email,
+      designation: params.designation || 'Ward Officer',
+      assigned_at: nowIso,
+      status: 'active',
+      notes: params.notes || 'Assigned by Super Admin'
+    });
+  }
+
+  public static async relieveWardOfficerFromWard(wardNumber: number, officerId: string, notes?: string): Promise<void> {
+    const nowIso = new Date().toISOString();
+    if (isDbConnected()) {
+      try {
+        await pool.query(
+          `UPDATE ward_officer_assignment_history
+           SET relieved_at = NOW(), status = 'relieved', notes = COALESCE($3, notes)
+           WHERE ward_number = $1 AND (officer_id = $2 OR officer_user_id = $2) AND status = 'active'`,
+          [wardNumber, officerId, notes || 'Relieved from ward duties']
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - relieveWardOfficerFromWard]:', err.message);
+      }
+    }
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    for (const h of memList) {
+      if (Number(h.ward_number) === Number(wardNumber) && (h.officer_id === officerId || h.officer_user_id === officerId) && h.status === 'active') {
+        h.status = 'relieved';
+        h.relieved_at = nowIso;
+        h.notes = notes || 'Relieved from ward duties';
+      }
+    }
+  }
+
+  public static async deleteWardOfficerFromDb(officerId: string): Promise<boolean> {
+    const nowIso = new Date().toISOString();
+    const officer = store.wardOfficers.find(o => o.id === officerId || o.user_id === officerId);
+    if (!officer) return false;
+
+    const previousWards = [...(officer.assigned_wards || [])];
+
+    if (isDbConnected()) {
+      try {
+        // 1. Deactivate in ward_officer_assignments
+        await pool.query(
+          `UPDATE ward_officer_assignments SET is_active = false, assigned_wards = '[]'::jsonb, updated_at = NOW()
+           WHERE id = $1 OR user_id = $2`,
+          [officer.id, officer.user_id]
+        );
+
+        // 2. Deactivate Profile so they cannot log in
+        await pool.query(
+          `UPDATE profiles SET is_active = false, updated_at = NOW()
+           WHERE id = $1 OR phone = $2`,
+          [officer.user_id, officer.phone]
+        );
+
+        // 3. Deactivate auth profile so password check rejects login
+        await pool.query(
+          `UPDATE citizen_auth_profiles SET account_status = 'deactivated', updated_at = NOW()
+           WHERE user_id = $1 OR mobile_number = $2`,
+          [officer.user_id, officer.phone]
+        );
+
+        // 4. Close all active assignments in history
+        await pool.query(
+          `UPDATE ward_officer_assignment_history
+           SET relieved_at = NOW(), status = 'relieved', notes = 'Ward Officer account deleted by Super Admin'
+           WHERE (officer_id = $1 OR officer_user_id = $2) AND status = 'active'`,
+          [officer.id, officer.user_id]
+        );
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteWardOfficerFromDb]:', err.message);
+      }
+    }
+
+    // In-memory sync
+    officer.is_active = false;
+    officer.assigned_wards = [];
+
+    const prof = store.profiles.find(p => p.id === officer.user_id || p.phone === officer.phone);
+    if (prof) prof.is_active = false;
+
+    const auth = store.authProfiles.find(a => a.user_id === officer.user_id || a.mobile_number === officer.phone);
+    if (auth) auth.account_status = 'suspended';
+
+    const memList: any[] = (store as any).wardOfficerAssignmentHistory || [];
+    for (const h of memList) {
+      if ((h.officer_id === officer.id || h.officer_user_id === officer.user_id) && h.status === 'active') {
+        h.status = 'relieved';
+        h.relieved_at = nowIso;
+        h.notes = 'Ward Officer account deleted by Super Admin';
+      }
+    }
+
+    // Reflect in store.wards and NAVSARI_WARDS: if no other active officer serves this ward, mark Unassigned
+    for (const wNum of previousWards) {
+      const activeOfficersForWard = store.wardOfficers
+        .filter(o => o.is_active !== false && Array.isArray(o.assigned_wards) && o.assigned_wards.map(Number).includes(wNum));
+      const lead = activeOfficersForWard[0];
+      const w = store.wards.find(w => w.ward_number === wNum);
+      if (w) {
+        w.ward_officer_name = lead ? lead.full_name : 'Unassigned';
+        w.contact_phone = lead ? lead.phone : 'N/A';
+      }
+      const nw = NAVSARI_WARDS.find(w => w.ward_number === wNum);
+      if (nw) {
+        nw.ward_officer_name = lead ? lead.full_name : 'Unassigned';
+        nw.contact_phone = lead ? lead.phone : 'N/A';
+      }
+    }
+
+    return true;
+  }
+
+  // =========================================================================
   // BOUNDARY HISTORY PERSISTENCE (NAVSARI CITY & WARD BOUNDARIES)
   // =========================================================================
   private static memBoundaryHistory: Array<{
@@ -5380,7 +6442,7 @@ export class DbRepository {
         saved_by VARCHAR(255),
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
-    `).catch(() => {});
+    `).catch(() => { });
   }
 
   public static async recordBoundaryHistory(entry: {
@@ -5516,17 +6578,17 @@ export class DbRepository {
         ).catch(() => ({ rows: [] as any[] }));
 
         for (const a of assignRes.rows) {
-          await pool.query(`DELETE FROM work_evidence WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM work_attendance WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM work_completion_reports WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM assignment_team_members WHERE assignment_id = $1`, [a.id]).catch(() => {});
-          await pool.query(`DELETE FROM work_assignments WHERE id = $1`, [a.id]).catch(() => {});
+          await pool.query(`DELETE FROM work_evidence WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM work_attendance WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM work_completion_reports WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM assignment_team_members WHERE assignment_id = $1`, [a.id]).catch(() => { });
+          await pool.query(`DELETE FROM work_assignments WHERE id = $1`, [a.id]).catch(() => { });
         }
 
         if (this.isValidUUID(compId)) {
-          await pool.query(`DELETE FROM complaint_activity_logs WHERE complaint_id = $1`, [compId]).catch(() => {});
-          await pool.query(`DELETE FROM complaint_feedback WHERE complaint_id = $1`, [compId]).catch(() => {});
-          await pool.query(`DELETE FROM notifications WHERE related_id = $1`, [compId]).catch(() => {});
+          await pool.query(`DELETE FROM complaint_activity_logs WHERE complaint_id = $1`, [compId]).catch(() => { });
+          await pool.query(`DELETE FROM complaint_feedback WHERE complaint_id = $1`, [compId]).catch(() => { });
+          await pool.query(`DELETE FROM notifications WHERE related_id = $1`, [compId]).catch(() => { });
           const delRes = await pool.query(
             `DELETE FROM complaints WHERE id = $1 OR complaint_number = $2`,
             [compId, compNum]
@@ -5590,9 +6652,21 @@ export class DbRepository {
                  (SELECT wa.task_code
                   FROM work_assignment_members wam
                   JOIN work_assignments wa ON wa.id = wam.assignment_id
-                  WHERE wam.worker_id = wp.id AND wa.status NOT IN ('verified_complete', 'closed')
+                  WHERE (wam.worker_id = wp.id OR wam.worker_id = wp.user_id) AND wa.status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')
                   ORDER BY wa.created_at DESC
-                  LIMIT 1) as live_active_task_code
+                  LIMIT 1) as live_active_task_code,
+                 (SELECT wa.complaint_number
+                  FROM work_assignment_members wam
+                  JOIN work_assignments wa ON wa.id = wam.assignment_id
+                  WHERE (wam.worker_id = wp.id OR wam.worker_id = wp.user_id) AND wa.status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')
+                  ORDER BY wa.created_at DESC
+                  LIMIT 1) as live_active_complaint_number,
+                 (SELECT wa.title
+                  FROM work_assignment_members wam
+                  JOIN work_assignments wa ON wa.id = wam.assignment_id
+                  WHERE (wam.worker_id = wp.id OR wam.worker_id = wp.user_id) AND wa.status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')
+                  ORDER BY wa.created_at DESC
+                  LIMIT 1) as live_active_task_title
           FROM worker_profiles wp
           JOIN profiles p ON p.id = wp.user_id
           LEFT JOIN worker_designations wd ON wd.id = wp.primary_designation_id
@@ -5626,6 +6700,7 @@ export class DbRepository {
             parsedSkills = ['Litter Abatement'];
           }
 
+          const isBusy = Boolean(r.live_active_complaint_number || r.live_active_task_code);
           return {
             id: r.id,
             user_id: r.user_id,
@@ -5633,14 +6708,18 @@ export class DbRepository {
             username: r.worker_username,
             plain_password: r.worker_plain_password,
             full_name: r.full_name,
+            name: r.full_name,
             phone: r.phone,
             email: r.email,
             designation: r.designation_label,
             primary_designation: r.designation_label,
             ward_number: r.ward_number || 3,
             ward_name: r.ward_name || `Ward ${r.ward_number || 3}`,
-            availability_status: r.availability_status || 'available',
+            is_busy: isBusy,
+            availability_status: isBusy ? 'busy' : 'available',
+            active_complaint_number: r.live_active_complaint_number || undefined,
             active_task_code: r.live_active_task_code || r.active_task_code || undefined,
+            active_task_title: r.live_active_task_title || undefined,
             experience_years: parseFloat(r.experience_years || '0'),
             skills: parsedSkills,
             attendance_today: r.attendance_today || 'Not Marked',
@@ -5654,7 +6733,22 @@ export class DbRepository {
     }
 
     // Fallback to in-memory store
-    let workers = store.workers || [];
+    let workers = (store.workers || []).map(w => {
+      const activeWa = (store.workAssignments || []).find((wa) =>
+        !['verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned'].includes(wa.status) &&
+        (wa.team_members || []).some((m) => m.worker_id === w.id || m.user_id === w.id || m.worker_id === w.user_id || m.user_id === w.user_id)
+      );
+      const isBusy = Boolean(activeWa);
+      return {
+        ...w,
+        name: w.full_name || w.name,
+        is_busy: isBusy,
+        availability_status: isBusy ? 'busy' : 'available',
+        active_complaint_number: activeWa ? activeWa.complaint_number : undefined,
+        active_task_code: activeWa ? activeWa.task_code : undefined,
+        active_task_title: activeWa ? activeWa.title : undefined
+      };
+    });
     if (filters?.availability && filters.availability !== 'all') {
       workers = workers.filter(w => w.availability_status === filters.availability);
     }
@@ -5741,7 +6835,7 @@ export class DbRepository {
            VALUES ($1, 'worker')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'worker'`,
           [validUserId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         // 5. Upsert worker_profiles with guaranteed unique worker_code and RETURNING actual DB id
         const skillsJson = JSON.stringify(Array.isArray(worker.skills) ? worker.skills : [worker.skills || 'Litter Abatement']);
@@ -5808,7 +6902,7 @@ export class DbRepository {
     if (isDbConnected()) {
       try {
         const skillsJson = updates.skills ? JSON.stringify(Array.isArray(updates.skills) ? updates.skills : [updates.skills]) : undefined;
-        
+
         let wpSql = `UPDATE worker_profiles SET updated_at = CURRENT_TIMESTAMP`;
         const wpVals: any[] = [];
         if (updates.designation) {
@@ -5848,7 +6942,7 @@ export class DbRepository {
             await pool.query(
               `UPDATE citizen_auth_profiles SET mobile_number = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
               [updates.phone.trim(), userId]
-            ).catch(() => {});
+            ).catch(() => { });
           }
         }
         return true;
@@ -5877,7 +6971,7 @@ export class DbRepository {
         }
 
         if (userId) {
-          await pool.query(`UPDATE profiles SET is_active = FALSE WHERE id = $1`, [userId]).catch(() => {});
+          await pool.query(`UPDATE profiles SET is_active = FALSE WHERE id = $1`, [userId]).catch(() => { });
         }
         return true;
       } catch (err: any) {
@@ -6134,7 +7228,7 @@ export class DbRepository {
            VALUES ($1, 'community_head')
            ON CONFLICT (user_id, role) DO UPDATE SET role = 'community_head'`,
           [validUserId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         await pool.query(
           `INSERT INTO communities (
@@ -6197,7 +7291,7 @@ export class DbRepository {
            VALUES (gen_random_uuid(), $1, $2, 'community_head')
            ON CONFLICT (community_id, user_id) DO UPDATE SET membership_role = 'community_head'`,
           [validCommId, validUserId]
-        ).catch(() => {});
+        ).catch(() => { });
       } catch (err: any) {
         console.error('[DB REPO ERROR - saveCommunityToDb]:', err.message);
       }
@@ -6322,6 +7416,7 @@ export class DbRepository {
           estimated_volunteers_needed: parseInt(r.estimated_volunteers_needed || '15', 10),
           suggested_equipment: Array.isArray(r.suggested_equipment) ? r.suggested_equipment : [],
           image_url: r.image_url,
+          location_url: r.location_url,
           status: r.status,
           allow_multiple_orgs: r.allow_multiple_orgs !== false,
           claimed_by_community_id: r.claimed_by_community_id,
@@ -6362,6 +7457,7 @@ export class DbRepository {
       estimated_volunteers_needed: parseInt(problem.estimated_volunteers_needed || '15', 10),
       suggested_equipment: Array.isArray(problem.suggested_equipment) ? problem.suggested_equipment : ['Brooms', 'Gloves', 'Trash Bags'],
       image_url: problem.image_url || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+      location_url: problem.location_url || null,
       status: problem.status || 'open',
       allow_multiple_orgs: allowMultipleOrgs,
       claimed_by_community_id: problem.claimed_by_community_id,
@@ -6379,15 +7475,15 @@ export class DbRepository {
           INSERT INTO community_problems (
             id, ward_number, ward_name, title, description, location_name,
             address, latitude, longitude, action_plan, urgency,
-            estimated_volunteers_needed, suggested_equipment, image_url,
+            estimated_volunteers_needed, suggested_equipment, image_url, location_url,
             status, allow_multiple_orgs, claimed_by_community_id, claimed_by_community_name,
             linked_activity_id, created_by, officer_name, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
-            $12, $13, $14,
-            $15, $16, $17, $18,
-            $19, $20, $21, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            $12, $13, $14, $15,
+            $16, $17, $18, $19,
+            $20, $21, $22, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
           ON CONFLICT (id) DO UPDATE SET
             title = EXCLUDED.title,
@@ -6397,6 +7493,7 @@ export class DbRepository {
             estimated_volunteers_needed = EXCLUDED.estimated_volunteers_needed,
             suggested_equipment = EXCLUDED.suggested_equipment,
             image_url = EXCLUDED.image_url,
+            location_url = EXCLUDED.location_url,
             status = EXCLUDED.status,
             allow_multiple_orgs = EXCLUDED.allow_multiple_orgs,
             claimed_by_community_id = EXCLUDED.claimed_by_community_id,
@@ -6418,6 +7515,7 @@ export class DbRepository {
           newProblem.estimated_volunteers_needed,
           JSON.stringify(newProblem.suggested_equipment),
           newProblem.image_url,
+          newProblem.location_url,
           newProblem.status,
           allowMultipleOrgs,
           newProblem.claimed_by_community_id || null,
@@ -6596,11 +7694,11 @@ export class DbRepository {
           await pool.query(
             `UPDATE profiles SET is_active = $1, updated_at = NOW() WHERE id = $2`,
             [isApprove, commRow.created_by]
-          ).catch(() => {});
+          ).catch(() => { });
           await pool.query(
             `UPDATE citizen_auth_profiles SET account_status = $1, updated_at = NOW() WHERE user_id = $2`,
             [isApprove ? 'active' : 'suspended', commRow.created_by]
-          ).catch(() => {});
+          ).catch(() => { });
 
           await this.createNotification(
             commRow.created_by,
@@ -6796,7 +7894,15 @@ export class DbRepository {
       const newApprovalStatus = isApproved ? 'approved' : action === 'reject' ? 'rejected' : 'changes_requested';
       const newPublicationStatus = isApproved ? 'published' : 'rejected';
       const newRegStatus = isApproved ? 'open' : 'not_open';
-      const allowMultipleOrgs = options?.allow_multiple_orgs !== undefined ? Boolean(options.allow_multiple_orgs) : true;
+      let allowMultipleOrgs = options?.allow_multiple_orgs !== undefined ? Boolean(options.allow_multiple_orgs) : true;
+      if (act.linked_problem_id && isDbConnected()) {
+        try {
+          const probCheck = await pool.query(`SELECT allow_multiple_orgs FROM community_problems WHERE id::text = $1::text`, [act.linked_problem_id]);
+          if (probCheck.rows.length > 0 && probCheck.rows[0].allow_multiple_orgs !== null) {
+            allowMultipleOrgs = Boolean(probCheck.rows[0].allow_multiple_orgs);
+          }
+        } catch { }
+      }
 
       if (isDbConnected()) {
         try {
@@ -6812,30 +7918,37 @@ export class DbRepository {
           if (isApproved) {
             const wardId = act.ward_id || `ward-0${act.ward_number || 3}`;
             const locName = act.address || act.landmark || 'Navsari Ward Area';
-            const startTime = act.proposed_start_at || new Date().toISOString();
-            const endTime = act.proposed_end_at || new Date(Date.now() + 10800000).toISOString();
-            const deadline = act.registration_open_at || startTime;
+            const startTime = this.normalizeDateWithIST(act.proposed_start_at) || new Date().toISOString();
+            const endTime = this.normalizeDateWithIST(act.proposed_end_at) || new Date(Date.now() + 10800000).toISOString();
+            const deadline = this.normalizeDateWithIST(act.registration_open_at) || startTime;
             const banner = act.cover_image_path || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80';
             const maxVol = act.maximum_participants || 50;
+            const reqAtt = act.requires_attendance !== false;
+            const isNmc = act.is_nmc_official_drive === true;
 
             await pool.query(`
               INSERT INTO cleanliness_drives (
                 id, title, description, ward_id, ward_name, location_name, latitude, longitude,
                 start_time, end_time, registration_deadline, organiser_name, lead_person, contact_phone,
-                status, banner_url, max_volunteers
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16)
+                status, banner_url, max_volunteers, requires_attendance, is_nmc_official_drive
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'upcoming', $15, $16, $17, $18)
               ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
                 ward_name = EXCLUDED.ward_name,
                 organiser_name = EXCLUDED.organiser_name,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                registration_deadline = EXCLUDED.registration_deadline,
+                requires_attendance = EXCLUDED.requires_attendance,
+                is_nmc_official_drive = EXCLUDED.is_nmc_official_drive,
                 status = 'upcoming'
             `, [
               id, act.title, act.short_description || act.detailed_description,
               wardId, act.ward_name || `Ward ${act.ward_number || 3}`, locName,
               Number(act.latitude) || 20.9470, Number(act.longitude) || 72.9280,
               startTime, endTime, deadline, orgName, act.head_name || orgName,
-              act.contact_phone || '+919825100000', banner, maxVol
+              act.contact_phone || '+919825100000', banner, maxVol, reqAtt, isNmc
             ]).catch(err => console.warn('[DB REPO NOTICE - cleanliness_drives sync]:', err.message));
 
             // Handle Multi-Org vs Exclusive Single-Org policy on linked community problem!
@@ -6848,7 +7961,7 @@ export class DbRepository {
                       status = 'open',
                       updated_at = NOW()
                   WHERE id::text = $1::text
-                `, [act.linked_problem_id]).catch(() => {});
+                `, [act.linked_problem_id]).catch(() => { });
               } else {
                 // Exclusive single organization: lock problem to this org & close competing pending drives on the same problem
                 await pool.query(`
@@ -6860,7 +7973,7 @@ export class DbRepository {
                       linked_activity_id = $3,
                       updated_at = NOW()
                   WHERE id::text = $4::text
-                `, [act.community_id, orgName, id, act.linked_problem_id]).catch(() => {});
+                `, [act.community_id, orgName, id, act.linked_problem_id]).catch(() => { });
 
                 // Reject other pending proposals on the same problem and notify their community heads
                 const otherPending = await pool.query(`
@@ -7077,23 +8190,31 @@ export class DbRepository {
         await pool.query(
           `UPDATE activity_evidence SET submission_status = 'verified' WHERE activity_id = $1`,
           [activityId]
-        ).catch(() => {});
+        ).catch(() => { });
 
         await pool.query(
           `UPDATE cleanliness_drives SET status = 'completed' WHERE id = $1`,
           [activityId]
-        ).catch(() => {});
+        ).catch(() => { });
+
+        // Auto-mark absent for any registered volunteers who did not check in during the drive
+        await pool.query(
+          `UPDATE activity_registrations
+           SET attendance_status = 'absent', updated_at = NOW()
+           WHERE activity_id = $1 AND (attendance_status IS NULL OR attendance_status = 'not_marked' OR attendance_status = '' OR attendance_status = 'registered')`,
+          [activityId]
+        ).catch(() => { });
 
         if (act?.linked_problem_id) {
           await pool.query(
             `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE id::text = $1::text OR linked_activity_id::text = $2::text`,
             [act.linked_problem_id, activityId]
-          ).catch(() => {});
+          ).catch(() => { });
         } else {
           await pool.query(
             `UPDATE community_problems SET status = 'completed', updated_at = NOW() WHERE linked_activity_id::text = $1::text`,
             [activityId]
-          ).catch(() => {});
+          ).catch(() => { });
         }
         if (store.communityProblems) {
           for (const p of store.communityProblems) {
@@ -7109,7 +8230,7 @@ export class DbRepository {
           `INSERT INTO activity_evidence_reviews (activity_id, reviewer_id, reviewer_role, decision, comments)
            VALUES ($1, $2, 'ward_officer', 'approved', $3)`,
           [activityId, validReviewer, comments]
-        ).catch(() => {});
+        ).catch(() => { });
 
         if (act?.created_by) {
           await this.createNotification(
@@ -7140,7 +8261,8 @@ export class DbRepository {
 
   public static async issueDriveCertificates(
     activityId: string,
-    issuedByOfficer: string
+    issuedByOfficer: string,
+    option: 'all' | 'present_only' = 'all'
   ): Promise<{ success: boolean; certificates: any[]; message: string }> {
     if (!isDbConnected() || !this.isValidUUID(activityId)) {
       return { success: false, certificates: [], message: 'Database connection and valid drive ID required.' };
@@ -7174,7 +8296,7 @@ export class DbRepository {
     const wasteKg = evRes.rows[0]?.review_metadata?.waste_collected_kg;
     const wasteCleared = wasteKg ? `${wasteKg} kg` : 'Verified Cleanliness Impact';
 
-    // Collect recipients: Community Head + participated citizens (prefer present; fallback to all registered)
+    // Collect recipients: Community Head + participated citizens (either all or present-only based on option)
     const regRes = await pool.query(
       `SELECT ar.*, p.full_name as profile_name, p.phone as profile_phone
        FROM activity_registrations ar
@@ -7183,8 +8305,10 @@ export class DbRepository {
       [activityId]
     ).catch(() => ({ rows: [] as any[] }));
 
-    const presentRegs = regRes.rows.filter(r => r.attendance_status === 'present');
-    const participantRegs = presentRegs.length > 0 ? presentRegs : regRes.rows;
+    let targetRegs = regRes.rows;
+    if (option === 'present_only') {
+      targetRegs = regRes.rows.filter(r => r.attendance_status === 'present');
+    }
 
     const existingCertsRes = await pool.query(
       `SELECT * FROM drive_certificates WHERE activity_id = $1`,
@@ -7196,21 +8320,29 @@ export class DbRepository {
       existingByUser.set(key, c);
     }
 
-    const recipients: Array<{ userId: string | null; name: string; role: 'community_head' | 'citizen'; phone: string }> = [
+    const recipients: Array<{
+      userId: string | null;
+      name: string;
+      role: 'community_head' | 'citizen';
+      phone: string;
+      attendance_status: string;
+    }> = [
       {
         userId: act.head_user_id || act.created_by || null,
         name: act.head_name || act.community_name || 'Community Head',
         role: 'community_head',
-        phone: act.community_phone || ''
+        phone: act.community_phone || '',
+        attendance_status: 'organizer_present'
       }
     ];
 
-    for (const reg of participantRegs) {
+    for (const reg of targetRegs) {
       recipients.push({
         userId: reg.citizen_id || null,
         name: reg.citizen_name || reg.profile_name || 'Citizen Volunteer',
         role: 'citizen',
-        phone: reg.citizen_phone || reg.profile_phone || ''
+        phone: reg.citizen_phone || reg.profile_phone || '',
+        attendance_status: reg.attendance_status === 'present' ? 'present' : 'absent'
       });
     }
 
@@ -7218,7 +8350,15 @@ export class DbRepository {
     for (const rec of recipients) {
       const key = `${rec.role}::${rec.userId || rec.name}`;
       if (existingByUser.has(key)) {
-        issued.push(existingByUser.get(key));
+        const existing = existingByUser.get(key);
+        if (existing && existing.attendance_status !== rec.attendance_status) {
+          await pool.query(
+            `UPDATE drive_certificates SET attendance_status = $1 WHERE id = $2`,
+            [rec.attendance_status, existing.id]
+          ).catch(() => {});
+          existing.attendance_status = rec.attendance_status;
+        }
+        issued.push(existing);
         continue;
       }
 
@@ -7232,14 +8372,14 @@ export class DbRepository {
            id, certificate_code, activity_id, drive_title, community_id, community_name,
            ward_number, ward_name, drive_date, location_name, waste_cleared,
            recipient_user_id, recipient_name, recipient_role, recipient_phone,
-           issued_by_officer, verification_url
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           issued_by_officer, verification_url, attendance_status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
          RETURNING *`,
         [
           certId, certCode, activityId, act.title, act.community_id || null, act.community_name || 'Community Organization',
           wardNum, wardName, driveDate, locationName, wasteCleared,
           rec.userId, rec.name, rec.role, rec.phone,
-          issuedByOfficer, verificationUrl
+          issuedByOfficer, verificationUrl, rec.attendance_status
         ]
       );
       const savedCert = ins.rows[0];
@@ -7249,7 +8389,7 @@ export class DbRepository {
         await this.createNotification(
           rec.userId,
           'Official NMC Cleanliness Certificate Issued!',
-          `Congratulations ${rec.name}! Your verified certificate (${certCode}) for "${act.title}" has been issued by ${issuedByOfficer}. View it in your Certificates section!`,
+          `Congratulations ${rec.name}! Your verified certificate (${certCode}) for "${act.title}" has been issued by ${issuedByOfficer} [Attendance: ${rec.attendance_status.toUpperCase()}]. View it in your Certificates section!`,
           activityId,
           'certificate_issued'
         );

@@ -348,10 +348,10 @@ export const WorkerAttendance: React.FC<WorkerAttendanceProps> = ({
                     >
                       <div>
                         <span className="font-bold text-slate-800 block">
-                          {new Date(att.attendance_timestamp || att.created_at).toLocaleDateString()}
+                          {new Date(att.attendance_timestamp || att.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
                         </span>
                         <span className="text-slate-500 text-[11px]">
-                          {new Date(att.attendance_timestamp || att.created_at).toLocaleTimeString()} • {att.distance_from_assignment_meters}m
+                          {new Date(att.attendance_timestamp || att.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} • {att.distance_from_assignment_meters}m
                         </span>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${

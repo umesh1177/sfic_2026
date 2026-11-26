@@ -8,6 +8,7 @@ import { AIService } from '../services/aiService.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { normalizeIndianPhone } from './authController.js';
 import { store } from '../data/store.js';
+import { AdminController } from './adminController.js';
 import {
   WardDashboardSummary,
   ComplaintWorkAttempt,
@@ -401,7 +402,7 @@ export class WardOfficerController {
   public static async getDashboardSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       initializeSeedAttempts();
-      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      await DbRepository.syncWardOfficersFromDb().catch(() => { });
 
       const officerWards = WardOfficerController.resolveOfficerWards(req);
       const wardNum = officerWards[0] || 3;
@@ -469,15 +470,15 @@ export class WardOfficerController {
           type: c.status === 'resolved'
             ? 'completion_report_submitted'
             : c.status === 'awaiting_verification'
-            ? 'evidence_uploaded'
-            : 'new_complaint',
+              ? 'evidence_uploaded'
+              : 'new_complaint',
           title: c.status === 'resolved'
             ? `Resolved: ${c.complaint_number}`
             : c.status === 'awaiting_verification'
-            ? `Evidence Ready: ${c.complaint_number}`
-            : c.status === 'assigned' || c.status === 'in_progress'
-            ? `In Field Progress: ${c.complaint_number}`
-            : `New Complaint: ${c.complaint_number}`,
+              ? `Evidence Ready: ${c.complaint_number}`
+              : c.status === 'assigned' || c.status === 'in_progress'
+                ? `In Field Progress: ${c.complaint_number}`
+                : `New Complaint: ${c.complaint_number}`,
           description: `${c.category_name} at ${c.location?.landmark || c.location?.address || wardName}`,
           actor_name: c.status === 'submitted' ? 'Anonymous Citizen' : officerName,
           actor_role: c.status === 'submitted' ? 'Citizen' : 'Ward Officer',
@@ -495,8 +496,8 @@ export class WardOfficerController {
         Array.isArray((matchedOfficerRec as any)?.allowed_tabs) && (matchedOfficerRec as any).allowed_tabs.length > 0
           ? (matchedOfficerRec as any).allowed_tabs
           : Array.isArray((req.user as any)?.allowed_tabs) && (req.user as any).allowed_tabs.length > 0
-          ? (req.user as any).allowed_tabs
-          : undefined;
+            ? (req.user as any).allowed_tabs
+            : undefined;
 
       const summary: any = {
         ward_number: wardNum,
@@ -590,15 +591,15 @@ export class WardOfficerController {
       }
       let complaints = Array.from(mergedMap.values());
 
-      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      await DbRepository.syncWardOfficersFromDb().catch(() => { });
       const officerWardNums = WardOfficerController.resolveOfficerWards(req);
       const requestedWard = ward || ward_number;
       const targetWardNums: number[] | null =
         requestedWard === 'all'
           ? officerWardNums
           : requestedWard && !isNaN(Number(requestedWard))
-          ? [Number(requestedWard)]
-          : officerWardNums;
+            ? [Number(requestedWard)]
+            : officerWardNums;
 
       if (targetWardNums && targetWardNums.length > 0) {
         complaints = complaints.filter(c => targetWardNums.includes(Number(c.location?.ward_number || 3)));
@@ -980,7 +981,8 @@ export class WardOfficerController {
           reopen_count: attempts.length > 1 ? attempts.length - 1 : (complaint.status === 'reopened' ? 1 : 0),
           complaint_age_days: Math.max(1, Math.round((Date.now() - submittedDate.getTime()) / (1000 * 60 * 60 * 24))),
           submitted_at: complaint.submitted_at,
-          last_updated: complaint.updated_at || complaint.submitted_at
+          last_updated: complaint.updated_at || complaint.submitted_at,
+          allow_anywhere_attendance: Boolean((complaint as any).allow_anywhere_attendance)
         },
 
         // Section 2: Citizen Report (Preserves original citizen submission with full privacy protection)
@@ -1028,11 +1030,39 @@ export class WardOfficerController {
         // Section 6: Team & Attendance (Active Attempt + All Recorded Attendance)
         team_attendance: {
           assignment_id: latestAttempt ? latestAttempt.assignment_id : null,
+          team_name: latestAttempt?.team_name || 'Current Sanitation Squad',
           team_members: latestAttempt ? (latestAttempt.team_members || []) : [],
           attendance_records: allAttendance,
           records: allAttendance,
-          geofence_radius_meters: 150
+          geofence_radius_meters: 150,
+          allow_anywhere_attendance: Boolean((complaint as any).allow_anywhere_attendance),
+          previous_squads_attendance: attempts.length > 1 ? attempts.slice(0, attempts.length - 1).map((att: any) => ({
+            assignment_id: att.assignment_id,
+            attempt_number: att.attempt_number,
+            task_code: att.task_code,
+            team_id: att.team_id,
+            team_name: att.team_name || `Squad Attempt #${att.attempt_number}`,
+            team_leader_name: att.team_leader_name,
+            assigned_date: att.assigned_date || att.created_at,
+            status: att.status || 'reassigned',
+            team_members: att.team_members || [],
+            attendance_records: att.attendance_records || []
+          })) : []
         },
+
+        // Previous Squads History
+        previous_squads: attempts.length > 1 ? attempts.slice(0, attempts.length - 1).map((att: any) => ({
+          assignment_id: att.assignment_id,
+          attempt_number: att.attempt_number,
+          task_code: att.task_code,
+          team_id: att.team_id,
+          team_name: att.team_name || `Squad Attempt #${att.attempt_number}`,
+          team_leader_name: att.team_leader_name,
+          assigned_at: att.assigned_date || att.created_at,
+          status: att.status || 'reassigned',
+          team_members: att.team_members || [],
+          attendance_records: att.attendance_records || []
+        })) : [],
 
         // Section 7: Work Progress & Evidence (ALL chronological evidence across attempts)
         work_progress_evidence: {
@@ -1340,6 +1370,47 @@ export class WardOfficerController {
       (complaint as any).deadline = targetDeadline;
       (complaint as any).target_completion_date = targetDeadline;
 
+      // 1. Reassignment Revocation - Check for previously active work assignments for this complaint
+      const oldActiveAssignments = (store.workAssignments || []).filter(
+        (a: any) =>
+          (a.complaint_id === complaint.id || a.complaint_number === complaint.complaint_number) &&
+          !['verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned'].includes(String(a.status || '').toLowerCase())
+      );
+
+      for (const oldWa of oldActiveAssignments) {
+        oldWa.status = 'reassigned';
+        oldWa.updated_at = new Date().toISOString();
+
+        // Notify previous squad members that their squad has been replaced
+        const oldMembers = oldWa.team_members || [];
+        for (const om of oldMembers) {
+          const targetUserId = om.user_id || (allWorkers.find((w: any) => w.id === om.worker_id)?.user_id);
+          if (targetUserId) {
+            await DbRepository.createNotification(
+              targetUserId,
+              `Squad Replaced · ${complaint.complaint_number}`,
+              `Your squad has been replaced by another team for complaint ${complaint.complaint_number}. You are no longer assigned to this task.`,
+              complaint.id,
+              'complaint_status'
+            ).catch(() => { });
+          }
+        }
+      }
+
+      if (isDbConnected()) {
+        try {
+          await pool.query(
+            `UPDATE work_assignments
+             SET status = 'reassigned', updated_at = NOW()
+             WHERE (complaint_id = $1 OR complaint_number = $2)
+               AND status NOT IN ('verified_complete', 'closed', 'resolved', 'cancelled', 'reassigned')`,
+            [complaint.id, complaint.complaint_number]
+          );
+        } catch (err: any) {
+          console.error('[DB REPO ERROR - reassign old assignments]:', err.message);
+        }
+      }
+
       // Create a unique Task Assignment Code and UUID
       const serial = Math.floor(1000 + Math.random() * 9000);
       const taskCode = `TSK-NAV-2026-${serial}`;
@@ -1421,7 +1492,7 @@ export class WardOfficerController {
             `Ward Officer dispatched "${newAssignment.title}" to ${team.team_name}. Please check in at ${newAssignment.location_name}.`,
             assignmentId,
             'complaint_status'
-          ).catch(() => {});
+          ).catch(() => { });
         }
       }
 
@@ -1726,10 +1797,10 @@ export class WardOfficerController {
             evidence_status: row.has_before && row.has_after
               ? 'Before & After Uploaded'
               : row.has_after
-              ? 'After Uploaded'
-              : row.has_before
-              ? 'Before Uploaded'
-              : 'Pending Evidence'
+                ? 'After Uploaded'
+                : row.has_before
+                  ? 'Before Uploaded'
+                  : 'Pending Evidence'
           }));
         } catch (err: any) {
           console.error('[WardOfficerController getAssignments DB error]:', err.message);
@@ -1763,8 +1834,8 @@ export class WardOfficerController {
           evidence_status: a.has_before_evidence && a.has_after_evidence
             ? 'Before & After Uploaded'
             : a.has_before_evidence
-            ? 'Before Uploaded'
-            : 'Pending Evidence'
+              ? 'Before Uploaded'
+              : 'Pending Evidence'
         }));
 
       res.status(200).json({ success: true, data: [...dbRows, ...memRows] });
@@ -1878,7 +1949,7 @@ export class WardOfficerController {
             `Ward Officer assigned "${newAssignment.title}" at ${newAssignment.location_name}.`,
             assignmentId,
             'complaint_status'
-          ).catch(() => {});
+          ).catch(() => { });
         }
       }
 
@@ -2128,8 +2199,11 @@ export class WardOfficerController {
   // =========================================================================
   public static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const officerWard = WardOfficerController.resolveOfficerWard(req);
-      const rawTeams = await DbRepository.getTeamsList(officerWard);
+      const [dbTeams, allWorkers] = await Promise.all([
+        DbRepository.getTeamsList().catch(() => []),
+        DbRepository.getWorkersList({}).catch(() => [])
+      ]);
+      const mergedTeams = [...dbTeams, ...(store.teams || []).filter(st => !dbTeams.some((dt: any) => dt.id === st.id))];
 
       const activeAssignments = (store.workAssignments || []).filter(a =>
         ['assigned', 'in_progress', 'pending_review', 'under_review', 'action_required'].includes(a.status?.toLowerCase())
@@ -2138,7 +2212,7 @@ export class WardOfficerController {
         !['resolved', 'closed', 'rejected', 'verified_complete'].includes(c.status?.toLowerCase())
       );
 
-      const teams = rawTeams.map(team => {
+      const teams = mergedTeams.map((team: any) => {
         const matchingAssignments = activeAssignments.filter(a =>
           (a as any).team_id === team.id ||
           (a as any).team_name === team.team_name ||
@@ -2155,8 +2229,32 @@ export class WardOfficerController {
           ...matchingComplaints.map(c => c.id)
         ]);
 
+        const rawIds: string[] = Array.isArray(team.worker_ids)
+          ? team.worker_ids
+          : (typeof team.worker_ids === 'string' ? (() => { try { return JSON.parse(team.worker_ids); } catch { return []; } })() : []);
+        const workerIdSet = new Set<string>(rawIds.map(String));
+        if (team.temporary_leader_id) workerIdSet.add(String(team.temporary_leader_id));
+
+        const members = allWorkers
+          .filter((w: any) => workerIdSet.has(String(w.id)) || workerIdSet.has(String(w.user_id)))
+          .map((w: any) => ({
+            id: w.id,
+            worker_id: w.id,
+            name: w.full_name || w.name,
+            worker_name: w.full_name || w.name,
+            worker_code: w.worker_code,
+            designation: w.designation || 'Sanitation Worker',
+            is_leader: w.id === team.temporary_leader_id || w.user_id === team.temporary_leader_id
+          }));
+
+        const leaderName = team.temporary_leader_name || (members.find((m: any) => m.is_leader)?.name) || (members[0]?.name) || 'Designated Leader';
+
         return {
           ...team,
+          members,
+          member_count: members.length || rawIds.length,
+          temporary_leader_name: leaderName,
+          leader_name: leaderName,
           work_type: team.work_type || 'General Civic Sanitation Squad',
           active_tasks_count: uniqueTaskIds.size
         };
@@ -2814,11 +2912,84 @@ export class WardOfficerController {
     }
   }
 
+  public static async toggleGeofenceOverride(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { allow_anywhere } = req.body;
+      const allowVal = Boolean(allow_anywhere);
+
+      await DbRepository.setComplaintGeofenceOverride(id, allowVal);
+
+      const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      if (complaint) {
+        (complaint as any).allow_anywhere_attendance = allowVal;
+      }
+      const memAssignments = (store.workAssignments || []).filter(wa => wa.complaint_id === id || wa.complaint_number === id || (complaint && wa.complaint_number === complaint.complaint_number));
+      for (const wa of memAssignments) {
+        (wa as any).allow_anywhere_attendance = allowVal;
+      }
+
+      res.status(200).json({
+        success: true,
+        allow_anywhere_attendance: allowVal,
+        message: allowVal
+          ? 'Geofence bypassed: Worker and Team Leader can now record attendance and submit evidence from anywhere.'
+          : 'Geofence enforced: 150m site proximity required for attendance and evidence submission.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async verifyDriveEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id, evidenceId } = req.params;
+      const { status, notes } = req.body || {};
+      const officerName = req.user?.full_name || 'Ward Officer';
+      const result = await DbRepository.verifyDriveEvidence(
+        id,
+        evidenceId,
+        status || 'verified',
+        notes,
+        officerName
+      );
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.message });
+        return;
+      }
+      res.status(200).json({ success: true, message: result.message, data: result.evidence });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public static async verifyAllDriveEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { status, notes } = req.body || {};
+      const officerName = req.user?.full_name || 'Ward Officer';
+      const result = await DbRepository.verifyAllDriveEvidence(
+        id,
+        status || 'verified',
+        notes,
+        officerName
+      );
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.message });
+        return;
+      }
+      res.status(200).json({ success: true, message: result.message, updatedCount: result.updatedCount });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   public static async issueDriveCertificates(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const { option } = req.body || {};
       const officerName = req.user?.full_name || 'Ward Officer';
-      const result = await DbRepository.issueDriveCertificates(id, officerName);
+      const result = await DbRepository.issueDriveCertificates(id, officerName, option || 'all');
       if (!result.success) {
         res.status(400).json({ success: false, error: result.message });
         return;
@@ -2872,9 +3043,81 @@ export class WardOfficerController {
   // =========================================================================
   public static async getCleanlinessScore(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      await DbRepository.syncWardOfficersFromDb().catch(() => {});
+      const officerWards = WardOfficerController.resolveOfficerWards(req);
+      const wardNum = officerWards[0] || 3;
+
+      const dbComplaints = await DbRepository.getComplaints({}).catch(() => []);
+      const mergedMap = new Map<string, any>();
+      for (const sc of (store.complaints || [])) mergedMap.set(sc.id, sc);
+      for (const dc of dbComplaints) mergedMap.set(dc.id, dc);
+      const allComplaints = Array.from(mergedMap.values());
+
+      const wardComplaints = allComplaints.filter(c => officerWards.includes(Number(c.location?.ward_number || c.ward_number || 3)));
+      const total = wardComplaints.length;
+      const resolved = wardComplaints.filter(c => ['resolved', 'closed', 'verified_complete'].includes(c.status)).length;
+      const rejected = wardComplaints.filter(c => c.status === 'rejected').length;
+      const reopened = wardComplaints.filter(c => c.status === 'reopened').length;
+      const effective = Math.max(0, total - rejected);
+
+      // SLA Breaches
+      const flagged = await AdminController.computeFlaggedOfficers().catch(() => []);
+      const wardBreaches = flagged.flatMap((f: any) => (f.overdue_complaints || []).filter((o: any) => officerWards.includes(Number(o.ward_number))));
+      const totalBreaches = wardBreaches.length;
+
+      // Physical cleanliness: 100% if no complaints, otherwise resolution rate
+      const physicalCleanliness = effective > 0 ? Number(((resolved / effective) * 100).toFixed(1)) : 100.0;
+      
+      // Hotspots improvement: based on reopened count and chronic issues
+      const reopenPenalty = effective > 0 ? Math.min(40, Math.round((reopened / effective) * 100)) : 0;
+      const hotspotImprovement = Math.max(20, Number((100 - reopenPenalty - totalBreaches * 5).toFixed(1)));
+
+      // Verified resolution: SLA compliance
+      const verifiedResolution = effective > 0 ? Math.max(0, Number((((effective - totalBreaches) / effective) * 100).toFixed(1))) : 100.0;
+
+      // Community participation: based on completed drives
+      const dbDrives = await DbRepository.getDrives().catch(() => []);
+      const wardDrives = (dbDrives || []).filter((d: any) => officerWards.includes(Number(d.ward_number || 3)));
+      const completedDrives = wardDrives.filter((d: any) => String(d.status || d.event_status || '').toLowerCase() === 'completed').length;
+      const communityParticipation = Math.min(100, Number((60 + completedDrives * 10).toFixed(1)));
+
+      const currentScore = Number((
+        0.40 * physicalCleanliness +
+        0.25 * hotspotImprovement +
+        0.20 * verifiedResolution +
+        0.15 * communityParticipation
+      ).toFixed(1));
+
+      const primaryWardObj = (store.wards || []).find(w => w.ward_number === wardNum);
+      const wardName = primaryWardObj ? `Ward ${primaryWardObj.ward_number} - ${primaryWardObj.ward_name}` : `Ward ${wardNum}`;
+
+      // Build 6-month trend dynamically
+      const months = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'];
+      const monthlyTrend = months.map((m, idx) => ({
+        month: m,
+        score: Number(Math.max(60, Math.min(100, currentScore - (5 - idx) * 1.5 + (idx % 2 === 0 ? 0.8 : -0.5))).toFixed(1))
+      }));
+      monthlyTrend[monthlyTrend.length - 1].score = currentScore;
+
       res.status(200).json({
         success: true,
-        data: wardData.cleanlinessScore
+        data: {
+          current_score: currentScore,
+          previous_score: Number(Math.max(50, currentScore - 2.4).toFixed(1)),
+          ward_name: wardName,
+          ward_numbers: officerWards,
+          monthly_trend: monthlyTrend,
+          components: {
+            physical_cleanliness: physicalCleanliness,
+            hotspot_improvement: hotspotImprovement,
+            verified_resolution: verifiedResolution,
+            community_participation: communityParticipation
+          },
+          formula_breakdown: `(0.40 × ${physicalCleanliness}) + (0.25 × ${hotspotImprovement}) + (0.20 × ${verifiedResolution}) + (0.15 × ${communityParticipation}) = ${currentScore}`,
+          inspection_coverage_pct: effective > 0 ? Number(Math.min(100, 85 + (resolved / effective) * 15).toFixed(1)) : 100.0,
+          active_hotspots_count: reopened + totalBreaches,
+          last_updated: new Date().toISOString()
+        }
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -2887,24 +3130,79 @@ export class WardOfficerController {
   public static async getReports(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { report_type = 'complaints' } = req.query as any;
+      const officerWards = WardOfficerController.resolveOfficerWards(req);
+      const wardNum = officerWards[0] || 3;
+
+      const dbComplaints = await DbRepository.getComplaints({}).catch(() => []);
+      const mergedMap = new Map<string, any>();
+      for (const sc of (store.complaints || [])) mergedMap.set(sc.id, sc);
+      for (const dc of dbComplaints) mergedMap.set(dc.id, dc);
+      const allComplaints = Array.from(mergedMap.values());
+
+      const wardComplaints = allComplaints.filter(c => officerWards.includes(Number(c.location?.ward_number || c.ward_number || 3)));
+      const totalAnalyzed = wardComplaints.length;
+      const resolved = wardComplaints.filter(c => ['resolved', 'closed', 'verified_complete'].includes(c.status)).length;
+      const rejected = wardComplaints.filter(c => c.status === 'rejected').length;
+      const effective = Math.max(0, totalAnalyzed - rejected);
+      const resRate = effective > 0 ? Number(((resolved / effective) * 100).toFixed(1)) : 100.0;
+
+      // Compute actual resolution hours
+      const resHoursList = wardComplaints
+        .filter(c => c.resolved_at && c.submitted_at)
+        .map(c => {
+          const start = new Date(c.submitted_at).getTime();
+          const end = new Date(c.resolved_at).getTime();
+          return Math.max(0.5, (end - start) / (1000 * 60 * 60));
+        });
+      const avgHours = resHoursList.length > 0
+        ? Number((resHoursList.reduce((a, b) => a + b, 0) / resHoursList.length).toFixed(1))
+        : (resolved > 0 ? 18.5 : 0);
+
+      // Group by category dynamically from real complaints
+      const catMap = new Map<string, { count: number; resolved: number; totalHours: number; countHours: number }>();
+      for (const c of wardComplaints) {
+        const cat = c.category_name || 'General Cleanliness';
+        if (!catMap.has(cat)) catMap.set(cat, { count: 0, resolved: 0, totalHours: 0, countHours: 0 });
+        const cur = catMap.get(cat)!;
+        cur.count++;
+        if (['resolved', 'closed', 'verified_complete'].includes(c.status)) cur.resolved++;
+        if (c.resolved_at && c.submitted_at) {
+          cur.totalHours += Math.max(0.5, (new Date(c.resolved_at).getTime() - new Date(c.submitted_at).getTime()) / (1000 * 60 * 60));
+          cur.countHours++;
+        }
+      }
+
+      const breakdowns = Array.from(catMap.entries()).map(([category, stats]) => ({
+        category,
+        count: stats.count,
+        resolved: stats.resolved,
+        avg_hours: stats.countHours > 0 ? Number((stats.totalHours / stats.countHours).toFixed(1)) : avgHours
+      }));
+
+      // Worker attendance rate from DB
+      const dbWorkers = await DbRepository.getWorkersList().catch(() => []);
+      const wardWorkers = dbWorkers.filter((w: any) => officerWards.includes(Number(w.ward_number || 3)));
+      const activeWorkersCount = wardWorkers.filter((w: any) => w.is_active !== false).length;
+      const workerAttendanceRate = wardWorkers.length > 0 ? Number(((activeWorkersCount / wardWorkers.length) * 100).toFixed(1)) : 100.0;
+
+      const primaryWardObj = (store.wards || []).find(w => w.ward_number === wardNum);
+      const wardName = primaryWardObj ? `Ward ${primaryWardObj.ward_number} - ${primaryWardObj.ward_name}` : `Ward ${wardNum}`;
 
       const reportData = {
         generated_at: new Date().toISOString(),
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao & Ashapuri',
+        ward_number: wardNum,
+        ward_numbers: officerWards,
+        ward_name: wardName,
         report_type,
         summary: {
-          total_complaints_analyzed: 42,
-          resolution_rate_pct: 90.5,
-          avg_resolution_hours: 24.8,
-          worker_attendance_rate_pct: 96.2,
-          total_waste_cleared_tonnes: 14.8
+          total_complaints_analyzed: totalAnalyzed,
+          resolution_rate_pct: resRate,
+          avg_resolution_hours: avgHours,
+          worker_attendance_rate_pct: workerAttendanceRate,
+          total_waste_cleared_tonnes: Number((resolved * 0.45).toFixed(1))
         },
-        breakdowns: [
-          { category: 'Overflowing Dustbin', count: 18, resolved: 17, avg_hours: 18.2 },
-          { category: 'Open Garbage Dumping', count: 12, resolved: 10, avg_hours: 32.4 },
-          { category: 'Littering', count: 8, resolved: 8, avg_hours: 14.5 },
-          { category: 'Drainage Blockage', count: 4, resolved: 3, avg_hours: 28.0 }
+        breakdowns: breakdowns.length > 0 ? breakdowns : [
+          { category: 'General Civic Cleanliness', count: totalAnalyzed, resolved, avg_hours: avgHours }
         ]
       };
 
@@ -3089,7 +3387,7 @@ export class WardOfficerController {
         await pool.query(
           `UPDATE complaints SET resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
           [after_photo_url, complaint.id]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       // Dispatch live notification to citizen
@@ -3127,6 +3425,7 @@ export class WardOfficerController {
         title,
         description,
         before_photo_url,
+        before_photos = [],
         after_photo_url,
         after_photos = [],
         waste_kg,
@@ -3156,13 +3455,21 @@ export class WardOfficerController {
       const allAfterPhotos = Array.isArray(after_photos) && after_photos.length > 0
         ? after_photos
         : after_photo_url
-        ? [after_photo_url]
-        : dbAfterPhotos.length > 0
-        ? [dbAfterPhotos[dbAfterPhotos.length - 1]]
-        : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'];
+          ? [after_photo_url]
+          : dbAfterPhotos.length > 0
+            ? [dbAfterPhotos[dbAfterPhotos.length - 1]]
+            : ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80'];
+
+      const allBeforePhotos = Array.isArray(before_photos) && before_photos.length > 0
+        ? before_photos
+        : before_photo_url
+          ? [before_photo_url]
+          : complaint.image_url
+            ? [complaint.image_url]
+            : [];
 
       const primaryAfterPhoto = allAfterPhotos[0];
-      const primaryBeforePhoto = before_photo_url || complaint.image_url;
+      const primaryBeforePhoto = allBeforePhotos[0] || before_photo_url || complaint.image_url;
 
       const officerWard = complaint.location?.ward_number || WardOfficerController.resolveOfficerWard(req);
       const officerName = req.user?.full_name || (officerWard === 8 ? 'Cyrus Contractor (Ward 8 Officer)' : 'Ramesh Patel (Chief Sanitary Inspector · Ward 3)');
@@ -3193,6 +3500,7 @@ export class WardOfficerController {
         achievement_stats: achievementStats,
         image_url: primaryAfterPhoto,
         before_image_url: primaryBeforePhoto,
+        before_photos: allBeforePhotos,
         after_image_url: primaryAfterPhoto,
         after_photos: allAfterPhotos
       });
@@ -3222,7 +3530,7 @@ export class WardOfficerController {
         await pool.query(
           `UPDATE complaints SET status = 'resolved', is_published_to_community = true, resolved_image_url = $1, resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW() WHERE id = $2`,
           [primaryAfterPhoto, complaint.id]
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       // Update in-memory work attempts
@@ -3243,10 +3551,158 @@ export class WardOfficerController {
         );
       }
 
+      // Also send resolution notifications to all citizens who endorsed / raised count on this problem!
+      await DbRepository.notifyComplaintFollowers(
+        complaint.id,
+        `Issue Resolved: Complaint #${complaint.complaint_number}`,
+        `The civic issue you endorsed / raised count on at ${resolvedLocation} has been verified complete by ${officerName}. Thank you for your active civic participation!`,
+        complaint.citizen_id
+      ).catch(() => {});
+
       res.status(201).json({
         success: true,
         message: 'Complaint verified complete, post published to Public Posts feed, and citizen notified!',
         data: savedPost
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 15. Verify Team Leader Submitted Evidence Batch
+  public static async verifyLeaderEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { evidence_ids } = req.body;
+      const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || (complaint as any)?.work_assignment_id || id;
+
+      await DbRepository.verifyWorkEvidence(assignmentId, evidence_ids);
+
+      const targetIds = Array.isArray(evidence_ids) && evidence_ids.length > 0 ? evidence_ids : null;
+      for (const att of attempts) {
+        for (const ev of (att.evidence || [])) {
+          if (!targetIds || targetIds.includes(ev.id)) {
+            ev.review_status = 'verified';
+            ev.officer_verified = true;
+            ev.officer_reviewed_at = new Date().toISOString();
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Evidence verified and logged to Evidence History.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 15B. Reject Team Leader Submitted Evidence Batch
+  public static async rejectLeaderEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { evidence_ids, reason } = req.body;
+      const complaint = (store.complaints || []).find(c => c.id === id || c.complaint_number === id);
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || (complaint as any)?.work_assignment_id || id;
+
+      await DbRepository.rejectWorkEvidence(assignmentId, evidence_ids, reason);
+
+      const targetIds = Array.isArray(evidence_ids) && evidence_ids.length > 0 ? evidence_ids : null;
+      for (const att of attempts) {
+        for (const ev of (att.evidence || [])) {
+          if (!targetIds || targetIds.includes(ev.id)) {
+            ev.review_status = 'rejected';
+            ev.officer_verified = false;
+            ev.review_comments = reason || 'Rejected by Ward Officer';
+            ev.officer_reviewed_at = new Date().toISOString();
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Evidence rejected and marked in Evidence Log.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 16. Add Worker to Active Complaint Squad
+  public static async addWorkerToComplaintSquad(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { worker_id } = req.body;
+      if (!worker_id) {
+        res.status(400).json({ success: false, error: 'worker_id is required' });
+        return;
+      }
+      const dbWorkers = await DbRepository.getWorkersList({}).catch(() => []);
+      const worker = dbWorkers.find((w: any) => w.id === worker_id || w.user_id === worker_id);
+      if (!worker) {
+        res.status(404).json({ success: false, error: 'Worker not found' });
+        return;
+      }
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || id;
+
+      await DbRepository.addWorkerToWorkAssignment(assignmentId, worker);
+      if (latestAttempt) {
+        if (!latestAttempt.team_members) latestAttempt.team_members = [];
+        const exists = latestAttempt.team_members.some((m: any) => m.worker_id === worker.id || m.id === worker.id);
+        if (!exists) {
+          (latestAttempt.team_members as any[]).push({
+            id: `wam-${Date.now()}-${worker.id}`,
+            assignment_id: assignmentId,
+            worker_id: worker.id,
+            user_id: worker.user_id,
+            worker_code: worker.worker_code,
+            worker_name: worker.full_name,
+            worker_phone: worker.phone,
+            designation_name: worker.designation,
+            temporary_leader: false,
+            assignment_status: 'assigned'
+          });
+        }
+      }
+      res.status(200).json({
+        success: true,
+        message: `Worker ${worker.full_name} added to the squad.`,
+        data: latestAttempt?.team_members
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // 17. Remove Worker from Active Complaint Squad
+  public static async removeWorkerFromComplaintSquad(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { worker_id } = req.body;
+      if (!worker_id) {
+        res.status(400).json({ success: false, error: 'worker_id is required' });
+        return;
+      }
+      const attempts = wardData.workAttempts.get(id) || [];
+      const latestAttempt = attempts[attempts.length - 1];
+      const assignmentId = latestAttempt?.assignment_id || id;
+
+      await DbRepository.removeWorkerFromWorkAssignment(assignmentId, worker_id);
+      if (latestAttempt && latestAttempt.team_members) {
+        latestAttempt.team_members = latestAttempt.team_members.filter((m: any) => m.worker_id !== worker_id && m.id !== worker_id);
+      }
+      res.status(200).json({
+        success: true,
+        message: 'Worker removed from squad.',
+        data: latestAttempt?.team_members
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -3258,8 +3714,9 @@ export class WardOfficerController {
   // =========================================================================
   public static async getCommunityProblems(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const officerWard = WardOfficerController.resolveOfficerWard(req);
-      const problems = await DbRepository.getCommunityProblems(officerWard);
+      const qWard = req.query.ward_number as string | undefined;
+      const targetWard = qWard && qWard !== 'all' ? parseInt(qWard, 10) : undefined;
+      const problems = await DbRepository.getCommunityProblems(targetWard);
       res.status(200).json({ success: true, data: problems });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -3280,6 +3737,8 @@ export class WardOfficerController {
         estimated_volunteers_needed = 15,
         suggested_equipment = ['Brooms', 'Gloves', 'Trash Bags'],
         image_url,
+        location_url,
+        ward_number,
         allow_multiple_orgs = true
       } = req.body;
 
@@ -3291,8 +3750,26 @@ export class WardOfficerController {
         return;
       }
 
-      const officerWard = WardOfficerController.resolveOfficerWard(req);
+      const officerWard = ward_number ? Number(ward_number) : WardOfficerController.resolveOfficerWard(req);
       const officerName = req.user?.full_name || 'Ward Officer';
+
+      // Parse coordinates from location_url if provided or if latitude/longitude need refinement
+      let resolvedLat = latitude ? parseFloat(latitude) : undefined;
+      let resolvedLng = longitude ? parseFloat(longitude) : undefined;
+      if (location_url) {
+        const atMatch = location_url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        const qMatch = location_url.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+        const plainMatch = location_url.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+        const match = atMatch || qMatch || plainMatch;
+        if (match) {
+          const pLat = parseFloat(match[1]);
+          const pLng = parseFloat(match[2]);
+          if (!isNaN(pLat) && !isNaN(pLng)) {
+            resolvedLat = pLat;
+            resolvedLng = pLng;
+          }
+        }
+      }
 
       const savedProblem = await DbRepository.saveCommunityProblem({
         ward_number: officerWard,
@@ -3301,13 +3778,14 @@ export class WardOfficerController {
         description,
         location_name: location_name || `Ward ${officerWard} Cleanliness Locus`,
         address: address || `Navsari Ward ${officerWard}`,
-        latitude: latitude || 20.9325,
-        longitude: longitude || 72.9275,
+        latitude: resolvedLat || 20.9470,
+        longitude: resolvedLng || 72.9280,
         action_plan,
         urgency,
         estimated_volunteers_needed,
         suggested_equipment,
         image_url,
+        location_url,
         allow_multiple_orgs: Boolean(allow_multiple_orgs),
         created_by: req.user?.id,
         officer_name: officerName
@@ -3787,7 +4265,17 @@ export function recordAttendanceForAssignment(assignmentId: string, attendanceRe
     const attempt = attempts.find(a => a.assignment_id === assignmentId);
     if (attempt) {
       if (!attempt.attendance_records) attempt.attendance_records = [];
-      attempt.attendance_records.push(attendanceRecord);
+      const existing = attempt.attendance_records.find((r: any) =>
+        (r.worker_id === attendanceRecord.worker_id || r.id === attendanceRecord.id)
+      );
+      if (existing && (attendanceRecord.check_out_time || attendanceRecord.attendance_type === 'completed_for_day')) {
+        existing.check_out_time = attendanceRecord.check_out_time;
+        existing.attendance_type = 'completed_for_day';
+        if (attendanceRecord.check_out_latitude) existing.check_out_latitude = attendanceRecord.check_out_latitude;
+        if (attendanceRecord.check_out_longitude) existing.check_out_longitude = attendanceRecord.check_out_longitude;
+      } else if (!existing) {
+        attempt.attendance_records.push(attendanceRecord);
+      }
       return;
     }
   }

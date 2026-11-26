@@ -251,6 +251,7 @@ export interface DriveCertificateData {
   waste_cleared?: string;
   recipient_name: string;
   recipient_role: 'community_head' | 'citizen' | string;
+  attendance_status?: 'present' | 'absent' | 'organizer_present' | string;
   issued_by_officer?: string;
   verification_url?: string;
   issued_at?: string;
@@ -265,9 +266,16 @@ export function buildCertificatePrintHtml(certificate: DriveCertificateData, aut
 
   const qrSvgMarkup = buildQrSvgMarkup(verifyUrl, 120);
   const isLeader = certificate.recipient_role === 'community_head';
+  const isAbsent = certificate.attendance_status === 'absent';
   const issuedDateFormatted = certificate.issued_at
     ? new Date(certificate.issued_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '2026';
+
+  const attendanceBadgeHtml = isAbsent
+    ? `<div style="display:inline-block;padding:5px 14px;background:#fee2e2;border:1.5px solid #ef4444;border-radius:999px;color:#991b1b;font-weight:900;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:6px auto 14px;">Official Attendance: ABSENT (Did Not Attend Field Drive)</div>`
+    : isLeader
+    ? `<div style="display:inline-block;padding:5px 14px;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:999px;color:#92400e;font-weight:900;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:6px auto 14px;">Civic Leadership: ORGANIZER (PRESENT)</div>`
+    : `<div style="display:inline-block;padding:5px 14px;background:#d1fae5;border:1.5px solid #10b981;border-radius:999px;color:#065f46;font-weight:900;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:6px auto 14px;">Official Attendance: PRESENT (Verified Field Volunteer)</div>`;
 
   return `<!doctype html>
 <html>
@@ -324,9 +332,12 @@ export function buildCertificatePrintHtml(certificate: DriveCertificateData, aut
       <div class="subtitle">${isLeader ? 'Community Organization Excellence Award' : 'Swachh Navsari Volunteer Honour'}</div>
       <div class="present">This official municipal certificate is proudly presented to</div>
       <div class="name-wrap"><div class="name">${certificate.recipient_name}</div></div>
+      <div style="text-align:center;">${attendanceBadgeHtml}</div>
       <div class="body">
         ${isLeader
           ? `Head of <strong>${certificate.community_name || 'Community Organization'}</strong>, in recognition of outstanding civic leadership in organizing and successfully completing the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong>`
+          : isAbsent
+          ? `in recognition of registered volunteer enrolment with <strong>${certificate.community_name || 'Community Action Team'}</strong> for the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong> (Official Attendance Recorded: <strong>ABSENT</strong>)`
           : `in grateful appreciation of active volunteer participation with <strong>${certificate.community_name || 'Community Action Team'}</strong> during the municipal cleanliness drive <strong>"${certificate.drive_title}"</strong>`}
         at <strong>${certificate.location_name || certificate.ward_name || 'Navsari'}</strong> on <strong>${certificate.drive_date || '2026'}</strong>.
         ${certificate.waste_cleared ? `<br/>Verified Impact: <strong>${certificate.waste_cleared}</strong>` : ''}
@@ -464,11 +475,37 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
               </p>
             </div>
 
+            {/* Official Attendance Status Stamped Badge */}
+            <div className="pt-1.5 flex justify-center">
+              {certificate.attendance_status === 'absent' ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-300 text-[11px] font-black uppercase tracking-wider shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                  Official Record: ABSENT (Did Not Attend)
+                </span>
+              ) : isLeader ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-[11px] font-black uppercase tracking-wider shadow-2xs">
+                  <Award className="w-3.5 h-3.5 text-amber-600" />
+                  Civic Leadership: ORGANIZER (PRESENT)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-black uppercase tracking-wider shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Official Attendance: PRESENT (Verified Field Volunteer)
+                </span>
+              )}
+            </div>
+
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl mx-auto pt-2">
               {isLeader ? (
                 <>
                   representing <strong className="text-[#0f2925]">{certificate.community_name || 'Community Organization'}</strong>, for exemplary civic leadership in organizing and successfully completing the municipal cleanliness drive{' '}
                   <strong className="text-[#095c54]">"{certificate.drive_title}"</strong>.
+                </>
+              ) : certificate.attendance_status === 'absent' ? (
+                <>
+                  in recognition of registered volunteer enrolment with{' '}
+                  <strong className="text-[#0f2925]">{certificate.community_name || 'Community Action Team'}</strong> for the municipal cleanliness drive{' '}
+                  <strong className="text-[#095c54]">"{certificate.drive_title}"</strong> (Official Attendance Recorded: <strong className="text-rose-700">ABSENT</strong>).
                 </>
               ) : (
                 <>

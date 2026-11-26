@@ -19,7 +19,11 @@ import {
   HelpCircle,
   Share2,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  UserCheck,
+  UserX,
+  Flame,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { CleanlinessDrive } from '../types/index.js';
@@ -87,6 +91,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWard, setSelectedWard] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'upcoming' | 'registered' | 'completed'>('all');
   const [actionSuccess, setActionSuccess] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -126,6 +131,35 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   const [attendanceMessage, setAttendanceMessage] = useState<string>('');
   const [attendanceError, setAttendanceError] = useState<string>('');
   const [distanceFromDrive, setDistanceFromDrive] = useState<number | null>(null);
+  const [liveUserCoords, setLiveUserCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [refreshingGps, setRefreshingGps] = useState<boolean>(false);
+
+  // Helper to extract coordinates from Google Maps URLs or direct lat,lng format
+  const extractCoordsFromUrl = (url?: string): { lat: number; lng: number } | null => {
+    if (!url) return null;
+    const atMatch = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]) };
+    const qMatch = url.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (qMatch) return { lat: parseFloat(qMatch[1]), lng: parseFloat(qMatch[2]) };
+    const plainMatch = url.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+    if (plainMatch) return { lat: parseFloat(plainMatch[1]), lng: parseFloat(plainMatch[2]) };
+    return null;
+  };
+
+  // Helper to resolve the most accurate coordinates for a drive
+  const resolveDriveCoords = (drive: CleanlinessDrive): { lat: number; lng: number; source: string } => {
+    if (drive.location_url) {
+      const fromUrl = extractCoordsFromUrl(drive.location_url);
+      if (fromUrl) return { lat: fromUrl.lat, lng: fromUrl.lng, source: 'Ward Officer Map URL' };
+    }
+    if (drive.problem_latitude && drive.problem_longitude) {
+      return { lat: Number(drive.problem_latitude), lng: Number(drive.problem_longitude), source: 'Ward Officer Map Pin' };
+    }
+    if (drive.latitude && drive.longitude) {
+      return { lat: Number(drive.latitude), lng: Number(drive.longitude), source: 'Drive Venue Locus' };
+    }
+    return { lat: 20.9470, lng: 72.9280, source: 'Navsari Default' };
+  };
 
   const t = translations[lang];
 
@@ -155,7 +189,6 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     try {
       const res = await api.registerForDrive(driveId);
       setActionSuccess(res.message);
-      fetchDrives();
       if (selectedDrive && selectedDrive.id === driveId) {
         setSelectedDrive({
           ...selectedDrive,
@@ -163,6 +196,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           registered_volunteers_count: selectedDrive.registered_volunteers_count + 1
         });
       }
+      setDrives(prev => prev.map(d => d.id === driveId ? { ...d, is_registered: true, registered_volunteers_count: d.registered_volunteers_count + 1 } : d));
+      await fetchDrives();
     } catch (err: any) {
       setActionError(err.message || 'Failed to register for drive');
     }
@@ -174,7 +209,6 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     try {
       const res = await api.cancelDriveRegistration(driveId);
       setActionSuccess(res.message);
-      fetchDrives();
       if (selectedDrive && selectedDrive.id === driveId) {
         setSelectedDrive({
           ...selectedDrive,
@@ -182,6 +216,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           registered_volunteers_count: Math.max(0, selectedDrive.registered_volunteers_count - 1)
         });
       }
+      setDrives(prev => prev.map(d => d.id === driveId ? { ...d, is_registered: false, registered_volunteers_count: Math.max(0, d.registered_volunteers_count - 1) } : d));
+      await fetchDrives();
     } catch (err: any) {
       setActionError(err.message || 'Failed to cancel registration');
     }
@@ -207,6 +243,44 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   };
 
   // Live Location Verification & Attendance Marker
+  const handleRefreshGps = () => {
+    if (!navigator.geolocation) {
+      setAttendanceError('Geolocation is not supported by your browser or device.');
+      return;
+    }
+    setRefreshingGps(true);
+    setAttendanceError('');
+    setAttendanceMessage('');
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+        setLiveUserCoords({ lat: userLat, lng: userLng, accuracy });
+
+        if (selectedDrive) {
+          const targetCoords = resolveDriveCoords(selectedDrive);
+          const dist = calculateDistanceMeters(userLat, userLng, targetCoords.lat, targetCoords.lng);
+          const roundedDist = Math.round(dist);
+          setDistanceFromDrive(roundedDist);
+
+          if (roundedDist <= 150) {
+            setAttendanceMessage(`✓ GPS Refreshed! You are ${roundedDist}m from the venue locus (Within 150m boundary). You can mark attendance.`);
+          } else {
+            setAttendanceError(`⚠️ Location Check: You are currently ${roundedDist}m away from the venue. Please move closer (≤ 150m) to check in.`);
+          }
+        }
+        setRefreshingGps(false);
+      },
+      err => {
+        setRefreshingGps(false);
+        setAttendanceError(`GPS Error (${err.message}). Please allow location access on your device.`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
   const handleMarkAttendance = () => {
     if (!selectedDrive) return;
     setAttendanceError('');
@@ -224,22 +298,20 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
         try {
           const userLat = position.coords.latitude;
           const userLng = position.coords.longitude;
+          setLiveUserCoords({ lat: userLat, lng: userLng, accuracy: position.coords.accuracy });
 
-          // Target coordinates of the drive
-          const driveLat = selectedDrive.latitude || 20.9470;
-          const driveLng = selectedDrive.longitude || 72.9280;
-
-          const distanceMeters = calculateDistanceMeters(userLat, userLng, driveLat, driveLng);
-          setDistanceFromDrive(Math.round(distanceMeters));
+          // Target coordinates of the drive using exact map pin / location_url coordinates
+          const targetCoords = resolveDriveCoords(selectedDrive);
+          const distanceMeters = calculateDistanceMeters(userLat, userLng, targetCoords.lat, targetCoords.lng);
+          const roundedDist = Math.round(distanceMeters);
+          setDistanceFromDrive(roundedDist);
 
           // Maximum allowed distance is 150 meters
           const MAX_DISTANCE_METERS = 150;
 
-          if (distanceMeters > MAX_DISTANCE_METERS) {
+          if (roundedDist > MAX_DISTANCE_METERS) {
             setAttendanceError(
-              `⚠️ Location Verification Failed: You are currently ${Math.round(
-                distanceMeters
-              )}m away from the drive location (${selectedDrive.location_name}). You must be within ${MAX_DISTANCE_METERS}m of the assembly site to mark attendance.`
+              `⚠️ Location Verification Failed: You are currently ${roundedDist}m away from the drive location (${selectedDrive.location_name}). You must be within ${MAX_DISTANCE_METERS}m of the assembly site to mark attendance.`
             );
             setVerifyingAttendance(false);
             return;
@@ -247,7 +319,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           // Within 150m! Proceed with recording attendance
           const res = await api.markCitizenDriveAttendance(selectedDrive.id, userLat, userLng);
-          setAttendanceMessage(res.message || '✓ Attendance verified and recorded! 150 Civic Karma points awarded.');
+          setAttendanceMessage(res.message || '✓ Attendance verified and officially recorded!');
           setSelectedDrive({
             ...selectedDrive,
             attendance_status: 'present',
@@ -268,7 +340,34 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
     );
   };
 
+  const getDriveLifecycleStatus = (d: CleanlinessDrive): 'running' | 'upcoming' | 'completed' => {
+    const now = new Date();
+    const start = new Date(d.start_time);
+    const end = new Date(d.end_time);
+    if (d.status === 'completed' || (d as any).status === 'completed' || now > end) return 'completed';
+    if (d.status === 'ongoing' || (d as any).status === 'in_progress' || (now >= start && now <= end)) return 'running';
+    return 'upcoming';
+  };
+
+  const isRegistrationClosed = (d: CleanlinessDrive): boolean => {
+    const now = new Date();
+    const regDeadline = d.registration_deadline ? new Date(d.registration_deadline) : new Date(d.start_time);
+    return (
+      (d as any).registration_status === 'closed' ||
+      (d as any).registration_status === 'not_open' ||
+      d.status === 'completed' ||
+      now > regDeadline ||
+      (d.max_volunteers > 0 && d.registered_volunteers_count >= d.max_volunteers)
+    );
+  };
+
   const filtered = drives.filter(d => {
+    const lifeStatus = getDriveLifecycleStatus(d);
+    if (statusFilter === 'running' && lifeStatus !== 'running') return false;
+    if (statusFilter === 'upcoming' && lifeStatus !== 'upcoming') return false;
+    if (statusFilter === 'completed' && lifeStatus !== 'completed') return false;
+    if (statusFilter === 'registered' && !d.is_registered) return false;
+
     if (selectedWard !== 'all' && !d.ward_name.includes(selectedWard)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -333,11 +432,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
               {selectedDrive.ward_name}
             </span>
             <span
-              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-                selectedDrive.status === 'completed'
-                  ? 'bg-slate-200 text-slate-700'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}
+              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${selectedDrive.status === 'completed'
+                ? 'bg-slate-200 text-slate-700'
+                : 'bg-emerald-100 text-emerald-800'
+                }`}
             >
               {selectedDrive.status}
             </span>
@@ -396,7 +494,9 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-teal-300" />
-                  {selectedDrive.registered_volunteers_count} / {selectedDrive.max_volunteers} Volunteers Enrolled
+                  {!selectedDrive.max_volunteers || selectedDrive.max_volunteers <= 0 || selectedDrive.is_unlimited_capacity
+                    ? `${selectedDrive.registered_volunteers_count} Registered (Unlimited Capacity · Open to All)`
+                    : `${selectedDrive.registered_volunteers_count} / ${selectedDrive.max_volunteers} Volunteers Enrolled`}
                 </span>
               </div>
             </div>
@@ -413,7 +513,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   Civic Volunteer Participation
                 </div>
                 <div className="text-[11px] text-[#64748b]">
-                  Registered volunteers earn +150 Civic Karma upon attendance verification
+                  Registered volunteers earn official participation status upon verification
                 </div>
               </div>
             </div>
@@ -443,8 +543,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     {selectedDrive.status === 'completed'
                       ? 'Drive Completed'
                       : selectedDrive.registered_volunteers_count >= selectedDrive.max_volunteers
-                      ? `Registration Full (${selectedDrive.registered_volunteers_count}/${selectedDrive.max_volunteers})`
-                      : 'Registration Closed by Organizer'}
+                        ? `Registration Full (${selectedDrive.registered_volunteers_count}/${selectedDrive.max_volunteers})`
+                        : 'Registration Closed by Organizer'}
                   </span>
                 </div>
               ) : (
@@ -465,11 +565,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
         <div className="flex border-b border-[#e2e8f0] bg-white rounded-2xl p-1.5 shadow-xs gap-1.5">
           <button
             onClick={() => setActiveTab('info')}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
-              activeTab === 'info'
-                ? 'bg-[#095c54] text-white shadow-sm'
-                : 'text-[#64748b] hover:bg-slate-100'
-            }`}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${activeTab === 'info'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-[#64748b] hover:bg-slate-100'
+              }`}
           >
             <Info className="w-4 h-4" />
             <span>Drive Overview & Kit</span>
@@ -477,11 +576,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           <button
             onClick={() => setActiveTab('organizer')}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
-              activeTab === 'organizer'
-                ? 'bg-[#095c54] text-white shadow-sm'
-                : 'text-[#64748b] hover:bg-slate-100'
-            }`}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${activeTab === 'organizer'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-[#64748b] hover:bg-slate-100'
+              }`}
           >
             <HelpCircle className="w-4 h-4" />
             <span>Organizer Info & Q&A</span>
@@ -489,23 +587,34 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
 
           <button
             onClick={() => setActiveTab('attendance')}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${
-              activeTab === 'attendance'
-                ? 'bg-[#095c54] text-white shadow-sm'
-                : 'text-[#64748b] hover:bg-slate-100'
-            }`}
+            className={`flex-1 py-3 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition ${activeTab === 'attendance'
+              ? 'bg-[#095c54] text-white shadow-sm'
+              : 'text-[#64748b] hover:bg-slate-100'
+              }`}
           >
-            {isDateUnlocked ? (
+            {selectedDrive.requires_attendance === false || selectedDrive.is_nmc_official_drive === true ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            ) : !selectedDrive.is_registered ? (
+              <Lock className="w-4 h-4 text-slate-400" />
+            ) : isDateUnlocked ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             ) : (
               <Lock className="w-4 h-4 text-amber-500" />
             )}
-            <span>Volunteer Attendance</span>
-            {!isDateUnlocked && (
+            <span>
+              {selectedDrive.requires_attendance === false || selectedDrive.is_nmc_official_drive === true
+                ? 'Rally Attendance (Waived)'
+                : 'Volunteer Attendance'}
+            </span>
+            {!selectedDrive.is_registered ? (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-extrabold hidden sm:inline">
+                Registered Only
+              </span>
+            ) : !isDateUnlocked ? (
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-extrabold hidden sm:inline">
                 Locked
               </span>
-            )}
+            ) : null}
           </button>
         </div>
 
@@ -707,11 +816,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                               </p>
                             </div>
                             <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                                isAnswered
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
-                              }`}
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${isAnswered
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}
                             >
                               {isAnswered ? 'Answered' : 'Awaiting Reply'}
                             </span>
@@ -749,21 +857,75 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
           </div>
         )}
 
-        {/* Tab 3: Volunteer Attendance (Locked until drive date arrives) */}
+        {/* Tab 3: Volunteer Attendance (Accessible ONLY to registered volunteers on drive date) */}
         {activeTab === 'attendance' && (
           <div className="space-y-4">
-            {!isDateUnlocked ? (
-              // LOCKED STATE
+            {selectedDrive.requires_attendance === false || selectedDrive.is_nmc_official_drive === true ? (
+              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-emerald-200 bg-emerald-50/40 text-center space-y-4 shadow-xs">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-[#095c54] flex items-center justify-center mx-auto shadow-xs">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase text-[#095c54] bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                    Public Awareness Rally
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-[#0f2925] mt-2">
+                    🏛️ Official NMC Civic Rally &amp; Public Campaign
+                  </h3>
+                  <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                    This is an official public awareness march &amp; civic rally organized by Navsari Municipal Corporation.
+                    <strong> No duty attendance check-in or GPS coordinate logging is required</strong> — all citizens, families, and volunteer groups are welcome to participate freely!
+                  </p>
+                </div>
+                <div className="p-3 rounded-2xl bg-white border border-emerald-200 text-xs text-emerald-950 font-bold inline-block">
+                  📍 Route / Assembly: {selectedDrive.location_name}
+                </div>
+              </div>
+            ) : !selectedDrive.is_registered ? (
+              // LOCKED: CITIZEN HAS NOT REGISTERED FOR THIS DRIVE
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto text-slate-500">
+                  <Lock className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#0f2925]">
+                    Attendance Restricted: Registered Volunteers Only
+                  </h3>
+                  <p className="text-xs text-[#64748b] max-w-md mx-auto mt-1 leading-relaxed">
+                    You cannot access the volunteer attendance check-in because you have not registered for this drive. Attendance is exclusively accessible to confirmed registered volunteers on event day.
+                  </p>
+                </div>
+
+                {!isRegistrationClosed(selectedDrive) ? (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRegister(selectedDrive.id)}
+                      className="px-6 py-2.5 rounded-2xl text-xs font-black text-white bg-[#095c54] hover:bg-[#074741] transition shadow-md inline-flex items-center gap-2"
+                    >
+                      <span>Register as Volunteer Now</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Registration Closed for this Drive</span>
+                  </div>
+                )}
+              </div>
+            ) : !isDateUnlocked ? (
+              // LOCKED: REGISTERED VOLUNTEER BUT EVENT DATE HAS NOT ARRIVED
               <div className="bg-white p-8 rounded-3xl border border-amber-200 shadow-xs text-center space-y-4">
                 <div className="w-16 h-16 rounded-3xl bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-700">
                   <Lock className="w-8 h-8" />
                 </div>
                 <div>
                   <h3 className="text-base font-black text-[#0f2925]">
-                    Attendance Tab is Locked
+                    Attendance Tab is Locked Until Event Day
                   </h3>
                   <p className="text-xs text-[#64748b] max-w-md mx-auto mt-1 leading-relaxed">
-                    Attendance verification unlocks strictly on the day of the drive (
+                    Registered volunteers can only access attendance check-in strictly on the day of the drive (
                     <strong className="text-[#095c54]">
                       {new Date(selectedDrive.start_time).toLocaleDateString([], {
                         weekday: 'long',
@@ -786,7 +948,7 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     <li>Open this tab on your mobile device.</li>
                     <li>Click <strong>"Verify Live GPS & Mark Attendance"</strong>.</li>
                     <li>Your device coordinates are validated against the venue (must be within 150 meters).</li>
-                    <li>Receive +150 Civic Karma points instantly to your profile!</li>
+                    <li>Receive official NMC Drive Certificate upon verification!</li>
                   </ol>
                 </div>
               </div>
@@ -804,9 +966,28 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                     You have successfully checked in for this cleanliness drive. Thank you for your active civic participation!
                   </p>
                 </div>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-100 border border-amber-300 text-xs font-black text-amber-900">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  <span>+150 Civic Karma Points Credited to Your Account</span>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-100 border border-emerald-300 text-xs font-black text-emerald-900">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Official Attendance Recorded: PRESENT (GPS Verified)</span>
+                </div>
+              </div>
+            ) : (selectedDrive.status === 'completed' || new Date() > new Date(selectedDrive.end_time)) ? (
+              // DRIVE COMPLETED BUT NOT ATTENDED: AUTOMATICALLY MARKED ABSENT
+              <div className="bg-white p-8 rounded-3xl border border-rose-200 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-rose-100 border border-rose-200 flex items-center justify-center mx-auto text-rose-700">
+                  <UserX className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-rose-900">
+                    Drive Concluded — Marked Absent
+                  </h3>
+                  <p className="text-xs text-rose-700 max-w-md mx-auto mt-1 leading-relaxed">
+                    This cleanliness drive has completed. You were registered as a volunteer, but live GPS check-in was not recorded during event hours. Your participation status has been automatically recorded as <strong>Absent</strong>.
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-black text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  <span>Attendance Status: ABSENT</span>
                 </div>
               </div>
             ) : (
@@ -825,18 +1006,106 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   </p>
                 </div>
 
-                {/* Target Venue Card */}
-                <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
-                  <div className="text-xs font-black text-[#0f2925] flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-[#095c54]" />
-                    <span>Assigned Venue Locus:</span>
+                {/* Target Venue Card with Ward Officer Pin & Map Link */}
+                {(() => {
+                  const targetCoords = resolveDriveCoords(selectedDrive);
+                  return (
+                    <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-xs font-black text-[#0f2925] flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-[#095c54]" />
+                          <span>Assigned Venue Locus:</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-50 text-[#095c54] font-black border border-teal-200">
+                            {targetCoords.source}
+                          </span>
+                          {selectedDrive.location_url && (
+                            <a
+                              href={selectedDrive.location_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-teal-700 underline font-semibold flex items-center gap-1 hover:text-teal-900"
+                            >
+                              <span>View Map</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-[#1e293b] font-semibold">
+                        {selectedDrive.location_name}
+                      </p>
+                      <div className="flex items-center justify-between text-[11px] text-[#64748b] flex-wrap gap-1">
+                        <span>Ward: <strong>{selectedDrive.ward_name}</strong> | Geofence Radius: <strong>150 meters</strong></span>
+                        <span className="font-mono text-[10px] text-slate-500">
+                          Coords: {targetCoords.lat.toFixed(5)}, {targetCoords.lng.toFixed(5)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Live GPS Coordinates Monitor & Refresh Button */}
+                <div className="p-4 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-xs font-black text-[#0f2925]">
+                        Live Device GPS Status
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={refreshingGps}
+                      onClick={handleRefreshGps}
+                      className="px-3 py-1.5 rounded-xl border border-[#095c54]/30 bg-[#f7f9f8] hover:bg-[#e6f4f1] text-[#095c54] text-xs font-extrabold flex items-center gap-1.5 transition disabled:opacity-60 shadow-2xs"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${refreshingGps ? 'animate-spin' : ''}`} />
+                      <span>{refreshingGps ? 'Refreshing GPS...' : 'Refresh GPS Coordinates'}</span>
+                    </button>
                   </div>
-                  <p className="text-xs text-[#1e293b] font-semibold">
-                    {selectedDrive.location_name}
-                  </p>
-                  <p className="text-[11px] text-[#64748b]">
-                    Ward: <strong>{selectedDrive.ward_name}</strong> | Maximum Geofence Radius: <strong>150 meters</strong>
-                  </p>
+
+                  {liveUserCoords ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Your Device Location</span>
+                        <span className="font-mono font-bold text-slate-800 text-[11px]">
+                          {liveUserCoords.lat.toFixed(5)}, {liveUserCoords.lng.toFixed(5)}
+                        </span>
+                        {liveUserCoords.accuracy && (
+                          <span className="text-[10px] text-slate-500 block">
+                            Accuracy: ±{Math.round(liveUserCoords.accuracy)}m
+                          </span>
+                        )}
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border ${distanceFromDrive !== null && distanceFromDrive <= 150
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                          : 'bg-amber-50/70 border-amber-300 text-amber-950'
+                        }`}>
+                        <span className="text-[10px] block font-bold uppercase tracking-wider opacity-75">Distance from Venue</span>
+                        <div className="flex items-center gap-1.5">
+                          <strong className="text-sm font-black">
+                            {distanceFromDrive !== null ? `${distanceFromDrive}m` : 'Calculating...'}
+                          </strong>
+                          {distanceFromDrive !== null && (
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${distanceFromDrive <= 150
+                                ? 'bg-emerald-200/80 text-emerald-900'
+                                : 'bg-amber-200/80 text-amber-900'
+                              }`}>
+                              {distanceFromDrive <= 150 ? 'Within Range (≤150m)' : 'Out of Range (>150m)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Click <strong>"Refresh GPS Coordinates"</strong> to detect your real-time GPS location and verify your distance to the venue before marking attendance.
+                    </p>
+                  )}
                 </div>
 
                 {/* Status Messages */}
@@ -949,6 +1218,34 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
         </div>
       )}
 
+      {/* Drive Status Filter Tabs Strip */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {[
+          { id: 'all', label: 'All Drives', count: drives.length },
+          { id: 'running', label: 'Running Now', count: drives.filter(d => getDriveLifecycleStatus(d) === 'running').length },
+          { id: 'upcoming', label: 'Upcoming', count: drives.filter(d => getDriveLifecycleStatus(d) === 'upcoming').length },
+          { id: 'registered', label: 'Registered', count: drives.filter(d => d.is_registered).length },
+          { id: 'completed', label: 'Completed', count: drives.filter(d => getDriveLifecycleStatus(d) === 'completed').length }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setStatusFilter(tab.id as any)}
+            className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap border ${statusFilter === tab.id
+              ? 'bg-[#095c54] text-white border-[#095c54] shadow-xs'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+          >
+            {tab.id === 'running' && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+            <span>{tab.label}</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Drives Grid */}
       {loading ? (
         <div className="text-center py-12 text-xs font-bold text-[#64748b]">{t.loading}</div>
@@ -957,7 +1254,10 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(d => {
-            const percentFilled = Math.min(100, Math.round((d.registered_volunteers_count / d.max_volunteers) * 100));
+            const isUnlimited = !d.max_volunteers || d.max_volunteers <= 0 || (d as any).is_unlimited_capacity;
+            const percentFilled = isUnlimited ? 0 : Math.min(100, Math.round((d.registered_volunteers_count / d.max_volunteers) * 100));
+            const lifeStatus = getDriveLifecycleStatus(d);
+            const regClosed = isRegistrationClosed(d);
 
             return (
               <div
@@ -967,6 +1267,37 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 <div>
                   <div className="relative aspect-video bg-slate-100">
                     <img src={d.banner_url} alt={d.title} className="w-full h-full object-cover" />
+
+                    {/* Top Left: Drive Lifecycle & Registered Status Badges */}
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                      {lifeStatus === 'running' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs flex items-center gap-1 animate-pulse">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                          Running Now
+                        </span>
+                      )}
+                      {lifeStatus === 'upcoming' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-sky-600 text-white shadow-xs">
+                          Upcoming
+                        </span>
+                      )}
+                      {lifeStatus === 'completed' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-700 text-white shadow-xs">
+                          Completed
+                        </span>
+                      )}
+                      {d.is_registered && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
+                          Registered
+                        </span>
+                      )}
+                      {(d.is_nmc_official_drive || d.requires_attendance === false) && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-gradient-to-r from-emerald-700 to-teal-800 text-white shadow-xs">
+                          🏛️ NMC Rally
+                        </span>
+                      )}
+                    </div>
+
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#095c54] text-white shadow-xs">
                         {d.ward_name}
@@ -993,32 +1324,71 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                       </div>
                     </div>
 
+                    {/* Registration Status Indicator */}
+                    <div className="flex items-center justify-between text-[11px] pt-1">
+                      <span className="font-bold text-slate-500">
+                        Registration:
+                      </span>
+                      {regClosed ? (
+                        <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 font-extrabold text-[10px] border border-rose-200 flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-rose-500" />
+                          <span>{lifeStatus === 'completed' ? 'Drive Concluded' : 'Registration Closed'}</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 font-extrabold text-[10px] border border-emerald-200 flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>Registration Open</span>
+                        </span>
+                      )}
+                    </div>
+
                     {/* Volunteer Progress Bar */}
-                    <div className="pt-2">
+                    <div className="pt-1">
                       <div className="flex items-center justify-between text-[11px] mb-1">
                         <span className="text-[#64748b] font-medium flex items-center gap-1">
                           <Users className="w-3.5 h-3.5 text-[#095c54]" /> Volunteers
                         </span>
                         <span className="font-extrabold text-[#095c54]">
-                          {d.registered_volunteers_count} / {d.max_volunteers} ({percentFilled}%)
+                          {isUnlimited
+                            ? `${d.registered_volunteers_count} Registered (Unlimited)`
+                            : `${d.registered_volunteers_count} / ${d.max_volunteers} (${percentFilled}%)`}
                         </span>
                       </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-[#095c54] to-[#10b981] h-full rounded-full transition-all duration-300"
-                          style={{ width: `${percentFilled}%` }}
-                        />
-                      </div>
+                      {!isUnlimited && (
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-gradient-to-r from-[#095c54] to-[#10b981] h-full rounded-full transition-all duration-300"
+                            style={{ width: `${percentFilled}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Card Action: View Details Full Page */}
+                {/* Card Action: View Details or Register */}
                 <div className="p-4 sm:p-5 pt-0">
                   {d.is_registered ? (
                     <div className="space-y-2">
-                      <div className="w-full py-2.5 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
+                      <div className="w-full py-2 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-extrabold flex items-center justify-center gap-1.5 border border-[#a7f3d0]">
                         <Check className="w-3.5 h-3.5" /> Registered Volunteer
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedDrive(d);
+                          setActiveTab('info');
+                        }}
+                        className="w-full py-2 rounded-xl text-xs font-bold text-[#095c54] hover:bg-[#e6f4f1] transition border border-[#b8e0d7] touch-press flex items-center justify-center gap-1.5"
+                      >
+                        <span>{t.view_details}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : regClosed ? (
+                    <div className="space-y-2">
+                      <div className="w-full py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-200">
+                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{lifeStatus === 'completed' ? 'Drive Concluded' : 'Registration Closed'}</span>
                       </div>
                       <button
                         onClick={() => {

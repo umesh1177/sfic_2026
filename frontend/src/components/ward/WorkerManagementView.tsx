@@ -73,9 +73,18 @@ export const WorkerManagementView: React.FC = () => {
         availability_status: editAvailability,
         skills: editSkills
       });
+      const updated = res.data || {
+        ...editingWorker,
+        full_name: editFullName,
+        phone: editPhone,
+        designation: editDesignation,
+        availability_status: editAvailability,
+        skills: editSkills
+      };
+      setWorkers(prev => prev.map(w => w.id === editingWorker.id ? { ...w, ...updated } : w));
       setActionSuccess(res.message || 'Worker updated successfully');
       setEditingWorker(null);
-      fetchWorkers();
+      await fetchWorkers();
     } catch (err: any) {
       setActionError(err.message || 'Failed to update worker');
     } finally {
@@ -91,6 +100,7 @@ export const WorkerManagementView: React.FC = () => {
       const res = await api.deleteWardWorker(workerId);
       setActionSuccess(res.message || `Worker ${workerName} removed successfully`);
       setWorkers(prev => prev.filter(w => w.id !== workerId));
+      await fetchWorkers();
     } catch (err: any) {
       setActionError(err.message || 'Failed to remove worker');
     }
@@ -154,6 +164,9 @@ export const WorkerManagementView: React.FC = () => {
         availability_status: availabilityStatus
       });
 
+      if (res.data) {
+        setWorkers(prev => [res.data, ...prev]);
+      }
       setActionSuccess(res.message || 'Worker added successfully.');
       setShowAddModal(false);
       setFullName('');

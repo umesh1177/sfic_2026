@@ -63,6 +63,7 @@ exports.apiRouter.delete('/complaints/:id', auth_js_1.authenticate, complaintsCo
 exports.apiRouter.post('/complaints/:id/feedback', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.submitFeedback);
 exports.apiRouter.post('/complaints/:id/reopen', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.reopenComplaint);
 exports.apiRouter.post('/complaints/:id/follow', softAuthenticate, complaintsController_js_1.ComplaintsController.toggleFollow);
+exports.apiRouter.post('/complaints/:id/raise-count', softAuthenticate, complaintsController_js_1.ComplaintsController.raiseCount);
 exports.apiRouter.post('/complaints/:id/add-evidence', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.addEvidence);
 // 5. Geographical & Navsari Cleanliness Map
 exports.apiRouter.get('/map/wards', mapController_js_1.MapController.getWards);
@@ -158,6 +159,7 @@ exports.apiRouter.get('/worker/assignments', softAuthenticate, workerController_
 exports.apiRouter.get('/worker/assignments/:id', softAuthenticate, workerController_js_1.WorkerController.getAssignmentDetails);
 exports.apiRouter.post('/worker/assignments/:id/acknowledge', softAuthenticate, workerController_js_1.WorkerController.acknowledgeAssignment);
 // 3. Location-Validated Attendance (GPS geofencing)
+exports.apiRouter.get('/worker/attendance/today', softAuthenticate, workerController_js_1.WorkerController.getTodayAttendance);
 exports.apiRouter.post('/worker/attendance/mark', softAuthenticate, workerController_js_1.WorkerController.markAttendance);
 exports.apiRouter.post('/worker/attendance/exception', softAuthenticate, workerController_js_1.WorkerController.requestAttendanceException);
 exports.apiRouter.get('/worker/attendance/history', softAuthenticate, workerController_js_1.WorkerController.getAttendanceHistory);
@@ -184,7 +186,12 @@ exports.apiRouter.post('/ward/complaints/:id/assign', softAuthenticate, wardOffi
 exports.apiRouter.post('/ward/complaints/:id/reject', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectComplaint);
 exports.apiRouter.post('/ward/complaints/:id/reclassify', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reclassifyComplaint);
 exports.apiRouter.post('/ward/complaints/:id/verify-complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyCompleteComplaint);
+exports.apiRouter.post('/ward/complaints/:id/verify-evidence', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyLeaderEvidence);
+exports.apiRouter.post('/ward/complaints/:id/reject-evidence', softAuthenticate, wardOfficerController_js_1.WardOfficerController.rejectLeaderEvidence);
+exports.apiRouter.post('/ward/complaints/:id/add-worker', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addWorkerToComplaintSquad);
+exports.apiRouter.post('/ward/complaints/:id/remove-worker', softAuthenticate, wardOfficerController_js_1.WardOfficerController.removeWorkerFromComplaintSquad);
 exports.apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishComplaintToCommunity);
+exports.apiRouter.post('/ward/complaints/:id/geofence-override', softAuthenticate, wardOfficerController_js_1.WardOfficerController.toggleGeofenceOverride);
 exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);
 exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);
 exports.apiRouter.post('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.createAssignment);
@@ -206,6 +213,8 @@ exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOffic
 exports.apiRouter.get('/ward/completed-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCompletedDrives);
 exports.apiRouter.post('/ward/drives/:id/publish-completion', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishDriveCompletion);
 exports.apiRouter.get('/ward/organization-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getOrganizationDrives);
+exports.apiRouter.post('/ward/organization-drives/:id/evidence/verify-all', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyAllDriveEvidence);
+exports.apiRouter.post('/ward/organization-drives/:id/evidence/:evidenceId/verify', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyDriveEvidence);
 exports.apiRouter.post('/ward/organization-drives/:id/complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.completeOrganizationDrive);
 exports.apiRouter.post('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.issueDriveCertificates);
 exports.apiRouter.get('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getDriveCertificates);
@@ -227,6 +236,8 @@ exports.apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, ward
 // ============================================================================
 exports.apiRouter.get('/admin/overview', softAuthenticate, adminController_js_1.AdminController.getOverview);
 exports.apiRouter.get('/admin/wards', softAuthenticate, adminController_js_1.AdminController.getWards);
+exports.apiRouter.put('/admin/wards/:id', softAuthenticate, adminController_js_1.AdminController.updateWard);
+exports.apiRouter.get('/admin/wards/:wardNumber/officer-history', softAuthenticate, adminController_js_1.AdminController.getWardOfficerHistory);
 exports.apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, adminController_js_1.AdminController.updateWardBoundary);
 exports.apiRouter.get('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.getCityBoundary);
 exports.apiRouter.put('/admin/city-boundary', softAuthenticate, adminController_js_1.AdminController.updateCityBoundary);
@@ -235,6 +246,8 @@ exports.apiRouter.post('/admin/boundary-history/:id/restore', softAuthenticate, 
 exports.apiRouter.get('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.getWardOfficers);
 exports.apiRouter.post('/admin/ward-officers', softAuthenticate, adminController_js_1.AdminController.createWardOfficer);
 exports.apiRouter.put('/admin/ward-officers/:id', softAuthenticate, adminController_js_1.AdminController.updateWardOfficer);
+exports.apiRouter.delete('/admin/ward-officers/:id', softAuthenticate, adminController_js_1.AdminController.deleteWardOfficer);
+exports.apiRouter.get('/admin/ward-officers/:officerId/ward-history', softAuthenticate, adminController_js_1.AdminController.getOfficerWardHistory);
 exports.apiRouter.get('/admin/workers', softAuthenticate, adminController_js_1.AdminController.getWorkers);
 exports.apiRouter.post('/admin/workers', softAuthenticate, adminController_js_1.AdminController.createWorker);
 exports.apiRouter.put('/admin/workers/:id', softAuthenticate, adminController_js_1.AdminController.updateWorker);

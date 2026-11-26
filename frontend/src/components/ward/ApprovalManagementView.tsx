@@ -32,9 +32,6 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  // Per-drive Multi-Org vs Exclusive Single-Org selection map (default: true = allow multiple)
-  const [multiOrgChoice, setMultiOrgChoice] = useState<Record<string, boolean>>({});
-
   // Certificate / Document Preview Modal
   const [previewDoc, setPreviewDoc] = useState<{ title: string; name: string; url: string } | null>(null);
 
@@ -51,15 +48,6 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
       const res = await api.getWardApprovals(wardNumber);
       const list = res.data || [];
       setApprovals(list);
-
-      // Initialize multi-org toggle state from backend problem policy
-      const defaults: Record<string, boolean> = {};
-      list.forEach((item: any) => {
-        if (item.type === 'activity') {
-          defaults[item.id] = item.problem_allow_multiple_orgs !== false;
-        }
-      });
-      setMultiOrgChoice(prev => ({ ...defaults, ...prev }));
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to load approval queue.');
     } finally {
@@ -98,28 +86,15 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
   const handleApproveDrive = async (item: any) => {
     setProcessingId(item.id);
     setErrorMessage('');
-    const allowMultiple = multiOrgChoice[item.id] !== undefined ? multiOrgChoice[item.id] : true;
     try {
       const res = await api.reviewWardApproval(
         item.id,
         'approve',
-        allowMultiple
-          ? 'Approved by Ward Officer (Multiple organizations permitted on this problem).'
-          : 'Approved by Ward Officer (Exclusive single organization assigned to this problem).',
-        {
-          approval_type: 'activity',
-          allow_multiple_orgs: allowMultiple
-        }
+        'Cleanliness Drive approved by Ward Officer.',
+        { approval_type: 'activity' }
       );
       setActionMessage(
-        res.message ||
-          `Cleanliness Drive "${item.title}" approved! ${
-            item.linked_problem_id
-              ? allowMultiple
-                ? 'Other organizations can also run drives on this problem.'
-                : 'Assigned exclusively to this organization; competing pending proposals closed.'
-              : 'Now live on citizen dashboards.'
-          }`
+        res.message || `Cleanliness Drive "${item.title}" approved and published!`
       );
       await fetchApprovals();
       setTimeout(() => setActionMessage(''), 6000);
@@ -394,7 +369,6 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
           {/* SUB-TAB 2: CLEANLINESS DRIVE APPROVAL */}
           {activeTab === 'activity' &&
             driveRequests.map(item => {
-              const isMulti = multiOrgChoice[item.id] !== undefined ? multiOrgChoice[item.id] : true;
               const hasLinkedProblem = Boolean(item.linked_problem_id || item.problem_title);
 
               return (
@@ -460,68 +434,6 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
                     </div>
                   )}
 
-                  {/* Multi-Organization vs Exclusive Single-Organization Policy Control */}
-                  <div className="p-4 rounded-2xl bg-[#f7f9f8] border border-[#cde6df] space-y-2.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-xs font-extrabold text-[#095c54] flex items-center gap-1.5">
-                        <Layers className="w-4 h-4" />
-                        <span>
-                          Problem Assignment Policy{item.problem_title ? ` for "${item.problem_title}"` : ''}
-                        </span>
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-500">
-                        Choose whether multiple organizations can collaborate on this problem
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setMultiOrgChoice(prev => ({ ...prev, [item.id]: true }))}
-                        className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                          isMulti
-                            ? 'bg-white border-[#095c54] ring-2 ring-[#095c54]/15'
-                            : 'bg-white/60 border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${isMulti ? 'border-[#095c54]' : 'border-slate-300'}`}>
-                          {isMulti && <span className="w-2 h-2 rounded-full bg-[#095c54]" />}
-                        </div>
-                        <div>
-                          <span className="text-xs font-extrabold text-[#0f2925] block">
-                            Allow Multiple Organizations
-                          </span>
-                          <span className="text-[11px] text-slate-500 block mt-0.5">
-                            Approve this drive AND allow other organizations to also run drives on the same problem.
-                          </span>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setMultiOrgChoice(prev => ({ ...prev, [item.id]: false }))}
-                        className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                          !isMulti
-                            ? 'bg-white border-amber-500 ring-2 ring-amber-500/15'
-                            : 'bg-white/60 border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${!isMulti ? 'border-amber-600' : 'border-slate-300'}`}>
-                          {!isMulti && <span className="w-2 h-2 rounded-full bg-amber-600" />}
-                        </div>
-                        <div>
-                          <span className="text-xs font-extrabold text-[#0f2925] flex items-center gap-1">
-                            <Lock className="w-3 h-3 text-amber-600" />
-                            <span>Exclusive (Single Organization Only)</span>
-                          </span>
-                          <span className="text-[11px] text-slate-500 block mt-0.5">
-                            Assign this problem exclusively to this organization and close other pending proposals on it.
-                          </span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
                   {/* Actions */}
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 flex-wrap">
                     <button
@@ -557,9 +469,7 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
                       ) : (
                         <Check className="w-3.5 h-3.5" />
                       )}
-                      <span>
-                        {isMulti ? 'Approve Drive (Multi-Org)' : 'Approve Drive (Exclusive)'}
-                      </span>
+                      <span>Approve Cleanliness Drive</span>
                     </button>
                   </div>
                 </div>
