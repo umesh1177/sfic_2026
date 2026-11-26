@@ -736,6 +736,7 @@ class ApiService {
     data: {
       image_url?: string;
       storage_path?: string;
+      photos?: string[];
       stage?: 'before' | 'during' | 'after';
       evidence_type?: 'before' | 'during' | 'after';
       caption?: string;

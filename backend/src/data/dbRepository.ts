@@ -1063,13 +1063,14 @@ export class DbRepository {
           organiser_name: r.organiser_name,
           status: r.status,
           banner_url: r.banner_url || r.banner_path,
-          max_volunteers: r.max_volunteers,
+          max_volunteers: r.max_volunteers !== undefined && r.max_volunteers !== null ? Number(r.max_volunteers) : 50,
           registered_volunteers_count: r.registered_volunteers_count || 0,
           is_registered: registeredDriveIds.has(r.id),
           latitude: 20.9470,
           longitude: 72.9280,
           requires_attendance: (r as any).requires_attendance !== false,
           is_nmc_official_drive: (r as any).is_nmc_official_drive === true,
+          is_unlimited_capacity: Number(r.max_volunteers) === 0,
           attendance_status: (r.status === 'completed' && registeredDriveIds.has(r.id))
             ? 'absent'
             : (registeredDriveIds.has(r.id) ? 'registered' : undefined)
@@ -1156,7 +1157,10 @@ export class DbRepository {
             status: r.status,
             registration_status: r.registration_status,
             banner_url: r.banner_url,
-            max_volunteers: parseInt(r.max_volunteers, 10) || 50,
+            max_volunteers: (r.max_volunteers !== undefined && r.max_volunteers !== null && !isNaN(parseInt(r.max_volunteers, 10)))
+              ? parseInt(r.max_volunteers, 10)
+              : 50,
+            is_unlimited_capacity: parseInt(r.max_volunteers, 10) === 0,
             registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
             is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
             requires_attendance: r.requires_attendance !== false,
@@ -2136,7 +2140,9 @@ export class DbRepository {
           normEnd,
           data.registration_open_at || new Date().toISOString(),
           data.registration_close_at || normStart,
-          data.maximum_participants || (data as any).max_capacity || (isNmcOfficial ? 200 : 50),
+          data.maximum_participants !== undefined && data.maximum_participants !== null
+            ? Number(data.maximum_participants)
+            : ((data as any).max_capacity !== undefined ? Number((data as any).max_capacity) : (isNmcOfficial ? 200 : 50)),
           data.minimum_participants || 10,
           data.waiting_list_enabled ?? true,
           data.registration_requires_approval ?? false,

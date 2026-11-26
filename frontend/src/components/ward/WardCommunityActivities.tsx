@@ -86,6 +86,7 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
   const [showAddDriveModal, setShowAddDriveModal] = useState<boolean>(false);
   const [submittingDrive, setSubmittingDrive] = useState<boolean>(false);
   const [driveFormError, setDriveFormError] = useState<string>('');
+  const [isUnlimitedCapacity, setIsUnlimitedCapacity] = useState<boolean>(true);
   const [newDriveForm, setNewDriveForm] = useState({
     title: '',
     activity_category: 'Public Awareness Rally',
@@ -141,7 +142,8 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
         proposed_start_at: toISTIso(newDriveForm.proposed_start_at),
         proposed_end_at: newDriveForm.proposed_end_at ? toISTIso(newDriveForm.proposed_end_at) : toISTIso(newDriveForm.proposed_start_at),
         cover_image_path: newDriveForm.cover_image_path.trim(),
-        maximum_participants: Number(newDriveForm.maximum_participants) || 250,
+        maximum_participants: isUnlimitedCapacity ? 0 : (Number(newDriveForm.maximum_participants) || 250),
+        is_unlimited_capacity: isUnlimitedCapacity,
         publication_status: 'published',
         approval_status: 'approved',
         registration_status: 'open',
@@ -1101,18 +1103,66 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                   </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">
-                    Target Public Capacity
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Volunteer Registration Capacity *
                   </label>
-                  <input
-                    type="number"
-                    min="20"
-                    max="5000"
-                    value={newDriveForm.maximum_participants}
-                    onChange={e => setNewDriveForm({ ...newDriveForm, maximum_participants: Number(e.target.value) })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsUnlimitedCapacity(true)}
+                      className={`p-2.5 rounded-xl border text-left transition ${
+                        isUnlimitedCapacity
+                          ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <p className="text-xs font-black flex items-center gap-1">
+                        <span>♾️ Unlimited</span>
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${isUnlimitedCapacity ? 'text-emerald-100' : 'text-slate-500'}`}>
+                        Open Rally (No limit)
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsUnlimitedCapacity(false)}
+                      className={`p-2.5 rounded-xl border text-left transition ${
+                        !isUnlimitedCapacity
+                          ? 'bg-[#095c54] text-white border-[#095c54] shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <p className="text-xs font-black flex items-center gap-1">
+                        <span>👥 Particular Count</span>
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${!isUnlimitedCapacity ? 'text-emerald-100' : 'text-slate-500'}`}>
+                        Fixed volunteer cap
+                      </p>
+                    </button>
+                  </div>
+
+                  {!isUnlimitedCapacity ? (
+                    <div className="pt-1.5 space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 block">
+                        Maximum Volunteer Capacity
+                      </label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="10000"
+                        value={newDriveForm.maximum_participants}
+                        onChange={e => setNewDriveForm({ ...newDriveForm, maximum_participants: Number(e.target.value) })}
+                        placeholder="e.g. 250"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#095c54] text-xs font-semibold text-slate-900 outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-200/80 rounded-lg px-2.5 py-1.5">
+                      ✓ Unlimited Capacity: Any number of citizens and volunteers can register freely.
+                    </p>
+                  )}
                 </div>
               </div>
 

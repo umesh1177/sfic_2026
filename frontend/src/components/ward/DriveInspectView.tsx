@@ -25,6 +25,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
   X
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
@@ -78,6 +81,8 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
   const [actionEvId, setActionEvId] = useState<string | null>(null);
   const [rejectingEvId, setRejectingEvId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState<string>('');
+  const [activePhotoIdx, setActivePhotoIdx] = useState<Record<string, number>>({});
+  const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 
   const isCompleted =
     activity.event_status === 'completed' || activity.evidence_status === 'verified_complete';
@@ -685,12 +690,18 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 {evidenceList.map((ev, idx) => {
                   const stage = ev.evidence_type || ev.stage || 'before';
                   const meta = ev.review_metadata || {};
-                  const hasMeta = Object.keys(meta).some(k => meta[k] !== undefined && meta[k] !== null && meta[k] !== '');
+                  const hasMeta = Object.keys(meta).some(k => meta[k] !== undefined && meta[k] !== null && meta[k] !== '' && k !== 'photos' && k !== 'total_photos' && k !== 'photo_index');
+                  const evIdKey = String(ev.id || idx);
+                  const evPhotos: string[] = Array.isArray(meta?.photos) && meta.photos.length > 0
+                    ? meta.photos
+                    : [ev.storage_path || ev.image_url].filter(Boolean);
+                  const currentPhotoIdx = activePhotoIdx[evIdKey] || 0;
+                  const displayedPhoto = evPhotos[currentPhotoIdx] || ev.storage_path || ev.image_url;
 
                   return (
                     <div
                       key={ev.id || idx}
-                      className="rounded-2xl border border-slate-200 bg-[#f7f9f8] overflow-hidden flex flex-col justify-between"
+                      className="rounded-2xl border border-slate-200 bg-[#f7f9f8] overflow-hidden flex flex-col justify-between shadow-xs"
                     >
                       <div>
                         <div className="px-4 py-3 bg-white border-b border-slate-200/70 flex items-center justify-between gap-2 flex-wrap">
@@ -723,13 +734,88 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                           </span>
                         </div>
 
-                        <div className="aspect-video bg-slate-100 overflow-hidden">
+                        {/* Interactive Photo Carousel / Multi-Photo Viewer */}
+                        <div className="relative aspect-video bg-slate-900 overflow-hidden group select-none">
                           <img
-                            src={ev.storage_path || ev.image_url}
+                            src={displayedPhoto}
                             alt={ev.caption || stage}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover cursor-pointer transition duration-300 group-hover:scale-102"
+                            onClick={() => setLightboxPhoto(displayedPhoto)}
+                            title="Click to view full photo"
                           />
+
+                          {/* Photo Counter Badge if multiple photos */}
+                          {evPhotos.length > 1 && (
+                            <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/80 text-white text-[11px] font-black flex items-center gap-1.5 backdrop-blur-xs shadow">
+                              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Photo {currentPhotoIdx + 1} of {evPhotos.length}</span>
+                            </div>
+                          )}
+
+                          {/* Prev / Next Buttons */}
+                          {evPhotos.length > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePhotoIdx(prev => ({
+                                    ...prev,
+                                    [evIdKey]: (currentPhotoIdx - 1 + evPhotos.length) % evPhotos.length
+                                  }));
+                                }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/90 transition shadow-md"
+                                title="Previous Photo"
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePhotoIdx(prev => ({
+                                    ...prev,
+                                    [evIdKey]: (currentPhotoIdx + 1) % evPhotos.length
+                                  }));
+                                }}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/90 transition shadow-md"
+                                title="Next Photo"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setLightboxPhoto(displayedPhoto)}
+                            className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[10px] font-black flex items-center gap-1.5 opacity-90 hover:opacity-100 hover:bg-black/90 transition shadow"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Click to Zoom</span>
+                          </button>
                         </div>
+
+                        {/* Thumbnail Strip for Multi-Photo Evidence */}
+                        {evPhotos.length > 1 && (
+                          <div className="px-3.5 py-2.5 bg-slate-100 border-b border-slate-200/80 flex items-center gap-2 overflow-x-auto">
+                            {evPhotos.map((p, pIdx) => (
+                              <img
+                                key={pIdx}
+                                src={p}
+                                alt={`Thumb ${pIdx + 1}`}
+                                className={`w-12 h-12 object-cover rounded-lg border-2 cursor-pointer transition shrink-0 ${
+                                  currentPhotoIdx === pIdx
+                                    ? 'border-[#095c54] ring-2 ring-[#095c54]/30 scale-105'
+                                    : 'border-white opacity-70 hover:opacity-100'
+                                }`}
+                                onClick={() => setActivePhotoIdx(prev => ({ ...prev, [evIdKey]: pIdx }))}
+                                title={`View Photo ${pIdx + 1}`}
+                              />
+                            ))}
+                          </div>
+                        )}
 
                         <div className="p-4 space-y-3">
                           <div>
@@ -1213,6 +1299,30 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 </div>
               )
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Full-Screen Lightbox Modal for Inspection */}
+      {lightboxPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightboxPhoto(null)}
+        >
+          <div className="relative max-w-5xl max-h-[92vh] bg-black rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center">
+            <img
+              src={lightboxPhoto}
+              alt="Enlarged Evidence Inspection"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              onClick={e => e.stopPropagation()}
+            />
+            <button
+              onClick={() => setLightboxPhoto(null)}
+              className="absolute top-4 right-4 p-2.5 rounded-full bg-black/75 text-white hover:bg-rose-600 transition shadow-lg"
+              title="Close inspection"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
       )}

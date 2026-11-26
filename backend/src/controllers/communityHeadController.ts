@@ -643,6 +643,7 @@ export class CommunityHeadController {
         stage,
         storage_path,
         image_url,
+        photos,
         caption,
         description,
         latitude,
@@ -654,25 +655,58 @@ export class CommunityHeadController {
       const resolvedStage = (evidence_type || stage) as 'before' | 'during' | 'after';
       const resolvedPath = storage_path || image_url;
 
-      if (!resolvedPath || !resolvedStage) {
-        res.status(400).json({ success: false, error: 'Evidence stage (before/during/after) and photograph are required' });
+      // Lock: If drive is already marked completed or verified, do not allow further evidence submission
+      const act = await DbRepository.getActivityById(id);
+      if (act && (act.event_status === 'completed' || act.evidence_status === 'verified_complete')) {
+        res.status(400).json({
+          success: false,
+          error: 'Evidence submission is closed because this cleanliness drive has already been verified and marked completed by the Ward Officer.'
+        });
         return;
       }
 
-      const ev = await DbRepository.createActivityEvidence({
-        activity_id: id,
-        uploaded_by: userId,
-        evidence_type: resolvedStage,
-        storage_path: resolvedPath,
-        caption: caption?.trim() || `${String(resolvedStage).toUpperCase()} Stage Evidence`,
-        description: description || caption,
-        latitude,
-        longitude,
-        image_hash,
-        review_metadata: review_metadata || {}
-      });
+      const rawPhotos: string[] = Array.isArray(photos) && photos.length > 0
+        ? photos.filter(p => typeof p === 'string' && p.trim())
+        : (resolvedPath ? [resolvedPath] : []);
 
-      res.status(201).json({ success: true, data: ev, message: 'Evidence photograph and details recorded' });
+      if (rawPhotos.length === 0 || !resolvedStage) {
+        res.status(400).json({ success: false, error: 'Evidence stage (before/during/after) and at least one photograph are required' });
+        return;
+      }
+
+      const createdEvs: any[] = [];
+      for (let i = 0; i < rawPhotos.length; i++) {
+        const photoPath = rawPhotos[i];
+        const photoCaption = rawPhotos.length > 1
+          ? `${caption?.trim() || `${String(resolvedStage).toUpperCase()} Stage`} (Photo ${i + 1}/${rawPhotos.length})`
+          : (caption?.trim() || `${String(resolvedStage).toUpperCase()} Stage Evidence`);
+
+        const ev = await DbRepository.createActivityEvidence({
+          activity_id: id,
+          uploaded_by: userId,
+          evidence_type: resolvedStage,
+          storage_path: photoPath,
+          caption: photoCaption,
+          description: description || caption,
+          latitude,
+          longitude,
+          image_hash,
+          review_metadata: {
+            ...(review_metadata || {}),
+            photos: rawPhotos,
+            photo_index: i,
+            total_photos: rawPhotos.length
+          }
+        });
+        createdEvs.push(ev);
+      }
+
+      res.status(201).json({
+        success: true,
+        data: createdEvs[0],
+        all_data: createdEvs,
+        message: `${createdEvs.length} evidence photograph${createdEvs.length > 1 ? 's' : ''} and details recorded`
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -682,6 +716,16 @@ export class CommunityHeadController {
     try {
       const { id } = req.params; // activity_id
       const userId = req.user?.id || 'c0000000-0000-0000-0000-000000000099';
+
+      // Lock: If drive is already marked completed or verified, reject
+      const act = await DbRepository.getActivityById(id);
+      if (act && (act.event_status === 'completed' || act.evidence_status === 'verified_complete')) {
+        res.status(400).json({
+          success: false,
+          error: 'Evidence submission is closed because this cleanliness drive has already been verified and marked completed by the Ward Officer.'
+        });
+        return;
+      }
 
       await DbRepository.submitActivityEvidence(id, userId);
       res.status(200).json({

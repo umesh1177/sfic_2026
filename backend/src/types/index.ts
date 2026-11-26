@@ -227,6 +227,7 @@ export interface CleanlinessDrive {
   is_registered?: boolean;
   requires_attendance?: boolean;
   is_nmc_official_drive?: boolean;
+  is_unlimited_capacity?: boolean;
   location_url?: string;
   problem_latitude?: number;
   problem_longitude?: number;

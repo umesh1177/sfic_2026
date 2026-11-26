@@ -494,7 +494,9 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-teal-300" />
-                  {selectedDrive.registered_volunteers_count} / {selectedDrive.max_volunteers} Volunteers Enrolled
+                  {!selectedDrive.max_volunteers || selectedDrive.max_volunteers <= 0 || selectedDrive.is_unlimited_capacity
+                    ? `${selectedDrive.registered_volunteers_count} Registered (Unlimited Capacity · Open to All)`
+                    : `${selectedDrive.registered_volunteers_count} / ${selectedDrive.max_volunteers} Volunteers Enrolled`}
                 </span>
               </div>
             </div>
@@ -1254,7 +1256,8 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(d => {
-            const percentFilled = Math.min(100, Math.round((d.registered_volunteers_count / d.max_volunteers) * 100));
+            const isUnlimited = !d.max_volunteers || d.max_volunteers <= 0 || (d as any).is_unlimited_capacity;
+            const percentFilled = isUnlimited ? 0 : Math.min(100, Math.round((d.registered_volunteers_count / d.max_volunteers) * 100));
             const lifeStatus = getDriveLifecycleStatus(d);
             const regClosed = isRegistrationClosed(d);
 
@@ -1348,15 +1351,19 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                           <Users className="w-3.5 h-3.5 text-[#095c54]" /> Volunteers
                         </span>
                         <span className="font-extrabold text-[#095c54]">
-                          {d.registered_volunteers_count} / {d.max_volunteers} ({percentFilled}%)
+                          {isUnlimited
+                            ? `${d.registered_volunteers_count} Registered (Unlimited)`
+                            : `${d.registered_volunteers_count} / ${d.max_volunteers} (${percentFilled}%)`}
                         </span>
                       </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-[#095c54] to-[#10b981] h-full rounded-full transition-all duration-300"
-                          style={{ width: `${percentFilled}%` }}
-                        />
-                      </div>
+                      {!isUnlimited && (
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-gradient-to-r from-[#095c54] to-[#10b981] h-full rounded-full transition-all duration-300"
+                            style={{ width: `${percentFilled}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
