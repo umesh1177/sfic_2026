@@ -22,7 +22,8 @@ import {
   RefreshCw,
   UserCheck,
   UserX,
-  Flame
+  Flame,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { CleanlinessDrive } from '../types/index.js';
@@ -130,6 +131,35 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   const [attendanceMessage, setAttendanceMessage] = useState<string>('');
   const [attendanceError, setAttendanceError] = useState<string>('');
   const [distanceFromDrive, setDistanceFromDrive] = useState<number | null>(null);
+  const [liveUserCoords, setLiveUserCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [refreshingGps, setRefreshingGps] = useState<boolean>(false);
+
+  // Helper to extract coordinates from Google Maps URLs or direct lat,lng format
+  const extractCoordsFromUrl = (url?: string): { lat: number; lng: number } | null => {
+    if (!url) return null;
+    const atMatch = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]) };
+    const qMatch = url.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (qMatch) return { lat: parseFloat(qMatch[1]), lng: parseFloat(qMatch[2]) };
+    const plainMatch = url.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+    if (plainMatch) return { lat: parseFloat(plainMatch[1]), lng: parseFloat(plainMatch[2]) };
+    return null;
+  };
+
+  // Helper to resolve the most accurate coordinates for a drive
+  const resolveDriveCoords = (drive: CleanlinessDrive): { lat: number; lng: number; source: string } => {
+    if (drive.location_url) {
+      const fromUrl = extractCoordsFromUrl(drive.location_url);
+      if (fromUrl) return { lat: fromUrl.lat, lng: fromUrl.lng, source: 'Ward Officer Map URL' };
+    }
+    if (drive.problem_latitude && drive.problem_longitude) {
+      return { lat: Number(drive.problem_latitude), lng: Number(drive.problem_longitude), source: 'Ward Officer Map Pin' };
+    }
+    if (drive.latitude && drive.longitude) {
+      return { lat: Number(drive.latitude), lng: Number(drive.longitude), source: 'Drive Venue Locus' };
+    }
+    return { lat: 20.9470, lng: 72.9280, source: 'Navsari Default' };
+  };
 
   const t = translations[lang];
 
@@ -213,6 +243,44 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
   };
 
   // Live Location Verification & Attendance Marker
+  const handleRefreshGps = () => {
+    if (!navigator.geolocation) {
+      setAttendanceError('Geolocation is not supported by your browser or device.');
+      return;
+    }
+    setRefreshingGps(true);
+    setAttendanceError('');
+    setAttendanceMessage('');
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+        setLiveUserCoords({ lat: userLat, lng: userLng, accuracy });
+
+        if (selectedDrive) {
+          const targetCoords = resolveDriveCoords(selectedDrive);
+          const dist = calculateDistanceMeters(userLat, userLng, targetCoords.lat, targetCoords.lng);
+          const roundedDist = Math.round(dist);
+          setDistanceFromDrive(roundedDist);
+
+          if (roundedDist <= 150) {
+            setAttendanceMessage(`✓ GPS Refreshed! You are ${roundedDist}m from the venue locus (Within 150m boundary). You can mark attendance.`);
+          } else {
+            setAttendanceError(`⚠️ Location Check: You are currently ${roundedDist}m away from the venue. Please move closer (≤ 150m) to check in.`);
+          }
+        }
+        setRefreshingGps(false);
+      },
+      err => {
+        setRefreshingGps(false);
+        setAttendanceError(`GPS Error (${err.message}). Please allow location access on your device.`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
   const handleMarkAttendance = () => {
     if (!selectedDrive) return;
     setAttendanceError('');
@@ -230,22 +298,20 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
         try {
           const userLat = position.coords.latitude;
           const userLng = position.coords.longitude;
+          setLiveUserCoords({ lat: userLat, lng: userLng, accuracy: position.coords.accuracy });
 
-          // Target coordinates of the drive
-          const driveLat = selectedDrive.latitude || 20.9470;
-          const driveLng = selectedDrive.longitude || 72.9280;
-
-          const distanceMeters = calculateDistanceMeters(userLat, userLng, driveLat, driveLng);
-          setDistanceFromDrive(Math.round(distanceMeters));
+          // Target coordinates of the drive using exact map pin / location_url coordinates
+          const targetCoords = resolveDriveCoords(selectedDrive);
+          const distanceMeters = calculateDistanceMeters(userLat, userLng, targetCoords.lat, targetCoords.lng);
+          const roundedDist = Math.round(distanceMeters);
+          setDistanceFromDrive(roundedDist);
 
           // Maximum allowed distance is 150 meters
           const MAX_DISTANCE_METERS = 150;
 
-          if (distanceMeters > MAX_DISTANCE_METERS) {
+          if (roundedDist > MAX_DISTANCE_METERS) {
             setAttendanceError(
-              `⚠️ Location Verification Failed: You are currently ${Math.round(
-                distanceMeters
-              )}m away from the drive location (${selectedDrive.location_name}). You must be within ${MAX_DISTANCE_METERS}m of the assembly site to mark attendance.`
+              `⚠️ Location Verification Failed: You are currently ${roundedDist}m away from the drive location (${selectedDrive.location_name}). You must be within ${MAX_DISTANCE_METERS}m of the assembly site to mark attendance.`
             );
             setVerifyingAttendance(false);
             return;
@@ -938,18 +1004,108 @@ export const CleanlinessDrives: React.FC<CleanlinessDrivesProps> = ({ lang }) =>
                   </p>
                 </div>
 
-                {/* Target Venue Card */}
-                <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
-                  <div className="text-xs font-black text-[#0f2925] flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-[#095c54]" />
-                    <span>Assigned Venue Locus:</span>
+                {/* Target Venue Card with Ward Officer Pin & Map Link */}
+                {(() => {
+                  const targetCoords = resolveDriveCoords(selectedDrive);
+                  return (
+                    <div className="p-4 rounded-2xl bg-[#f8faf9] border border-[#e2e8f0] space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-xs font-black text-[#0f2925] flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-[#095c54]" />
+                          <span>Assigned Venue Locus:</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-50 text-[#095c54] font-black border border-teal-200">
+                            {targetCoords.source}
+                          </span>
+                          {selectedDrive.location_url && (
+                            <a
+                              href={selectedDrive.location_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-teal-700 underline font-semibold flex items-center gap-1 hover:text-teal-900"
+                            >
+                              <span>View Map</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-[#1e293b] font-semibold">
+                        {selectedDrive.location_name}
+                      </p>
+                      <div className="flex items-center justify-between text-[11px] text-[#64748b] flex-wrap gap-1">
+                        <span>Ward: <strong>{selectedDrive.ward_name}</strong> | Geofence Radius: <strong>150 meters</strong></span>
+                        <span className="font-mono text-[10px] text-slate-500">
+                          Coords: {targetCoords.lat.toFixed(5)}, {targetCoords.lng.toFixed(5)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Live GPS Coordinates Monitor & Refresh Button */}
+                <div className="p-4 rounded-2xl bg-white border border-[#b8e0d7] shadow-xs space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-xs font-black text-[#0f2925]">
+                        Live Device GPS Status
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={refreshingGps}
+                      onClick={handleRefreshGps}
+                      className="px-3 py-1.5 rounded-xl border border-[#095c54]/30 bg-[#f7f9f8] hover:bg-[#e6f4f1] text-[#095c54] text-xs font-extrabold flex items-center gap-1.5 transition disabled:opacity-60 shadow-2xs"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${refreshingGps ? 'animate-spin' : ''}`} />
+                      <span>{refreshingGps ? 'Refreshing GPS...' : 'Refresh GPS Coordinates'}</span>
+                    </button>
                   </div>
-                  <p className="text-xs text-[#1e293b] font-semibold">
-                    {selectedDrive.location_name}
-                  </p>
-                  <p className="text-[11px] text-[#64748b]">
-                    Ward: <strong>{selectedDrive.ward_name}</strong> | Maximum Geofence Radius: <strong>150 meters</strong>
-                  </p>
+
+                  {liveUserCoords ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Your Device Location</span>
+                        <span className="font-mono font-bold text-slate-800 text-[11px]">
+                          {liveUserCoords.lat.toFixed(5)}, {liveUserCoords.lng.toFixed(5)}
+                        </span>
+                        {liveUserCoords.accuracy && (
+                          <span className="text-[10px] text-slate-500 block">
+                            Accuracy: ±{Math.round(liveUserCoords.accuracy)}m
+                          </span>
+                        )}
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border ${
+                        distanceFromDrive !== null && distanceFromDrive <= 150
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                          : 'bg-amber-50/70 border-amber-300 text-amber-950'
+                      }`}>
+                        <span className="text-[10px] block font-bold uppercase tracking-wider opacity-75">Distance from Venue</span>
+                        <div className="flex items-center gap-1.5">
+                          <strong className="text-sm font-black">
+                            {distanceFromDrive !== null ? `${distanceFromDrive}m` : 'Calculating...'}
+                          </strong>
+                          {distanceFromDrive !== null && (
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${
+                              distanceFromDrive <= 150
+                                ? 'bg-emerald-200/80 text-emerald-900'
+                                : 'bg-amber-200/80 text-amber-900'
+                            }`}>
+                              {distanceFromDrive <= 150 ? 'Within Range (≤150m)' : 'Out of Range (>150m)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Click <strong>"Refresh GPS Coordinates"</strong> to detect your real-time GPS location and verify your distance to the venue before marking attendance.
+                    </p>
+                  )}
                 </div>
 
                 {/* Status Messages */}

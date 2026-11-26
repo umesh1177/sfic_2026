@@ -63,6 +63,7 @@ exports.apiRouter.delete('/complaints/:id', auth_js_1.authenticate, complaintsCo
 exports.apiRouter.post('/complaints/:id/feedback', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.submitFeedback);
 exports.apiRouter.post('/complaints/:id/reopen', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.reopenComplaint);
 exports.apiRouter.post('/complaints/:id/follow', softAuthenticate, complaintsController_js_1.ComplaintsController.toggleFollow);
+exports.apiRouter.post('/complaints/:id/raise-count', softAuthenticate, complaintsController_js_1.ComplaintsController.raiseCount);
 exports.apiRouter.post('/complaints/:id/add-evidence', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.addEvidence);
 // 5. Geographical & Navsari Cleanliness Map
 exports.apiRouter.get('/map/wards', mapController_js_1.MapController.getWards);

@@ -941,6 +941,84 @@ export class DbRepository {
     return { is_following: true, followers_count: 1 };
   }
 
+  public static async raiseComplaintCount(complaintId: string, citizenId: string): Promise<{ success: boolean; followers_count: number; message: string }> {
+    const validCitizenId = this.isValidUUID(citizenId) ? citizenId : 'c0000000-0000-0000-0000-000000000001';
+    let newCount = 1;
+    if (isDbConnected()) {
+      try {
+        const check = await pool.query(
+          'SELECT id FROM complaint_followers WHERE complaint_id::text = $1::text AND citizen_id::text = $2::text',
+          [String(complaintId), validCitizenId]
+        );
+        if (check.rows.length === 0) {
+          await pool.query(
+            'INSERT INTO complaint_followers (complaint_id, citizen_id) VALUES ($1, $2)',
+            [complaintId, validCitizenId]
+          );
+          await pool.query(
+            'UPDATE complaints SET followers_count = COALESCE(followers_count, 0) + 1, upvotes_count = COALESCE(upvotes_count, 0) + 1 WHERE id::text = $1::text',
+            [String(complaintId)]
+          );
+        }
+        const countRes = await pool.query('SELECT followers_count FROM complaints WHERE id::text = $1::text', [String(complaintId)]);
+        newCount = Number(countRes.rows[0]?.followers_count || 1);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - raiseComplaintCount]:', err.message);
+      }
+    }
+
+    const c = store.complaints.find(comp => comp.id === complaintId);
+    if (c) {
+      c.followers_count = (c.followers_count || 0) + 1;
+      c.upvotes_count = c.followers_count;
+      newCount = c.followers_count;
+    }
+
+    return {
+      success: true,
+      followers_count: newCount,
+      message: 'Count increased successfully! You will receive live status notifications for this complaint.'
+    };
+  }
+
+  public static async getComplaintFollowerIds(complaintId: string): Promise<string[]> {
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          'SELECT citizen_id FROM complaint_followers WHERE complaint_id::text = $1::text',
+          [String(complaintId)]
+        );
+        return res.rows.map(r => r.citizen_id).filter(Boolean);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getComplaintFollowerIds]:', err.message);
+      }
+    }
+    return [];
+  }
+
+  public static async notifyComplaintFollowers(
+    complaintId: string,
+    title: string,
+    message: string,
+    excludeCitizenId?: string
+  ): Promise<void> {
+    try {
+      const followerIds = await this.getComplaintFollowerIds(complaintId);
+      for (const fId of followerIds) {
+        if (excludeCitizenId && fId === excludeCitizenId) continue;
+        await this.createNotification(
+          fId,
+          title,
+          message,
+          complaintId,
+          'complaint_resolved'
+        ).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error('[DB REPO ERROR - notifyComplaintFollowers]:', err.message);
+    }
+  }
+
   public static async addEvidence(complaintId: string, actorName: string, note?: string): Promise<boolean> {
     if (isDbConnected()) {
       try {
@@ -1001,8 +1079,12 @@ export class DbRepository {
         const actRes = await pool.query(`
           SELECT 
             a.id, a.title, COALESCE(a.short_description, a.detailed_description, '') as description,
-            a.ward_id, a.ward_name, COALESCE(a.address, a.landmark, 'Navsari') as location_name,
-            a.latitude, a.longitude,
+            a.ward_id, a.ward_name, COALESCE(a.address, a.landmark, cp.location_name, 'Navsari') as location_name,
+            COALESCE(NULLIF(a.latitude, 0), NULLIF(cp.latitude, 0), 20.9470) as latitude,
+            COALESCE(NULLIF(a.longitude, 0), NULLIF(cp.longitude, 0), 72.9280) as longitude,
+            cp.latitude as problem_latitude,
+            cp.longitude as problem_longitude,
+            cp.location_url as location_url,
             a.proposed_start_at as start_time, a.proposed_end_at as end_time,
             a.proposed_start_at as registration_deadline,
             COALESCE(c.community_name, 'Community Organization') as organiser_name,
@@ -1018,6 +1100,7 @@ export class DbRepository {
             (SELECT ar.attendance_status FROM activity_registrations ar WHERE ar.activity_id = a.id AND ar.citizen_id = $1 AND ar.registration_status <> 'cancelled' LIMIT 1) as my_attendance_status
           FROM community_activities a
           LEFT JOIN communities c ON c.id = a.community_id
+          LEFT JOIN community_problems cp ON (cp.id::text = a.linked_problem_id::text OR cp.linked_activity_id::text = a.id::text)
           WHERE a.approval_status IN ('approved', 'ward_approved', 'nmc_admin_approved') AND a.publication_status IN ('published', 'approved')
         `, [citizenId && this.isValidUUID(citizenId) ? citizenId : '00000000-0000-0000-0000-000000000000']);
 
@@ -1032,33 +1115,57 @@ export class DbRepository {
           presentActIds = new Set(actRegRes.rows.filter(r => r.attendance_status === 'present').map(r => r.activity_id));
         }
 
-        const communityDrives: CleanlinessDrive[] = actRes.rows.map(r => ({
-          id: r.id,
-          title: r.title,
-          description: r.description,
-          ward_id: r.ward_id,
-          ward_name: r.ward_name,
-          location_name: r.location_name,
-          latitude: parseFloat(r.latitude) || 20.9470,
-          longitude: parseFloat(r.longitude) || 72.9280,
-          start_time: r.start_time,
-          end_time: r.end_time,
-          registration_deadline: r.registration_deadline,
-          organiser_name: r.organiser_name,
-          lead_person: r.lead_person,
-          contact_phone: r.contact_phone,
-          status: r.status,
-          registration_status: r.registration_status,
-          banner_url: r.banner_url,
-          max_volunteers: parseInt(r.max_volunteers, 10) || 50,
-          registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
-          is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
-          requires_attendance: r.requires_attendance !== false,
-          is_nmc_official_drive: r.is_nmc_official_drive === true,
-          attendance_status: (r.status === 'completed' && !presentActIds.has(r.id) && registeredActIds.has(r.id))
-            ? 'absent'
-            : (r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined))
-        } as any));
+        const communityDrives: CleanlinessDrive[] = actRes.rows.map(r => {
+          let resolvedLat = parseFloat(r.latitude) || 20.9470;
+          let resolvedLng = parseFloat(r.longitude) || 72.9280;
+
+          // If location_url contains coordinates, parse and resolve them
+          if (r.location_url) {
+            const atMatch = r.location_url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+            const qMatch = r.location_url.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+            const plainMatch = r.location_url.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+            const m = atMatch || qMatch || plainMatch;
+            if (m) {
+              const uLat = parseFloat(m[1]);
+              const uLng = parseFloat(m[2]);
+              if (!isNaN(uLat) && !isNaN(uLng)) {
+                resolvedLat = uLat;
+                resolvedLng = uLng;
+              }
+            }
+          }
+
+          return {
+            id: r.id,
+            title: r.title,
+            description: r.description,
+            ward_id: r.ward_id,
+            ward_name: r.ward_name,
+            location_name: r.location_name,
+            latitude: resolvedLat,
+            longitude: resolvedLng,
+            problem_latitude: r.problem_latitude ? parseFloat(r.problem_latitude) : undefined,
+            problem_longitude: r.problem_longitude ? parseFloat(r.problem_longitude) : undefined,
+            location_url: r.location_url || undefined,
+            start_time: r.start_time,
+            end_time: r.end_time,
+            registration_deadline: r.registration_deadline,
+            organiser_name: r.organiser_name,
+            lead_person: r.lead_person,
+            contact_phone: r.contact_phone,
+            status: r.status,
+            registration_status: r.registration_status,
+            banner_url: r.banner_url,
+            max_volunteers: parseInt(r.max_volunteers, 10) || 50,
+            registered_volunteers_count: parseInt(r.registered_volunteers_count, 10) || 0,
+            is_registered: registeredActIds.has(r.id) || registeredDriveIds.has(r.id),
+            requires_attendance: r.requires_attendance !== false,
+            is_nmc_official_drive: r.is_nmc_official_drive === true,
+            attendance_status: (r.status === 'completed' && !presentActIds.has(r.id) && registeredActIds.has(r.id))
+              ? 'absent'
+              : (r.my_attendance_status || (presentActIds.has(r.id) ? 'present' : registeredActIds.has(r.id) ? 'registered' : undefined))
+          } as any;
+        });
 
         const combined = [...communityDrives];
         for (const sd of standardDrives) {
@@ -1977,6 +2084,29 @@ export class DbRepository {
 
         const linkedProbRaw = (data as any).linked_problem_id;
         const linkedProblemId = this.isValidUUID(linkedProbRaw) ? linkedProbRaw : null;
+
+        let actLat = data.latitude;
+        let actLng = data.longitude;
+        if (linkedProblemId) {
+          try {
+            const probRes = await pool.query(
+              'SELECT latitude, longitude, location_url, address, location_name FROM community_problems WHERE id::text = $1::text',
+              [linkedProblemId]
+            );
+            if (probRes.rows.length > 0) {
+              const pRow = probRes.rows[0];
+              if (pRow.latitude && (!actLat || actLat === 20.9470)) {
+                actLat = parseFloat(pRow.latitude);
+              }
+              if (pRow.longitude && (!actLng || actLng === 72.9280)) {
+                actLng = parseFloat(pRow.longitude);
+              }
+            }
+          } catch (e: any) {
+            console.error('[createCommunityActivity] error querying linked problem:', e.message);
+          }
+        }
+
         const normStart = this.normalizeDateWithIST(data.proposed_start_at) || new Date(Date.now() + 86400000).toISOString();
         const normEnd = this.normalizeDateWithIST(data.proposed_end_at) || new Date(Date.now() + 86400000 + 10800000).toISOString();
         const isNmcOfficial = (data as any).is_nmc_official_drive === true;
@@ -1998,8 +2128,8 @@ export class DbRepository {
           data.ward_id || `ward-${String(data.ward_number || 3).padStart(2, '0')}`,
           data.ward_number || 3,
           data.ward_name || `Ward ${data.ward_number || 3}`,
-          data.latitude || 20.9470,
-          data.longitude || 72.9280,
+          actLat || 20.9470,
+          actLng || 72.9280,
           data.address || (data as any).target_area || 'Navsari Municipal Area',
           data.landmark || (data as any).meeting_point || null,
           normStart,

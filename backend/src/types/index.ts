@@ -227,6 +227,9 @@ export interface CleanlinessDrive {
   is_registered?: boolean;
   requires_attendance?: boolean;
   is_nmc_official_drive?: boolean;
+  location_url?: string;
+  problem_latitude?: number;
+  problem_longitude?: number;
 }
 
 export interface Challenge {

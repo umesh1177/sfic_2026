@@ -65,6 +65,7 @@ apiRouter.delete('/complaints/:id', authenticate, ComplaintsController.deleteCom
 apiRouter.post('/complaints/:id/feedback', authenticate, ComplaintsController.submitFeedback);
 apiRouter.post('/complaints/:id/reopen', authenticate, ComplaintsController.reopenComplaint);
 apiRouter.post('/complaints/:id/follow', softAuthenticate, ComplaintsController.toggleFollow);
+apiRouter.post('/complaints/:id/raise-count', softAuthenticate, ComplaintsController.raiseCount);
 apiRouter.post('/complaints/:id/add-evidence', authenticate, ComplaintsController.addEvidence);
 
 // 5. Geographical & Navsari Cleanliness Map

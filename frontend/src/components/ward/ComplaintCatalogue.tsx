@@ -487,6 +487,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                   <th className="py-3 px-4">Complaint ID & Category</th>
                   <th className="py-3 px-4">Location / Landmark</th>
                   <th className="py-3 px-4">Priority & SLA</th>
+                  <th className="py-3 px-4 text-center">Raise Count</th>
                   <th className="py-3 px-4">Assigned Unit & Leader</th>
                   <th className="py-3 px-4">Progress Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -550,6 +551,17 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                         <Clock className="w-3 h-3 text-slate-400" />
                         <span>{complaint.days_pending}d pending</span>
                       </p>
+                    </td>
+
+                    {/* Raise Count */}
+                    <td className="py-3.5 px-4 text-center">
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-xs font-black shadow-2xs"
+                        title={`${Number(complaint.followers_count || 1)} citizen(s) endorsed / raised this problem`}
+                      >
+                        <Users className="w-3.5 h-3.5 text-[#095c54]" />
+                        <span>{Number(complaint.followers_count || 1)}</span>
+                      </span>
                     </td>
 
                     {/* Assigned Unit & Leader */}
@@ -675,7 +687,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                   {/* Inline Status Progression Stepper (No Modal) */}
                   {trackingComplaintId === complaint.id && (
                     <tr className="bg-emerald-50/30 border-b border-[#e2e8f0]">
-                      <td colSpan={6} className="p-4 px-6">
+                      <td colSpan={7} className="p-4 px-6">
                         <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs">
                           <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
                             <div className="flex items-center gap-2">
@@ -719,7 +731,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                 key={complaint.id}
                 className="p-4 rounded-3xl bg-white border border-[#e2e8f0] shadow-xs space-y-3 hover:border-[#095c54] transition"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-black text-[#095c54] bg-[#e6f4f1] px-2 py-0.5 rounded-md">
                       {complaint.complaint_number}
@@ -730,17 +742,23 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                       </span>
                     )}
                   </div>
-                  <span
-                    className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
-                      complaint.priority === 'urgent'
-                        ? 'bg-red-50 text-red-800'
-                        : complaint.priority === 'high'
-                        ? 'bg-orange-50 text-orange-800'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {complaint.priority}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-teal-50 text-[#095c54] border border-teal-200">
+                      <Users className="w-3 h-3 text-[#095c54]" />
+                      <span>Raise Count: {Number(complaint.followers_count || 1)}</span>
+                    </span>
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                        complaint.priority === 'urgent'
+                          ? 'bg-red-50 text-red-800'
+                          : complaint.priority === 'high'
+                          ? 'bg-orange-50 text-orange-800'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {complaint.priority}
+                    </span>
+                  </div>
                 </div>
 
                 <div>

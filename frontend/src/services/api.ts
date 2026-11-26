@@ -386,6 +386,13 @@ class ApiService {
     );
   }
 
+  async raiseComplaintCount(complaintId: string) {
+    return this.request<{ success: boolean; followers_count: number; message: string }>(
+      `/complaints/${complaintId}/raise-count`,
+      { method: 'POST' }
+    );
+  }
+
   // --- MAP APIS ---
 
   async getWardsGeoJson() {

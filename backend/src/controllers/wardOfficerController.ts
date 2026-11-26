@@ -3484,6 +3484,14 @@ export class WardOfficerController {
         );
       }
 
+      // Also send resolution notifications to all citizens who endorsed / raised count on this problem!
+      await DbRepository.notifyComplaintFollowers(
+        complaint.id,
+        `Issue Resolved: Complaint #${complaint.complaint_number}`,
+        `The civic issue you endorsed / raised count on at ${resolvedLocation} has been verified complete by ${officerName}. Thank you for your active civic participation!`,
+        complaint.citizen_id
+      ).catch(() => {});
+
       res.status(201).json({
         success: true,
         message: 'Complaint verified complete, post published to Public Posts feed, and citizen notified!',
@@ -3678,6 +3686,24 @@ export class WardOfficerController {
       const officerWard = ward_number ? Number(ward_number) : WardOfficerController.resolveOfficerWard(req);
       const officerName = req.user?.full_name || 'Ward Officer';
 
+      // Parse coordinates from location_url if provided or if latitude/longitude need refinement
+      let resolvedLat = latitude ? parseFloat(latitude) : undefined;
+      let resolvedLng = longitude ? parseFloat(longitude) : undefined;
+      if (location_url) {
+        const atMatch = location_url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        const qMatch = location_url.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+        const plainMatch = location_url.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+        const match = atMatch || qMatch || plainMatch;
+        if (match) {
+          const pLat = parseFloat(match[1]);
+          const pLng = parseFloat(match[2]);
+          if (!isNaN(pLat) && !isNaN(pLng)) {
+            resolvedLat = pLat;
+            resolvedLng = pLng;
+          }
+        }
+      }
+
       const savedProblem = await DbRepository.saveCommunityProblem({
         ward_number: officerWard,
         ward_name: `Ward ${officerWard}`,
@@ -3685,8 +3711,8 @@ export class WardOfficerController {
         description,
         location_name: location_name || `Ward ${officerWard} Cleanliness Locus`,
         address: address || `Navsari Ward ${officerWard}`,
-        latitude: latitude || 20.9325,
-        longitude: longitude || 72.9275,
+        latitude: resolvedLat || 20.9470,
+        longitude: resolvedLng || 72.9280,
         action_plan,
         urgency,
         estimated_volunteers_needed,

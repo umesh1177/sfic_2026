@@ -365,7 +365,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
 
       {/* 2. Officers List: Compact Mobile Cards + Desktop Table */}
       <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-xs overflow-hidden">
-        {/* Mobile Card View (< md) — Zero Horizontal Scroll */}
+        {/* Mobile Card View (< md) — Zero Horizontal Scroll, Full Touch Optimization */}
         <div className="md:hidden divide-y divide-slate-100">
           {loading && officers.length === 0 ? (
             <div className="py-10 text-center text-slate-400 text-xs font-bold">
@@ -384,15 +384,21 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                   : ALL_TAB_IDS;
               const isFull = tabs.length >= ALL_TAB_IDS.length;
               return (
-                <div key={officer.id} className="p-3 space-y-2">
+                <div key={officer.id} className="p-4 space-y-3 bg-white hover:bg-slate-50/50 transition">
+                  {/* Top Bar: Officer Avatar, Name, and Status */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                         {officer.full_name?.slice(0, 2).toUpperCase() || 'WO'}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-black text-[#0f2925] text-xs truncate">{officer.full_name}</div>
-                        <div className="text-[10px] text-[#095c54] font-bold truncate">{officer.phone} · {officer.designation}</div>
+                        <div className="font-black text-[#0f2925] text-sm truncate">{officer.full_name}</div>
+                        <div className="text-[11px] text-[#095c54] font-bold truncate flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{officer.phone}</span>
+                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-500 font-medium">{officer.designation}</span>
+                        </div>
                       </div>
                     </div>
                     {officer.flagged ? (
@@ -406,45 +412,46 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1">
+                  {/* Ward Chips and Access Badge */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     {officer.assigned_wards?.map((wNum: number) => (
-                      <span key={wNum} className="px-1.5 py-0.5 rounded bg-teal-50 text-[#095c54] font-black text-[10px] border border-teal-200">
+                      <span key={wNum} className="px-2 py-0.5 rounded-md bg-teal-50 text-[#095c54] font-black text-[10px] border border-teal-200">
                         Ward {wNum}
                       </span>
                     ))}
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold border ${isFull ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${isFull ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
                       {isFull ? 'Full Access' : `${tabs.length}/${ALL_TAB_IDS.length} Tabs`}
+                    </span>
+                    <span className="ml-auto text-[11px] font-black text-emerald-800">
+                      Score: {typeof officer.cleanliness_score === 'number' ? `${officer.cleanliness_score.toFixed(1)}%` : '100.0%'}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1 gap-1">
-                    <span className="text-[11px] font-black text-emerald-700">
-                      Score: {typeof officer.cleanliness_score === 'number' ? `${officer.cleanliness_score.toFixed(1)}%` : '100.0%'}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openHistoryModal(officer)}
-                        className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-[10px] flex items-center gap-1"
-                        title="View Ward History"
-                      >
-                        <History className="w-3 h-3 text-slate-500" />
-                        <span>History</span>
-                      </button>
-                      <button
-                        onClick={() => handleOpenEdit(officer)}
-                        className="px-2.5 py-1.5 bg-[#095c54] text-white rounded-xl font-bold text-[10px] flex items-center gap-1"
-                      >
-                        <Edit className="w-3 h-3" />
-                        <span>Update</span>
-                      </button>
-                      <button
-                        onClick={() => setOfficerToDelete(officer)}
-                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-[10px] border border-rose-200"
-                        title="Delete Officer"
-                      >
-                        <Trash2 className="w-3 h-3 text-rose-600" />
-                      </button>
-                    </div>
+                  {/* Mobile Actions Toolbar */}
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => openHistoryModal(officer)}
+                      className="py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition"
+                      title="View Ward History"
+                    >
+                      <History className="w-3.5 h-3.5 text-slate-500" />
+                      <span>History</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenEdit(officer)}
+                      className="py-2 px-2 bg-[#095c54] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition shadow-2xs"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Update</span>
+                    </button>
+                    <button
+                      onClick={() => setOfficerToDelete(officer)}
+                      className="py-2 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1 border border-rose-200 transition"
+                      title="Delete Officer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Delete</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -452,19 +459,19 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
           )}
         </div>
 
-        {/* Desktop Table View (>= md) */}
+        {/* Desktop Table View (>= md) with Dedicated Column Widths */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Officer Name</th>
-                <th className="py-3.5 px-4">Contact Phone</th>
-                <th className="py-3.5 px-4">Email</th>
-                <th className="py-3.5 px-4">Assigned Wards</th>
-                <th className="py-3.5 px-4 text-center">Cleanliness Score</th>
-                <th className="py-3.5 px-4 text-center">SLA Status</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+              <tr className="bg-slate-50/90 border-b border-[#e2e8f0] text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                <th className="py-3.5 px-4 min-w-[200px]">Officer Name</th>
+                <th className="py-3.5 px-4 min-w-[140px] whitespace-nowrap">Contact Phone</th>
+                <th className="py-3.5 px-4 min-w-[170px]">Email</th>
+                <th className="py-3.5 px-4 min-w-[210px]">Assigned Wards &amp; Access</th>
+                <th className="py-3.5 px-4 min-w-[120px] text-center whitespace-nowrap">Cleanliness Score</th>
+                <th className="py-3.5 px-4 min-w-[110px] text-center whitespace-nowrap">SLA Status</th>
+                <th className="py-3.5 px-4 min-w-[90px] text-center whitespace-nowrap">Status</th>
+                <th className="py-3.5 px-4 min-w-[230px] text-right whitespace-nowrap pr-6">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
@@ -485,20 +492,20 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                 paginatedOfficers.map(officer => (
                   <tr key={officer.id} className="hover:bg-slate-50/80 transition">
                     {/* Name */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-3.5 px-4 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-[#095c54] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                           {officer.full_name?.slice(0, 2).toUpperCase() || 'WO'}
                         </div>
                         <div>
-                          <div className="font-black text-[#0f2925] text-sm">{officer.full_name}</div>
+                          <div className="font-black text-[#0f2925] text-sm leading-tight">{officer.full_name}</div>
                           <div className="text-[11px] text-slate-500 font-medium">{officer.designation}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Phone */}
-                    <td className="py-3.5 px-4 font-bold text-[#095c54]">
+                    <td className="py-3.5 px-4 font-bold text-[#095c54] whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
                         <span>{officer.phone}</span>
@@ -506,16 +513,16 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Email */}
-                    <td className="py-3.5 px-4 text-slate-600 font-medium truncate max-w-[160px]">
+                    <td className="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">
                       <div className="flex items-center gap-1.5" title={officer.email}>
                         <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate">{officer.email || 'N/A'}</span>
+                        <span className="truncate max-w-[170px]">{officer.email || '—'}</span>
                       </div>
                     </td>
 
                     {/* Assigned Wards (Multi-ward chips) & Dashboard Tab Access */}
                     <td className="py-3.5 px-4">
-                      <div className="flex flex-wrap gap-1.5 max-w-[220px]">
+                      <div className="flex flex-wrap gap-1 max-w-[210px]">
                         {officer.assigned_wards?.map((wNum: number) => (
                           <span
                             key={wNum}
@@ -549,12 +556,14 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Cleanliness Score */}
-                    <td className="py-3.5 px-4 text-center font-black text-emerald-700">
-                      {typeof officer.cleanliness_score === 'number' ? `${officer.cleanliness_score.toFixed(1)}%` : '100.0%'}
+                    <td className="py-3.5 px-4 text-center font-black text-emerald-700 whitespace-nowrap">
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-mono text-xs border border-emerald-200">
+                        {typeof officer.cleanliness_score === 'number' ? `${officer.cleanliness_score.toFixed(1)}%` : '100.0%'}
+                      </span>
                     </td>
 
                     {/* SLA Status */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       {officer.flagged ? (
                         <span
                           className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-black text-[10px] border border-red-300"
@@ -572,12 +581,12 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Status */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <span
-                        className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                        className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
                           officer.is_active !== false
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
                         }`}
                       >
                         {officer.is_active !== false ? 'Active' : 'Inactive'}
@@ -585,11 +594,11 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right pr-6 whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => openHistoryModal(officer)}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition flex items-center gap-1"
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition flex items-center gap-1 border border-slate-200"
                           title="View Past Ward Assignments"
                         >
                           <History className="w-3.5 h-3.5 text-slate-500" />
@@ -597,7 +606,7 @@ export const WardOfficerManagement: React.FC<WardOfficerManagementProps> = ({ la
                         </button>
                         <button
                           onClick={() => handleOpenEdit(officer)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-[#095c54] hover:text-white rounded-xl text-slate-700 font-bold text-xs transition flex items-center gap-1.5"
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-[#095c54] hover:text-white text-slate-700 rounded-xl font-bold text-xs transition flex items-center gap-1.5 border border-slate-200"
                           title="Update Details & Allocate Wards"
                         >
                           <Edit className="w-3.5 h-3.5" />

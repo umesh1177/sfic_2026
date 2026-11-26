@@ -28,7 +28,8 @@ import {
   AlertCircle,
   Volume2,
   MousePointerClick,
-  FileText
+  FileText,
+  Users
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
@@ -362,11 +363,11 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     isSafe: true
   });
 
-  // 6. Short-Range Duplicate Detection State
+  // 6. Short-Range Duplicate Detection State (200m radius monitoring)
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState<boolean>(false);
   const [dismissedDuplicates, setDismissedDuplicates] = useState<boolean>(false);
-  const [upvotedComplaintId, setUpvotedComplaintId] = useState<string | null>(null);
+  const [upvotedComplaintIds, setUpvotedComplaintIds] = useState<string[]>([]);
 
   // 7. Status & Success State
   const [loading, setLoading] = useState<boolean>(false);
@@ -694,18 +695,25 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
     return () => clearTimeout(timer);
   }, [mapCenter, selectedCategoryId, dismissedDuplicates]);
 
-  // Handle Upvoting existing duplicate complaint
+  // Handle Raising count on existing duplicate complaint within 200m
   const handleUpvoteDuplicate = async (complaintId: string) => {
     try {
-      await api.toggleFollow(complaintId);
-      setUpvotedComplaintId(complaintId);
+      const res = await api.raiseComplaintCount(complaintId);
+      setUpvotedComplaintIds(prev => [...prev, complaintId]);
+      setDuplicateMatches(prev =>
+        prev.map(d =>
+          d.id === complaintId
+            ? { ...d, followers_count: res.followers_count || (d.followers_count || 1) + 1 }
+            : d
+        )
+      );
       confetti({
         particleCount: 50,
-        spread: 50,
+        spread: 60,
         origin: { y: 0.6 }
       });
     } catch {
-      setUpvotedComplaintId(complaintId);
+      setUpvotedComplaintIds(prev => [...prev, complaintId]);
     }
   };
 
@@ -1448,81 +1456,127 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           </div>
 
           {/* ======================================================== */}
-          {/* SECTION 3: SHORT-RANGE DUPLICATE DETECTION ALERT         */}
+          {/* SECTION 3: SHORT-RANGE DUPLICATE DETECTION (200M RADIUS)  */}
           {/* ======================================================== */}
           {duplicateMatches.length > 0 && !dismissedDuplicates && (
-            <div className="p-4 rounded-2xl bg-[#fffbeb] border border-[#fde68a] space-y-3 animate-fadeIn">
+            <div className="p-4 sm:p-5 rounded-3xl bg-amber-50/90 border border-amber-300 space-y-3.5 animate-fadeIn shadow-xs">
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-[#fef3c7] text-[#d97706]">
-                    <AlertTriangle className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-2xl bg-amber-100 text-amber-700 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-[#92400e]">
-                      Similar Issue Found Nearby ({duplicateMatches[0].distance_meters}m away)
+                    <h4 className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-2">
+                      <span>{duplicateMatches.length} Civic Issue{duplicateMatches.length > 1 ? 's' : ''} Found Nearby</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black uppercase">
+                        Within 200m Radius
+                      </span>
                     </h4>
-                    <p className="text-[11px] text-[#78350f]">
-                      A citizen has already logged a report for this spot. You can upvote it to escalate priority!
+                    <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5 font-medium leading-relaxed">
+                      Citizens have already reported civic issues around this spot. If your problem is the same, simply <strong>Increase Count (+1)</strong> to escalate priority instead of submitting a duplicate!
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setDismissedDuplicates(true)}
-                  className="text-slate-400 hover:text-slate-600 p-1"
-                  title="Dismiss duplicate alert"
+                  className="text-amber-600 hover:text-amber-900 p-1.5 rounded-xl hover:bg-amber-100 transition shrink-0"
+                  title="Dismiss and submit new complaint"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Duplicate Card Preview */}
-              <div className="p-3 rounded-xl bg-white border border-[#fde68a] flex items-center gap-3">
-                <img
-                  src={duplicateMatches[0].image_url}
-                  alt="Existing duplicate"
-                  className="w-14 h-14 rounded-xl object-cover shrink-0 border border-[#e2e8f0]"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e]">
-                      {duplicateMatches[0].complaint_number}
-                    </span>
-                    <span className="text-[10px] font-bold text-[#10b981] capitalize">
-                      ● {duplicateMatches[0].status}
-                    </span>
-                  </div>
-                  <p className="text-xs font-semibold text-[#0f2925] truncate mt-1">
-                    {duplicateMatches[0].description}
-                  </p>
-                  <span className="text-[10px] text-[#64748b]">
-                    Category: {duplicateMatches[0].category_name}
-                  </span>
-                </div>
+              {/* Duplicate Cards List */}
+              <div className="space-y-2.5">
+                {duplicateMatches.map(dup => {
+                  const isUpvoted = upvotedComplaintIds.includes(dup.id);
+                  return (
+                    <div
+                      key={dup.id}
+                      className="p-3.5 rounded-2xl bg-white border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        {dup.image_url ? (
+                          <img
+                            src={dup.image_url}
+                            alt={dup.complaint_number}
+                            className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 bg-slate-100"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center shrink-0 text-[#095c54]">
+                            <MapPin className="w-6 h-6" />
+                          </div>
+                        )}
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-black text-[#095c54] bg-[#e6f4f1] border border-[#a7f3d0] px-2 py-0.5 rounded-md">
+                              {dup.complaint_number}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                              {dup.distance_meters}m away
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 capitalize">
+                              ● {dup.status}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-[#0f2925] truncate">
+                            {dup.description || dup.category_name}
+                          </p>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium flex-wrap">
+                            <span>Category: <strong className="text-slate-700">{dup.category_name}</strong></span>
+                            {dup.landmark && (
+                              <>
+                                <span>·</span>
+                                <span className="truncate">{dup.landmark}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Raise Count Button & Metric */}
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <div className="px-2.5 py-1.5 rounded-xl bg-teal-50 border border-teal-200 text-center">
+                          <span className="text-[10px] font-black uppercase text-teal-700 block">Raise Count</span>
+                          <span className="text-xs font-black text-[#095c54] flex items-center justify-center gap-1">
+                            <Users className="w-3 h-3" />
+                            <span>{dup.followers_count || 1}</span>
+                          </span>
+                        </div>
+
+                        {isUpvoted ? (
+                          <div className="py-2 px-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-black flex items-center gap-1.5 shadow-2xs">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Count Raised (+1)</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleUpvoteDuplicate(dup.id)}
+                            className="px-3.5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                            <span>Increase Count (+1)</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Actions: Upvote or Proceed Anyway */}
-              <div className="flex items-center gap-2.5 pt-1">
-                {upvotedComplaintId === duplicateMatches[0].id ? (
-                  <div className="py-2 px-3 rounded-xl bg-[#ecfdf5] text-[#047857] text-xs font-black flex items-center gap-1.5 border border-[#a7f3d0]">
-                    <Check className="w-3.5 h-3.5" /> Upvoted & Followed (+1 Priority)
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleUpvoteDuplicate(duplicateMatches[0].id)}
-                    className="btn-primary-custom py-2 px-3 text-xs font-extrabold flex items-center gap-1.5"
-                  >
-                    <ThumbsUp className="w-3.5 h-3.5" />
-                    <span>Upvote Existing Issue (+1)</span>
-                  </button>
-                )}
+              {/* Footer Info & Dismiss */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-amber-200/80 text-xs text-amber-900">
+                <span className="text-[11px] font-semibold text-amber-800">
+                  💡 When this issue is resolved by NMC, all citizens who raised count will be notified automatically.
+                </span>
                 <button
                   type="button"
                   onClick={() => setDismissedDuplicates(true)}
-                  className="btn-outline-custom py-2 px-3 text-xs font-bold text-[#64748b]"
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-slate-700 font-bold text-xs border border-amber-300 transition self-start sm:self-auto shrink-0"
                 >
-                  Submit Separate Report
+                  My Issue Is Different (Proceed)
                 </button>
               </div>
             </div>
