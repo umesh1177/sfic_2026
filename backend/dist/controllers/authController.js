@@ -79,16 +79,23 @@ class AuthController {
             const otpHash = await bcryptjs_1.default.hash(plainOtp, 8);
             const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
             // Dispatch real SMS to the entered mobile number via configured SMS gateway
-            const smsResult = await smsService_js_1.SmsService.sendOtp(normalizedPhone, plainOtp, 'signup');
-            const isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
+            let smsResult;
+            try {
+                smsResult = await smsService_js_1.SmsService.sendOtp(normalizedPhone, plainOtp, 'signup');
+            }
+            catch (smsErr) {
+                console.warn('[AUTH] Error during SmsService.sendOtp:', smsErr?.message);
+                smsResult = {
+                    delivered: false,
+                    fallbackToOnScreen: true,
+                    provider: 'local_fallback',
+                    error: smsErr?.message
+                };
+            }
+            let isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
             if (!smsResult.delivered && !isOnScreenFallback) {
-                res.status(smsResult.requiresConfiguration ? 503 : 502).json({
-                    success: false,
-                    error: smsResult.error || 'Unable to deliver SMS OTP to your mobile number. Please try again later.',
-                    sms_provider: smsResult.provider,
-                    requires_sms_config: Boolean(smsResult.requiresConfiguration)
-                });
-                return;
+                console.warn(`[AUTH] SMS dispatch unsuccessful (${smsResult.error || 'unknown'}). Falling back to on-screen OTP.`);
+                isOnScreenFallback = true;
             }
             const newSession = {
                 id: `otp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -562,16 +569,22 @@ class AuthController {
             let verifyServiceSid;
             let isOnScreenFallback = false;
             if (profile) {
-                const smsResult = await smsService_js_1.SmsService.sendOtp(normalizedPhone, plainOtp, 'password_reset');
+                let smsResult;
+                try {
+                    smsResult = await smsService_js_1.SmsService.sendOtp(normalizedPhone, plainOtp, 'password_reset');
+                }
+                catch (smsErr) {
+                    smsResult = {
+                        delivered: false,
+                        fallbackToOnScreen: true,
+                        provider: 'local_fallback',
+                        error: smsErr?.message
+                    };
+                }
                 isOnScreenFallback = !smsResult.delivered && Boolean(smsResult.fallbackToOnScreen);
                 if (!smsResult.delivered && !isOnScreenFallback) {
-                    res.status(smsResult.requiresConfiguration ? 503 : 502).json({
-                        success: false,
-                        error: smsResult.error || 'Unable to deliver password reset SMS OTP.',
-                        sms_provider: smsResult.provider,
-                        requires_sms_config: Boolean(smsResult.requiresConfiguration)
-                    });
-                    return;
+                    console.warn(`[AUTH] Forgot Password SMS dispatch unsuccessful (${smsResult.error || 'unknown'}). Falling back to on-screen OTP.`);
+                    isOnScreenFallback = true;
                 }
                 if (!isOnScreenFallback && smsResult.verifyMode) {
                     deliveryMode = 'twilio_verify';

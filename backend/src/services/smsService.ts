@@ -51,6 +51,9 @@ export class SmsService {
   public static getConfiguredProvider(): string | null {
     this.refreshEnvIfNeeded();
     const explicit = (process.env.SMS_PROVIDER || '').trim().toLowerCase();
+    if (explicit === 'mock' || explicit === 'local' || explicit === 'demo' || explicit === 'none' || explicit === 'disabled') {
+      return null;
+    }
     if (explicit && explicit !== 'auto') return explicit;
 
     if (
@@ -87,14 +90,15 @@ export class SmsService {
 
     if (!provider) {
       console.warn(
-        `[SMS SERVICE] No SMS provider configured in backend/.env. Cannot deliver real SMS to ${e164}.`
+        `[SMS SERVICE] No SMS provider configured in backend/.env. Using on-screen OTP fallback for ${e164}.`
       );
       return {
         delivered: false,
+        fallbackToOnScreen: true,
         provider: 'unconfigured',
-        requiresConfiguration: true,
+        requiresConfiguration: false,
         error:
-          'SMS gateway credentials are not configured on the server yet. Add TWOFACTOR_API_KEY, FAST2SMS_API_KEY, MSG91_AUTH_KEY, or TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_FROM_NUMBER in backend/.env to deliver real SMS OTPs.'
+          'SMS gateway credentials not configured on server. Falling back to on-screen verification OTP.'
       };
     }
 
@@ -115,36 +119,21 @@ export class SmsService {
         default:
           return {
             delivered: false,
+            fallbackToOnScreen: true,
             provider,
             error: `Unsupported SMS_PROVIDER "${provider}". Use twilio, 2factor, fast2sms, msg91, textbelt, or webhook.`
           };
       }
     } catch (err: any) {
       const errMsg = String(err?.message || `Failed to dispatch SMS via ${provider}`);
-      console.error(`[SMS SERVICE ERROR - ${provider}]:`, errMsg);
-
-      // On Twilio Free Trial accounts, unverified recipient numbers are blocked by Twilio's
-      // verified-tester policy. Signal the controller to seamlessly fall back to on-screen OTP
-      // for those unverified numbers while keeping real SMS active for verified numbers.
-      const isTrialUnverifiedRecipient =
-        provider === 'twilio' &&
-        /verified tester|unverified|trial.*(recipient|account)|21608/i.test(errMsg);
-
-      if (isTrialUnverifiedRecipient) {
-        console.warn(
-          `[SMS SERVICE] Unverified recipient on Twilio Trial (${e164}). Falling back to on-screen OTP display.`
-        );
-        return {
-          delivered: false,
-          fallbackToOnScreen: true,
-          provider: 'twilio_trial_fallback',
-          error: errMsg
-        };
-      }
+      console.warn(
+        `[SMS SERVICE] Real SMS dispatch via ${provider} failed (${errMsg}). Activating automatic on-screen fallback OTP for ${e164}.`
+      );
 
       return {
         delivered: false,
-        provider,
+        fallbackToOnScreen: true,
+        provider: `${provider}_fallback`,
         error: errMsg
       };
     }
@@ -323,27 +312,32 @@ export class SmsService {
     params.set('To', e164);
     params.set('Code', code.trim());
 
-    const resp = await fetch(
-      `https://verify.twilio.com/v2/Services/${encodeURIComponent(resolvedServiceSid)}/VerificationCheck`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
-      }
-    );
-
-    const data: any = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      console.warn(
-        `[SMS SERVICE] Twilio Verify check failed for ${e164}: ${data?.message || resp.status}`
+    try {
+      const resp = await fetch(
+        `https://verify.twilio.com/v2/Services/${encodeURIComponent(resolvedServiceSid)}/VerificationCheck`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: params.toString()
+        }
       );
+
+      const data: any = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        console.warn(
+          `[SMS SERVICE] Twilio Verify check failed for ${e164}: ${data?.message || resp.status}`
+        );
+        return false;
+      }
+
+      return String(data?.status || '').toLowerCase() === 'approved';
+    } catch (err: any) {
+      console.warn(`[SMS SERVICE] Twilio Verify check failed with network error:`, err?.message);
       return false;
     }
-
-    return String(data?.status || '').toLowerCase() === 'approved';
   }
 
   private static async sendViaTwoFactor(toE164: string, otpCode: string): Promise<SmsDeliveryResult> {

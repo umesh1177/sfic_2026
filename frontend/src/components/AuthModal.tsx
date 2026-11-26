@@ -13,7 +13,9 @@ import {
   RefreshCw,
   User,
   MapPin,
-  Check
+  Check,
+  MessageSquare,
+  Copy
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { Profile } from '../types/index.js';
@@ -55,6 +57,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [countdown, setCountdown] = useState(0);
   const [verificationToken, setVerificationToken] = useState('');
   const [devOtpCode, setDevOtpCode] = useState<string | null>(null);
+  const [copiedOtp, setCopiedOtp] = useState(false);
 
   // CAPTCHA State
   const [captchaPassed, setCaptchaPassed] = useState(false);
@@ -481,6 +484,66 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Fallback OTP display for offline / sandbox / unverified trial numbers */}
+                  {devOtpCode ? (
+                    <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 leading-tight">
+                            <p className="text-xs font-bold text-amber-950">Verification OTP</p>
+                            <p className="text-[11px] text-amber-800">
+                              Enter this code below to proceed
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const digits = devOtpCode.slice(0, 6).split('');
+                            setOtpDigits([
+                              digits[0] || '',
+                              digits[1] || '',
+                              digits[2] || '',
+                              digits[3] || '',
+                              digits[4] || '',
+                              digits[5] || ''
+                            ]);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold shrink-0 transition"
+                        >
+                          Auto-Fill
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-amber-200">
+                        <span className="text-lg font-black tracking-[0.25em] text-[#095c54]">
+                          {devOtpCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(devOtpCode);
+                            setCopiedOtp(true);
+                            setTimeout(() => setCopiedOtp(false), 1500);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#095c54] hover:underline"
+                        >
+                          {copiedOtp ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" /> Copy
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
                   {/* 6 OTP boxes */}
                   <div className="flex justify-between gap-2 max-w-xs mx-auto">
                     {otpDigits.map((digit, idx) => (
@@ -861,6 +924,66 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="text-center mb-2">
                     <span className="text-xs text-[#64748b]">Enter OTP sent to +91 {phone}</span>
                   </div>
+
+                  {/* Fallback OTP display for offline / sandbox / unverified trial numbers */}
+                  {devOtpCode ? (
+                    <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 leading-tight">
+                            <p className="text-xs font-bold text-amber-950">Reset OTP</p>
+                            <p className="text-[11px] text-amber-800">
+                              Enter this code below to proceed
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const digits = devOtpCode.slice(0, 6).split('');
+                            setOtpDigits([
+                              digits[0] || '',
+                              digits[1] || '',
+                              digits[2] || '',
+                              digits[3] || '',
+                              digits[4] || '',
+                              digits[5] || ''
+                            ]);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold shrink-0 transition"
+                        >
+                          Auto-Fill
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-amber-200">
+                        <span className="text-lg font-black tracking-[0.25em] text-[#095c54]">
+                          {devOtpCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(devOtpCode);
+                            setCopiedOtp(true);
+                            setTimeout(() => setCopiedOtp(false), 1500);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#095c54] hover:underline"
+                        >
+                          {copiedOtp ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" /> Copy
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="flex justify-between gap-2 max-w-xs mx-auto">
                     {otpDigits.map((digit, idx) => (
