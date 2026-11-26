@@ -35,7 +35,7 @@ services:
         fromService:
           type: web
           name: swachh-setu-ml
-          property: hostport
+          property: host
 
   # 2. FastAPI AI/ML Microservice (EfficientNet-B0 + Continual Prototype Memory)
   - type: web

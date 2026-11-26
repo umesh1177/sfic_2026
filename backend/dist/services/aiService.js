@@ -15,12 +15,18 @@ class AIService {
             return 'http://127.0.0.1:8008';
         if (/^https?:\/\//i.test(trimmed))
             return trimmed;
-        // Render Blueprint `fromService` may supply `service.onrender.com` or `host:port`
+        // Render Blueprint `fromService` may supply `service.onrender.com` or `host:port` or bare slug
         if (trimmed.includes('onrender.com'))
             return `https://${trimmed}`;
+        const hostWithoutPort = trimmed.split(':')[0];
+        if (!hostWithoutPort.includes('.') && hostWithoutPort !== 'localhost' && hostWithoutPort !== '127.0.0.1') {
+            return `https://${hostWithoutPort}.onrender.com`;
+        }
         return `http://${trimmed}`;
     }
-    static ML_SERVICE_URL = AIService.normalizeMlUrl(process.env.ML_SERVICE_URL);
+    static getMlServiceUrl() {
+        return this.normalizeMlUrl(process.env.ML_SERVICE_URL);
+    }
     static TRAINING_STORE_PATH = path_1.default.resolve(process.cwd(), 'data', 'ai_training_samples.json');
     static learnedSamples = [];
     static learnedLoaded = false;
@@ -62,9 +68,10 @@ class AIService {
         }
         // 2. Register with running Python ML microservice
         try {
+            const mlUrl = this.getMlServiceUrl();
             const controller = new AbortController();
-            const tid = setTimeout(() => controller.abort(), 2000);
-            await fetch(`${this.ML_SERVICE_URL}/add-category`, {
+            const tid = setTimeout(() => controller.abort(), 10000);
+            await fetch(`${mlUrl}/add-category`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ category_name: cleanName, keywords: keywords || [] }),
@@ -209,9 +216,10 @@ class AIService {
         // Forward to Python ML microservice for dataset persistence & online prototype training
         if (b64 && b64.startsWith('data:image')) {
             try {
+                const mlUrl = this.getMlServiceUrl();
                 const controller = new AbortController();
-                const tid = setTimeout(() => controller.abort(), 3500);
-                await fetch(`${this.ML_SERVICE_URL}/train-sample`, {
+                const tid = setTimeout(() => controller.abort(), 20000);
+                await fetch(`${mlUrl}/train-sample`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -250,9 +258,10 @@ class AIService {
         }
         // 2. Try external Python FastAPI ML microservice
         try {
+            const mlUrl = this.getMlServiceUrl();
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1200);
-            const res = await fetch(`${this.ML_SERVICE_URL}/moderate`, {
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const res = await fetch(`${mlUrl}/moderate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text, image_base64: imageBase64 }),
@@ -336,12 +345,14 @@ class AIService {
         let mlModelVersion = 'v2.0.0';
         let mlLearnedCount = 0;
         let matchedLearnedSample = false;
-        // 2a. Try external Python FastAPI ML microservice (ResNet-50 + online prototypes) and FUSE into scores
+        // 2a. Try external Python FastAPI ML microservice (EfficientNet-B0 + Continual Prototype Memory)
         if (imageBase64) {
+            const mlUrl = this.getMlServiceUrl();
             try {
+                console.log(`[AI Service] Calling ML microservice at: ${mlUrl}/predict`);
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2500);
-                const res = await fetch(`${this.ML_SERVICE_URL}/predict`, {
+                const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s for Render cold start/CPU inference
+                const res = await fetch(`${mlUrl}/predict`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -355,49 +366,56 @@ class AIService {
                 clearTimeout(timeoutId);
                 if (res.ok) {
                     const mlData = (await res.json());
-                    // Only weight ML prediction strongly when v2+ or v3+ real image was analyzed with distinct confidence
-                    const isModernModel = String(mlData.model_version || '').startsWith('v2') ||
-                        String(mlData.model_version || '').startsWith('v3');
-                    const mlWeight = isModernModel ? 4.5 : 1.5;
+                    console.log(`[AI Service] ML microservice returned result:`, {
+                        category: mlData.category,
+                        confidence: mlData.confidence,
+                        is_relevant: mlData.is_relevant,
+                        model_name: mlData.model_name
+                    });
                     if (mlData.is_relevant === false) {
-                        isRelevant = false;
-                        relevanceReason =
-                            mlData.relevance_reason ||
-                                relevanceReason ||
-                                'This photo is not relevant to a cleanliness issue and cannot be submitted.';
+                        return {
+                            predicted_category_name: mlData.category || 'Other Cleanliness Issues',
+                            confidence: mlData.confidence || 0.9,
+                            alternative_predictions: (mlData.alternatives || []).map((a) => ({
+                                category_name: a.category || a.category_name,
+                                confidence: a.confidence
+                            })),
+                            is_relevant: false,
+                            relevance_reason: mlData.relevance_reason ||
+                                'This photo is not relevant to a cleanliness issue and cannot be submitted.',
+                            matched_learned_sample: false,
+                            learned_samples_count: Number(mlData.total_learned_samples || 0),
+                            model_name: mlData.model_name || 'NavsariWasteClassifier-EfficientNetB0-Continual',
+                            model_version: mlData.model_version || 'v3.0.0',
+                            processing_time_ms: Date.now() - startTime,
+                            is_mock_inference: false
+                        };
                     }
-                    else if (mlData.category === 'Clean / Not Garbage' ||
-                        mlData.category === 'Garbage Sketch / Drawing' ||
-                        mlData.category === 'Non-Overflowed Dustbin') {
-                        isRelevant = false;
-                        if (mlData.category === 'Garbage Sketch / Drawing') {
-                            relevanceReason =
-                                'This image appears to be a drawing, sketch, or illustration rather than an actual photograph. Please upload a real photograph.';
-                        }
-                        else if (mlData.category === 'Non-Overflowed Dustbin') {
-                            relevanceReason =
-                                'The dustbin in this photo is not overflowing and is within capacity. Municipal clearance complaints can only be filed for overflowing or damaged community bins.';
-                        }
-                        else {
-                            relevanceReason =
-                                'The location in this photo appears to be clean and well-maintained with no visible garbage or waste. A complaint cannot be registered for a clean place.';
-                        }
-                    }
-                    mlLearnedCount = Number(mlData.total_learned_samples || 0);
-                    if (mlData.matched_learned_samples) {
-                        matchedLearnedSample = true;
-                    }
-                    if (mlData.category && scores[mlData.category] !== undefined) {
-                        scores[mlData.category] += (Number(mlData.confidence) || 0.85) * mlWeight;
-                    }
-                    if (isModernModel && mlData.model_name) {
-                        mlModelName = mlData.model_name;
-                        mlModelVersion = mlData.model_version || 'v3.0.0';
+                    if (mlData.category) {
+                        return {
+                            predicted_category_name: mlData.category,
+                            confidence: Number(mlData.confidence) || 0.92,
+                            alternative_predictions: (mlData.alternatives || []).map((a) => ({
+                                category_name: a.category || a.category_name,
+                                confidence: a.confidence
+                            })),
+                            is_relevant: true,
+                            relevance_reason: undefined,
+                            matched_learned_sample: Boolean(mlData.matched_learned_samples),
+                            learned_samples_count: Number(mlData.total_learned_samples || 0),
+                            model_name: mlData.model_name || 'NavsariWasteClassifier-EfficientNetB0-Continual',
+                            model_version: mlData.model_version || 'v3.0.0',
+                            processing_time_ms: Date.now() - startTime,
+                            is_mock_inference: false
+                        };
                     }
                 }
+                else {
+                    console.warn(`[AI Service WARN] ML microservice returned HTTP status ${res.status}`);
+                }
             }
-            catch {
-                // Fallback smoothly to built-in visual feature + online k-NN inference engine
+            catch (err) {
+                console.warn(`[AI Service WARN] ML microservice request failed: ${err.message}. Using local vision fallback.`);
             }
         }
         // 3a. Online-learned k-NN similarity matching (improves automatically with every new photo uploaded!)

@@ -7,6 +7,7 @@ import { checkDatabaseConnection } from './data/db.js';
 import { ensureDatabaseInitialized } from './data/bootstrapDb.js';
 import { DbRepository } from './data/dbRepository.js';
 import { PushService } from './services/pushService.js';
+import { AIService } from './services/aiService.js';
 
 import path from 'path';
 import fs from 'fs';
@@ -111,6 +112,20 @@ app.listen(PORT, '0.0.0.0', async () => {
   await ensureDatabaseInitialized();
   await DbRepository.initializeWorkerAndTeamTables();
   await PushService.initialize();
+
+  // Log and ping ML microservice to warm up cold containers on Render
+  const mlUrl = AIService.getMlServiceUrl();
+  console.log(`[AI SERVICE] Configured ML Microservice URL: ${mlUrl}`);
+  fetch(`${mlUrl}/health`).then(async (r) => {
+    if (r.ok) {
+      const data = await r.json();
+      console.log(`[AI SERVICE] ML microservice is online & healthy:`, data);
+    } else {
+      console.warn(`[AI SERVICE WARN] ML microservice ping returned status ${r.status}`);
+    }
+  }).catch((err) => {
+    console.warn(`[AI SERVICE INFO] ML microservice initial ping notice: ${err.message}`);
+  });
 });
 
 export { app };

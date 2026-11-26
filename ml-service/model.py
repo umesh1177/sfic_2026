@@ -212,7 +212,7 @@ class NavsariWasteNet(nn.Module):
     Features heavy regularizations (Dropout 0.4, LayerNorm) to strictly prevent overfitting.
     LayerNorm supports single-sample online adaptation without batch size constraints.
     """
-    def __init__(self, num_classes: int = len(CIVIC_CATEGORIES), pretrained: bool = True):
+    def __init__(self, num_classes: int = len(CIVIC_CATEGORIES), pretrained: bool = False):
         super().__init__()
         weights = models.EfficientNet_B0_Weights.DEFAULT if pretrained else None
         backbone = models.efficientnet_b0(weights=weights)
@@ -262,22 +262,24 @@ class WasteClassifierInference:
     """
     def __init__(
         self,
-        weights_path: str = "weights/waste_efficientnet_navsari.pt",
-        prototypes_path: str = "weights/online_prototypes.json"
+        weights_path: Optional[str] = None,
+        prototypes_path: Optional[str] = None
     ):
-        self.weights_path = weights_path
-        self.prototypes_path = prototypes_path
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.weights_path = weights_path or os.path.join(base_dir, "weights", "waste_efficientnet_navsari.pt")
+        self.prototypes_path = prototypes_path or os.path.join(base_dir, "weights", "online_prototypes.json")
         self.model_name = "NavsariWasteClassifier-EfficientNetB0-Continual"
         self.model_version = "v3.0.0"
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
         print(f"[AI MODEL INIT] Using compute device: {self.device}")
 
-        # Build network
-        self.model = NavsariWasteNet(num_classes=len(CIVIC_CATEGORIES), pretrained=True)
+        # Build network (use pretrained=False when weights file exists to avoid slow internet weight downloads)
+        has_custom = os.path.exists(self.weights_path)
+        self.model = NavsariWasteNet(num_classes=len(CIVIC_CATEGORIES), pretrained=(not has_custom))
         self.has_weights = False
 
-        if os.path.exists(self.weights_path):
+        if has_custom:
             try:
                 state = torch.load(self.weights_path, map_location=self.device)
                 model_dict = self.model.state_dict()

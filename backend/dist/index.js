@@ -13,6 +13,7 @@ const db_js_1 = require("./data/db.js");
 const bootstrapDb_js_1 = require("./data/bootstrapDb.js");
 const dbRepository_js_1 = require("./data/dbRepository.js");
 const pushService_js_1 = require("./services/pushService.js");
+const aiService_js_1 = require("./services/aiService.js");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const envPaths = [
@@ -104,4 +105,18 @@ app.listen(PORT, '0.0.0.0', async () => {
     await (0, bootstrapDb_js_1.ensureDatabaseInitialized)();
     await dbRepository_js_1.DbRepository.initializeWorkerAndTeamTables();
     await pushService_js_1.PushService.initialize();
+    // Log and ping ML microservice to warm up cold containers on Render
+    const mlUrl = aiService_js_1.AIService.getMlServiceUrl();
+    console.log(`[AI SERVICE] Configured ML Microservice URL: ${mlUrl}`);
+    fetch(`${mlUrl}/health`).then(async (r) => {
+        if (r.ok) {
+            const data = await r.json();
+            console.log(`[AI SERVICE] ML microservice is online & healthy:`, data);
+        }
+        else {
+            console.warn(`[AI SERVICE WARN] ML microservice ping returned status ${r.status}`);
+        }
+    }).catch((err) => {
+        console.warn(`[AI SERVICE INFO] ML microservice initial ping notice: ${err.message}`);
+    });
 });
