@@ -10,16 +10,19 @@ const moderation_js_1 = require("../utils/moderation.js");
 const db_js_1 = require("../data/db.js");
 class AIService {
     static normalizeMlUrl(raw) {
-        const trimmed = (raw || '').trim().replace(/\/+$/, '');
+        let trimmed = (raw || '').trim().replace(/\/+$/, '');
         if (!trimmed)
             return 'http://127.0.0.1:8008';
+        if (trimmed.includes('localhost')) {
+            trimmed = trimmed.replace('localhost', '127.0.0.1');
+        }
         if (/^https?:\/\//i.test(trimmed))
             return trimmed;
         // Render Blueprint `fromService` may supply `service.onrender.com` or `host:port` or bare slug
         if (trimmed.includes('onrender.com'))
             return `https://${trimmed}`;
         const hostWithoutPort = trimmed.split(':')[0];
-        if (!hostWithoutPort.includes('.') && hostWithoutPort !== 'localhost' && hostWithoutPort !== '127.0.0.1') {
+        if (!hostWithoutPort.includes('.') && hostWithoutPort !== '127.0.0.1') {
             return `https://${hostWithoutPort}.onrender.com`;
         }
         return `http://${trimmed}`;
@@ -320,6 +323,10 @@ class AIService {
             const skin = visualFeatures.skin_ratio ?? 0;
             const white = visualFeatures.white_ratio ?? 0;
             const grayRoad = visualFeatures.gray_road_ratio ?? 0;
+            const green = visualFeatures.green_ratio ?? 0;
+            const blueWater = visualFeatures.blue_water_ratio ?? 0;
+            const brownEarth = visualFeatures.brown_earth_ratio ?? 0;
+            const sat = visualFeatures.saturation ?? 0.25;
             if (b < 18 || b > 246 || sd < 13 || edge < 0.025) {
                 isRelevant = false;
                 relevanceReason =
@@ -335,6 +342,31 @@ class AIService {
                 relevanceReason =
                     'This photo appears to be a document, blank wall, or screen capture rather than a cleanliness issue. This photo cannot be submitted.';
             }
+            else if (edge < 0.08 && brownEarth < 0.08 && blueWater < 0.06 && sat < 0.22) {
+                isRelevant = false;
+                relevanceReason =
+                    'The location in this photo appears to be clean and well-maintained with no visible garbage or litter. A complaint cannot be registered for a clean place.';
+            }
+            else if (green > 0.40 && edge < 0.09 && brownEarth < 0.08) {
+                isRelevant = false;
+                relevanceReason =
+                    'The area in this photo appears to be a clean park or lawn with no visible waste. A complaint cannot be registered for a clean place.';
+            }
+        }
+        if (!isRelevant) {
+            return {
+                predicted_category_name: 'Clean / Not Garbage',
+                confidence: 0.95,
+                alternative_predictions: [],
+                is_relevant: false,
+                relevance_reason: relevanceReason,
+                matched_learned_sample: false,
+                learned_samples_count: 0,
+                model_name: 'NavsariWasteClassifier-CleanRelevanceGate',
+                model_version: 'v2.0.0',
+                processing_time_ms: Date.now() - startTime,
+                is_mock_inference: false
+            };
         }
         // 2. Initialize unified multi-modal category scores (All 10 Categories)
         const scores = {};
@@ -374,8 +406,8 @@ class AIService {
                     });
                     if (mlData.is_relevant === false) {
                         return {
-                            predicted_category_name: mlData.category || 'Other Cleanliness Issues',
-                            confidence: mlData.confidence || 0.9,
+                            predicted_category_name: mlData.category || 'Clean / Not Garbage',
+                            confidence: mlData.confidence || 0.95,
                             alternative_predictions: (mlData.alternatives || []).map((a) => ({
                                 category_name: a.category || a.category_name,
                                 confidence: a.confidence
@@ -505,6 +537,23 @@ class AIService {
         }
         const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
         const [topCategory, topScore] = sorted[0];
+        // Local Fallback Open-Set Waste Gate: If no category scored above baseline,
+        // the image does not show a civic issue (clean surface or non-civic object)
+        if (topScore <= 0.25 && !matchedLearnedSample) {
+            return {
+                predicted_category_name: 'Clean / Not Garbage',
+                confidence: 0.95,
+                alternative_predictions: [],
+                is_relevant: false,
+                relevance_reason: 'No civic cleanliness or infrastructure issue detected in this photo. The location appears to be clean and well-maintained. Complaints cannot be registered for clean places.',
+                matched_learned_sample: false,
+                learned_samples_count: this.learnedSamples.length,
+                model_name: mlModelName,
+                model_version: mlModelVersion,
+                processing_time_ms: Date.now() - startTime,
+                is_mock_inference: true
+            };
+        }
         const expSum = sorted.reduce((acc, [, s]) => acc + Math.exp(Math.min(s, 10)), 0);
         const rawConf = Math.exp(Math.min(topScore, 10)) / Math.max(expSum, 1e-6);
         const confidence = Number(Math.min(0.98, Math.max(0.76, rawConf)).toFixed(2));

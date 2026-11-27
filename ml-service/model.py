@@ -6,6 +6,7 @@ SIH Problem Statement: PS000089 - My Clean Navsari
 
 import os
 import io
+import re
 import json
 import time
 import base64
@@ -180,25 +181,37 @@ NON_CIVIC_TERMS: List[str] = [
     "moped", "bicycle", "tricycle", "skateboard"
 ]
 
+def label_matches_term(label: str, term: str) -> bool:
+    """Matches term with word boundaries to avoid false substring positives (e.g., 'robin' matching 'bin')."""
+    pattern = r'\b' + re.escape(term.strip()) + r'\b'
+    return bool(re.search(pattern, label, re.IGNORECASE))
+
+
 CLEAN_PLACE_TERMS: List[str] = [
     "patio", "promenade", "plaza", "public square", "courtyard", "fountain", "palace",
     "castle", "monastery", "church", "mosque", "library", "golf course", "lawn",
     "flowerbed", "botanic garden", "greenhouse", "resort", "swimming pool", "atrium",
-    "hallway", "clean pavement", "clean sidewalk", "terrace", "pavilion"
+    "hallway", "clean pavement", "clean sidewalk", "terrace", "pavilion",
+    # Common outdoor clean surfaces
+    "sidewalk", "pavement", "street", "curb", "road", "paving stone", "flagstone", "tile", "mosaic",
+    "asphalt", "cobblestone", "crosswalk", "pedestrian bridge", "footpath", "boardwalk",
+    "park bench", "bench", "meadow", "grass", "turf", "garden", "backyard",
+    # Indoor clean surfaces
+    "floor", "carpet", "tile roof", "living room", "dining room", "room", "apartment"
 ]
 
 # ImageNet semantic visual terms that map directly to civic waste
 IMAGENET_TO_CATEGORY: Dict[str, List[str]] = {
-    "Littering": ["plastic bag", "water bottle", "pop bottle", "beer bottle", "wine bottle", "packet", "carton", "cup", "paper towel", "toilet tissue"],
-    "Open Garbage Dumping": ["landfill", "trash", "junk", "scrap", "pile", "wreck", "ruin", "rubble"],
-    "Overflowing Dustbin": ["ashcan", "trash", "garbage", "bucket", "pail", "barrel", "tub", "crate", "hamper", "shopping cart", "dumpster", "bin"],
-    "Roadside Garbage": ["street sign", "traffic light", "parking meter", "sidewalk", "curb", "alley", "street"],
-    "Drainage / Waste Accumulation": ["manhole", "sewer", "grate", "drain", "canal", "ditch", "mud", "swamp", "pond"],
-    "Other Cleanliness Issues": ["rubbish", "refuse", "waste", "filth", "debris", "carcass", "dead animal", "slum", "outhouse", "toilet"],
-    "Potholes / Degraded Road": ["pothole", "crater", "excavation", "quarry", "ditch", "trench", "gravel", "cracked pavement", "damaged road", "asphalt"],
-    "Fallen Tree / Blockage": ["tree", "log", "stump", "branch", "timber", "trunk", "wood", "forest", "fallen", "blockage"],
-    "Railing / Parapet Damaged": ["railing", "balustrade", "banister", "fence", "barrier", "wall", "parapet", "culvert", "guard rail"],
-    "Road Overtopped / Waterlogging": ["lakeshore", "seashore", "coast", "water", "flood", "stream", "puddle", "reservoir", "river", "fountain"]
+    "Littering": ["plastic bag", "water bottle", "pop bottle", "beer bottle", "wine bottle", "packet", "carton", "paper towel", "toilet tissue", "wrapper"],
+    "Open Garbage Dumping": ["landfill", "trash", "junk", "scrap", "rubble", "garbage dump"],
+    "Overflowing Dustbin": ["ashcan", "trash can", "garbage can", "dumpster", "rubbish bin"],
+    "Roadside Garbage": ["street garbage", "roadside trash", "littered pavement", "debris pile"],
+    "Drainage / Waste Accumulation": ["sewer", "drain", "manhole cover", "cesspool", "sludge", "gutter", "drainage"],
+    "Other Cleanliness Issues": ["rubbish", "refuse", "waste", "filth", "debris", "carcass"],
+    "Potholes / Degraded Road": ["pothole", "crater", "excavation", "broken road", "trench", "cracked pavement"],
+    "Fallen Tree / Blockage": ["fallen tree", "log", "tree trunk", "broken branch"],
+    "Railing / Parapet Damaged": ["broken railing", "damaged fence", "broken barrier", "collapsed wall"],
+    "Road Overtopped / Waterlogging": ["flood", "waterlogging", "submerged", "inundation"]
 }
 
 
@@ -402,6 +415,7 @@ class WasteClassifierInference:
         is_relevant = True
         relevance_reason = ""
         matched_learned = False
+        has_waste_label = False
 
         img_raw = self._decode_image(image_base64)
         if img_raw is None:
@@ -464,11 +478,11 @@ class WasteClassifierInference:
                 dot = sum(a * b for a, b in zip(emb_vec, proto_vec))
                 if cat == "Non-Overflowed Dustbin":
                     # Only boost non-overflowed if it is closer than overflowing dustbin
-                    if dot > 0.05 and dot > sim_over + 0.015:
+                    if dot > 0.35 and dot > sim_over + 0.015:
                         scores[cat] += dot * 3.5
                         matched_learned = True
                 else:
-                    if dot > 0.05:
+                    if dot > 0.40:
                         scores[cat] += dot * 3.5
                         matched_learned = True
 
@@ -484,10 +498,10 @@ class WasteClassifierInference:
                     if c_name == "Non-Overflowed Dustbin":
                         if sim > max_knn_non:
                             max_knn_non = sim
-                        if sim >= 0.40:
+                        if sim >= 0.45:
                             knn_hits.append((sim, c_name))
                     else:
-                        if sim > 0.25:
+                        if sim >= 0.45:
                             knn_hits.append((sim, c_name))
             knn_hits.sort(key=lambda x: x[0], reverse=True)
             for sim, c_name in knn_hits[:5]:
@@ -507,17 +521,21 @@ class WasteClassifierInference:
                 top_labels = [self.imagenet_labels[i].lower() for i in top_i.cpu().tolist()]
                 top_scores = [float(p) for p in top_p.cpu().tolist()]
 
-                # Check if any waste term is recognized in top labels
+                # Check if any legitimate waste term is recognized in top labels
+                actual_waste_terms = [
+                    "trash", "garbage", "rubbish", "refuse", "litter", "waste", "debris",
+                    "landfill", "plastic bag", "water bottle", "pop bottle", "beer bottle",
+                    "wine bottle", "dumpster", "ashcan", "sewer", "pothole", "flood"
+                ]
                 has_waste_label = any(
-                    any(t in lbl for t in terms)
+                    any(label_matches_term(lbl, t) for t in actual_waste_terms)
                     for lbl in top_labels
-                    for terms in IMAGENET_TO_CATEGORY.values()
                 )
 
                 # A. Animal Check (dogs, cats, birds, cows, horses, monkeys, etc.)
                 if not has_waste_label:
                     for lbl, prob in zip(top_labels[:2], top_scores[:2]):
-                        if prob >= 0.35 and any(a in lbl for a in ANIMAL_TERMS):
+                        if prob >= 0.35 and any(label_matches_term(lbl, a) for a in ANIMAL_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
                             relevance_reason = f"This photo appears to show an animal ({clean_lbl}). Complaints can only be submitted for actual civic waste, garbage dumps, overflowing bins, or drainage issues."
@@ -526,7 +544,7 @@ class WasteClassifierInference:
                 # B. Personal / Portrait / Selfie / Clothing Check
                 if is_relevant and not has_waste_label:
                     for lbl, prob in zip(top_labels[:2], top_scores[:2]):
-                        if prob >= 0.35 and any(p in lbl for p in PERSON_SELFIE_TERMS):
+                        if prob >= 0.35 and any(label_matches_term(lbl, p) for p in PERSON_SELFIE_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
                             relevance_reason = f"This photo appears to capture a person, portrait, or clothing ({clean_lbl}). Please capture an outdoor photo of the civic cleanliness or waste problem."
@@ -535,26 +553,30 @@ class WasteClassifierInference:
                 # C. Indoor / Electronics / Food / Non-Civic Object Check
                 if is_relevant and not has_waste_label:
                     for lbl, prob in zip(top_labels[:2], top_scores[:2]):
-                        if prob >= 0.40 and any(n in lbl for n in NON_CIVIC_TERMS):
+                        if prob >= 0.40 and any(label_matches_term(lbl, n) for n in NON_CIVIC_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
                             relevance_reason = f"This photo appears to show an indoor or non-civic object ({clean_lbl}) rather than outdoor municipal waste."
                             break
 
-                # D. Clean Place Check (Clean streets, clean parks, clean plazas, fountains)
-                if is_relevant:
-                    for lbl, prob in zip(top_labels[:3], top_scores[:3]):
-                        if prob >= 0.30 and any(c in lbl for c in CLEAN_PLACE_TERMS):
+                # D. Clean Place Check (Clean streets, clean parks, clean plazas, lawns, floors)
+                if is_relevant and not has_waste_label:
+                    for lbl, prob in zip(top_labels[:4], top_scores[:4]):
+                        if prob >= 0.08 and any(label_matches_term(lbl, c) for c in CLEAN_PLACE_TERMS):
                             is_relevant = False
                             clean_lbl = lbl.split(",")[0].strip().title()
-                            relevance_reason = f"The location in this photo appears to be clean and well-maintained ({clean_lbl}) with no visible garbage or overflow. A complaint cannot be registered for a clean place."
+                            relevance_reason = (
+                                f"The location in this photo appears to be clean and well-maintained ({clean_lbl}) "
+                                "with no visible garbage or overflow. A complaint cannot be registered for a clean place."
+                            )
+                            scores["Clean / Not Garbage"] = scores.get("Clean / Not Garbage", 0.0) + 4.0
                             break
 
                 # E. Map legitimate waste visual concepts to civic classes
                 if is_relevant:
                     for lbl, prob in zip(top_labels, top_scores):
                         for cat, terms in IMAGENET_TO_CATEGORY.items():
-                            if any(t in lbl for t in terms) and cat in scores:
+                            if any(label_matches_term(lbl, t) for t in terms) and cat in scores:
                                 # When a dustbin/ashcan is recognized, check whether it is a non-overflowed dustbin!
                                 if cat == "Overflowing Dustbin":
                                     is_half_or_empty = (max_knn_non >= 0.42) or (sim_non > sim_over + 0.015 and sim_non >= 0.05)
@@ -568,8 +590,8 @@ class WasteClassifierInference:
                 pass
 
         # 6. Multilingual Description & Filename Semantics
-        # When photo is provided, visual model features strictly lead category prediction.
-        text_weight = 0.2 if img_raw is not None else 1.8
+        # Text description provides informative context alongside visual signals.
+        text_weight = 1.2 if img_raw is not None else 2.0
         text_corpus = f"{filename} {description}".lower()
         for cat, words in CATEGORY_KEYWORDS.items():
             if cat in scores and any(w in text_corpus for w in words):
@@ -604,14 +626,48 @@ class WasteClassifierInference:
                 break
 
         # Stage 2: Positive Waste Verification (Open-Set Waste Gate)
-        # If no waste category was supported by model logits, prototypes, visual concepts, or keywords:
-        if is_relevant and max_waste_score <= 0.25:
-            is_relevant = False
-            relevance_reason = (
-                "No civic cleanliness or infrastructure issue detected in this photo. "
-                "The photo does not show littering, an open garbage dump, overflowing dustbin, roadside garbage, drainage waste, other cleanliness issues, potholes, a fallen tree, damaged railing, or waterlogging. "
-                "Please upload a clear photo of the civic problem."
-            )
+        has_waste_evidence = has_waste_label or (matched_learned and max_waste_score >= 1.5) or any(
+            any(w in text_corpus for w in words)
+            for words in CATEGORY_KEYWORDS.values()
+        )
+
+        if is_relevant:
+            # If there is zero concrete waste evidence (no recognized waste object in ImageNet, no text keywords, no strong prototype match),
+            # suppress false positive background ground texture activations (clean roads, pavements, tiles, grass)
+            if (not has_waste_evidence) and (max_waste_score < 1.2):
+                is_relevant = False
+                relevance_reason = (
+                    "No civic cleanliness or infrastructure issue detected in this photo. "
+                    "The location appears to be clean and well-maintained. Complaints cannot be registered for clean places."
+                )
+                invalid_scores["Clean / Not Garbage"] = invalid_scores.get("Clean / Not Garbage", 0.0) + 3.0
+            elif max_waste_score <= 0.25:
+                is_relevant = False
+                relevance_reason = (
+                    "No civic cleanliness or infrastructure issue detected in this photo. "
+                    "The photo does not show littering, an open garbage dump, overflowing dustbin, roadside garbage, drainage waste, other cleanliness issues, potholes, a fallen tree, damaged railing, or waterlogging. "
+                    "Please upload a clear photo of the civic problem."
+                )
+
+        if not is_relevant:
+            return_cat = "Clean / Not Garbage"
+            if "Non-Overflowed Dustbin" in invalid_scores and invalid_scores["Non-Overflowed Dustbin"] >= 1.0:
+                return_cat = "Non-Overflowed Dustbin"
+            elif "Garbage Sketch / Drawing" in invalid_scores and invalid_scores["Garbage Sketch / Drawing"] >= 1.0:
+                return_cat = "Garbage Sketch / Drawing"
+
+            return {
+                "category": return_cat,
+                "confidence": 0.95,
+                "is_relevant": False,
+                "relevance_reason": relevance_reason,
+                "alternatives": [],
+                "model_name": self.model_name,
+                "model_version": self.model_version,
+                "total_learned_samples": len(self.online_samples),
+                "matched_learned_samples": False,
+                "processing_time_ms": round((time.time() - start_time) * 1000, 1)
+            }
 
         # Compute Softmax normalized confidence
         sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)

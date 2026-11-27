@@ -2240,7 +2240,7 @@ export class WardOfficerController {
         ['assigned', 'in_progress', 'pending_review', 'under_review', 'action_required'].includes(a.status?.toLowerCase())
       );
       const completedAssignments = allAssignments.filter(a =>
-        ['completed', 'verified', 'closed'].includes(a.status?.toLowerCase())
+        ['completed', 'verified', 'closed', 'verified_complete'].includes(a.status?.toLowerCase())
       );
 
       const dbComplaints = await DbRepository.getComplaints({}).catch(() => []);
@@ -2254,17 +2254,166 @@ export class WardOfficerController {
 
       const todayStr = new Date().toISOString().split('T')[0];
 
+      // Comprehensive Navsari Ward Geographical reference registry
+      const WARD_GEO_CONFIG: Record<number, {
+        name: string;
+        center: [number, number];
+        depot: { name: string; address: string; lat: number; lng: number };
+        fieldSites: Array<{ name: string; address: string; lat: number; lng: number }>;
+      }> = {
+        1: {
+          name: 'Ward 1 - Lunsikui & Tower Road',
+          center: [20.9475, 72.9275],
+          depot: { name: 'Tower Road Civic Depot & Hub', address: 'Tower Road Civic Compound, Ward 1, Navsari', lat: 20.9460, lng: 72.9260 },
+          fieldSites: [
+            { name: 'Tower Road Clock Tower Junction', address: 'Clock Tower Circle, Junathana, Navsari', lat: 20.9480, lng: 72.9280 },
+            { name: 'Kabilpore GIDC Road Access Point', address: 'Near Industrial Association Gate, Ward 1', lat: 20.9490, lng: 72.9270 }
+          ]
+        },
+        2: {
+          name: 'Ward 2 - Station Road & Fuwara',
+          center: [20.9475, 72.9425],
+          depot: { name: 'Station Road Ward Sub-Center', address: 'Opposite Navsari Railway Station Platform 1, Navsari', lat: 20.9465, lng: 72.9415 },
+          fieldSites: [
+            { name: 'Station Road Auto Stand Junction', address: 'Near Railway Station Platform 1 Exit, Ward 2', lat: 20.9480, lng: 72.9430 },
+            { name: 'Golwad Market Square', address: 'Main Golwad Bazar, Ward 2, Navsari', lat: 20.9490, lng: 72.9440 }
+          ]
+        },
+        3: {
+          name: 'Ward 3 - Dudhiya Talao & Ashapuri',
+          center: [20.9325, 72.9275],
+          depot: { name: 'Dudhiya Talao Municipal Depot', address: 'Dudhiya Talao Complex, Ward 3, Navsari', lat: 20.9320, lng: 72.9270 },
+          fieldSites: [
+            { name: 'Dudhiya Talav Lake Promenade', address: 'North Lake Promenade, Opposite Lake View Garden, Dudhiya Talao, Navsari', lat: 20.9312, lng: 72.9284 },
+            { name: 'Ashapuri Mandir Approach Road', address: 'Near North Temple Gate, Ward 3, Navsari', lat: 20.9335, lng: 72.9275 }
+          ]
+        },
+        4: {
+          name: 'Ward 4 - Kaliawadi & Sayaji Road',
+          center: [20.9325, 72.9425],
+          depot: { name: 'Kaliawadi Civic Operations Depot', address: 'Near Sayaji Library, Kaliawadi, Ward 4', lat: 20.9315, lng: 72.9415 },
+          fieldSites: [
+            { name: 'Sayaji Library Road Promenade', address: 'Near Library Reading Garden, Ward 4', lat: 20.9330, lng: 72.9430 },
+            { name: 'Lunsikui Sports Complex Perimeter', address: 'Lunsikui Ground East Corner, Ward 4', lat: 20.9340, lng: 72.9440 }
+          ]
+        },
+        5: {
+          name: 'Ward 5 - Jalalpore Gateway & Chhapra',
+          center: [20.9400, 72.9125],
+          depot: { name: 'Jalalpore Civic Operations Depot', address: 'Jalalpore Main Rd, Navsari', lat: 20.9390, lng: 72.9115 },
+          fieldSites: [
+            { name: 'Chhapra Road Commercial Junction', address: 'Near Chhapra Octroi Post, Ward 5', lat: 20.9410, lng: 72.9135 },
+            { name: 'Jalalpore Bus Station Circle', address: 'Near Bus Terminal Entrance, Ward 5', lat: 20.9420, lng: 72.9145 }
+          ]
+        },
+        6: {
+          name: 'Ward 6 - Shantadevi & Vijalpore',
+          center: [20.9400, 72.9575],
+          depot: { name: 'Shantadevi Road Civic Center Depot', address: 'Shantadevi Road Civic Center, Ward 6', lat: 20.9395, lng: 72.9565 },
+          fieldSites: [
+            { name: 'Vijalpore North Crossing', address: 'Opposite State Bank, Vijalpore, Ward 6', lat: 20.9410, lng: 72.9580 },
+            { name: 'Shantadevi Market Point', address: 'Near Municipal Vegetable Market, Ward 6', lat: 20.9420, lng: 72.9590 }
+          ]
+        },
+        7: {
+          name: 'Ward 7 - Gandevi Road & GIDC',
+          center: [20.9175, 72.9450],
+          depot: { name: 'GIDC Sector 2 Municipal Depot', address: 'GIDC Office Sector 2, Navsari', lat: 20.9165, lng: 72.9440 },
+          fieldSites: [
+            { name: 'GIDC Sector 2 Main Gate', address: 'GIDC Estate Main Avenue, Ward 7', lat: 20.9180, lng: 72.9460 },
+            { name: 'Gandevi Road Industrial Approach', address: 'Near Fire Station Sub-Center, Ward 7', lat: 20.9190, lng: 72.9470 }
+          ]
+        },
+        8: {
+          name: 'Ward 8 - Madhumati & Parsi Wad',
+          center: [20.9625, 72.9290],
+          depot: { name: 'Heritage Parsi Vad Sub-Depot', address: 'Heritage Parsi Vad, Ward 8, Navsari', lat: 20.9615, lng: 72.9280 },
+          fieldSites: [
+            { name: 'Madhumati Riverfront Promenade', address: 'Riverfront Walkway, Ward 8', lat: 20.9635, lng: 72.9300 },
+            { name: 'Parsi Wad Heritage Square', address: 'Near Tata Hall, Ward 8', lat: 20.9645, lng: 72.9310 }
+          ]
+        },
+        9: {
+          name: 'Ward 9 - Sandhkuva & Junathana',
+          center: [20.9625, 72.9465],
+          depot: { name: 'Junathana Market Compound Depot', address: 'Junathana Market Compound, Ward 9', lat: 20.9615, lng: 72.9455 },
+          fieldSites: [
+            { name: 'Sandhkuva Circle Commercial Corridor', address: 'Near Sandhkuva Bus Stop, Ward 9', lat: 20.9635, lng: 72.9475 },
+            { name: 'Junathana Fish Market Area', address: 'Market Road East, Ward 9', lat: 20.9645, lng: 72.9485 }
+          ]
+        },
+        10: {
+          name: 'Ward 10 - Vejalpore Extension',
+          center: [20.9225, 72.9600],
+          depot: { name: 'Vejalpore Community Hall Depot', address: 'Vejalpore Community Hall, Ward 10', lat: 20.9215, lng: 72.9590 },
+          fieldSites: [
+            { name: 'Vejalpore East Ring Road', address: 'Near Government High School, Ward 10', lat: 20.9235, lng: 72.9610 },
+            { name: 'Navsari South Bypass Junction', address: 'Bypass Crossing, Ward 10', lat: 20.9245, lng: 72.9620 }
+          ]
+        },
+        11: {
+          name: 'Ward 11 - Sarbhan & Aru Rural Gateway',
+          center: [20.9200, 72.9100],
+          depot: { name: 'Sarbhan Chokdi Ward Operations Depot', address: 'Sarbhan Chokdi Ward Center, Ward 11', lat: 20.9190, lng: 72.9090 },
+          fieldSites: [
+            { name: 'Sarbhan Crossroads Transit Hub', address: 'Near State Transport Stand, Ward 11', lat: 20.9210, lng: 72.9110 },
+            { name: 'Aru Gram Road Corridor', address: 'Aru Village Approach, Ward 11', lat: 20.9220, lng: 72.9120 }
+          ]
+        },
+        12: {
+          name: 'Ward 12 - Mahuva Highway & Chikhli Approach',
+          center: [20.9150, 72.9300],
+          depot: { name: 'Ward 12 Mahuva Highway Depot & Hub', address: 'Mahuva Highway Municipal Depot, Ward 12, Navsari', lat: 20.9160, lng: 72.9320 },
+          fieldSites: [
+            { name: 'Gandevi Road Main Commercial Junction', address: 'Near Tariacolony Help Center, Gandevi Road, Ward 12', lat: 20.9150, lng: 72.9300 },
+            { name: 'Chikhli Approach Highway Road', address: 'Near Highway Bridge Crossing, Ward 12', lat: 20.9135, lng: 72.9290 },
+            { name: 'Tariacolony Residential Ring', address: 'Opposite Community Hall, Tariacolony, Ward 12', lat: 20.9165, lng: 72.9312 }
+          ]
+        },
+        13: {
+          name: 'Ward 13 - Dandi Coastal Corridor',
+          center: [20.9350, 72.8925],
+          depot: { name: 'Dandi Road Heritage Junction Depot', address: 'Dandi Road Heritage Junction, Ward 13', lat: 20.9340, lng: 72.8915 },
+          fieldSites: [
+            { name: 'Dandi Memorial Highway Road', address: 'Near Historical March Milestone, Ward 13', lat: 20.9360, lng: 72.8935 },
+            { name: 'Matwad Creek Crossing', address: 'Near Creek Bridge, Ward 13', lat: 20.9370, lng: 72.8945 }
+          ]
+        }
+      };
+
       const teams = candidateTeams.map((team: any, index: number) => {
+        const teamWardNum = Number(team.ward_number || targetWard || 12);
+        const wardConfig = WARD_GEO_CONFIG[teamWardNum] || {
+          name: `Ward ${teamWardNum}`,
+          center: [20.9150 + teamWardNum * 0.002, 72.9250 + teamWardNum * 0.002] as [number, number],
+          depot: {
+            name: `NMC Ward ${teamWardNum} Municipal Depot`,
+            address: `Ward ${teamWardNum} Municipal Operations Depot, Navsari`,
+            lat: 20.9150 + teamWardNum * 0.002,
+            lng: 72.9250 + teamWardNum * 0.002
+          },
+          fieldSites: [
+            {
+              name: `Ward ${teamWardNum} Commercial Hub`,
+              address: `Ward ${teamWardNum} Main Corridor, Navsari`,
+              lat: 20.9155 + teamWardNum * 0.002,
+              lng: 72.9260 + teamWardNum * 0.002
+            }
+          ]
+        };
+
         const matchingAssignments = activeAssignments.filter(a =>
-          (a as any).team_id === team.id ||
+          ((a as any).team_id === team.id ||
           (a as any).team_name === team.team_name ||
           (team.worker_ids || []).includes((a as any).assigned_to) ||
-          (team.temporary_leader_id && (a as any).temporary_leader_id === team.temporary_leader_id)
+          (team.temporary_leader_id && (a as any).temporary_leader_id === team.temporary_leader_id))
+          && (!(a as any).ward_number || Number((a as any).ward_number) === teamWardNum)
         );
         const matchingComplaints = activeComplaints.filter(c =>
-          (c as any).assigned_team_id === team.id ||
+          ((c as any).assigned_team_id === team.id ||
           (c as any).assigned_team_name === team.team_name ||
-          (team.temporary_leader_id && (c as any).temporary_team_leader_id === team.temporary_leader_id)
+          (team.temporary_leader_id && (c as any).temporary_team_leader_id === team.temporary_leader_id))
+          && (!(c as any).ward_number || Number((c as any).ward_number) === teamWardNum)
         );
         const uniqueTaskIds = new Set([
           ...matchingAssignments.map(a => a.id),
@@ -2291,43 +2440,78 @@ export class WardOfficerController {
 
         const leaderName = team.temporary_leader_name || (members.find((m: any) => m.is_leader)?.name) || (members[0]?.name) || 'worker3';
 
-        // Match active work assignment
-        const activeAss = matchingAssignments[0] || (matchingComplaints.length > 0 ? {
-          task_code: matchingComplaints[0].complaint_number || 'TSK-NAV-101',
-          title: (matchingComplaints[0] as any).title || (matchingComplaints[0] as any).description || 'Open Garbage Dumping Clearance',
-          category: (matchingComplaints[0] as any).category?.name || (matchingComplaints[0] as any).category || 'Open Garbage Dumping',
-          location_name: matchingComplaints[0].location?.landmark || matchingComplaints[0].location?.address || 'Dudhiya Talav Lake Promenade',
-          address: matchingComplaints[0].location?.address || 'North Lake Promenade, Opposite Lake View Garden, Dudhiya Talao, Navsari',
-          latitude: matchingComplaints[0].location?.latitude || 20.9312,
-          longitude: matchingComplaints[0].location?.longitude || 72.9284
-        } : null);
+        // Check active work assignment or complaint
+        let activeAss: any = null;
+        if (matchingAssignments.length > 0) {
+          const ass = matchingAssignments[0];
+          activeAss = {
+            task_code: ass.task_code || `TSK-W${teamWardNum}-${index + 101}`,
+            title: ass.title || 'Civic Cleanliness & Waste Clearance',
+            category: ass.category || team.work_type || 'Waste Collection & Dumping Clearance',
+            location_name: ass.location_name || ass.address || wardConfig.fieldSites[0]?.name,
+            address: ass.address || wardConfig.fieldSites[0]?.address,
+            latitude: Number(ass.latitude) || wardConfig.fieldSites[0]?.lat,
+            longitude: Number(ass.longitude) || wardConfig.fieldSites[0]?.lng
+          };
+        } else if (matchingComplaints.length > 0) {
+          const comp: any = matchingComplaints[0];
+          const cLat = Number(comp.latitude ?? comp.location?.latitude);
+          const cLng = Number(comp.longitude ?? comp.location?.longitude);
+          activeAss = {
+            task_code: comp.complaint_number || `TSK-W${teamWardNum}-${index + 101}`,
+            title: comp.title || comp.description || 'Open Garbage Dumping Clearance',
+            category: comp.category_name || comp.category?.name || team.work_type || 'Open Garbage Dumping',
+            location_name: comp.landmark || comp.location?.landmark || comp.address || comp.location?.address || wardConfig.fieldSites[0]?.name,
+            address: comp.address || comp.location?.address || wardConfig.fieldSites[0]?.address,
+            latitude: Number.isFinite(cLat) && cLat !== 0 ? cLat : wardConfig.fieldSites[0]?.lat,
+            longitude: Number.isFinite(cLng) && cLng !== 0 ? cLng : wardConfig.fieldSites[0]?.lng
+          };
+        }
 
-        // Determine active vs standby status
-        const isActuallyActive = team.status === 'active' && Boolean(activeAss || uniqueTaskIds.size > 0);
+        // Active status: if status is 'active' in DB/store, squad is active on field
+        const isActuallyActive = team.status === 'active';
         const effectiveStatus = isActuallyActive ? 'active' : 'standby';
 
-        // Live location
-        const teamWardNum = team.ward_number || targetWard || 12;
-        const currentLocation = isActuallyActive && activeAss
-          ? {
-            name: activeAss.location_name || 'Dudhiya Talav Lake Promenade',
-            address: activeAss.address || 'North Lake Promenade, Opposite Lake View Garden, Dudhiya Talao, Navsari',
-            latitude: Number(activeAss.latitude) || 20.9312,
-            longitude: Number(activeAss.longitude) || 72.9284
+        // Determine exact current location in that team's ward
+        let currentLocation: { name: string; address: string; latitude: number; longitude: number };
+        if (isActuallyActive) {
+          if (activeAss && Number.isFinite(Number(activeAss.latitude)) && Number(activeAss.latitude) !== 0) {
+            currentLocation = {
+              name: activeAss.location_name,
+              address: activeAss.address,
+              latitude: Number(activeAss.latitude),
+              longitude: Number(activeAss.longitude)
+            };
+          } else {
+            // Distinct field site in this specific ward
+            const site = wardConfig.fieldSites[index % wardConfig.fieldSites.length];
+            const jitterLat = (index * 0.0006);
+            const jitterLng = (index * 0.0004);
+            currentLocation = {
+              name: site.name,
+              address: site.address,
+              latitude: Number((site.lat + jitterLat).toFixed(5)),
+              longitude: Number((site.lng + jitterLng).toFixed(5))
+            };
           }
-          : {
-            name: `NMC Ward ${teamWardNum} Municipal Depot & Equipment Hub`,
-            address: `Mahuva Highway Municipal Depot, Ward ${teamWardNum}, Navsari`,
-            latitude: 20.9410,
-            longitude: 72.9210
+        } else {
+          // Depot standby location in this specific ward
+          const jitterLat = (index * 0.0003);
+          const jitterLng = (index * 0.0003);
+          currentLocation = {
+            name: wardConfig.depot.name,
+            address: wardConfig.depot.address,
+            latitude: Number((wardConfig.depot.lat + jitterLat).toFixed(5)),
+            longitude: Number((wardConfig.depot.lng + jitterLng).toFixed(5))
           };
+        }
 
-        // Assigned work info
-        const assignedWork = isActuallyActive && activeAss
+        // Assigned work info for card display
+        const assignedWork = isActuallyActive
           ? {
-            task_code: activeAss.task_code || 'TSK-W12-101',
-            title: activeAss.title || 'Overflowing Garbage Container & Street Litter Abatement',
-            category_name: activeAss.category || 'Open Garbage Dumping',
+            task_code: activeAss?.task_code || `OPS-W${teamWardNum}-0${index + 1}`,
+            title: activeAss?.title || `${team.work_type || 'Civic Sanitation'} Routine Field Operations & Monitoring`,
+            category_name: activeAss?.category || team.work_type || 'Waste Collection & Dumping Clearance',
             sla_target: 'Target: Within 4 Hours',
             gps: `${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`
           }
@@ -2360,31 +2544,77 @@ export class WardOfficerController {
 
         // Solved problems count from completed assignments & complaints
         const teamSolvedComplaints = solvedComplaints.filter(c =>
-          (c as any).assigned_team_id === team.id ||
+          ((c as any).assigned_team_id === team.id ||
           (c as any).assigned_team_name === team.team_name ||
-          (team.temporary_leader_id && (c as any).temporary_team_leader_id === team.temporary_leader_id)
+          (team.temporary_leader_id && (c as any).temporary_team_leader_id === team.temporary_leader_id))
+          && (!(c as any).ward_number || Number((c as any).ward_number) === teamWardNum)
         );
         const teamSolvedAssignments = completedAssignments.filter(a =>
-          (a as any).team_id === team.id ||
-          (a as any).team_name === team.team_name
+          ((a as any).team_id === team.id ||
+          (a as any).team_name === team.team_name)
+          && (!(a as any).ward_number || Number((a as any).ward_number) === teamWardNum)
         );
-        const baseSolved = (index === 0 ? 38 : index === 1 ? 29 : 24);
-        const solvedCount = Math.max(baseSolved, teamSolvedComplaints.length + teamSolvedAssignments.length);
+        // Also check if any team members solved tasks individually
+        const memberIds = new Set(members.map((m: any) => String(m.id || m.worker_id || m.user_id)));
+        const memberSolvedCount = solvedComplaints.filter(c =>
+          (c as any).assigned_officer_id && memberIds.has(String((c as any).assigned_officer_id))
+        ).length;
 
-        // Mathematical Model: Municipal Team Performance Index (MTPI)
+        // Real dynamic count of problems solved (0 for freshly added teams)
+        const solvedCount = teamSolvedComplaints.length + teamSolvedAssignments.length + memberSolvedCount;
+
+        // DYNAMIC MATHEMATICAL MODEL: Municipal Team Performance Index (MTPI)
         // MTPI = (0.30 * S) + (0.25 * A) + (0.20 * T) + (0.15 * V) + (0.10 * R)
-        const S = Math.min(100, Math.max(88, 92 + (index === 0 ? 4 : index === 1 ? 2 : 0))); // Resolution Success Rate
-        const A = 100; // Attendance & Geofence Verification Rate
-        const T = Math.min(100, Math.max(86, 90 + (index === 0 ? 4.5 : index === 1 ? 2.5 : 1))); // SLA Timeliness Factor
-        const V = Math.min(100, Math.max(85, 91 + (index === 0 ? 3 : index === 1 ? 1.5 : 0))); // Work Velocity Factor
-        const R = Math.min(100, Math.max(88, 93 + (index === 0 ? 2 : index === 1 ? 1 : 0))); // Citizen Verification Rating
+
+        // 1. S: Resolution Success Rate
+        const totalAssignedTasks = uniqueTaskIds.size + solvedCount;
+        const S = totalAssignedTasks > 0
+          ? Math.min(100, Math.round((solvedCount / totalAssignedTasks) * 100))
+          : 100;
+
+        // 2. A: Attendance & Geofence Verification Rate
+        const presentCount = attendanceLogs.filter(l => l.status === 'Present').length;
+        const A = attendanceLogs.length > 0 ? Math.round((presentCount / attendanceLogs.length) * 100) : 100;
+
+        // 3. T: SLA Timeliness Factor
+        let onTimeCount = 0;
+        let checkedTasks = 0;
+        for (const c of teamSolvedComplaints) {
+          checkedTasks++;
+          const resolvedTime = new Date((c as any).resolved_at || (c as any).updated_at).getTime();
+          const deadlineTime = (c as any).deadline ? new Date((c as any).deadline).getTime() : (new Date((c as any).submitted_at || (c as any).created_at).getTime() + 24 * 3600 * 1000);
+          if (resolvedTime <= deadlineTime) onTimeCount++;
+        }
+        for (const _a of teamSolvedAssignments) {
+          checkedTasks++;
+          onTimeCount++;
+        }
+        const T = checkedTasks > 0 ? Math.round((onTimeCount / checkedTasks) * 100) : 95;
+
+        // 4. V: Work Velocity Factor
+        let totalHours = 0;
+        for (const c of teamSolvedComplaints) {
+          const start = new Date((c as any).submitted_at || (c as any).created_at).getTime();
+          const end = new Date((c as any).resolved_at || (c as any).updated_at).getTime();
+          if (end > start) totalHours += (end - start) / (1000 * 3600);
+        }
+        const avgHours = checkedTasks > 0 ? totalHours / checkedTasks : 3.5;
+        const V = Math.min(100, Math.max(70, Math.round(100 - avgHours * 2.5)));
+
+        // 5. R: Citizen Verification Rating
+        const teamFeedbacks = teamSolvedComplaints.map(c => (c as any).feedback).filter(Boolean);
+        let avgRating = 4.8;
+        if (teamFeedbacks.length > 0) {
+          avgRating = teamFeedbacks.reduce((sum: number, fb: any) => sum + Number(fb.rating || 5), 0) / teamFeedbacks.length;
+        }
+        const R = Math.round((avgRating / 5.0) * 100);
 
         const mtpiScore = Number(((0.30 * S) + (0.25 * A) + (0.20 * T) + (0.15 * V) + (0.10 * R)).toFixed(1));
         const grade = mtpiScore >= 90 ? 'A+ Elite' : mtpiScore >= 80 ? 'A High Efficiency' : mtpiScore >= 70 ? 'B Standard' : 'C';
 
         const performance = {
           problems_solved_count: solvedCount,
-          current_task_title: isActuallyActive && assignedWork ? assignedWork.title : 'Depot Standby / Awaiting Municipal Dispatch',
+          current_task_title: isActuallyActive && assignedWork ? assignedWork.title : 'Depot Standby / Ready for Municipal Dispatch',
           current_task_code: isActuallyActive && assignedWork ? assignedWork.task_code : 'STANDBY',
           mtpi_score: mtpiScore,
           grade: grade,
@@ -2422,7 +2652,15 @@ export class WardOfficerController {
         };
       });
 
-      store.teams = teams;
+      if (!store.teams) store.teams = [];
+      for (const updatedTeam of teams) {
+        const existingIdx = store.teams.findIndex((t: any) => t.id === updatedTeam.id);
+        if (existingIdx !== -1) {
+          store.teams[existingIdx] = updatedTeam;
+        } else {
+          store.teams.push(updatedTeam);
+        }
+      }
       res.status(200).json({ success: true, data: teams });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

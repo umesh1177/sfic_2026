@@ -36,11 +36,15 @@ class ComplaintsController {
         try {
             const { file_name, file_size, description, image_base64, visual_features, source } = req.body;
             const classification = await aiService_js_1.AIService.classifyWasteImage(file_name || 'civic_issue.jpg', Number(file_size || 500000), description, image_base64, visual_features, source === 'live_camera' ? 'live_camera' : 'upload');
-            // Match with category ID from database (exact or partial keyword match across all 10 categories)
-            const predLower = classification.predicted_category_name.toLowerCase();
-            const matchedCategory = store_js_1.store.categories.find(c => c.category_name.toLowerCase() === predLower) ||
-                store_js_1.store.categories.find(c => c.category_name.toLowerCase().includes(predLower.split('/')[0].trim()) ||
-                    predLower.includes(c.category_name.toLowerCase().split('/')[0].trim()));
+            // Match with category ID from database only if photo is relevant to a civic issue
+            let matchedCategory = undefined;
+            if (classification.is_relevant) {
+                const predLower = classification.predicted_category_name.toLowerCase();
+                matchedCategory =
+                    store_js_1.store.categories.find(c => c.category_name.toLowerCase() === predLower) ||
+                        store_js_1.store.categories.find(c => c.category_name.toLowerCase().includes(predLower.split('/')[0].trim()) ||
+                            predLower.includes(c.category_name.toLowerCase().split('/')[0].trim()));
+            }
             res.status(200).json({
                 success: true,
                 data: {

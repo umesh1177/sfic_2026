@@ -33,13 +33,37 @@ const depotIcon = L.divIcon({
   popupAnchor: [0, -16]
 });
 
-const MapController: React.FC<{ targetCoords: [number, number] | null }> = ({ targetCoords }) => {
+const MapController: React.FC<{
+  targetCoords: [number, number] | null;
+  teams: any[];
+}> = ({ targetCoords, teams }) => {
   const map = useMap();
+
   useEffect(() => {
     if (targetCoords && targetCoords[0] && targetCoords[1]) {
-      map.flyTo(targetCoords, 15, { duration: 1.2 });
+      map.flyTo(targetCoords, 16, { duration: 1.0 });
+      return;
     }
-  }, [targetCoords, map]);
+
+    // Auto-fit all valid team coordinates
+    const validPoints = teams
+      .map(t => {
+        const lat = Number(t.current_location?.latitude);
+        const lng = Number(t.current_location?.longitude);
+        return [lat, lng] as [number, number];
+      })
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0);
+
+    if (validPoints.length > 0) {
+      if (validPoints.length === 1) {
+        map.setView(validPoints[0], 14);
+      } else {
+        const bounds = L.latLngBounds(validPoints);
+        map.fitBounds(bounds, { padding: [45, 45], maxZoom: 15 });
+      }
+    }
+  }, [targetCoords, teams, map]);
+
   return null;
 };
 
@@ -84,7 +108,7 @@ export const ActiveTeamsMap: React.FC<ActiveTeamsMapProps> = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <MapController targetCoords={highlightedCoords} />
+          <MapController targetCoords={highlightedCoords} teams={teams} />
 
           {teams.map(team => {
             const loc = team.current_location || {};

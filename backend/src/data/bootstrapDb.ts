@@ -93,6 +93,7 @@ export async function ensureDatabaseInitialized(): Promise<void> {
 
     // Ensure essential complaints across every dashboard are seeded into PostgreSQL
     await seedEssentialComplaints();
+    await seedEssentialTeams();
   } catch (err: any) {
     console.error('[DB BOOTSTRAP WARN]:', err.message);
   }
@@ -356,5 +357,139 @@ export async function seedEssentialComplaints(): Promise<void> {
     console.log('[DB BOOTSTRAP] Seeded 14 multi-dashboard complaints across Wards 1, 2, 3, 4, 11, 12 into PostgreSQL.');
   } catch (err: any) {
     console.warn('[DB BOOTSTRAP] Error seeding complaints:', err.message);
+  }
+}
+
+/**
+ * Seeds official municipal squads and active work assignments across Wards
+ * so teams and live GPS locations are always populated in PostgreSQL.
+ */
+export async function seedEssentialTeams(): Promise<void> {
+  try {
+    // 1. Ensure worker profiles exist for Ward 12
+    await pool.query(`
+      INSERT INTO profiles (id, full_name, phone, role, username, plain_password, ward_number, address, locality, is_active)
+      VALUES 
+      ('f1000000-0000-0000-0000-000000000011', 'worker3', '+919825120011', 'worker', 'worker3', 'worker3', 12, 'Navsari Municipal Staff Quarters', 'Ward 12', TRUE),
+      ('f1000000-0000-0000-0000-000000000012', 'worker4', '+919825120012', 'worker', 'worker4', 'worker4', 12, 'Navsari Municipal Staff Quarters', 'Ward 12', TRUE),
+      ('f1000000-0000-0000-0000-000000000015', 'worker5', '+919825120015', 'worker', 'worker5', 'worker5', 12, 'Navsari Municipal Staff Quarters', 'Ward 12', TRUE)
+      ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, ward_number = EXCLUDED.ward_number;
+
+      INSERT INTO worker_profiles (id, user_id, worker_code, ward_number, ward_name, employment_status, experience_years, availability_status, username, plain_password, designation, skills, attendance_today)
+      VALUES 
+      ('f1000000-0000-0000-0000-000000000011', 'f1000000-0000-0000-0000-000000000011', 'WRK-2026-011', 12, 'Ward 12', 'permanent', '3.5', 'on_duty', 'worker3', 'worker3', 'Sanitation Worker', '["Litter Abatement", "Bin Clearance"]'::jsonb, 'Present'),
+      ('f1000000-0000-0000-0000-000000000012', 'f1000000-0000-0000-0000-000000000012', 'WRK-2026-012', 12, 'Ward 12', 'permanent', '2.0', 'on_duty', 'worker4', 'worker4', 'Sanitation Worker', '["Street Sweeping", "Waste Loading"]'::jsonb, 'Present'),
+      ('f1000000-0000-0000-0000-000000000015', 'f1000000-0000-0000-0000-000000000015', 'WRK-2026-015', 12, 'Ward 12', 'permanent', '4.0', 'on_duty', 'worker5', 'worker5', 'Sanitation Worker', '["Drainage Cleaning", "Desilting"]'::jsonb, 'Present')
+      ON CONFLICT (id) DO UPDATE SET ward_number = EXCLUDED.ward_number, availability_status = 'on_duty', attendance_today = 'Present';
+    `).catch(() => {});
+
+    // 2. Insert Ward 12 Squads with authentic locations
+    await pool.query(`
+      INSERT INTO worker_teams (
+        id, team_name, ward_number, ward_name, temporary_leader_id, temporary_leader_name,
+        worker_ids, work_type, shift, status, created_at
+      ) VALUES 
+      (
+        'squad-w12-01',
+        'Sanitation Squad 1',
+        12,
+        'Ward 12',
+        'f1000000-0000-0000-0000-000000000011',
+        'worker3',
+        '["f1000000-0000-0000-0000-000000000012", "f1000000-0000-0000-0000-000000000011"]'::jsonb,
+        'Waste Collection & Dumping Clearance',
+        'Morning (06:00 - 14:00)',
+        'active',
+        NOW() - INTERVAL '30 days'
+      ),
+      (
+        'squad-w12-02',
+        'Sanitation Squad 2',
+        12,
+        'Ward 12',
+        'f1000000-0000-0000-0000-000000000015',
+        'worker5',
+        '["f1000000-0000-0000-0000-000000000015"]'::jsonb,
+        'Waste Collection & Dumping Clearance',
+        'Morning (06:00 - 14:00)',
+        'active',
+        NOW() - INTERVAL '25 days'
+      ),
+      (
+        'squad-w12-03',
+        'Sanitation Squad 3',
+        12,
+        'Ward 12',
+        'a951c954-7930-430e-80b7-50ee639a165b',
+        'worker1',
+        '["a951c954-7930-430e-80b7-50ee639a165b"]'::jsonb,
+        'Waste Collection & Dumping Clearance',
+        'Morning (06:00 - 14:00)',
+        'standby',
+        NOW() - INTERVAL '20 days'
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        team_name = EXCLUDED.team_name,
+        status = EXCLUDED.status,
+        ward_number = EXCLUDED.ward_number;
+    `).catch(() => {});
+
+    // 3. Insert active work assignments with real coordinates in Ward 12
+    await pool.query(`
+      INSERT INTO work_assignments (
+        id, task_code, title, description, category, priority, status,
+        team_id, team_name, ward_number, location_name, address, latitude, longitude,
+        scheduled_date, scheduled_start_time, expected_end_time, created_at
+      ) VALUES
+      (
+        'a1000000-0000-0000-0000-000000000011',
+        'TSK-W12-101',
+        'Overflowing Garbage Container & Street Litter Abatement',
+        'Clear commercial wholesale waste and scattered debris along Gandevi Road corridor.',
+        'Open Garbage Dumping',
+        'high',
+        'in_progress',
+        'squad-w12-01',
+        'Sanitation Squad 1',
+        12,
+        'Gandevi Road Main Commercial Junction',
+        'Near Tariacolony Help Center, Gandevi Road, Ward 12',
+        20.9150,
+        72.9300,
+        CURRENT_DATE,
+        NOW() - INTERVAL '2 hours',
+        NOW() + INTERVAL '2 hours',
+        NOW()
+      ),
+      (
+        'a1000000-0000-0000-0000-000000000012',
+        'TSK-W12-102',
+        'Drainage Desilting & Litter Abatement Patrol',
+        'Desilting stormwater curb drain and street sweeping near Chikhli Highway bypass.',
+        'Drainage Issues',
+        'high',
+        'in_progress',
+        'squad-w12-02',
+        'Sanitation Squad 2',
+        12,
+        'Chikhli Approach Highway Road',
+        'Near Highway Bridge Crossing, Ward 12',
+        20.9135,
+        72.9290,
+        CURRENT_DATE,
+        NOW() - INTERVAL '1 hours',
+        NOW() + INTERVAL '3 hours',
+        NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        location_name = EXCLUDED.location_name,
+        status = EXCLUDED.status;
+    `).catch(() => {});
+
+    console.log('[DB BOOTSTRAP] Seeded Ward 12 teams and active work assignments into PostgreSQL.');
+  } catch (err: any) {
+    console.warn('[DB BOOTSTRAP] Error seeding teams:', err.message);
   }
 }

@@ -883,15 +883,8 @@ export class AIAnalyticsService {
       let raised = b.raisedItems.length;
       let fallen = b.resolvedItems.length;
 
-      // Ensure data realism across the timeline
-      if (raised === 0 && allWardComplaints.length > 0) {
-        const seasonalFactor = Math.sin((idx / Math.max(1, buckets.length)) * Math.PI * 2);
-        const pseudo = Math.max(0, Math.round(2 + seasonalFactor * 1.5 + (idx % 3 === 0 ? 2 : 0)));
-        if (pseudo > 0) {
-          raised = pseudo;
-          fallen = Math.max(0, Math.round(pseudo * 0.85));
-        }
-      }
+      // Pure dynamic real-time complaints counts: zero synthetic pseudo data
+      // raised and fallen strictly reflect real citizen submissions and officer resolutions
 
       raisedCounts.push(raised);
       const net = raised - fallen;
@@ -906,8 +899,12 @@ export class AIAnalyticsService {
         bucketCatMap[cat] = (bucketCatMap[cat] || 0) + 1;
         bucketAreaMap[area] = (bucketAreaMap[area] || 0) + 1;
       });
-      const topCat = Object.entries(bucketCatMap).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Roadside Waste';
-      const topArea = Object.entries(bucketAreaMap).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Mota Bazaar Corridor';
+      const topCat = b.raisedItems.length > 0
+        ? Object.entries(bucketCatMap).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Civic Cleanliness'
+        : 'None';
+      const topArea = b.raisedItems.length > 0
+        ? Object.entries(bucketAreaMap).sort((a, b) => b[1] - a[1])[0]?.[0] || `Ward ${primaryWard}`
+        : `Ward ${primaryWard} Operations Area`;
 
       // Velocity % change from previous interval
       const prevRaised = idx > 0 ? series[idx - 1].raised_count : raised;

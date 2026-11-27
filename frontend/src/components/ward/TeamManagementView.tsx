@@ -267,10 +267,13 @@ export const TeamManagementView: React.FC<TeamManagementViewProps> = ({ wardNumb
     : teams;
 
   // MTPI Metrics for Team Analysis view
-  const totalSolvedAcrossTeams = teams.reduce((acc, t) => acc + (t.performance?.problems_solved_count || 30), 0);
+  const totalSolvedAcrossTeams = teams.reduce((acc, t) => acc + (t.performance?.problems_solved_count ?? 0), 0);
   const avgMTPI = teams.length > 0
-    ? (teams.reduce((acc, t) => acc + (t.performance?.mtpi_score || 92), 0) / teams.length).toFixed(1)
-    : '94.2';
+    ? (teams.reduce((acc, t) => acc + (t.performance?.mtpi_score ?? 90), 0) / teams.length).toFixed(1)
+    : '90.0';
+  const avgSLACompliance = teams.length > 0
+    ? (teams.reduce((acc, t) => acc + (t.performance?.factors?.sla_timeliness ?? 95), 0) / teams.length).toFixed(1)
+    : '95.0';
   const topSquad = [...teams].sort((a, b) => (b.performance?.mtpi_score || 0) - (a.performance?.mtpi_score || 0))[0] || teams[0];
 
   return (
@@ -829,7 +832,7 @@ export const TeamManagementView: React.FC<TeamManagementViewProps> = ({ wardNumb
                 On-Time SLA Compliance
               </span>
               <div className="text-2xl sm:text-3xl font-black text-[#0f2925] mt-1">
-                94.8%
+                {avgSLACompliance}%
               </div>
               <span className="text-[11px] font-semibold text-slate-400">
                 Within Standard Time Window
@@ -842,11 +845,11 @@ export const TeamManagementView: React.FC<TeamManagementViewProps> = ({ wardNumb
             {teams.map(team => {
               const perf = team.performance || {};
               const factors = perf.factors || {
-                resolution_success: 94,
+                resolution_success: 100,
                 attendance_discipline: 100,
-                sla_timeliness: 92,
+                sla_timeliness: 95,
                 work_velocity: 90,
-                citizen_verification: 95
+                citizen_verification: 90
               };
               const isActive = team.is_active || team.status === 'active';
 
@@ -879,7 +882,7 @@ export const TeamManagementView: React.FC<TeamManagementViewProps> = ({ wardNumb
                       {/* Score Gauge */}
                       <div className="text-right shrink-0">
                         <div className="text-xl font-black text-[#095c54]">
-                          {perf.mtpi_score || 94.2}%
+                          {perf.mtpi_score ?? 90.0}%
                         </div>
                         <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase">
                           {perf.grade || 'A+ Elite'}
@@ -893,7 +896,7 @@ export const TeamManagementView: React.FC<TeamManagementViewProps> = ({ wardNumb
                         Problems Solved
                       </span>
                       <strong className="text-sm font-black text-[#095c54]">
-                        {perf.problems_solved_count || 32} Solved
+                        {(perf.problems_solved_count ?? 0)} Solved
                       </strong>
                     </div>
 
@@ -987,8 +990,8 @@ export const TeamManagementView: React.FC<TeamManagementViewProps> = ({ wardNumb
 
             <div className="space-y-4">
               {teams.map(team => {
-                const score = team.performance?.mtpi_score || 90;
-                const solved = team.performance?.problems_solved_count || 30;
+                const score = team.performance?.mtpi_score ?? 90;
+                const solved = team.performance?.problems_solved_count ?? 0;
                 return (
                   <div key={team.id} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs font-bold text-[#0f2925]">

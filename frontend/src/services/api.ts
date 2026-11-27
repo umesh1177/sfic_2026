@@ -37,15 +37,31 @@ import {
 
 function resolveApiBaseUrl(): string {
   const raw = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-  if (!raw) return 'http://localhost:5000/api';
+  
+  // Dynamic host adaptation: When accessing from a phone or other device on LAN (e.g. 192.168.x.x:5173),
+  // requests to "localhost" or "127.0.0.1" would point to the phone itself and fail.
+  // We resolve the backend to the current page host's port 8080.
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  const isMobileOrLan = Boolean(currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1');
+
+  if (!raw) {
+    if (isMobileOrLan) {
+      return `${window.location.protocol}//${currentHost}:8080/api`;
+    }
+    return 'http://localhost:8080/api';
+  }
+
   if (raw.startsWith('/')) {
     return raw.endsWith('/api') ? raw : `${raw}/api`;
   }
+
   let normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   try {
     const parsed = new URL(normalized);
-    // Render Blueprint `fromService` (property: host) injects the bare service slug (e.g. "swachh-setu-backend")
-    if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost') {
+    if (isMobileOrLan && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+      parsed.hostname = currentHost;
+      normalized = parsed.toString().replace(/\/+$/, '');
+    } else if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost') {
       parsed.hostname = `${parsed.hostname}.onrender.com`;
       normalized = parsed.toString().replace(/\/+$/, '');
     }

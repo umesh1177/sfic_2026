@@ -1371,6 +1371,46 @@ const initialWorkers = [
 // Initial Ward 3 & 8 Formed Teams
 const initialTeams = [
   {
+    id: 'squad-w12-01',
+    team_name: 'Sanitation Squad 1',
+    ward_number: 12,
+    worker_ids: [
+      'f1000000-0000-0000-0000-000000000011',
+      'f1000000-0000-0000-0000-000000000012'
+    ],
+    temporary_leader_id: 'f1000000-0000-0000-0000-000000000011',
+    temporary_leader_name: 'worker3',
+    work_type: 'Waste Collection & Dumping Clearance',
+    created_at: '2026-10-25T08:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'squad-w12-02',
+    team_name: 'Sanitation Squad 2',
+    ward_number: 12,
+    worker_ids: [
+      'f1000000-0000-0000-0000-000000000015'
+    ],
+    temporary_leader_id: 'f1000000-0000-0000-0000-000000000015',
+    temporary_leader_name: 'worker5',
+    work_type: 'Waste Collection & Dumping Clearance',
+    created_at: '2026-10-26T09:00:00Z',
+    status: 'active'
+  },
+  {
+    id: 'squad-w12-03',
+    team_name: 'Sanitation Squad 3',
+    ward_number: 12,
+    worker_ids: [
+      'a951c954-7930-430e-80b7-50ee639a165b'
+    ],
+    temporary_leader_id: 'a951c954-7930-430e-80b7-50ee639a165b',
+    temporary_leader_name: 'worker1',
+    work_type: 'Waste Collection & Dumping Clearance',
+    created_at: '2026-10-27T10:00:00Z',
+    status: 'standby'
+  },
+  {
     id: 'team-01',
     team_name: 'Sanitation Unit 4B',
     ward_number: 3,
@@ -1473,6 +1513,78 @@ const initialCommunities = [
 
 // Initial Work Assignments (linked with Ward 3 workers & complaints)
 const initialWorkAssignments: WorkAssignment[] = [
+  {
+    id: 'a1000000-0000-0000-0000-000000000011',
+    task_code: 'TSK-W12-101',
+    title: 'Overflowing Garbage Container & Street Litter Abatement',
+    description: 'Clear commercial wholesale waste and scattered debris along Gandevi Road corridor.',
+    category: 'waste_collection',
+    priority: 'high',
+    ward_id: 'ward-12',
+    ward_number: 12,
+    ward_name: 'Ward 12 - Mahuva Highway & Chikhli Approach',
+    location_name: 'Gandevi Road Main Commercial Junction',
+    address: 'Near Tariacolony Help Center, Gandevi Road, Ward 12',
+    latitude: 20.9150,
+    longitude: 72.9300,
+    scheduled_date: new Date().toISOString().split('T')[0],
+    scheduled_start_time: '08:00:00',
+    expected_end_time: '12:00:00',
+    attendance_radius_meters: 150,
+    evidence_radius_meters: 150,
+    work_instructions: 'Deploy compact compactor truck and clear curb waste.',
+    safety_instructions: 'Wear high-visibility reflective vest and rubber gloves.',
+    required_equipment: ['Shovels', 'Waste Pushcart', 'Bleaching Powder'],
+    emergency_contact_phone: '+919825130012',
+    status: 'in_progress',
+    team_id: 'squad-w12-01',
+    team_name: 'Sanitation Squad 1',
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    updated_at: new Date().toISOString(),
+    is_temporary_leader: true,
+    temporary_leader_name: 'worker3',
+    temporary_leader_id: 'f1000000-0000-0000-0000-000000000011',
+    team_members: [],
+    my_attendance_status: 'Present',
+    has_before_evidence: true,
+    has_after_evidence: false
+  },
+  {
+    id: 'a1000000-0000-0000-0000-000000000012',
+    task_code: 'TSK-W12-102',
+    title: 'Drainage Desilting & Litter Abatement Patrol',
+    description: 'Desilt stormwater culvert and clear accumulated plastic near Chikhli Highway bypass.',
+    category: 'drainage_cleaning',
+    priority: 'high',
+    ward_id: 'ward-12',
+    ward_number: 12,
+    ward_name: 'Ward 12 - Mahuva Highway & Chikhli Approach',
+    location_name: 'Chikhli Approach Highway Road',
+    address: 'Near Highway Bridge Crossing, Ward 12',
+    latitude: 20.9135,
+    longitude: 72.9290,
+    scheduled_date: new Date().toISOString().split('T')[0],
+    scheduled_start_time: '08:30:00',
+    expected_end_time: '12:30:00',
+    attendance_radius_meters: 150,
+    evidence_radius_meters: 150,
+    work_instructions: 'Clear blocked culvert to allow smooth drainage discharge.',
+    safety_instructions: 'Wear safety boots and protective goggles.',
+    required_equipment: ['Drain Scoops', 'Silt Buckets', 'Safety Cones'],
+    emergency_contact_phone: '+919825130012',
+    status: 'in_progress',
+    team_id: 'squad-w12-02',
+    team_name: 'Sanitation Squad 2',
+    created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
+    updated_at: new Date().toISOString(),
+    is_temporary_leader: true,
+    temporary_leader_name: 'worker5',
+    temporary_leader_id: 'f1000000-0000-0000-0000-000000000015',
+    team_members: [],
+    my_attendance_status: 'Present',
+    has_before_evidence: true,
+    has_after_evidence: false
+  },
 
   {
     id: 'a1000000-0000-0000-0000-000000000002',

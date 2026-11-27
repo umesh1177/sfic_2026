@@ -181,6 +181,20 @@ export function checkLocalCleanlinessRelevance(
       reason: 'This photo appears to be a document, blank wall, or screen capture rather than a cleanliness issue and cannot be submitted.'
     };
   }
+  // Clean flat surface check (clean floor, tiles, road, pavement with no debris or garbage)
+  if (f.edge_density < 0.08 && f.brown_earth_ratio < 0.08 && f.blue_water_ratio < 0.06 && f.saturation < 0.22) {
+    return {
+      isRelevant: false,
+      reason: 'The location in this photo appears to be clean and well-maintained with no visible garbage or litter. A complaint cannot be registered for a clean place.'
+    };
+  }
+  // Clean lawn / green park check
+  if (f.green_ratio > 0.40 && f.edge_density < 0.09 && f.brown_earth_ratio < 0.08) {
+    return {
+      isRelevant: false,
+      reason: 'The area in this photo appears to be a clean park or lawn with no visible waste. A complaint cannot be registered for a clean place.'
+    };
+  }
   return { isRelevant: true };
 }
 
@@ -188,7 +202,7 @@ export function checkLocalCleanlinessRelevance(
  * Predicts complaint category directly from pixel visual features (for offline or instantaneous fallback)
  */
 export function detectCategoryFromVisualFeatures(f: ExtractedVisualFeatures | null): string {
-  if (!f) return 'cat-03';
+  if (!f) return '';
   if (f.blue_water_ratio > 0.18 && f.gray_road_ratio > 0.18) return 'cat-10'; // Road Overtopped / Waterlogging
   if (f.green_ratio > 0.20 && (f.brown_earth_ratio > 0.05 || f.green_ratio > 0.30)) return 'cat-08'; // Fallen Tree / Blockage
   if (f.blue_water_ratio > 0.12) return 'cat-05'; // Drainage / Waste Accumulation
@@ -196,6 +210,7 @@ export function detectCategoryFromVisualFeatures(f: ExtractedVisualFeatures | nu
   if (f.edge_density > 0.12 && f.gray_road_ratio > 0.20 && f.saturation < 0.20) return 'cat-09'; // Railing / Parapet Damaged
   if (f.brown_earth_ratio > 0.20 && f.edge_density > 0.10) return 'cat-02'; // Open Garbage Dumping
   if (f.saturation > 0.28 && f.edge_density > 0.09) return 'cat-03'; // Overflowing Dustbin
-  if (f.gray_road_ratio > 0.25) return 'cat-04'; // Roadside Garbage
-  return 'cat-01'; // Littering
+  if (f.gray_road_ratio > 0.25 && f.edge_density > 0.09) return 'cat-04'; // Roadside Garbage
+  if (f.edge_density > 0.09 && f.saturation > 0.20) return 'cat-01'; // Littering
+  return ''; // Clean or unclassified — do NOT default to Littering!
 }

@@ -616,6 +616,18 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       }
     } catch {
       // Offline fallback: visual pixel features from the captured photo
+      const localCheck = checkLocalCleanlinessRelevance(visualFeatures);
+      if (!localCheck.isRelevant) {
+        setPhotoRejectedAlert(
+          localCheck.reason ||
+          'This photo does not appear to show a cleanliness issue and cannot be submitted.'
+        );
+        setImageUrl('');
+        setAiIdentifiedCategory(null);
+        setImageValidationStatus('Photo rejected — Location is clean / Not a civic issue');
+        return;
+      }
+
       const autoCat = detectCategoryFromVisualFeatures(visualFeatures);
       if (autoCat && categories.some(c => c.id === autoCat)) {
         setSelectedCategoryId(autoCat);
@@ -626,35 +638,83 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
           name: catObj?.category_name || 'Civic Issue',
           confidence: 88
         });
+        setImageValidationStatus('Photo verified locally (Offline mode ready)');
+      } else {
+        setImageValidationStatus('Photo verified (Cleanliness visual clear)');
       }
-      setImageValidationStatus('Photo verified locally (Offline mode ready)');
     }
   };
 
-  // Convert uploaded image file to Base64 and run validation
-  const handleImageFileSelected = (file: File) => {
+  // Utility to compress and scale large camera captures client-side before upload
+  const compressAndResizeImage = (file: File, maxDim = 1280, quality = 0.82): Promise<{ dataUrl: string; size: number }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({ dataUrl: e.target?.result as string, size: file.size });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const approximateSize = Math.round(dataUrl.length * 0.75);
+          resolve({ dataUrl, size: approximateSize });
+        };
+        img.onerror = () => reject(new Error('Failed to load image for compression'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Convert uploaded image file to Base64 and run validation with client-side compression
+  const handleImageFileSelected = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setFormError('Invalid file format. Please upload an image file (JPEG, PNG, WebP).');
       return;
     }
 
-    if (file.size > 15 * 1024 * 1024) {
-      setFormError('Image file is too large (max 15MB).');
+    if (file.size > 20 * 1024 * 1024) {
+      setFormError('Image file is too large (max 20MB).');
       return;
     }
 
     setFormError(null);
     setPhotoRejectedAlert(null);
     setImageFileName(file.name);
-    setImageValidationStatus(`Analyzing photo (${(file.size / 1024).toFixed(0)} KB)...`);
+    setImageValidationStatus('Optimizing photo for fast AI analysis...');
 
-    const reader = new FileReader();
-    reader.onload = async e => {
-      const b64 = e.target?.result as string;
-      setImageUrl(b64);
-      await analyzeAndValidatePhoto(b64, file.name, file.size, 'upload');
-    };
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl, size } = await compressAndResizeImage(file, 1280, 0.82);
+      setImageUrl(dataUrl);
+      setImageValidationStatus(`Analyzing photo (${(size / 1024).toFixed(0)} KB)...`);
+      await analyzeAndValidatePhoto(dataUrl, file.name, size, 'upload');
+    } catch {
+      const reader = new FileReader();
+      reader.onload = async e => {
+        const b64 = e.target?.result as string;
+        setImageUrl(b64);
+        await analyzeAndValidatePhoto(b64, file.name, file.size, 'upload');
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // Short-Range Duplicate Detection Check

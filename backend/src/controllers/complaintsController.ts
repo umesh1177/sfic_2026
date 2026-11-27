@@ -47,15 +47,18 @@ export class ComplaintsController {
         source === 'live_camera' ? 'live_camera' : 'upload'
       );
 
-      // Match with category ID from database (exact or partial keyword match across all 10 categories)
-      const predLower = classification.predicted_category_name.toLowerCase();
-      const matchedCategory =
-        store.categories.find(c => c.category_name.toLowerCase() === predLower) ||
-        store.categories.find(
-          c =>
-            c.category_name.toLowerCase().includes(predLower.split('/')[0].trim()) ||
-            predLower.includes(c.category_name.toLowerCase().split('/')[0].trim())
-        );
+      // Match with category ID from database only if photo is relevant to a civic issue
+      let matchedCategory = undefined;
+      if (classification.is_relevant) {
+        const predLower = classification.predicted_category_name.toLowerCase();
+        matchedCategory =
+          store.categories.find(c => c.category_name.toLowerCase() === predLower) ||
+          store.categories.find(
+            c =>
+              c.category_name.toLowerCase().includes(predLower.split('/')[0].trim()) ||
+              predLower.includes(c.category_name.toLowerCase().split('/')[0].trim())
+          );
+      }
 
       res.status(200).json({
         success: true,
