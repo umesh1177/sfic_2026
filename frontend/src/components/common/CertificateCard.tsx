@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Award, CheckCircle2, Copy, Download, Printer, ShieldCheck, Check, MapPin, Calendar } from 'lucide-react';
+import { Award, CheckCircle2, Copy, Download, Printer, ShieldCheck, Check, MapPin, Calendar, Share2 } from 'lucide-react';
+import { LinkedInCertificateShareModal } from './LinkedInCertificateShareModal.js';
 
 // =============================================================================
 // Compact, Zero-Dependency Real ISO/IEC 18004 QR Code Encoder (Byte Mode, EC-L)
@@ -407,6 +408,7 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
 }) => {
   const certRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const origin = typeof window !== 'undefined' && window.location?.origin
     ? window.location.origin
@@ -591,8 +593,17 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
         </div>
       </div>
 
-      {/* Action Bar: Print / Download & Copy Verification Code */}
+      {/* Action Bar: Share / Print / Download & Copy Verification Code */}
       <div className="flex items-center justify-end gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setShowShareModal(true)}
+          className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white border border-blue-200 text-xs font-extrabold flex items-center gap-1.5 transition shadow-2xs"
+          title="Share certificate with LinkedIn post preview"
+        >
+          <Share2 className="w-3.5 h-3.5" />
+          <span>Share on LinkedIn</span>
+        </button>
         <button
           type="button"
           onClick={handleCopyCode}
@@ -619,6 +630,13 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
           <span>Print / Save PDF</span>
         </button>
       </div>
+
+      {showShareModal && (
+        <LinkedInCertificateShareModal
+          certificate={certificate}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   );
 };

@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Maximize2,
   Trash2,
+  Share2,
   X
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
@@ -38,6 +39,7 @@ import { api } from '../../services/api.js';
 import { ActivityRegistration } from '../../types/index.js';
 import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
 import { DigitalSignaturePad } from '../common/DigitalSignaturePad.js';
+import { LinkedInCertificateShareModal } from '../common/LinkedInCertificateShareModal.js';
 import { TablePagination } from '../common/TablePagination.js';
 
 const markerIcon = new L.Icon({
@@ -70,6 +72,7 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
   const [certPage, setCertPage] = useState<number>(1);
   const tablePageSize = 6;
   const [selectedCertId, setSelectedCertId] = useState<string | null>(null);
+  const [sharingCert, setSharingCert] = useState<DriveCertificateData | null>(null);
   const [loadingData, setLoadingData] = useState<boolean>(true);
 
   const [reviewNotes, setReviewNotes] = useState<string>(
@@ -1187,14 +1190,25 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                             )}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCertId(cert.id)}
-                          className="px-2.5 py-1.5 rounded-xl bg-[#095c54] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0"
-                        >
-                          <Award className="w-3.5 h-3.5 text-amber-300" />
-                          <span>View</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSharingCert(cert)}
+                            className="px-2 py-1.5 rounded-xl bg-blue-50 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white border border-blue-200 text-[11px] font-extrabold inline-flex items-center gap-1 transition"
+                            title="Share on LinkedIn"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                            <span>Share</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCertId(cert.id)}
+                            className="px-2.5 py-1.5 rounded-xl bg-[#095c54] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0"
+                          >
+                            <Award className="w-3.5 h-3.5 text-amber-300" />
+                            <span>View</span>
+                          </button>
+                        </div>
                       </div>
                       );
                     })}
@@ -1269,14 +1283,25 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                                 : 'Today'}
                             </td>
                             <td className="py-3 px-4 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCertId(cert.id)}
-                                className="px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-2xs transition"
-                              >
-                                <Award className="w-3.5 h-3.5 text-amber-300" />
-                                <span>View Certificate</span>
-                              </button>
+                              <div className="inline-flex items-center gap-1.5 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setSharingCert(cert)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white border border-blue-200 text-xs font-bold inline-flex items-center gap-1 transition shadow-2xs"
+                                  title="Share certificate with LinkedIn post preview"
+                                >
+                                  <Share2 className="w-3.5 h-3.5" />
+                                  <span>Share</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCertId(cert.id)}
+                                  className="px-3.5 py-1.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-2xs transition"
+                                >
+                                  <Award className="w-3.5 h-3.5 text-amber-300" />
+                                  <span>View Certificate</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                             );
@@ -1325,6 +1350,18 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                       <CertificateCard certificate={activeCert} />
                     </div>
                   </div>
+                )}
+
+                {/* LinkedIn Certificate Share Modal */}
+                {sharingCert && (
+                  <LinkedInCertificateShareModal
+                    certificate={sharingCert}
+                    onClose={() => setSharingCert(null)}
+                    onOpenFullCertificate={() => {
+                      setSelectedCertId(sharingCert.id);
+                      setSharingCert(null);
+                    }}
+                  />
                 )}
               </div>
             ) : (

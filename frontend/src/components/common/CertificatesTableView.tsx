@@ -16,7 +16,8 @@ import {
   Sparkles,
   FileText,
   User,
-  Users
+  Users,
+  Share2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -25,6 +26,7 @@ import {
   printCertificate,
   downloadCertificateHtml
 } from './CertificateCard.js';
+import { LinkedInCertificateShareModal } from './LinkedInCertificateShareModal.js';
 
 interface CertificatesTableViewProps {
   certificates: DriveCertificateData[];
@@ -45,6 +47,7 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCert, setSelectedCert] = useState<DriveCertificateData | null>(null);
+  const [sharingCert, setSharingCert] = useState<DriveCertificateData | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopy = (code: string) => {
@@ -313,9 +316,20 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
                           </span>
                         </td>
 
-                        {/* Actions (View, Print, Download) */}
+                        {/* Actions (Share, View, Print, Download) */}
                         <td className="py-4 px-4 text-right pr-6 whitespace-nowrap">
                           <div className="inline-flex items-center gap-1.5 justify-end">
+                            {/* Share on LinkedIn / Social Preview Option */}
+                            <button
+                              type="button"
+                              onClick={() => setSharingCert(cert)}
+                              className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white border border-blue-200 text-xs font-bold flex items-center gap-1 transition shadow-2xs"
+                              title="Share certificate with LinkedIn post preview"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              <span>Share</span>
+                            </button>
+
                             {/* View Option */}
                             <button
                               type="button"
@@ -423,12 +437,21 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Actions Toolbar for Mobile (View, Print, Download) */}
-                  <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-2">
+                  {/* Actions Toolbar for Mobile (Share, View, Print, Download) */}
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-4 gap-1.5 sm:gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSharingCert(cert)}
+                      className="py-2 px-1.5 rounded-xl bg-blue-50 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition"
+                      title="Share certificate with LinkedIn post preview"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setSelectedCert(cert)}
-                      className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition"
+                      className="py-2 px-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition"
                     >
                       <Eye className="w-3.5 h-3.5 text-[#095c54]" />
                       <span>View</span>
@@ -520,7 +543,19 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
               <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
                 Verified Navsari Municipal Corporation Digital Credential
               </span>
-              <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSharingCert(selectedCert);
+                    setSelectedCert(null);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white border border-blue-200 text-xs font-extrabold flex items-center gap-1.5 transition shadow-2xs"
+                  title="Share certificate with LinkedIn post preview"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Share on LinkedIn</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setSelectedCert(null)}
@@ -548,6 +583,18 @@ export const CertificatesTableView: React.FC<CertificatesTableViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 4. LinkedIn Certificate Post Preview & Social Share Modal */}
+      {sharingCert && (
+        <LinkedInCertificateShareModal
+          certificate={sharingCert}
+          onClose={() => setSharingCert(null)}
+          onOpenFullCertificate={() => {
+            setSelectedCert(sharingCert);
+            setSharingCert(null);
+          }}
+        />
       )}
     </div>
   );
