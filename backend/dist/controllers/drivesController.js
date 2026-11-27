@@ -157,5 +157,21 @@ class DrivesController {
             res.status(500).json({ success: false, error: err.message });
         }
     }
+    /**
+     * DELETE /api/drives/:id
+     */
+    static async deleteDrive(req, res) {
+        try {
+            const { id } = req.params;
+            await dbRepository_js_1.DbRepository.deleteDrive(id);
+            res.status(200).json({
+                success: true,
+                message: 'Cleanliness drive deleted successfully from all systems.'
+            });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
 }
 exports.DrivesController = DrivesController;

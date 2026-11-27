@@ -48,6 +48,24 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
   const [loadingOrgs, setLoadingOrgs] = useState<boolean>(false);
   const [actionMessage, setActionMessage] = useState<string>('');
   const [inspectingActivity, setInspectingActivity] = useState<any | null>(null);
+  const [deletingDriveId, setDeletingDriveId] = useState<string | null>(null);
+
+  const handleDeleteDrive = async (drive: any) => {
+    const confirmText = `Are you sure you want to delete "${drive.title}"?\n\nThis will permanently delete this cleanliness drive from all citizen, ward, and community dashboards.`;
+    if (!window.confirm(confirmText)) return;
+
+    setDeletingDriveId(drive.id);
+    try {
+      await api.deleteWardOrganizationDrive(drive.id);
+      setActionMessage(`Cleanliness drive "${drive.title}" has been permanently deleted from all dashboards.`);
+      setDrives(prev => prev.filter(d => d.id !== drive.id));
+      setTimeout(() => setActionMessage(''), 6000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete cleanliness drive.');
+    } finally {
+      setDeletingDriveId(null);
+    }
+  };
 
   // View / Edit Organization Modals
   const [viewingOrg, setViewingOrg] = useState<any | null>(null);
@@ -989,18 +1007,30 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                 </div>
 
                 {/* Footer Action */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[11px] text-slate-400 font-medium">
                     {drive.evidence_count || 0} Evidence Photo{(drive.evidence_count || 0) === 1 ? '' : 's'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setInspectingActivity(drive)}
-                    className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View Details</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={deletingDriveId === drive.id}
+                      onClick={() => handleDeleteDrive(drive)}
+                      className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold flex items-center gap-1.5 transition disabled:opacity-50"
+                      title="Delete Cleanliness Drive from all systems"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{deletingDriveId === drive.id ? 'Deleting...' : 'Delete'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInspectingActivity(drive)}
+                      className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>View Details</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );

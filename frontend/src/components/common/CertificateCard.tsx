@@ -253,16 +253,17 @@ export interface DriveCertificateData {
   recipient_role: 'community_head' | 'citizen' | string;
   attendance_status?: 'present' | 'absent' | 'organizer_present' | string;
   issued_by_officer?: string;
+  digital_signature?: string;
+  signature_image?: string;
   verification_url?: string;
   issued_at?: string;
 }
 
 export function buildCertificatePrintHtml(certificate: DriveCertificateData, autoPrint: boolean = true): string {
-  const verifyUrl =
-    certificate.verification_url ||
-    (typeof window !== 'undefined'
-      ? `${window.location.origin}/api/certificates/verify/${certificate.certificate_code}`
-      : `https://swachhsetu.navsari.gov.in/api/certificates/verify/${certificate.certificate_code}`);
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://localhost:5173';
+  const verifyUrl = `${origin}/?verify_cert=${encodeURIComponent(certificate.certificate_code)}`;
 
   const qrSvgMarkup = buildQrSvgMarkup(verifyUrl, 120);
   const isLeader = certificate.recipient_role === 'community_head';
@@ -344,10 +345,16 @@ export function buildCertificatePrintHtml(certificate: DriveCertificateData, aut
       </div>
       <div class="footer">
         <div>
+          ${certificate.digital_signature ? `
+            <div style="margin-bottom: 4px;">
+              <img src="${certificate.digital_signature}" alt="Digital Signature" style="max-height: 48px; max-width: 170px; object-fit: contain;" />
+            </div>
+          ` : ''}
           <div class="sig-line"></div>
           <div class="sig-name">${certificate.issued_by_officer || 'Ward Sanitary Officer'}</div>
           <div class="sig-role">Ward ${certificate.ward_number || 3} Officer · Navsari Municipal Corporation</div>
-          <div class="sub" style="margin-top:4px;">Issued: ${issuedDateFormatted}</div>
+          <div style="font-size: 10px; color: #10b981; font-weight: 800; margin-top: 3px;">✓ Digitally Signed &amp; QR Verified</div>
+          <div class="sub" style="margin-top:2px;">Issued: ${issuedDateFormatted}</div>
         </div>
         <div class="qr-box">
           ${qrSvgMarkup}
@@ -401,9 +408,10 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
   const certRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
-  const verifyUrl =
-    certificate.verification_url ||
-    `${window.location.origin}/api/certificates/verify/${certificate.certificate_code}`;
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://localhost:5173';
+  const verifyUrl = `${origin}/?verify_cert=${encodeURIComponent(certificate.certificate_code)}`;
 
   const isLeader = certificate.recipient_role === 'community_head';
 
@@ -538,12 +546,25 @@ export const CertificateCard: React.FC<{ certificate: DriveCertificateData; comp
           {/* Bottom Signature & Real Scannable Unique QR Code */}
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-center sm:text-left">
+              {certificate.digital_signature && (
+                <div className="mb-1.5 flex justify-center sm:justify-start">
+                  <img
+                    src={certificate.digital_signature}
+                    alt="Ward Officer Digital Signature"
+                    className="max-h-12 max-w-[160px] object-contain"
+                  />
+                </div>
+              )}
               <div className="w-44 border-b border-slate-400 mb-1.5 mx-auto sm:mx-0" />
               <p className="text-xs font-extrabold text-[#0f2925]">
                 {certificate.issued_by_officer || 'Ward Sanitary Officer'}
               </p>
               <p className="text-[11px] text-slate-500">
                 Ward {certificate.ward_number || 3} Officer · Navsari Municipal Corporation
+              </p>
+              <p className="text-[10px] text-emerald-700 font-bold flex items-center justify-center sm:justify-start gap-1 mt-0.5">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>Digitally Signed &amp; QR Verified</span>
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">
                 Issued: {certificate.issued_at ? new Date(certificate.issued_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today'}

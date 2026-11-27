@@ -20,6 +20,7 @@ import { NMCAdminDashboard } from './components/admin/NMCAdminDashboard.js';
 import { LocationMonitor } from './components/common/LocationMonitor.js';
 import { OfflineSyncBanner } from './components/common/OfflineSyncBanner.js';
 import { PwaNotificationManager } from './components/common/PwaNotificationManager.js';
+import { PublicCertificateVerificationModal } from './components/common/PublicCertificateVerificationModal.js';
 import { api } from './services/api.js';
 import { Profile, AppNotification, ComplaintCategory, Complaint } from './types/index.js';
 import { Language, translations } from './i18n/translations.js';
@@ -46,6 +47,25 @@ export const App: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [complaintsRefreshTrigger, setComplaintsRefreshTrigger] = useState<number>(0);
+
+  // Deep-link public certificate verification code (?verify_cert=... or ?code=...)
+  const [verifyCertCode, setVerifyCertCode] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('verify_cert') || params.get('code') || null;
+  });
+
+  const handleCloseVerification = () => {
+    setVerifyCertCode(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('verify_cert');
+      url.searchParams.delete('code');
+      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+    } catch {
+      // safe fallback
+    }
+  };
 
   const t = translations[lang];
 
@@ -172,11 +192,19 @@ export const App: React.FC = () => {
   // 2. Unauthenticated State: Show Dedicated Login / Sign Up Page directly!
   if (!user) {
     return (
-      <AuthPage
-        onSuccess={handleAuthSuccess}
-        lang={lang}
-        onLanguageChange={setLang}
-      />
+      <>
+        {verifyCertCode && (
+          <PublicCertificateVerificationModal
+            certificateCode={verifyCertCode}
+            onClose={handleCloseVerification}
+          />
+        )}
+        <AuthPage
+          onSuccess={handleAuthSuccess}
+          lang={lang}
+          onLanguageChange={setLang}
+        />
+      </>
     );
   }
 
@@ -184,6 +212,12 @@ export const App: React.FC = () => {
   if (viewMode === 'community_head') {
     return (
       <>
+        {verifyCertCode && (
+          <PublicCertificateVerificationModal
+            certificateCode={verifyCertCode}
+            onClose={handleCloseVerification}
+          />
+        )}
         <PwaNotificationManager userId={user?.id} />
         <CommunityHeadDashboard
           user={user}
@@ -203,6 +237,12 @@ export const App: React.FC = () => {
   if (viewMode === 'worker') {
     return (
       <>
+        {verifyCertCode && (
+          <PublicCertificateVerificationModal
+            certificateCode={verifyCertCode}
+            onClose={handleCloseVerification}
+          />
+        )}
         <PwaNotificationManager userId={user?.id} />
         <WorkerDashboard
           user={user}
@@ -222,6 +262,12 @@ export const App: React.FC = () => {
   if (viewMode === 'ward_officer') {
     return (
       <>
+        {verifyCertCode && (
+          <PublicCertificateVerificationModal
+            certificateCode={verifyCertCode}
+            onClose={handleCloseVerification}
+          />
+        )}
         <PwaNotificationManager userId={user?.id} />
         <WardOfficerDashboard
           user={user}
@@ -241,6 +287,12 @@ export const App: React.FC = () => {
   if (viewMode === 'nmc_admin') {
     return (
       <>
+        {verifyCertCode && (
+          <PublicCertificateVerificationModal
+            certificateCode={verifyCertCode}
+            onClose={handleCloseVerification}
+          />
+        )}
         <PwaNotificationManager userId={user?.id} />
         <NMCAdminDashboard
           user={user}
@@ -255,6 +307,13 @@ export const App: React.FC = () => {
   // 4. Authenticated Citizen Application
   return (
     <div className="min-h-screen bg-[#f8faf9] text-[#0f2925] flex antialiased selection:bg-[#e6f4f1] selection:text-[#095c54] overflow-x-clip">
+      {/* Public Certificate Verification Modal */}
+      {verifyCertCode && (
+        <PublicCertificateVerificationModal
+          certificateCode={verifyCertCode}
+          onClose={handleCloseVerification}
+        />
+      )}
       {/* Native Mobile PWA Push Notifications */}
       <PwaNotificationManager userId={user?.id} onNewNotifications={setNotifications} />
 

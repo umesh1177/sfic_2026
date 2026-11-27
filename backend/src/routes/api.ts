@@ -79,6 +79,7 @@ apiRouter.get('/map/nearby', MapController.getNearby);
 apiRouter.get('/drives', softAuthenticate, DrivesController.getDrives);
 apiRouter.get('/drives/my-registrations', authenticate, DrivesController.getMyRegistrations);
 apiRouter.get('/drives/:id', softAuthenticate, DrivesController.getDriveById);
+apiRouter.delete('/drives/:id', softAuthenticate, DrivesController.deleteDrive);
 apiRouter.get('/drives/:id/questions', softAuthenticate, DrivesController.getDriveQuestions);
 apiRouter.post('/drives/:id/register', softAuthenticate, DrivesController.registerForDrive);
 apiRouter.delete('/drives/:id/register', softAuthenticate, DrivesController.cancelRegistration);
@@ -236,6 +237,8 @@ apiRouter.delete('/ward/communities/:id', softAuthenticate, WardOfficerControlle
 apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getApprovals);
 apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
 apiRouter.get('/ward/organization-drives', softAuthenticate, WardOfficerController.getOrganizationDrives);
+apiRouter.delete('/ward/organization-drives/:id', softAuthenticate, WardOfficerController.deleteDrive);
+apiRouter.delete('/ward/drives/:id', softAuthenticate, WardOfficerController.deleteDrive);
 apiRouter.post('/ward/organization-drives/:id/evidence/verify-all', softAuthenticate, WardOfficerController.verifyAllDriveEvidence);
 apiRouter.post('/ward/organization-drives/:id/evidence/:evidenceId/verify', softAuthenticate, WardOfficerController.verifyDriveEvidence);
 apiRouter.post('/ward/organization-drives/:id/complete', softAuthenticate, WardOfficerController.completeOrganizationDrive);
@@ -243,6 +246,7 @@ apiRouter.post('/ward/organization-drives/:id/certificates', softAuthenticate, W
 apiRouter.get('/ward/organization-drives/:id/certificates', softAuthenticate, WardOfficerController.getDriveCertificates);
 apiRouter.get('/certificates/my', softAuthenticate, WardOfficerController.getMyCertificates);
 apiRouter.get('/certificates/verify/:code', WardOfficerController.verifyCertificate);
+apiRouter.get('/verify/:code', WardOfficerController.verifyCertificate);
 apiRouter.get('/ward/community-problems', softAuthenticate, WardOfficerController.getCommunityProblems);
 apiRouter.post('/ward/community-problems', softAuthenticate, WardOfficerController.addCommunityProblem);
 apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, WardOfficerController.reopenCommunityProblem);

@@ -28,6 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
+  Trash2,
   X
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
@@ -36,6 +37,7 @@ import confetti from 'canvas-confetti';
 import { api } from '../../services/api.js';
 import { ActivityRegistration } from '../../types/index.js';
 import { CertificateCard, DriveCertificateData } from '../common/CertificateCard.js';
+import { DigitalSignaturePad } from '../common/DigitalSignaturePad.js';
 import { TablePagination } from '../common/TablePagination.js';
 
 const markerIcon = new L.Icon({
@@ -78,6 +80,7 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [certOption, setCertOption] = useState<'all' | 'present_only'>('all');
+  const [digitalSignature, setDigitalSignature] = useState<string>('');
   const [actionEvId, setActionEvId] = useState<string | null>(null);
   const [rejectingEvId, setRejectingEvId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState<string>('');
@@ -110,6 +113,9 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
       }
       if (certRes.success && certRes.data) {
         setCertificates(certRes.data);
+        if (certRes.data.length > 0 && certRes.data[0]?.digital_signature) {
+          setDigitalSignature(certRes.data[0].digital_signature);
+        }
       }
     } catch (err) {
       console.error('Failed to load drive details:', err);
@@ -206,13 +212,13 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
     setIssuingCerts(true);
     setActionMsg(null);
     try {
-      const res = await api.issueDriveCertificates(activity.id, certOption);
+      const res = await api.issueDriveCertificates(activity.id, certOption, digitalSignature);
       if (res.data && res.data.length > 0) {
         setCertificates(res.data);
       }
       setActionMsg({
         type: 'success',
-        text: res.message || 'Official QR-verified certificates generated and sent to Community Head & volunteers!'
+        text: res.message || 'Official QR-verified certificates generated and digitally signed!'
       });
       confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
     } catch (err: any) {
@@ -277,7 +283,26 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm(`Are you sure you want to delete "${activity.title}"?\n\nThis will permanently remove this drive and all associated evidence/registrations from all dashboards.`)) return;
+              try {
+                await api.deleteWardOrganizationDrive(activity.id);
+                alert('Cleanliness drive deleted successfully.');
+                onActionCompleted();
+                onBack();
+              } catch (err: any) {
+                alert(err.message || 'Failed to delete drive');
+              }
+            }}
+            className="px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold flex items-center gap-1.5 transition"
+            title="Delete Cleanliness Drive"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Delete Drive</span>
+          </button>
           <button
             type="button"
             onClick={fetchDriveDetails}
@@ -1041,6 +1066,20 @@ export const DriveInspectView: React.FC<DriveInspectViewProps> = ({
                 </span>
               </button>
             </div>
+
+            {/* Interactive Ward Officer Digital Signature Pad */}
+            <DigitalSignaturePad
+              initialSignature={digitalSignature}
+              onSaveSignature={(dataUrl) => {
+                setDigitalSignature(dataUrl);
+                setActionMsg({
+                  type: 'success',
+                  text: 'Official digital signature saved! Click "Sync / Re-Issue Certificates" or "Generate Certificates" to apply it to all certificates.'
+                });
+              }}
+              officerName={`Ward ${activity.ward_number || 3} Officer`}
+              wardNumber={activity.ward_number || 3}
+            />
 
             {/* Scope Selection Card before issuing */}
             {isCompleted && (

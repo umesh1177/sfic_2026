@@ -436,6 +436,13 @@ class ApiService {
     );
   }
 
+  async deleteDrive(driveId: string) {
+    return this.request<{ success: boolean; message: string }>(
+      `/drives/${driveId}`,
+      { method: 'DELETE' }
+    );
+  }
+
   async markCitizenDriveAttendance(driveId: string, latitude?: number, longitude?: number) {
     return this.request<{ success: boolean; message: string; data: any }>(
       `/drives/${driveId}/attendance`,
@@ -1322,6 +1329,12 @@ class ApiService {
     return this.request<{ success: boolean; data: any[] }>(`/ward/organization-drives${q}`);
   }
 
+  async deleteWardOrganizationDrive(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/ward/organization-drives/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   async completeOrganizationDrive(id: string, comments?: string) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/organization-drives/${id}/complete`, {
       method: 'POST',
@@ -1343,10 +1356,10 @@ class ApiService {
     });
   }
 
-  async issueDriveCertificates(id: string, option: 'all' | 'present_only' = 'all') {
+  async issueDriveCertificates(id: string, option: 'all' | 'present_only' = 'all', digitalSignature?: string) {
     return this.request<{ success: boolean; message: string; data: any[] }>(`/ward/organization-drives/${id}/certificates`, {
       method: 'POST',
-      body: JSON.stringify({ option })
+      body: JSON.stringify({ option, digital_signature: digitalSignature })
     });
   }
 
@@ -1359,7 +1372,7 @@ class ApiService {
   }
 
   async verifyCertificate(code: string) {
-    return this.request<{ success: boolean; valid: boolean; data: any }>(`/certificates/verify/${encodeURIComponent(code)}`);
+    return this.request<{ success: boolean; valid?: boolean; data?: any; error?: string }>(`/certificates/verify/${encodeURIComponent(code)}`);
   }
 
   async getWardCleanlinessScore() {

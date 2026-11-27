@@ -887,60 +887,8 @@ const initialComplaints = [
         ]
     }
 ];
-// Seed Cleanliness Drives
-const initialDrives = [
-    {
-        id: 'drive-01',
-        title: 'Dudhiya Talao Lakefront Mega Swachhata Drive',
-        description: 'Join Navsari municipal staff and civic youth in deep-cleaning the lake walking track, seating benches, and flowerbeds.',
-        ward_id: 'ward-03',
-        ward_name: 'Dudhiya Talao - Ashapuri',
-        location_name: 'Dudhiya Talao North Gate, Navsari',
-        start_time: '2026-11-02T07:00:00+05:30',
-        end_time: '2026-11-02T10:30:00+05:30',
-        registration_deadline: '2026-11-01T20:00:00+05:30',
-        organiser_name: 'Navsari Municipal Youth Taskforce & NMC',
-        status: 'upcoming',
-        banner_url: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: 150,
-        registered_volunteers_count: 94,
-        is_registered: true
-    },
-    {
-        id: 'drive-02',
-        title: 'Lunsikui Ground & Sports Complex Cleanup',
-        description: 'Post-festival cleaning and plastic segregator bin installation drive around Lunsikui circle.',
-        ward_id: 'ward-01',
-        ward_name: 'Lunsikui - Tower Road',
-        location_name: 'Lunsikui Ground Pavilion, Navsari',
-        start_time: '2026-11-05T06:30:00+05:30',
-        end_time: '2026-11-05T09:30:00+05:30',
-        registration_deadline: '2026-11-04T18:00:00+05:30',
-        organiser_name: 'Navsari Green Club',
-        status: 'upcoming',
-        banner_url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: 80,
-        registered_volunteers_count: 42,
-        is_registered: false
-    },
-    {
-        id: 'drive-03',
-        title: 'Historic Dandi Beach Heritage Cleanliness Action',
-        description: 'Preserving the Father of the Nation Mahatma Gandhi heritage path: cleanup along coastal road approaching Dandi.',
-        ward_id: 'ward-13',
-        ward_name: 'Dandi Coastal Corridor',
-        location_name: 'Dandi Salt Memorial Entrance',
-        start_time: '2026-11-08T07:00:00+05:30',
-        end_time: '2026-11-08T11:00:00+05:30',
-        registration_deadline: '2026-11-07T21:00:00+05:30',
-        organiser_name: 'NMC Swachhata Cell & Gujarat Tourism',
-        status: 'upcoming',
-        banner_url: 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: 200,
-        registered_volunteers_count: 168,
-        is_registered: false
-    }
-];
+// Seed Cleanliness Drives (Empty - Dynamic user & officer created only)
+const initialDrives = [];
 // Seed Challenges
 const initialChallenges = [
     {
@@ -1533,91 +1481,8 @@ const initialWorkAssignments = [
         has_after_evidence: false
     }
 ];
-// Initial Community Activities (Cleanliness Drives)
-const initialCommunityActivities = [
-    {
-        id: 'act-01',
-        community_id: 'b0000000-0000-0000-0000-000000000001',
-        community_name: 'Navsari Green Warriors RWA',
-        title: 'Lakeside Eco-Cleanliness Drive 2026',
-        short_description: 'Citizen-led plastic collection and lake promenade cleaning along Dudhiya Talao.',
-        detailed_description: 'Join hands with fellow citizens and NMC officers to clear non-biodegradable waste from the shores of Dudhiya Talao lake. Safety gear provided on spot.',
-        activity_category: 'Lake & Waterbody Cleaning',
-        objectives: ['Collect 300+ kg of shoreline plastic', 'Clean pedestrian pathway', 'Promote source segregation'],
-        expected_outcomes: ['Zero litter on lakeside path', 'Increased citizen awareness'],
-        instructions: 'Report at North Gate Garden Entrance by 7:00 AM. Bring reusable water bottle.',
-        equipment_requirements: ['Cotton Gloves', 'Biodegradable Trash Bags', 'Grabber Sticks'],
-        safety_guidelines: 'Stay 2 meters away from water edge. Supervised by NMC ward team.',
-        faq: [{ q: 'Is transportation provided?', a: 'Please reach directly at Dudhiya Talao North Gate.' }],
-        cover_image_path: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=1200&q=80',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        latitude: 20.9315,
-        longitude: 72.9280,
-        address: 'Dudhiya Talao North Promenade, Navsari',
-        landmark: 'Near Ashapuri Garden Gate',
-        proposed_start_at: '2026-11-08T07:00:00Z',
-        proposed_end_at: '2026-11-08T10:30:00Z',
-        registration_open_at: '2026-10-25T00:00:00Z',
-        registration_close_at: '2026-11-07T20:00:00Z',
-        maximum_participants: 100,
-        minimum_participants: 20,
-        waiting_list_enabled: true,
-        registration_requires_approval: false,
-        publication_status: 'published',
-        approval_status: 'ward_approved',
-        registration_status: 'open',
-        event_status: 'upcoming',
-        evidence_status: 'not_submitted',
-        registered_count: 48,
-        verified_participants_count: 0,
-        created_by: 'c0000000-0000-0000-0000-000000000099',
-        created_at: '2026-10-25T10:00:00Z',
-        updated_at: '2026-10-28T12:00:00Z'
-    },
-    {
-        id: 'act-02',
-        community_id: 'b0000000-0000-0000-0000-000000000001',
-        community_name: 'Navsari Green Warriors RWA',
-        title: 'Ashapuri Temple Area Cleanliness Drive',
-        short_description: 'Post-festival cleaning and flower composting drive near Ashapuri Mata Mandir.',
-        detailed_description: 'Segregation of biodegradable floral offerings from plastic wrappers. Creating organic compost pits with NMC assistance.',
-        activity_category: 'Religious & Heritage Site Cleaning',
-        objectives: ['Divert organic temple waste into compost', 'Clean approach roads'],
-        expected_outcomes: ['100% segregated floral waste'],
-        instructions: 'Meet in front of Temple parking area at 6:30 AM.',
-        equipment_requirements: ['Compost bags', 'Brooms', 'Rakes'],
-        safety_guidelines: 'Follow footwear norms in temple compound.',
-        faq: [],
-        cover_image_path: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80',
-        ward_id: 'ward-03',
-        ward_number: 3,
-        ward_name: 'Ward 3 - Dudhiya Talao',
-        latitude: 20.9300,
-        longitude: 72.9295,
-        address: 'Ashapuri Temple Road, Ward 3, Navsari',
-        landmark: 'Ashapuri Mata Mandir Complex',
-        proposed_start_at: '2026-11-15T06:30:00Z',
-        proposed_end_at: '2026-11-15T09:30:00Z',
-        registration_open_at: '2026-10-30T00:00:00Z',
-        registration_close_at: '2026-11-14T18:00:00Z',
-        maximum_participants: 60,
-        minimum_participants: 15,
-        waiting_list_enabled: true,
-        registration_requires_approval: false,
-        publication_status: 'draft',
-        approval_status: 'submitted',
-        registration_status: 'not_open',
-        event_status: 'upcoming',
-        evidence_status: 'not_submitted',
-        registered_count: 12,
-        verified_participants_count: 0,
-        created_by: 'c0000000-0000-0000-0000-000000000099',
-        created_at: '2026-10-30T11:00:00Z',
-        updated_at: '2026-10-30T11:00:00Z'
-    }
-];
+// Initial Community Activities (Cleanliness Drives - Empty, Dynamic Only)
+const initialCommunityActivities = [];
 // Initial LinkedIn-style Recognition Wall Posts (Shared across Citizen, Officer, Community, Worker)
 const initialRecognitionPosts = [
     {
@@ -1902,7 +1767,7 @@ exports.store = {
     loginLogs: [],
     wards: postgis_js_1.NAVSARI_WARDS,
     categories: initialCategories,
-    complaints: [],
+    complaints: initialComplaints,
     drives: [],
     driveRegistrations: [],
     challenges: [],
@@ -1911,9 +1776,9 @@ exports.store = {
     citizenRewards: [],
     notifications: [],
     supportTickets: [],
-    teams: [],
-    workers: [],
-    workAssignments: [],
+    teams: initialTeams,
+    workers: initialWorkers,
+    workAssignments: initialWorkAssignments,
     communities: [],
     communityActivities: [],
     recognitionPosts: [],

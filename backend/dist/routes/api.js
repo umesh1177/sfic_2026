@@ -75,6 +75,7 @@ exports.apiRouter.get('/map/nearby', mapController_js_1.MapController.getNearby)
 exports.apiRouter.get('/drives', softAuthenticate, drivesController_js_1.DrivesController.getDrives);
 exports.apiRouter.get('/drives/my-registrations', auth_js_1.authenticate, drivesController_js_1.DrivesController.getMyRegistrations);
 exports.apiRouter.get('/drives/:id', softAuthenticate, drivesController_js_1.DrivesController.getDriveById);
+exports.apiRouter.delete('/drives/:id', softAuthenticate, drivesController_js_1.DrivesController.deleteDrive);
 exports.apiRouter.get('/drives/:id/questions', softAuthenticate, drivesController_js_1.DrivesController.getDriveQuestions);
 exports.apiRouter.post('/drives/:id/register', softAuthenticate, drivesController_js_1.DrivesController.registerForDrive);
 exports.apiRouter.delete('/drives/:id/register', softAuthenticate, drivesController_js_1.DrivesController.cancelRegistration);
@@ -210,6 +211,8 @@ exports.apiRouter.delete('/ward/communities/:id', softAuthenticate, wardOfficerC
 exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getApprovals);
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
 exports.apiRouter.get('/ward/organization-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getOrganizationDrives);
+exports.apiRouter.delete('/ward/organization-drives/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteDrive);
+exports.apiRouter.delete('/ward/drives/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteDrive);
 exports.apiRouter.post('/ward/organization-drives/:id/evidence/verify-all', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyAllDriveEvidence);
 exports.apiRouter.post('/ward/organization-drives/:id/evidence/:evidenceId/verify', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyDriveEvidence);
 exports.apiRouter.post('/ward/organization-drives/:id/complete', softAuthenticate, wardOfficerController_js_1.WardOfficerController.completeOrganizationDrive);
@@ -217,6 +220,7 @@ exports.apiRouter.post('/ward/organization-drives/:id/certificates', softAuthent
 exports.apiRouter.get('/ward/organization-drives/:id/certificates', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getDriveCertificates);
 exports.apiRouter.get('/certificates/my', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getMyCertificates);
 exports.apiRouter.get('/certificates/verify/:code', wardOfficerController_js_1.WardOfficerController.verifyCertificate);
+exports.apiRouter.get('/verify/:code', wardOfficerController_js_1.WardOfficerController.verifyCertificate);
 exports.apiRouter.get('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCommunityProblems);
 exports.apiRouter.post('/ward/community-problems', softAuthenticate, wardOfficerController_js_1.WardOfficerController.addCommunityProblem);
 exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reopenCommunityProblem);

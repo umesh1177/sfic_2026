@@ -5825,9 +5825,13 @@ export class DbRepository {
           recipient_role VARCHAR(50) NOT NULL,
           recipient_phone VARCHAR(40),
           issued_by_officer VARCHAR(200),
+          digital_signature TEXT,
+          attendance_status VARCHAR(50) DEFAULT 'present',
           verification_url TEXT,
           issued_at TIMESTAMPTZ DEFAULT NOW()
         );
+        ALTER TABLE drive_certificates ADD COLUMN IF NOT EXISTS digital_signature TEXT;
+        ALTER TABLE drive_certificates ADD COLUMN IF NOT EXISTS attendance_status VARCHAR(50) DEFAULT 'present';
       `).catch(() => { });
 
       // 4. Synchronize memory store from database on startup so state is 100% unified
@@ -8176,10 +8180,21 @@ export class DbRepository {
   public static async issueDriveCertificates(
     activityId: string,
     issuedByOfficer: string,
-    option: 'all' | 'present_only' = 'all'
+    option: 'all' | 'present_only' = 'all',
+    digitalSignature?: string
   ): Promise<{ success: boolean; certificates: any[]; message: string }> {
     if (!isDbConnected() || !this.isValidUUID(activityId)) {
       return { success: false, certificates: [], message: 'Database connection and valid drive ID required.' };
+    }
+
+    // If digital signature provided, update any existing certificates for this activity immediately
+    if (digitalSignature) {
+      await pool.query(
+        `UPDATE drive_certificates
+         SET digital_signature = $1, issued_by_officer = $2
+         WHERE activity_id = $3`,
+        [digitalSignature, issuedByOfficer, activityId]
+      ).catch(() => {});
     }
 
     const actRes = await pool.query(`
@@ -8265,6 +8280,9 @@ export class DbRepository {
       const key = `${rec.role}::${rec.userId || rec.name}`;
       if (existingByUser.has(key)) {
         const existing = existingByUser.get(key);
+        if (digitalSignature) {
+          existing.digital_signature = digitalSignature;
+        }
         if (existing && existing.attendance_status !== rec.attendance_status) {
           await pool.query(
             `UPDATE drive_certificates SET attendance_status = $1 WHERE id = $2`,
@@ -8279,21 +8297,21 @@ export class DbRepository {
       const certId = randomUUID();
       const shortCode = `${Date.now().toString(36).toUpperCase().slice(-4)}${certId.replace(/-/g, '').slice(0, 4).toUpperCase()}`;
       const certCode = `NMC-CERT-${new Date().getFullYear()}-${shortCode}`;
-      const verificationUrl = `https://swachhsetu.navsari.gov.in/verify/${certCode}`;
+      const verificationUrl = `/?verify_cert=${certCode}`;
 
       const ins = await pool.query(
         `INSERT INTO drive_certificates (
            id, certificate_code, activity_id, drive_title, community_id, community_name,
            ward_number, ward_name, drive_date, location_name, waste_cleared,
            recipient_user_id, recipient_name, recipient_role, recipient_phone,
-           issued_by_officer, verification_url, attendance_status
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+           issued_by_officer, digital_signature, verification_url, attendance_status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          RETURNING *`,
         [
           certId, certCode, activityId, act.title, act.community_id || null, act.community_name || 'Community Organization',
           wardNum, wardName, driveDate, locationName, wasteCleared,
           rec.userId, rec.name, rec.role, rec.phone,
-          issuedByOfficer, verificationUrl, rec.attendance_status
+          issuedByOfficer, digitalSignature || null, verificationUrl, rec.attendance_status
         ]
       );
       const savedCert = ins.rows[0];
@@ -8351,15 +8369,66 @@ export class DbRepository {
   }
 
   public static async verifyCertificateByCode(code: string): Promise<any | null> {
-    if (!isDbConnected()) return null;
-    try {
-      const res = await pool.query(
-        `SELECT * FROM drive_certificates WHERE UPPER(certificate_code) = UPPER($1) LIMIT 1`,
-        [code.trim()]
-      );
-      return res.rows[0] || null;
-    } catch {
-      return null;
+    const cleanCode = (code || '').trim().toUpperCase();
+    if (!cleanCode) return null;
+
+    if (isDbConnected()) {
+      try {
+        const res = await pool.query(
+          `SELECT * FROM drive_certificates WHERE UPPER(certificate_code) = UPPER($1) LIMIT 1`,
+          [cleanCode]
+        );
+        if (res.rows[0]) return res.rows[0];
+      } catch (err: any) {
+        console.warn('[DB REPO WARN - verifyCertificateByCode]:', err.message);
+      }
     }
+
+    // Memory store fallback
+    if ((store as any).driveCertificates) {
+      const match = (store as any).driveCertificates.find(
+        (c: any) => String(c.certificate_code).toUpperCase() === cleanCode
+      );
+      if (match) return match;
+    }
+
+    return null;
+  }
+
+  public static async deleteDrive(id: string): Promise<boolean> {
+    if (isDbConnected()) {
+      try {
+        await pool.query(`DELETE FROM drive_registrations WHERE drive_id::text = $1::text`, [id]).catch(() => {});
+        await pool.query(`DELETE FROM activity_registrations WHERE activity_id::text = $1::text`, [id]).catch(() => {});
+        await pool.query(`DELETE FROM activity_evidence WHERE activity_id::text = $1::text`, [id]).catch(() => {});
+        await pool.query(`DELETE FROM drive_certificates WHERE activity_id::text = $1::text`, [id]).catch(() => {});
+        await pool.query(`DELETE FROM cleanliness_drives WHERE id::text = $1::text`, [id]).catch(() => {});
+        await pool.query(`DELETE FROM community_activities WHERE id::text = $1::text`, [id]).catch(() => {});
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteDrive]:', err.message);
+      }
+    }
+
+    // Always clean up memory store
+    if (store.drives) {
+      store.drives = store.drives.filter(d => d.id !== id);
+    }
+    if (store.communityActivities) {
+      store.communityActivities = store.communityActivities.filter(a => a.id !== id);
+    }
+    if ((store as any).driveRegistrations) {
+      (store as any).driveRegistrations = (store as any).driveRegistrations.filter((r: any) => r.drive_id !== id && r.activity_id !== id);
+    }
+    if ((store as any).communityActivityRegistrations) {
+      (store as any).communityActivityRegistrations = (store as any).communityActivityRegistrations.filter((r: any) => r.activity_id !== id);
+    }
+    if ((store as any).communityActivityEvidence) {
+      (store as any).communityActivityEvidence = (store as any).communityActivityEvidence.filter((e: any) => e.activity_id !== id);
+    }
+    if ((store as any).driveCertificates) {
+      (store as any).driveCertificates = (store as any).driveCertificates.filter((c: any) => c.activity_id !== id);
+    }
+
+    return true;
   }
 }
