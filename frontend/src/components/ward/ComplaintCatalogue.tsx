@@ -557,10 +557,10 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                     <td className="py-3.5 px-4 text-center">
                       <span
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-xs font-black shadow-2xs"
-                        title={`${Number(complaint.followers_count || 1)} citizen(s) endorsed / raised this problem`}
+                        title={`${Number(complaint.followers_count ?? complaint.upvotes_count ?? 1)} citizen(s) endorsed / raised this problem`}
                       >
                         <Users className="w-3.5 h-3.5 text-[#095c54]" />
-                        <span>{Number(complaint.followers_count || 1)}</span>
+                        <span>{Number(complaint.followers_count ?? complaint.upvotes_count ?? 1)}</span>
                       </span>
                     </td>
 
@@ -745,7 +745,7 @@ export const ComplaintCatalogue: React.FC<ComplaintCatalogueProps> = ({ initialF
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-teal-50 text-[#095c54] border border-teal-200">
                       <Users className="w-3 h-3 text-[#095c54]" />
-                      <span>Raise Count: {Number(complaint.followers_count || 1)}</span>
+                      <span>Raise Count: {Number(complaint.followers_count ?? complaint.upvotes_count ?? 1)}</span>
                     </span>
                     <span
                       className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${

@@ -157,8 +157,8 @@ export class ComplaintsController {
           image_url: c.image_url,
           distance_meters: dist,
           status: c.status,
-          followers_count: Number(c.followers_count || c.upvotes_count || 1),
-          upvotes_count: Number(c.upvotes_count || c.followers_count || 1),
+          followers_count: Number(c.followers_count ?? c.upvotes_count ?? 1),
+          upvotes_count: Number(c.upvotes_count ?? c.followers_count ?? 1),
           submitted_at: c.submitted_at,
           matches_category: Boolean(category_id && c.category_id === category_id)
         };
@@ -582,6 +582,23 @@ export class ComplaintsController {
       res.status(200).json({
         success: true,
         message: 'Evidence added to complaint history'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * GET /api/complaints/feedback
+   */
+  public static async getCitizenFeedbackList(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const wardNumber = req.query.ward_number ? Number(req.query.ward_number) : undefined;
+      const feedbacks = await DbRepository.getCitizenFeedbackList(wardNumber);
+      res.status(200).json({
+        success: true,
+        data: feedbacks,
+        total: feedbacks.length
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

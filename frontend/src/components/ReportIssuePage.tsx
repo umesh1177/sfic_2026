@@ -304,6 +304,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('cat-03');
   const [aiIdentifiedCategory, setAiIdentifiedCategory] = useState<{ id: string; name: string; confidence: number } | null>(null);
   const [isCategoryManuallyOverridden, setIsCategoryManuallyOverridden] = useState<boolean>(false);
+  const [pendingCategoryChange, setPendingCategoryChange] = useState<string | null>(null);
   const [isUrgent, setIsUrgent] = useState<boolean>(false);
 
   // 3. Location & Map State (Uber/Rapido style)
@@ -682,14 +683,17 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
   // Handle Raising count on existing duplicate complaint within 200m
   const handleUpvoteDuplicate = async (complaintId: string) => {
     try {
-      const res = await api.raiseComplaintCount(complaintId);
+      const res: any = await api.raiseComplaintCount(complaintId);
       setUpvotedComplaintIds(prev => [...prev, complaintId]);
+      const returnedCount = res.followers_count ?? res.upvotes_count ?? res.data?.followers_count;
       setDuplicateMatches(prev =>
-        prev.map(d =>
-          d.id === complaintId
-            ? { ...d, followers_count: res.followers_count || (d.followers_count || 1) + 1 }
-            : d
-        )
+        prev.map(d => {
+          if (d.id === complaintId || d.complaint_number === complaintId) {
+            const nextCount = returnedCount !== undefined ? returnedCount : ((d.followers_count || d.upvotes_count || 1) + 1);
+            return { ...d, followers_count: nextCount, upvotes_count: nextCount };
+          }
+          return d;
+        })
       );
       confetti({
         particleCount: 50,
@@ -698,6 +702,13 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
       });
     } catch {
       setUpvotedComplaintIds(prev => [...prev, complaintId]);
+      setDuplicateMatches(prev =>
+        prev.map(d =>
+          d.id === complaintId || d.complaint_number === complaintId
+            ? { ...d, followers_count: (d.followers_count || d.upvotes_count || 1) + 1, upvotes_count: (d.followers_count || d.upvotes_count || 1) + 1 }
+            : d
+        )
+      );
     }
   };
 
@@ -1397,8 +1408,13 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                   id="complaint-category-dropdown"
                   value={selectedCategoryId}
                   onChange={e => {
-                    setSelectedCategoryId(e.target.value);
-                    setIsCategoryManuallyOverridden(true);
+                    const newCatId = e.target.value;
+                    if (aiIdentifiedCategory && aiIdentifiedCategory.id !== newCatId) {
+                      setPendingCategoryChange(newCatId);
+                    } else {
+                      setSelectedCategoryId(newCatId);
+                      setIsCategoryManuallyOverridden(true);
+                    }
                   }}
                   className={`w-full bg-[#f8faf9] text-[#0f2925] border-2 rounded-2xl px-4 py-3.5 text-sm font-bold appearance-none transition-all outline-none pr-11 shadow-xs cursor-pointer ${
                     aiIdentifiedCategory && !isCategoryManuallyOverridden
@@ -1566,7 +1582,7 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
                           <span className="text-[10px] font-black uppercase text-teal-700 block">Raise Count</span>
                           <span className="text-xs font-black text-[#095c54] flex items-center justify-center gap-1">
                             <Users className="w-3 h-3" />
-                            <span>{dup.followers_count || 1}</span>
+                            <span>{dup.followers_count ?? dup.upvotes_count ?? 1}</span>
                           </span>
                         </div>
 
@@ -1866,6 +1882,68 @@ export const ReportIssuePage: React.FC<ReportIssuePageProps> = ({
               </button>
 
               <div className="w-11"></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pop-up Alert: Manual Category Override Confirmation */}
+      {pendingCategoryChange && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-200">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-[#0f2925]">
+                  Confirm Category Change
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  AI Computer Vision Recommendation Notice
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#f0faf7] border border-[#b8e0d7] text-xs text-[#0f2925] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500">AI Predicted Category:</span>
+                <span className="font-extrabold text-[#095c54] flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-[#095c54]" />
+                  {aiIdentifiedCategory?.name} ({aiIdentifiedCategory?.confidence}%)
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
+                <span className="text-[11px] font-bold text-slate-500">You Selected:</span>
+                <span className="font-extrabold text-[#b45309]">
+                  {categories.find(c => c.id === pendingCategoryChange)?.category_name || pendingCategoryChange}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 font-medium leading-relaxed">
+              Our system predicted this problem as <strong>"{aiIdentifiedCategory?.name}"</strong> based on the photo evidence. Do you still want to change the category to <strong>"{categories.find(c => c.id === pendingCategoryChange)?.category_name}"</strong>?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setPendingCategoryChange(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+              >
+                Keep AI Prediction
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategoryId(pendingCategoryChange);
+                  setIsCategoryManuallyOverridden(true);
+                  setPendingCategoryChange(null);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black shadow-xs transition"
+              >
+                Yes, Change Category
+              </button>
             </div>
           </div>
         </div>

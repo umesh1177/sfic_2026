@@ -1163,8 +1163,9 @@ class ApiService {
     });
   }
 
-  async getWardTeams() {
-    return this.request<{ success: boolean; data: any[] }>('/ward/teams');
+  async getWardTeams(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[] }>(`/ward/teams${q}`);
   }
 
   async createWardTeam(data: {
@@ -1172,6 +1173,7 @@ class ApiService {
     worker_ids: string[];
     temporary_leader_id?: string;
     work_type?: string;
+    specialized_categories?: string[];
   }) {
     return this.request<{ success: boolean; message: string; data: any }>('/ward/teams', {
       method: 'POST',
@@ -1184,11 +1186,25 @@ class ApiService {
     worker_ids?: string[];
     temporary_leader_id?: string;
     work_type?: string;
+    specialized_categories?: string[];
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/ward/teams/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data)
     });
+  }
+
+  async getSuggestedTeamsForComplaint(complaintId: string) {
+    return this.request<{
+      success: boolean;
+      data: any[];
+      complaint_context: any;
+    }>(`/ward/complaints/${complaintId}/suggested-teams`);
+  }
+
+  async getCitizenFeedback(wardNumber?: number) {
+    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
+    return this.request<{ success: boolean; data: any[]; total: number }>(`/complaints/feedback${q}`);
   }
 
   async deleteWardTeam(id: string) {
@@ -1302,9 +1318,18 @@ class ApiService {
     });
   }
 
-  async getWardApprovals(wardNumber?: number) {
-    const q = wardNumber ? `?ward_number=${wardNumber}` : '';
-    return this.request<{ success: boolean; data: any[]; counts?: { community_registrations: number; cleanliness_drives: number } }>(`/ward/approvals${q}`);
+  async getWardApprovals(wardNumber?: number | string) {
+    const q = wardNumber !== undefined && wardNumber !== null && wardNumber !== '' ? `?ward_number=${wardNumber}` : '';
+    return this.request<{
+      success: boolean;
+      data: any[];
+      counts?: {
+        community_registrations: number;
+        cleanliness_drives: number;
+        total_citywide_cleanliness_drives?: number;
+        total_citywide_community_registrations?: number;
+      };
+    }>(`/ward/approvals${q}`);
   }
 
   async reviewWardApproval(
@@ -1372,6 +1397,18 @@ class ApiService {
   async getWardCompletedDrives(wardNumber?: number) {
     const q = wardNumber ? `?ward_number=${wardNumber}` : '';
     return this.request<{ success: boolean; data: any[] }>(`/ward/completed-drives${q}`);
+  }
+
+  async deleteWardDrive(driveId: string) {
+    return this.request<{ success: boolean; message: string }>(`/ward/drives/${driveId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async cleanSeedDrives() {
+    return this.request<{ success: boolean; message: string; data: any }>(`/ward/drives-seed/clean-all`, {
+      method: 'DELETE'
+    });
   }
 
   async publishDriveCompletion(
@@ -1461,18 +1498,81 @@ class ApiService {
     });
   }
 
-  // AI Analytics Suite Endpoints
-  async getAISeasonalPredictions(ward?: number) {
-    const qStr = ward ? `?ward=${ward}` : '';
+  // Analytics Suite Endpoints
+  async getAISeasonalPredictions(ward?: number, lead_days?: 15 | 30) {
+    const params = new URLSearchParams();
+    if (ward) params.append('ward', String(ward));
+    if (lead_days) params.append('lead_days', String(lead_days));
+    const qStr = params.toString() ? `?${params.toString()}` : '';
     return this.request<{
       success: boolean;
       data: {
         current_season: string;
         forecast_month: string;
         total_predictions: number;
+        ward_numbers: number[];
+        active_lead_days: 15 | 30;
+        active_alerts_count: number;
         predictions: import('../types/index.js').SeasonalPrediction[];
       };
     }>(`/ward/ai-analytics/seasonal-predictions${qStr}`);
+  }
+
+  async getSeasonalAlertSettings() {
+    return this.request<{
+      success: boolean;
+      data: {
+        alert_lead_days: 15 | 30;
+        available_options: number[];
+      };
+    }>('/ward/ai-analytics/seasonal-settings');
+  }
+
+  async updateSeasonalAlertSettings(alert_lead_days: 15 | 30) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      data: {
+        alert_lead_days: 15 | 30;
+      };
+    }>('/ward/ai-analytics/seasonal-settings', {
+      method: 'POST',
+      body: JSON.stringify({ alert_lead_days })
+    });
+  }
+
+  async getComplaintsTrend(params?: {
+    ward?: number | string;
+    timeframe?: 'weekly' | 'monthly' | 'yearly';
+    category?: string;
+    filter_mode?: 'month' | 'year' | 'range' | 'timeframe';
+    year?: number;
+    month?: number;
+    start_date?: string;
+    end_date?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.ward !== undefined) q.append('ward', String(params.ward));
+    if (params?.timeframe) q.append('timeframe', params.timeframe);
+    if (params?.category) q.append('category', params.category);
+    if (params?.filter_mode) q.append('filter_mode', params.filter_mode);
+    if (params?.year) q.append('year', String(params.year));
+    if (params?.month) q.append('month', String(params.month));
+    if (params?.start_date) q.append('start_date', params.start_date);
+    if (params?.end_date) q.append('end_date', params.end_date);
+    const qStr = q.toString() ? `?${q.toString()}` : '';
+    return this.request<{
+      success: boolean;
+      data: import('../types/index.js').ComplaintsTrendResult;
+    }>(`/ward/ai-analytics/complaints-trend${qStr}`);
+  }
+
+  async getWardWiseSeasonalPredictions(lead_days?: 15 | 30) {
+    const qStr = lead_days ? `?lead_days=${lead_days}` : '';
+    return this.request<{
+      success: boolean;
+      data: import('../types/index.js').WardWiseSeasonalResult;
+    }>(`/admin/seasonal-predictions/ward-wise${qStr}`);
   }
 
   async getAIPerformersSuggestions(ward?: number) {
@@ -1570,6 +1670,26 @@ class ApiService {
   }) {
     return this.request<{ success: boolean; message: string; data: any }>(`/admin/wards/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async createWard(data: {
+    ward_number: number;
+    ward_name: string;
+    ward_name_gu?: string;
+    office_address?: string;
+    contact_phone?: string;
+    officer_id?: string;
+    center_latitude?: number;
+    center_longitude?: number;
+    population?: number;
+    area_sq_km?: number;
+    zone?: string;
+    boundary_coordinates?: [number, number][];
+  }) {
+    return this.request<{ success: boolean; message: string; data: any }>('/admin/wards', {
+      method: 'POST',
       body: JSON.stringify(data)
     });
   }

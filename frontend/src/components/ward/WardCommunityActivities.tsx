@@ -47,6 +47,28 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingOrgs, setLoadingOrgs] = useState<boolean>(false);
   const [actionMessage, setActionMessage] = useState<string>('');
+  const [deletingDriveId, setDeletingDriveId] = useState<string | null>(null);
+
+  const handleDeleteDrive = async (driveId: string, driveTitle?: string) => {
+    const titleDisplay = driveTitle ? `"${driveTitle}"` : 'this cleanliness drive';
+    if (!window.confirm(`Are you sure you want to permanently delete ${titleDisplay}? This will remove it from all dashboards and purge registrations.`)) {
+      return;
+    }
+    setDeletingDriveId(driveId);
+    try {
+      const res = await api.deleteWardDrive(driveId);
+      setActionMessage(res.message || 'Cleanliness drive deleted successfully.');
+      setDrives(prev => prev.filter(d => d.id !== driveId));
+      if (inspectingActivity?.id === driveId) {
+        setInspectingActivity(null);
+      }
+      setTimeout(() => setActionMessage(''), 5000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete cleanliness drive.');
+    } finally {
+      setDeletingDriveId(null);
+    }
+  };
   const [inspectingActivity, setInspectingActivity] = useState<any | null>(null);
 
   // View / Edit Organization Modals
@@ -542,6 +564,7 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
         onActionCompleted={() => {
           fetchDrives();
         }}
+        onDelete={handleDeleteDrive}
       />
     );
   }
@@ -993,14 +1016,26 @@ export const WardCommunityActivities: React.FC<WardCommunityActivitiesProps> = (
                   <span className="text-[11px] text-slate-400 font-medium">
                     {drive.evidence_count || 0} Evidence Photo{(drive.evidence_count || 0) === 1 ? '' : 's'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setInspectingActivity(drive)}
-                    className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View Details</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDrive(drive.id, drive.title)}
+                      disabled={deletingDriveId === drive.id}
+                      className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold flex items-center gap-1.5 transition disabled:opacity-50"
+                      title="Delete cleanliness drive permanently"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{deletingDriveId === drive.id ? 'Deleting...' : 'Delete'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInspectingActivity(drive)}
+                      className="px-4 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>View Details</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );

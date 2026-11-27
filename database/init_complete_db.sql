@@ -306,6 +306,17 @@ VALUES (
     'B-402, Ashapuri Residency, Near Dudhiya Talao',
     'Dudhiya Talao Ward 3',
     TRUE
+),
+(
+    'c0000000-0000-0000-0000-000000000002',
+    'Priya Shah',
+    '+919876543211',
+    'priya.shah@example.com',
+    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=256&q=80',
+    'en',
+    'A-12, Green City Enclave, Gandevi Road',
+    'Ward 12 - Gandevi Road',
+    TRUE
 );
 
 INSERT INTO user_roles (user_id, role)
@@ -344,198 +355,233 @@ INSERT INTO wards (id, ward_number, ward_name, ward_name_gu, ward_officer_name, 
 ('ward-12', 12, 'Ward 12 - Gandevi Road & Tariacolony', 'વોર્ડ ૧૨ - ગણદેવી રોડ અને તારીયાકોલોની', 'Hemant Nayak', '+91 98251 10012', 'Gandevi Road Help Center, Navsari', 20.9150, 72.9300, 88),
 ('ward-13', 13, 'Ward 13 - Mogar & Outer Ring', 'વોર્ડ ૧૩ - મોગાર અને રીંગ રોડ', 'Girish Patel', '+91 98251 10013', 'Outer Ring Road Terminal, Navsari', 20.9700, 72.9350, 83);
 
--- 4. Seed Real Complaints
+-- 4. Seed Real Complaints Across Multiple Wards and Dashboards
 INSERT INTO complaints (
-    id, complaint_number, citizen_id, citizen_name, citizen_phone,
-    category_id, category_name, description, original_language,
-    image_url, resolved_image_url, latitude, longitude,
-    address, landmark, ward_id, ward_number, ward_name,
-    assigned_officer_name, status, priority, is_urgent,
-    confidence_score, upvotes_count, followers_count,
-    submitted_at, resolved_at
-) VALUES
-(
-    'c1111111-1111-1111-1111-111111111101',
-    'NMC-2026-10021',
-    'c0000000-0000-0000-0000-000000000001',
-    'Harshil Mehta',
-    '+919876543210',
-    'cat-03',
-    'Overflowing Dustbin',
-    'Public community bin overflowing near Dudhiya Talao park entrance. Waste spilling onto pedestrian walkway.',
-    'en',
-    'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80',
-    NULL,
-    20.9472,
-    72.9281,
-    'Near Dudhiya Talao West Gate, Ward 3',
-    'Opposite Ashapuri Garden Main Gate',
-    'ward-03',
-    3,
-    'Ward 3 - Dudhiya Talao & Ashapuri',
-    'Ramesh Patel (Chief Sanitary Inspector)',
-    'in_progress',
-    'high',
-    FALSE,
-    0.95,
-    14,
-    6,
-    NOW() - INTERVAL '2 days',
-    NULL
-),
-(
-    'c1111111-1111-1111-1111-111111111102',
-    'NMC-2026-10019',
-    'c0000000-0000-0000-0000-000000000001',
-    'Harshil Mehta',
-    '+919876543210',
-    'cat-04',
-    'Roadside Garbage',
-    'Accumulated waste and dry leaves cleared from Station Road market corner.',
-    'en',
-    'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1584467735871-8e85353a8413?auto=format&fit=crop&w=800&q=80',
-    20.9515,
-    72.9325,
-    'Station Road Auto Stand Junction',
-    'Near Navsari Railway Station Platform 1',
-    'ward-02',
-    2,
-    'Ward 2 - Station Road & Golwad',
-    'Kiritbhai Desai',
-    'resolved',
-    'medium',
-    FALSE,
-    0.93,
-    28,
-    12,
-    NOW() - INTERVAL '5 days',
-    NOW() - INTERVAL '3 days'
-),
-(
-    'c1111111-1111-1111-1111-111111111103',
-    'NMC-2026-10034',
-    'c0000000-0000-0000-0000-000000000001',
-    'Harshil Mehta',
-    '+919876543210',
-    'cat-05',
-    'Drainage / Waste Accumulation',
-    'Severe drain blockage causing wastewater overflow near Sayaji Road footpath.',
-    'en',
-    'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80',
-    NULL,
-    20.9421,
-    72.9214,
-    'Near Sayaji Library, Lunsikui',
-    'Near Central Bank ATM',
-    'ward-04',
-    4,
-    'Ward 4 - Lunsikui & Sayaji Road',
-    'Jayesh Solanki',
-    'submitted',
-    'urgent',
-    TRUE,
-    0.96,
-    5,
-    3,
-    NOW() - INTERVAL '4 hours',
-    NULL
-);
+        id, complaint_number, citizen_id, citizen_name, citizen_phone,
+        category_id, category_name, description, original_language,
+        image_url, resolved_image_url, latitude, longitude,
+        address, landmark, ward_id, ward_number, ward_name,
+        assigned_officer_name, status, priority, is_urgent,
+        confidence_score, upvotes_count, followers_count,
+        submitted_at, resolved_at
+      ) VALUES
+      (
+        'c1111111-1111-1111-1111-111111111101', 'NMC-2026-10021',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-03', 'Overflowing Dustbin',
+        'Public community bin overflowing near Dudhiya Talao park entrance. Waste spilling onto pedestrian walkway.', 'en',
+        'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9472, 72.9281,
+        'Near Dudhiya Talao West Gate, Ward 3', 'Opposite Ashapuri Garden Main Gate',
+        'ward-03', 3, 'Ward 3 - Dudhiya Talao & Ashapuri',
+        'Ramesh Patel (Chief Sanitary Inspector)', 'in_progress', 'high', FALSE,
+        0.95, 14, 6, NOW() - INTERVAL '2 days', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111102', 'NMC-2026-10019',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-04', 'Roadside Garbage',
+        'Accumulated waste and dry leaves cleared from Station Road market corner.', 'en',
+        'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1584467735871-8e85353a8413?auto=format&fit=crop&w=800&q=80',
+        20.9515, 72.9325,
+        'Station Road Auto Stand Junction', 'Near Navsari Railway Station Platform 1',
+        'ward-02', 2, 'Ward 2 - Station Road & Golwad',
+        'Kiritbhai Desai', 'resolved', 'medium', FALSE,
+        0.93, 28, 12, NOW() - INTERVAL '5 days', NOW() - INTERVAL '3 days'
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111103', 'NMC-2026-10034',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-05', 'Drainage / Waste Accumulation',
+        'Severe drain blockage causing wastewater overflow near Sayaji Road footpath.', 'en',
+        'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9421, 72.9214,
+        'Near Sayaji Library, Lunsikui', 'Near Central Bank ATM',
+        'ward-04', 4, 'Ward 4 - Lunsikui & Sayaji Road',
+        'Jayesh Solanki', 'submitted', 'urgent', TRUE,
+        0.96, 5, 3, NOW() - INTERVAL '4 hours', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111104', 'NMC-2026-30001',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-02', 'Open Garbage Dumping',
+        'Massive pile of uncollected mixed organic and plastic waste cleared from lake promenade.', 'en',
+        'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        20.9312, 72.9284,
+        'North Lake Promenade, Dudhiya Talao', 'Near Ashapuri Garden Gate',
+        'ward-03', 3, 'Ward 3 - Dudhiya Talao',
+        'Rajesh Patel', 'resolved', 'high', FALSE,
+        0.98, 14, 5, NOW() - INTERVAL '3 days', NOW() - INTERVAL '1 day'
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111105', 'NMC-2026-30002',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-03', 'Overflowing Dustbin',
+        'Broken municipal dustbin leaking organic waste onto temple approach road.', 'en',
+        'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9302, 72.9291,
+        'Ashapuri Mandir Approach Road, Ward 3', 'Near North Temple Gate',
+        'ward-03', 3, 'Ward 3 - Dudhiya Talao',
+        'Rajesh Patel', 'assigned', 'medium', FALSE,
+        0.94, 8, 3, NOW() - INTERVAL '2 days', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111106', 'NMC-2026-30005',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-01', 'Littering',
+        'Discarded plastic bottles and paper wraps scattered near sports ground pavilion.', 'en',
+        'https://images.unsplash.com/photo-1621451537084-482c73073a0f?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9340, 72.9260,
+        'Lunsikui Ground East Corner, Ward 3', 'Next to Cricket Pavilion',
+        'ward-03', 3, 'Ward 3 - Dudhiya Talao',
+        'Rajesh Patel', 'submitted', 'low', FALSE,
+        0.95, 2, 1, NOW() - INTERVAL '5 hours', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111107', 'NMC-2026-12001',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-02', 'Open Garbage Dumping',
+        'Commercial wholesale vegetable refuse dumped along Gandevi Road corridor.', 'en',
+        'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9150, 72.9300,
+        'Gandevi Road Main Commercial Junction', 'Near Tariacolony Help Center',
+        'ward-12', 12, 'Ward 12 - Mahuva Highway & Chikhli Approach',
+        'Hemant Nayak', 'in_progress', 'high', FALSE,
+        0.97, 19, 8, NOW() - INTERVAL '1 day', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111108', 'NMC-2026-12002',
+        'c0000000-0000-0000-0000-000000000002', 'Priya Shah', '+919876543211',
+        'cat-04', 'Roadside Garbage',
+        'Debris and dry branches cleared successfully from Tariacolony residential street.', 'en',
+        'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1584467735871-8e85353a8413?auto=format&fit=crop&w=800&q=80',
+        20.9165, 72.9312,
+        'Tariacolony Internal Ring, Ward 12', 'Opposite Community Hall',
+        'ward-12', 12, 'Ward 12 - Mahuva Highway & Chikhli Approach',
+        'Hemant Nayak', 'resolved', 'medium', FALSE,
+        0.95, 22, 9, NOW() - INTERVAL '4 days', NOW() - INTERVAL '2 days'
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111109', 'NMC-2026-12003',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-05', 'Drainage / Waste Accumulation',
+        'Stormwater culvert choked with silt near Chikhli Highway bypass road.', 'en',
+        'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9135, 72.9290,
+        'Chikhli Approach Highway Road', 'Near Highway Bridge Crossing',
+        'ward-12', 12, 'Ward 12 - Mahuva Highway & Chikhli Approach',
+        'Hemant Nayak', 'submitted', 'high', FALSE,
+        0.96, 7, 3, NOW() - INTERVAL '6 hours', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111110', 'NMC-2026-10001',
+        'c0000000-0000-0000-0000-000000000002', 'Priya Shah', '+919876543211',
+        'cat-04', 'Roadside Garbage',
+        'Industrial packaging debris piled up on Kabilpore GIDC access road.', 'en',
+        'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9600, 72.9200,
+        'Kabilpore GIDC Road, Ward 1', 'Near Industrial Association Gate',
+        'ward-01', 1, 'Ward 1 - Kabilpore & GIDC',
+        'Kirtan Solanki', 'submitted', 'medium', FALSE,
+        0.94, 9, 4, NOW() - INTERVAL '12 hours', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111111', 'NMC-2026-10002',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-06', 'Other Cleanliness Issues',
+        'Dead animal carcass safely removed and disinfected with lime powder.', 'en',
+        'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        20.9580, 72.9215,
+        'Station Approach Road, Kabilpore', 'Opposite Municipal Water Works',
+        'ward-01', 1, 'Ward 1 - Kabilpore & GIDC',
+        'Kirtan Solanki', 'resolved', 'urgent', TRUE,
+        0.98, 31, 15, NOW() - INTERVAL '3 days', NOW() - INTERVAL '2 days'
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111112', 'NMC-2026-40002',
+        'c0000000-0000-0000-0000-000000000002', 'Priya Shah', '+919876543211',
+        'cat-03', 'Overflowing Dustbin',
+        'Damaged metal bin spilling trash onto footpath near Sayaji Library gate.', 'en',
+        'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9410, 72.9220,
+        'Sayaji Library Road Promenade', 'Near Library Reading Garden',
+        'ward-04', 4, 'Ward 4 - Lunsikui & Sayaji Road',
+        'Jayesh Solanki', 'assigned', 'medium', FALSE,
+        0.92, 6, 2, NOW() - INTERVAL '1 day', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111113', 'NMC-2026-11001',
+        'c0000000-0000-0000-0000-000000000001', 'Harshil Mehta', '+919876543210',
+        'cat-05', 'Drainage / Waste Accumulation',
+        'Severe sewage overflow at Railway Colony approach junction.', 'en',
+        'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=800&q=80', NULL,
+        20.9200, 72.9450,
+        'Railway Colony Main Road, Ward 11', 'Near Platform 3 Overbridge Approach',
+        'ward-11', 11, 'Ward 11 - Vijalpore East & Railway Colony',
+        'Chetan Tandel', 'in_progress', 'high', FALSE,
+        0.95, 16, 7, NOW() - INTERVAL '18 hours', NULL
+      ),
+      (
+        'c1111111-1111-1111-1111-111111111114', 'NMC-2026-11002',
+        'c0000000-0000-0000-0000-000000000002', 'Priya Shah', '+919876543211',
+        'cat-02', 'Open Garbage Dumping',
+        'Cleared vegetable waste heap and disinfected corner with bleaching powder.', 'en',
+        'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
+        20.9215, 72.9430,
+        'Vijalpore East Market Corridor', 'Behind Municipal Sub-Market',
+        'ward-11', 11, 'Ward 11 - Vijalpore East & Railway Colony',
+        'Chetan Tandel', 'resolved', 'high', FALSE,
+        0.96, 24, 11, NOW() - INTERVAL '6 days', NOW() - INTERVAL '4 days'
+      );
+
 
 -- 5. Seed Activity Logs
-INSERT INTO complaint_activity_logs (complaint_id, status, note, actor_name, actor_role, created_at) VALUES
-('c1111111-1111-1111-1111-111111111101', 'submitted', 'Complaint lodged by citizen with photo evidence.', 'Harshil Mehta', 'citizen', NOW() - INTERVAL '2 days'),
-('c1111111-1111-1111-1111-111111111101', 'under_review', 'Verified by AI Classifier and geolocated to Ward 3.', 'AI Dispatch Engine', 'system', NOW() - INTERVAL '40 hours'),
-('c1111111-1111-1111-1111-111111111101', 'assigned', 'Assigned to Ward 3 Sanitation Inspector Ramesh Patel.', 'NMC Central Control', 'admin', NOW() - INTERVAL '30 hours'),
-('c1111111-1111-1111-1111-111111111101', 'in_progress', 'Sanitation Quick-Response Team 4B dispatched with compact compactor.', 'Ramesh Patel', 'ward_officer', NOW() - INTERVAL '4 hours'),
-('c1111111-1111-1111-1111-111111111102', 'submitted', 'Citizen reported accumulated road sweepings.', 'Harshil Mehta', 'citizen', NOW() - INTERVAL '5 days'),
-('c1111111-1111-1111-1111-111111111102', 'in_progress', 'Mechanical sweeper unit cleared area.', 'Kiritbhai Desai', 'ward_officer', NOW() - INTERVAL '4 days'),
-('c1111111-1111-1111-1111-111111111102', 'resolved', 'Cleanup inspected and verified with post-clearance photo.', 'Kiritbhai Desai', 'ward_officer', NOW() - INTERVAL '3 days');
+INSERT INTO complaint_activity_logs (id, complaint_id, status, note, actor_name, actor_role, created_at)
+      VALUES
+      ('al111111-1111-1111-1111-111111111101', 'c1111111-1111-1111-1111-111111111104', 'submitted', 'Citizen reported open garbage dumping with photo evidence.', 'Harshil Mehta', 'citizen', NOW() - INTERVAL '3 days'),
+      ('al111111-1111-1111-1111-111111111102', 'c1111111-1111-1111-1111-111111111104', 'assigned', 'Assigned to Ward 3 Sanitation Squad 1 led by Kanti Solanki.', 'Rajesh Patel', 'ward_officer', NOW() - INTERVAL '2 days'),
+      ('al111111-1111-1111-1111-111111111103', 'c1111111-1111-1111-1111-111111111104', 'resolved', 'Cleared 380 kg waste, pavement washed and disinfected with bleaching powder.', 'Rajesh Patel', 'ward_officer', NOW() - INTERVAL '1 day'),
+      ('al111111-1111-1111-1111-111111111104', 'c1111111-1111-1111-1111-111111111107', 'submitted', 'Commercial vegetable dumping reported on Gandevi Road.', 'Harshil Mehta', 'citizen', NOW() - INTERVAL '1 day'),
+      ('al111111-1111-1111-1111-111111111105', 'c1111111-1111-1111-1111-111111111107', 'in_progress', 'Ward 12 Sanitation Squad 2 dispatched with mini-dumper truck.', 'Hemant Nayak', 'ward_officer', NOW() - INTERVAL '4 hours');
 
--- 6. Seed Cleanliness Drives
-INSERT INTO cleanliness_drives (
-    id, title, description, ward_id, ward_name, location_name,
-    latitude, longitude, start_time, end_time, registration_deadline,
-    organiser_name, lead_person, contact_phone, meeting_spot,
-    reporting_time, gear_provided, karma_reward, status,
-    banner_url, max_volunteers, registered_volunteers_count
-) VALUES
-(
-    'drive-01',
-    'Dudhiya Talao Lakefront Mega Swachhata Drive',
-    'Join fellow citizens to clear plastic litter and restore the natural beauty of historic Dudhiya Talao perimeter.',
-    'ward-03',
-    'Ward 3 - Dudhiya Talao',
-    'Dudhiya Talao Lake Promenade, Ward 3',
-    20.9470,
-    72.9280,
-    NOW() + INTERVAL '2 days',
-    NOW() + INTERVAL '2 days 3 hours',
-    NOW() + INTERVAL '1 day',
-    'Rotary Club of Navsari & NMC Joint Cell',
-    'Dr. Suresh Desai (Rotary President)',
-    '+91 98251 40120',
-    'Dudhiya Talao West Gate Fountain Plaza',
-    '06:45 AM (Sunday)',
-    ARRAY['Nitrile Heavy-Duty Gloves', 'Biodegradable Waste Sacks', 'Reflective Safety Vest', 'Hydration & Refreshments'],
-    150,
-    'upcoming',
-    'https://images.unsplash.com/photo-1567095761054-7a02e69e5c43?auto=format&fit=crop&w=800&q=80',
-    50,
-    42
-),
-(
-    'drive-02',
-    'Navsari Railway Station Plastic-Free Corridor Campaign',
-    'Volunteers unite to clean up access paths and station approaches to ensure zero-plastic litter for travelers.',
-    'ward-02',
-    'Ward 2 - Station Road',
-    'Station Road Approach & Parking Grounds',
-    20.9510,
-    72.9320,
-    NOW() + INTERVAL '5 days',
-    NOW() + INTERVAL '5 days 4 hours',
-    NOW() + INTERVAL '4 days',
-    'Navsari Youth Green Brigade',
-    'Pooja Patel (Youth Coordinator)',
-    '+91 98251 60234',
-    'Opposite Navsari Railway Station Auto Stand',
-    '07:30 AM',
-    ARRAY['Rubber Gloves', 'Trash Pickers', 'Recyclable Collection Sacks', 'Sanitizers & Snacks'],
-    120,
-    'upcoming',
-    'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
-    40,
-    18
-),
-(
-    'drive-03',
-    'Lunsikui Green Belt & Community Park Cleanup',
-    'Community drive focusing on public gardens, tree beds, and segregated disposal awareness.',
-    'ward-04',
-    'Ward 4 - Lunsikui',
-    'Lunsikui Community Park & Playgrounds',
-    20.9420,
-    72.9210,
-    NOW() + INTERVAL '8 days',
-    NOW() + INTERVAL '8 days 3 hours',
-    NOW() + INTERVAL '7 days',
-    'Lunsikui Citizens Welfare Association',
-    'Hasmukh Shah (RWA Secretary)',
-    '+91 98251 89110',
-    'Lunsikui Community Ground Pavilion',
-    '07:00 AM',
-    ARRAY['Gloves', 'Brooms', 'Collection Dustbins', 'Breakfast & Certificate'],
-    100,
-    'upcoming',
-    'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80',
-    60,
-    35
-);
 
--- Register demo citizen for drive-01
-INSERT INTO drive_registrations (drive_id, citizen_id)
-VALUES ('drive-01', 'c0000000-0000-0000-0000-000000000001');
+-- 5.1 Seed Complaint Feedbacks
+INSERT INTO complaint_feedback (id, complaint_id, citizen_id, rating, feedback_text, resolution_satisfactory, created_at)
+      VALUES
+      (
+        'fb111111-1111-1111-1111-111111111101', 'c1111111-1111-1111-1111-111111111102',
+        'c0000000-0000-0000-0000-000000000001', 5,
+        'Prompt action by NMC Ward 2 team! Roadside waste was completely cleared within 4 hours. Area looks neat.', TRUE, NOW() - INTERVAL '3 days'
+      ),
+      (
+        'fb111111-1111-1111-1111-111111111102', 'c1111111-1111-1111-1111-111111111104',
+        'c0000000-0000-0000-0000-000000000001', 5,
+        'Remarkable prompt action by NMC Ward 3 squad! Within 3 hours the waste was cleared and bleaching powder disinfected the spot. Thank you!', TRUE, NOW() - INTERVAL '1 day'
+      ),
+      (
+        'fb111111-1111-1111-1111-111111111103', 'c1111111-1111-1111-1111-111111111108',
+        'c0000000-0000-0000-0000-000000000002', 5,
+        'Excellent work by Ward 12 Officer Hemant Nayak and squad. Debris was hauled away quickly and traffic resumed smoothly.', TRUE, NOW() - INTERVAL '2 days'
+      ),
+      (
+        'fb111111-1111-1111-1111-111111111104', 'c1111111-1111-1111-1111-111111111111',
+        'c0000000-0000-0000-0000-000000000001', 4,
+        'Very hygienic and fast disposal by Kabilpore team. Disinfection was carried out properly.', TRUE, NOW() - INTERVAL '2 days'
+      ),
+      (
+        'fb111111-1111-1111-1111-111111111105', 'c1111111-1111-1111-1111-111111111114',
+        'c0000000-0000-0000-0000-000000000002', 5,
+        'Vijalpore market corner is clean now. Big relief for morning commuters. Thank you Swachh Setu!', TRUE, NOW() - INTERVAL '4 days'
+      );
+
+
+-- 6. Cleanliness Drives (Dynamic - Real-time Citizen & Community Created)
+-- Mock seed drives removed per production specification
 
 -- 7. Seed Challenges
 INSERT INTO challenges (id, title, description, challenge_type, start_date, end_date, target_value, current_value, status, banner_url, participants_count) VALUES

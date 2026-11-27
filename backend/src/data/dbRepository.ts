@@ -1014,12 +1014,110 @@ export class DbRepository {
            VALUES ($1, $2, $3, $4, $5)`,
           [complaintId, citizenId, rating, feedbackText, satisfactory]
         );
-        return true;
       } catch (err: any) {
         console.error('[DB REPO ERROR - submitFeedback]:', err.message);
       }
     }
+
+    // Keep in-memory complaint updated
+    const targetComp = (store.complaints || []).find(c => c.id === complaintId || c.complaint_number === complaintId);
+    if (targetComp) {
+      targetComp.feedback = {
+        id: randomUUID(),
+        complaint_id: targetComp.id,
+        citizen_id: citizenId,
+        rating,
+        feedback_text: feedbackText,
+        resolution_satisfactory: satisfactory,
+        created_at: new Date().toISOString()
+      };
+    }
+
     return true;
+  }
+
+  public static async getCitizenFeedbackList(wardNumber?: number): Promise<any[]> {
+    if (isDbConnected()) {
+      try {
+        const queryParams: any[] = [];
+        let wardClause = '';
+        if (wardNumber !== undefined && !isNaN(Number(wardNumber))) {
+          queryParams.push(Number(wardNumber));
+          wardClause = `AND c.ward_number = $${queryParams.length}`;
+        }
+
+        const res = await pool.query(
+          `SELECT 
+             cf.id,
+             cf.complaint_id,
+             cf.citizen_id,
+             cf.rating,
+             cf.feedback_text,
+             cf.resolution_satisfactory,
+             cf.created_at,
+             c.complaint_number,
+             c.category_id,
+             c.category_name,
+             c.description as complaint_description,
+             c.address as complaint_address,
+             c.ward_number,
+             c.ward_name,
+             c.status as complaint_status,
+             c.image_url as complaint_before_image,
+             c.resolved_image_url as complaint_after_image,
+             c.resolved_at as complaint_resolved_at,
+             c.assigned_officer_name,
+             COALESCE(p.full_name, c.citizen_name, 'Navsari Citizen') as citizen_name,
+             COALESCE(p.phone, c.citizen_phone, '') as citizen_phone,
+             p.avatar_url as citizen_avatar
+           FROM complaint_feedback cf
+           JOIN complaints c ON cf.complaint_id = c.id
+           LEFT JOIN profiles p ON cf.citizen_id = p.id
+           WHERE c.status IN ('resolved', 'closed', 'verified_complete')
+           ${wardClause}
+           ORDER BY cf.created_at DESC`,
+          queryParams
+        );
+
+        if (res.rows && res.rows.length > 0) {
+          return res.rows;
+        }
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - getCitizenFeedbackList]:', err.message);
+      }
+    }
+
+    // Fallback: search in-memory complaints that are resolved and have feedback
+    const resolvedWithFeedback = (store.complaints || []).filter((c: any) => 
+      ['resolved', 'closed', 'verified_complete'].includes(c.status) &&
+      c.feedback &&
+      (wardNumber === undefined || Number(c.location?.ward_number || c.ward_number) === Number(wardNumber))
+    ).map((c: any) => ({
+      id: c.feedback?.id || `fb-${c.id}`,
+      complaint_id: c.id,
+      citizen_id: c.citizen_id,
+      rating: c.feedback?.rating || 5,
+      feedback_text: c.feedback?.feedback_text || '',
+      resolution_satisfactory: c.feedback?.resolution_satisfactory ?? true,
+      created_at: c.feedback?.created_at || c.resolved_at || new Date().toISOString(),
+      complaint_number: c.complaint_number,
+      category_id: c.category_id,
+      category_name: c.category_name,
+      complaint_description: c.description,
+      complaint_address: c.location?.address || c.address || 'Navsari',
+      ward_number: c.location?.ward_number || c.ward_number || 3,
+      ward_name: c.location?.ward_name || c.ward_name || 'Navsari Ward',
+      complaint_status: c.status,
+      complaint_before_image: c.image_url,
+      complaint_after_image: c.resolved_image_url || c.resolution_evidence?.after_images?.[0] || '',
+      complaint_resolved_at: c.resolved_at,
+      assigned_officer_name: c.assigned_officer_name,
+      citizen_name: c.citizen_name || 'Navsari Citizen',
+      citizen_phone: c.citizen_phone || '',
+      citizen_avatar: c.citizen_avatar || ''
+    }));
+
+    return resolvedWithFeedback;
   }
 
   public static async toggleFollow(complaintId: string, citizenId: string): Promise<{ is_following: boolean; followers_count: number }> {
@@ -5804,6 +5902,20 @@ export class DbRepository {
         ALTER TABLE worker_teams ALTER COLUMN id TYPE VARCHAR(100);
         ALTER TABLE worker_teams ALTER COLUMN temporary_leader_id TYPE VARCHAR(100);
         ALTER TABLE worker_teams ADD COLUMN IF NOT EXISTS work_type VARCHAR(150) DEFAULT 'General Civic Sanitation Squad';
+        ALTER TABLE worker_teams ADD COLUMN IF NOT EXISTS specialized_categories JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE wards ADD COLUMN IF NOT EXISTS boundary_coordinates JSONB;
+        ALTER TABLE wards ADD COLUMN IF NOT EXISTS population INT DEFAULT 25000;
+        ALTER TABLE wards ADD COLUMN IF NOT EXISTS area_sq_km NUMERIC(6, 2) DEFAULT 3.5;
+        ALTER TABLE wards ADD COLUMN IF NOT EXISTS zone VARCHAR(100) DEFAULT 'Central Zone';
+        CREATE TABLE IF NOT EXISTS complaint_feedback (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          complaint_id UUID NOT NULL,
+          citizen_id UUID NOT NULL,
+          rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+          feedback_text TEXT,
+          resolution_satisfactory BOOLEAN DEFAULT TRUE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS complaint_id VARCHAR(100);
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS complaint_number VARCHAR(60);
         ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS team_id VARCHAR(100);
@@ -6019,7 +6131,7 @@ export class DbRepository {
           : [1];
         const allowedTabs: string[] | undefined =
           Array.isArray(row.allowed_tabs) && row.allowed_tabs.length > 0
-            ? row.allowed_tabs.map(String)
+            ? (row.allowed_tabs.includes('citizen_feedback') ? row.allowed_tabs.map(String) : [...row.allowed_tabs.map(String), 'citizen_feedback'])
             : undefined;
         const primaryWardNum = assignedWards[0] || 1;
         const primaryWardObj = store.wards.find(w => w.ward_number === primaryWardNum);
@@ -7046,6 +7158,12 @@ export class DbRepository {
           } else if (typeof r.worker_ids === 'string') {
             try { parsedWorkerIds = JSON.parse(r.worker_ids); } catch { parsedWorkerIds = []; }
           }
+          let parsedSpecialized: string[] = [];
+          if (Array.isArray(r.specialized_categories)) {
+            parsedSpecialized = r.specialized_categories;
+          } else if (typeof r.specialized_categories === 'string') {
+            try { parsedSpecialized = JSON.parse(r.specialized_categories); } catch { parsedSpecialized = []; }
+          }
           return {
             id: r.id,
             team_name: r.team_name,
@@ -7055,6 +7173,7 @@ export class DbRepository {
             temporary_leader_id: r.temporary_leader_id,
             temporary_leader_name: r.temporary_leader_name,
             work_type: r.work_type || 'General Civic Sanitation Squad',
+            specialized_categories: parsedSpecialized,
             shift: r.shift || 'Morning (06:00 - 14:00)',
             status: r.status || 'active',
             active_task_code: r.active_task_code,
@@ -7073,11 +7192,12 @@ export class DbRepository {
       try {
         const teamId = team.id || `team-${Date.now()}`;
         const workerIdsJson = JSON.stringify(Array.isArray(team.worker_ids) ? team.worker_ids : []);
+        const specializedJson = JSON.stringify(Array.isArray(team.specialized_categories) ? team.specialized_categories : []);
         await pool.query(
           `INSERT INTO worker_teams (
              id, team_name, ward_number, ward_name, temporary_leader_id, temporary_leader_name,
-             worker_ids, shift, status, work_type
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             worker_ids, shift, status, work_type, specialized_categories
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (id) DO UPDATE SET
              team_name = EXCLUDED.team_name,
              temporary_leader_id = EXCLUDED.temporary_leader_id,
@@ -7086,6 +7206,7 @@ export class DbRepository {
              shift = EXCLUDED.shift,
              status = EXCLUDED.status,
              work_type = EXCLUDED.work_type,
+             specialized_categories = EXCLUDED.specialized_categories,
              updated_at = CURRENT_TIMESTAMP`,
           [
             teamId,
@@ -7097,7 +7218,8 @@ export class DbRepository {
             workerIdsJson,
             team.shift || 'Morning (06:00 - 14:00)',
             team.status || 'active',
-            team.work_type || 'General Civic Sanitation Squad'
+            team.work_type || 'General Civic Sanitation Squad',
+            specializedJson
           ]
         );
       } catch (err: any) {
@@ -7127,6 +7249,10 @@ export class DbRepository {
         if (updates.worker_ids) {
           vals.push(JSON.stringify(Array.isArray(updates.worker_ids) ? updates.worker_ids : []));
           sql += `, worker_ids = $${vals.length}::jsonb`;
+        }
+        if (updates.specialized_categories !== undefined) {
+          vals.push(JSON.stringify(Array.isArray(updates.specialized_categories) ? updates.specialized_categories : []));
+          sql += `, specialized_categories = $${vals.length}::jsonb`;
         }
         if (updates.status) {
           vals.push(updates.status);
@@ -8211,6 +8337,72 @@ export class DbRepository {
       }
     }
     return [];
+  }
+
+  public static async deleteDrivePermanently(driveId: string): Promise<boolean> {
+    if (!driveId) return false;
+    const cleanId = String(driveId).trim();
+    if (isDbConnected()) {
+      try {
+        await pool.query(`DELETE FROM drive_certificates WHERE activity_id::text = $1 OR drive_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM activity_certificates WHERE activity_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM activity_feedback WHERE activity_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM activity_evidence WHERE activity_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM activity_questions WHERE activity_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM activity_announcements WHERE activity_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM activity_registrations WHERE activity_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM drive_registrations WHERE drive_id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM cleanliness_drives WHERE id::text = $1`, [cleanId]).catch(() => {});
+        await pool.query(`DELETE FROM community_activities WHERE id::text = $1`, [cleanId]).catch(() => {});
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - deleteDrivePermanently]:', err.message);
+      }
+    }
+    if (store.drives) {
+      store.drives = store.drives.filter(d => d.id !== cleanId);
+    }
+    if (store.communityActivities) {
+      store.communityActivities = store.communityActivities.filter(a => a.id !== cleanId);
+    }
+    if (store.driveRegistrations) {
+      store.driveRegistrations = store.driveRegistrations.filter((r: any) => r.drive_id !== cleanId && r.activity_id !== cleanId);
+    }
+    return true;
+  }
+
+  public static async cleanSeedDrives(): Promise<{ deletedCount: number }> {
+    let count = 0;
+    if (isDbConnected()) {
+      try {
+        const seedFilter = `
+          id::text LIKE 'e0000000%' 
+          OR id::text LIKE '55555555%' 
+          OR id::text LIKE 'drive-%'
+          OR title ILIKE '%Mega Swachhata Drive%'
+          OR title ILIKE '%Mega Cleanliness Drive%'
+          OR title ILIKE '%Plastic-Free Corridor Campaign%'
+          OR title ILIKE '%Green Belt & Community Park Cleanup%'
+        `;
+        await pool.query(`
+          DELETE FROM activity_registrations WHERE activity_id::text IN (SELECT id::text FROM community_activities WHERE ${seedFilter});
+          DELETE FROM drive_registrations WHERE drive_id::text IN (SELECT id::text FROM cleanliness_drives WHERE ${seedFilter});
+          DELETE FROM activity_evidence WHERE activity_id::text IN (SELECT id::text FROM community_activities WHERE ${seedFilter});
+        `).catch(() => {});
+
+        const delD = await pool.query(`DELETE FROM cleanliness_drives WHERE ${seedFilter}`);
+        const delA = await pool.query(`DELETE FROM community_activities WHERE ${seedFilter}`);
+        count = (delD.rowCount || 0) + (delA.rowCount || 0);
+      } catch (err: any) {
+        console.error('[DB REPO ERROR - cleanSeedDrives]:', err.message);
+      }
+    }
+    if (store.drives) {
+      store.drives = store.drives.filter(d => !d.id.startsWith('drive-') && !d.id.startsWith('e0000000'));
+    }
+    if (store.communityActivities) {
+      store.communityActivities = store.communityActivities.filter(a => !a.id.startsWith('e0000000'));
+    }
+    return { deletedCount: count };
   }
 
   public static async completeOrganizationDrive(

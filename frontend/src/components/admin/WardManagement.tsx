@@ -17,12 +17,44 @@ import {
   Edit,
   History,
   Shield,
-  Clock
+  Clock,
+  Plus,
+  RotateCcw,
+  Trash2,
+  Layers,
+  Sparkles
 } from 'lucide-react';
+import {
+  MapContainer,
+  TileLayer,
+  Polygon,
+  Marker,
+  Tooltip,
+  useMapEvents
+} from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { api } from '../../services/api.js';
 import { Ward, WardOfficerAssignmentHistory } from '../../types/index.js';
 import { Language } from '../../i18n/translations.js';
 import { TablePagination } from '../common/TablePagination.js';
+
+// Custom vertex pin icon for adding ward boundary
+const newWardVertexIcon = new L.DivIcon({
+  className: 'custom-new-ward-vertex',
+  html: `<div style="background-color: #095c54; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); cursor: pointer;"></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
+});
+
+function NewWardMapInteraction({ onAddPoint }: { onAddPoint: (pt: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      onAddPoint([e.latlng.lng, e.latlng.lat]);
+    }
+  });
+  return null;
+}
 
 interface WardManagementProps {
   lang: Language;
@@ -53,6 +85,20 @@ export const WardManagement: React.FC<WardManagementProps> = ({
   const [editContactPhone, setEditContactPhone] = useState<string>('');
   const [editOfficerId, setEditOfficerId] = useState<string>('');
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
+
+  // Add Ward Modal State
+  const [showAddWardModal, setShowAddWardModal] = useState<boolean>(false);
+  const [newWardNumber, setNewWardNumber] = useState<number>(14);
+  const [newWardName, setNewWardName] = useState<string>('');
+  const [newWardNameGu, setNewWardNameGu] = useState<string>('');
+  const [newWardZone, setNewWardZone] = useState<string>('Central Zone');
+  const [newWardOfficeAddress, setNewWardOfficeAddress] = useState<string>('');
+  const [newWardContactPhone, setNewWardContactPhone] = useState<string>('+91 2637 289114');
+  const [newWardOfficerId, setNewWardOfficerId] = useState<string>('');
+  const [newWardPopulation, setNewWardPopulation] = useState<number>(25000);
+  const [newWardArea, setNewWardArea] = useState<number>(3.5);
+  const [newWardBoundaryPoints, setNewWardBoundaryPoints] = useState<[number, number][]>([]);
+  const [creatingWard, setCreatingWard] = useState<boolean>(false);
 
   // Ward Officer History Modal State
   const [historyModalWard, setHistoryModalWard] = useState<any | null>(null);
@@ -126,6 +172,104 @@ export const WardManagement: React.FC<WardManagementProps> = ({
     }
   };
 
+  const openAddWardModal = () => {
+    const nextNum = Math.max(0, ...wards.map(w => Number(w.ward_number) || 0)) + 1;
+    setNewWardNumber(nextNum);
+    setNewWardName('');
+    setNewWardNameGu('');
+    setNewWardZone('Central Zone');
+    setNewWardOfficeAddress(`NMC Ward ${nextNum} Administrative Office, Navsari`);
+    setNewWardContactPhone('+91 2637 289114');
+    setNewWardOfficerId('');
+    setNewWardPopulation(25000);
+    setNewWardArea(3.5);
+    // Provide a starting sector polygon in Navsari
+    const centerLng = 72.9350;
+    const centerLat = 20.9350;
+    setNewWardBoundaryPoints([
+      [centerLng - 0.008, centerLat - 0.008],
+      [centerLng + 0.008, centerLat - 0.008],
+      [centerLng + 0.008, centerLat + 0.008],
+      [centerLng - 0.008, centerLat + 0.008]
+    ]);
+    setShowAddWardModal(true);
+  };
+
+  const handleAddBoundaryPoint = (point: [number, number]) => {
+    setNewWardBoundaryPoints(prev => [...prev, point]);
+  };
+
+  const handleUndoBoundaryPoint = () => {
+    setNewWardBoundaryPoints(prev => prev.slice(0, -1));
+  };
+
+  const handleClearBoundaryPoints = () => {
+    setNewWardBoundaryPoints([]);
+  };
+
+  const handleGenerateDefaultSector = () => {
+    const centerLng = 72.9350;
+    const centerLat = 20.9350;
+    setNewWardBoundaryPoints([
+      [centerLng - 0.008, centerLat - 0.008],
+      [centerLng + 0.008, centerLat - 0.008],
+      [centerLng + 0.008, centerLat + 0.008],
+      [centerLng - 0.008, centerLat + 0.008]
+    ]);
+  };
+
+  const handleCreateWardSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWardName.trim()) {
+      setError('Ward Name is required');
+      return;
+    }
+    if (newWardBoundaryPoints.length < 3) {
+      setError('Please define at least 3 boundary coordinates on the map for the new ward');
+      return;
+    }
+    setCreatingWard(true);
+    setError(null);
+    try {
+      const finalPoints = [...newWardBoundaryPoints];
+      if (
+        finalPoints.length > 0 &&
+        (finalPoints[0][0] !== finalPoints[finalPoints.length - 1][0] ||
+          finalPoints[0][1] !== finalPoints[finalPoints.length - 1][1])
+      ) {
+        finalPoints.push([finalPoints[0][0], finalPoints[0][1]]);
+      }
+      const avgLng = finalPoints.reduce((acc, p) => acc + p[0], 0) / finalPoints.length;
+      const avgLat = finalPoints.reduce((acc, p) => acc + p[1], 0) / finalPoints.length;
+
+      const res = await api.createWard({
+        ward_number: Number(newWardNumber),
+        ward_name: newWardName.trim(),
+        ward_name_gu: newWardNameGu.trim() || newWardName.trim(),
+        zone: newWardZone,
+        office_address: newWardOfficeAddress.trim(),
+        contact_phone: newWardContactPhone.trim(),
+        officer_id: newWardOfficerId || undefined,
+        population: Number(newWardPopulation),
+        area_sq_km: Number(newWardArea),
+        center_latitude: avgLat,
+        center_longitude: avgLng,
+        boundary_coordinates: finalPoints
+      });
+
+      if (res.success) {
+        setSuccessMessage(`Municipal Ward ${newWardNumber} (${newWardName}) created successfully with boundary coordinates!`);
+        setShowAddWardModal(false);
+        await fetchWardsAndOfficers();
+        setTimeout(() => setSuccessMessage(null), 5000);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to create new ward');
+    } finally {
+      setCreatingWard(false);
+    }
+  };
+
   const openHistoryModal = async (ward: any) => {
     setHistoryModalWard(ward);
     setLoadingHistory(true);
@@ -168,7 +312,7 @@ export const WardManagement: React.FC<WardManagementProps> = ({
             <span className="px-2 py-0.5 rounded-full bg-teal-50 text-[#095c54] text-[10px] sm:text-xs font-black border border-teal-200">
               MUNICIPAL WARDS DIRECTORY
             </span>
-            <span className="text-slate-400 text-[11px] font-bold">13 Divisions</span>
+            <span className="text-slate-400 text-[11px] font-bold">{wards.length} Divisions</span>
           </div>
           <h2 className="text-base sm:text-xl font-black text-[#0f2925] tracking-tight">
             Navsari Ward Management
@@ -176,7 +320,7 @@ export const WardManagement: React.FC<WardManagementProps> = ({
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-72">
+          <div className="relative flex-1 md:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -196,6 +340,14 @@ export const WardManagement: React.FC<WardManagementProps> = ({
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={openAddWardModal}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#095c54] hover:bg-[#074741] text-white rounded-xl text-xs font-black transition shrink-0 shadow-xs active:scale-95"
+            title="Add New Municipal Ward"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Ward</span>
           </button>
         </div>
       </div>
@@ -767,6 +919,336 @@ export const WardManagement: React.FC<WardManagementProps> = ({
                 <span>Boundary</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. MODAL: ADD NEW MUNICIPAL WARD WITH MAP BOUNDARY DRAWING */}
+      {showAddWardModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#095c54] text-white flex items-center justify-center shadow-xs">
+                  <Building2 className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#0f2925]">
+                    Add New Municipal Ward
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Define ward administrative profile and draw geofenced boundary coordinates on the map.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddWardModal(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateWardSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* Left: Ward Form Inputs */}
+                <div className="lg:col-span-5 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Ward Number *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={newWardNumber}
+                        onChange={e => setNewWardNumber(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-black focus:outline-none focus:border-[#095c54]"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Municipal Zone
+                      </label>
+                      <select
+                        value={newWardZone}
+                        onChange={e => setNewWardZone(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-[#095c54]"
+                      >
+                        <option value="Central Zone">Central Zone</option>
+                        <option value="North Zone">North Zone</option>
+                        <option value="South Zone">South Zone</option>
+                        <option value="East Zone">East Zone</option>
+                        <option value="West Zone">West Zone</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Ward Name (English) *
+                    </label>
+                    <input
+                      type="text"
+                      value={newWardName}
+                      onChange={e => setNewWardName(e.target.value)}
+                      placeholder="e.g., Kabilpore Industrial Corridor"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Ward Name (Gujarati)
+                    </label>
+                    <input
+                      type="text"
+                      value={newWardNameGu}
+                      onChange={e => setNewWardNameGu(e.target.value)}
+                      placeholder="દા.ત. કાબિલપોર ઔદ્યોગિક કોરિડોર"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Office Address *
+                    </label>
+                    <input
+                      type="text"
+                      value={newWardOfficeAddress}
+                      onChange={e => setNewWardOfficeAddress(e.target.value)}
+                      placeholder="e.g., Near GIDC Water Tank, Kabilpore, Navsari"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Contact Phone
+                      </label>
+                      <input
+                        type="text"
+                        value={newWardContactPhone}
+                        onChange={e => setNewWardContactPhone(e.target.value)}
+                        placeholder="+91 2637 289114"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Assigned Officer
+                      </label>
+                      <select
+                        value={newWardOfficerId}
+                        onChange={e => setNewWardOfficerId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                      >
+                        <option value="">Unassigned (Assign Later)</option>
+                        {officers.map(o => (
+                          <option key={o.id} value={o.id}>
+                            {o.full_name || o.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Est. Population
+                      </label>
+                      <input
+                        type="number"
+                        min={1000}
+                        step={500}
+                        value={newWardPopulation}
+                        onChange={e => setNewWardPopulation(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Area (sq km)
+                      </label>
+                      <input
+                        type="number"
+                        min={0.1}
+                        step={0.1}
+                        value={newWardArea}
+                        onChange={e => setNewWardArea(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-[#095c54]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Interactive Boundary Map */}
+                <div className="lg:col-span-7 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-700 block">
+                        Set Ward Boundary Geofence Polygon *
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Click on the map to add vertices or drag pins to adjust.
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleUndoBoundaryPoint}
+                        disabled={newWardBoundaryPoints.length === 0}
+                        className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Undo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearBoundaryPoints}
+                        disabled={newWardBoundaryPoints.length === 0}
+                        className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleGenerateDefaultSector}
+                        className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#095c54] text-[10px] font-black flex items-center gap-1 border border-teal-200"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Reset Box
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Leaflet Canvas */}
+                  <div className="h-[280px] sm:h-[320px] rounded-2xl border border-slate-200 overflow-hidden relative shadow-inner">
+                    <MapContainer
+                      center={[20.9350, 72.9350]}
+                      zoom={13}
+                      scrollWheelZoom={true}
+                      className="h-full w-full z-0"
+                    >
+                      <NewWardMapInteraction onAddPoint={handleAddBoundaryPoint} />
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+
+                      {/* Other Wards Polygons for context */}
+                      {wards.map(w => {
+                        if (!w.boundary_coordinates || w.boundary_coordinates.length < 3) return null;
+                        return (
+                          <Polygon
+                            key={w.id}
+                            positions={w.boundary_coordinates.map((p: number[]) => [p[1], p[0]] as [number, number])}
+                            interactive={false}
+                            pathOptions={{
+                              color: '#14b8a6',
+                              fillColor: '#2dd4bf',
+                              fillOpacity: 0.06,
+                              weight: 1,
+                              dashArray: '3, 3'
+                            }}
+                          />
+                        );
+                      })}
+
+                      {/* Current Drawing Polygon */}
+                      {newWardBoundaryPoints.length >= 3 && (
+                        <Polygon
+                          positions={newWardBoundaryPoints.map(p => [p[1], p[0]] as [number, number])}
+                          interactive={false}
+                          pathOptions={{
+                            color: '#095c54',
+                            fillColor: '#095c54',
+                            fillOpacity: 0.28,
+                            weight: 2.5
+                          }}
+                        />
+                      )}
+
+                      {/* Vertex Markers */}
+                      {newWardBoundaryPoints.map((pt, idx) => (
+                        <Marker
+                          key={idx}
+                          position={[pt[1], pt[0]]}
+                          icon={newWardVertexIcon}
+                          draggable={true}
+                          eventHandlers={{
+                            dragend: e => {
+                              const latlng = e.target.getLatLng();
+                              setNewWardBoundaryPoints(prev => {
+                                const next = [...prev];
+                                next[idx] = [latlng.lng, latlng.lat];
+                                return next;
+                              });
+                            }
+                          }}
+                        >
+                          <Tooltip permanent direction="top" offset={[0, -10]}>
+                            <span className="text-[9px] font-black text-[#095c54]">
+                              #{idx + 1}
+                            </span>
+                          </Tooltip>
+                        </Marker>
+                      ))}
+                    </MapContainer>
+
+                    {/* Floating Info Pill */}
+                    <div className="absolute top-2 left-2 z-[1000] bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-800 shadow-sm flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${newWardBoundaryPoints.length >= 3 ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                      <span>
+                        {newWardBoundaryPoints.length} vertices {newWardBoundaryPoints.length >= 3 ? '(Boundary Valid)' : '(Need min 3 points)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                <span className="text-[11px] text-slate-500 font-medium">
+                  Ward will immediately activate across Navsari dashboards and live geofencing.
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddWardModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingWard || !newWardName.trim() || newWardBoundaryPoints.length < 3}
+                    className="px-5 py-2 rounded-xl bg-[#095c54] hover:bg-[#074741] text-white text-xs font-black transition disabled:opacity-50 shadow-xs active:scale-95 flex items-center gap-1.5"
+                  >
+                    {creatingWard ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Creating Ward...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Building2 className="w-3.5 h-3.5" />
+                        <span>Create Municipal Ward</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

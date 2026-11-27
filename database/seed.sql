@@ -58,9 +58,6 @@ INSERT INTO challenges (id, title, description, challenge_type, start_date, end_
 ('44444444-4444-4444-4444-444444444403', 'Green Neighborhood 10-Day Streak', 'Encourage daily reporting and prompt resolution verification in residential localities', 'reporting_streak', '2026-10-20', '2026-11-01', 50, 'active', 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80')
 ON CONFLICT DO NOTHING;
 
--- 5. Upcoming Cleanliness Drives
-INSERT INTO cleanliness_drives (id, title, description, ward_id, location_name, start_time, end_time, registration_deadline, organiser_name, status, max_volunteers) VALUES
-('55555555-5555-5555-5555-555555555501', 'Dudhiya Talao Lakefront Mega Swachhata Drive', 'Join Navsari municipal staff and civic youth in deep-cleaning the lake walking track, seating benches, and flowerbeds.', '22222222-2222-2222-2222-222222222203', 'Dudhiya Talao North Gate, Navsari', '2026-11-02 07:00:00+05:30', '2026-11-02 10:30:00+05:30', '2026-11-01 20:00:00+05:30', 'Navsari Municipal Youth Taskforce & NMC', 'upcoming', 150),
-('55555555-5555-5555-5555-555555555502', 'Lunsikui Ground & Sports Complex Cleanup', 'Post-festival cleaning and plastic segregator bin installation drive around Lunsikui circle.', '22222222-2222-2222-2222-222222222201', 'Lunsikui Ground Pavilion, Navsari', '2026-11-05 06:30:00+05:30', '2026-11-05 09:30:00+05:30', '2026-11-04 18:00:00+05:30', 'Navsari Green Club', 'upcoming', 80),
-('55555555-5555-5555-5555-555555555503', 'Historic Dandi Beach Heritage Cleanliness Action', 'Preserving the Father of the Nation Mahatma Gandhi heritage path: cleanup along coastal road approaching Dandi.', '22222222-2222-2222-2222-222222222213', 'Dandi Salt Memorial Entrance', '2026-11-08 07:00:00+05:30', '2026-11-08 11:00:00+05:30', '2026-11-07 21:00:00+05:30', 'NMC Swachhata Cell & Gujarat Tourism', 'upcoming', 200)
-ON CONFLICT DO NOTHING;
+-- 5. Cleanliness Drives (Dynamic - Real-time Citizen & Community Created)
+-- Mock seed drives removed per production specification
+

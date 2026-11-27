@@ -14,8 +14,10 @@ import {
   ShieldCheck,
   Bell,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  MessageSquareHeart
 } from 'lucide-react';
+import { CitizenFeedbackView } from '../common/CitizenFeedbackView.js';
 import { Profile } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
 import { SwachhSetuIcon } from '../SwachhSetuLogo.js';
@@ -59,7 +61,8 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
     { id: 'ward_officers', label: '4. Ward Officer Management', icon: UserCheck },
     { id: 'staff', label: '5. Worker & Officer Management', icon: Users },
     { id: 'boundaries', label: '6. Set Boundary & Geofencing', icon: Compass },
-    { id: 'categories', label: '7. Manage Categories & SLA', icon: Tags }
+    { id: 'categories', label: '7. Manage Categories & SLA', icon: Tags },
+    { id: 'citizen_feedback', label: '8. Citizen Feedback Reviews', icon: MessageSquareHeart }
   ];
 
   const handleNavigateToBoundary = (wardNum?: number) => {
@@ -319,6 +322,10 @@ export const NMCAdminDashboard: React.FC<NMCAdminDashboardProps> = ({
 
           {activeTab === 'categories' && (
             <CategoryManagement lang={lang} />
+          )}
+
+          {activeTab === 'citizen_feedback' && (
+            <CitizenFeedbackView lang={lang} />
           )}
         </main>
 

@@ -38,9 +38,10 @@ const WARD_OFFICER_NAV_TABS: Array<{ id: string; label: string; group: string }>
   { id: 'approvals', label: '7. Approval Management', group: 'Community' },
   { id: 'posts', label: '8. Community & Citizen Posts', group: 'Community' },
   { id: 'community_problems', label: '9. Add Problem for Community', group: 'Community' },
-  { id: 'ai_analytics', label: '10. AI Analytics', group: 'Insights' },
-  { id: 'notifications', label: '11. Notifications', group: 'Account' },
-  { id: 'settings', label: '12. Settings', group: 'Account' }
+  { id: 'citizen_feedback', label: '10. Citizen Feedback', group: 'Community' },
+  { id: 'ai_analytics', label: '11. Analytics', group: 'Insights' },
+  { id: 'notifications', label: '12. Notifications', group: 'Account' },
+  { id: 'settings', label: '13. Settings', group: 'Account' }
 ];
 
 const ALL_TAB_IDS = WARD_OFFICER_NAV_TABS.map(t => t.id);

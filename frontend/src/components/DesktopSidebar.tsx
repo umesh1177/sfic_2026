@@ -15,7 +15,8 @@ import {
   Globe,
   Wrench,
   Building2,
-  ShieldCheck
+  ShieldCheck,
+  MessageSquareHeart
 } from 'lucide-react';
 import { SwachhSetuLogo, SwachhSetuIcon } from './SwachhSetuLogo.js';
 import { Profile } from '../types/index.js';

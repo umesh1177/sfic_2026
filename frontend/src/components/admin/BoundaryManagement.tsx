@@ -641,7 +641,7 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
 
             {mode === 'ward' && (
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Select Ward (1 to 13)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Ward ({wards.length} Wards)</label>
                 <select
                   value={selectedWardNumber}
                   onChange={e => {
@@ -863,6 +863,14 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
                   <Polygon
                     key={ward.id}
                     positions={latLngs}
+                    interactive={!isDrawing}
+                    eventHandlers={{
+                      click: (e) => {
+                        if (isDrawing) {
+                          handleAddPoint([e.latlng.lng, e.latlng.lat]);
+                        }
+                      }
+                    }}
                     pathOptions={{
                       color: isSelected ? '#095c54' : '#14b8a6',
                       fillColor: isSelected ? '#095c54' : '#2dd4bf',
@@ -871,13 +879,15 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
                       dashArray: isSelected ? undefined : '4, 4'
                     }}
                   >
-                    <Popup>
-                      <div className="text-xs font-bold text-[#0f2925]">
-                        <div className="font-black text-sm">Ward {ward.ward_number}: {ward.ward_name}</div>
-                        <div className="text-slate-500 font-medium">{ward.office_address}</div>
-                        <div className="text-[#095c54] mt-1 font-bold">Officer: {ward.ward_officer_name}</div>
-                      </div>
-                    </Popup>
+                    {!isDrawing && (
+                      <Popup>
+                        <div className="text-xs font-bold text-[#0f2925]">
+                          <div className="font-black text-sm">Ward {ward.ward_number}: {ward.ward_name}</div>
+                          <div className="text-slate-500 font-medium">{ward.office_address}</div>
+                          <div className="text-[#095c54] mt-1 font-bold">Officer: {ward.ward_officer_name}</div>
+                        </div>
+                      </Popup>
+                    )}
                   </Polygon>
                 );
               })}
@@ -886,6 +896,14 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
               {cityBoundary.length > 2 && (
                 <Polygon
                   positions={cityBoundary.map(p => [p[1], p[0]] as [number, number])}
+                  interactive={!isDrawing}
+                  eventHandlers={{
+                    click: (e) => {
+                      if (isDrawing) {
+                        handleAddPoint([e.latlng.lng, e.latlng.lat]);
+                      }
+                    }
+                  }}
                   pathOptions={{
                     color: '#043e39',
                     fillColor: '#095c54',
@@ -894,12 +912,14 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
                     dashArray: mode === 'city' ? undefined : '6, 6'
                   }}
                 >
-                  <Popup>
-                    <div className="text-xs font-bold text-[#0f2925]">
-                      <div className="font-black text-sm">Navsari Municipal Corporation (NMC)</div>
-                      <div className="text-slate-500">Official Municipal Jurisdiction Limits</div>
-                    </div>
-                  </Popup>
+                  {!isDrawing && (
+                    <Popup>
+                      <div className="text-xs font-bold text-[#0f2925]">
+                        <div className="font-black text-sm">Navsari Municipal Corporation (NMC)</div>
+                        <div className="text-slate-500">Official Municipal Jurisdiction Limits</div>
+                      </div>
+                    </Popup>
+                  )}
                 </Polygon>
               )}
 
@@ -907,6 +927,7 @@ export const BoundaryManagement: React.FC<BoundaryManagementProps> = ({
               {isDrawing && currentPolygonLatLngs.length > 2 && (
                 <Polygon
                   positions={currentPolygonLatLngs}
+                  interactive={false}
                   pathOptions={{
                     color: '#ef4444',
                     fillColor: '#ef4444',

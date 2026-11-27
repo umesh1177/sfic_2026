@@ -474,16 +474,27 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
         api.getWardTeams(),
         api.getWardWorkers()
       ]);
-      const teams = tRes.data || [];
+      let teams = tRes.data || [];
       const workers = wRes.data || [];
+
+      // Query AI recommendation engine with 4-factor scoring model
+      if (complaintId) {
+        try {
+          const suggRes = await api.getSuggestedTeamsForComplaint(complaintId);
+          if (suggRes.success && Array.isArray(suggRes.data) && suggRes.data.length > 0) {
+            teams = suggRes.data;
+          }
+        } catch (e) {
+          console.warn('Suggested teams endpoint fallback to base teams:', e);
+        }
+      }
+
       setWardTeams(teams);
       setWardWorkers(workers);
-      if (teams.length > 0 && !selectedNewTeamId) {
+      if (teams.length > 0) {
         setSelectedNewTeamId(teams[0].id);
-        const members = teams[0].members || [];
-        if (members.length > 0) {
-          setSelectedNewLeaderId(members[0].id || members[0].worker_id);
-        }
+        const leader = teams[0].temporary_leader_id || (teams[0].members?.[0]?.id) || (teams[0].leader_id) || '';
+        setSelectedNewLeaderId(leader);
       }
     } catch {
       // ignore
@@ -2397,51 +2408,127 @@ export const ComplaintInspectView: React.FC<ComplaintInspectViewProps> = ({
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1.5">Select Created Sanitation Squad *</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700">Select Sanitation Squad *</label>
+                  <span className="text-[10px] font-bold text-[#095c54] flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    AI Ranked Recommendations
+                  </span>
+                </div>
                 {wardTeams.length === 0 ? (
                   <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
                     No sanitation squads found for this ward. Please create squads in the Teams section first.
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                     {wardTeams.map(t => {
                       const isSelected = selectedNewTeamId === t.id;
                       const leaderName = t.temporary_leader_name || t.leader_name || (t.members?.[0]?.name) || 'Designated Leader';
                       const memberCount = t.member_count || (t.members?.length) || (Array.isArray(t.worker_ids) ? t.worker_ids.length : 0);
+                      const isTop = Boolean(t.is_top_recommendation);
+                      const score = t.match_score !== undefined ? Math.round(t.match_score) : null;
+                      const distanceLabel = t.distance_meters !== undefined
+                        ? (t.distance_meters > 1000 ? `${(t.distance_meters / 1000).toFixed(1)} km away` : `${Math.round(t.distance_meters)}m away`)
+                        : null;
+                      const isAvail = t.is_available !== false;
+                      const hasCatMatch = Boolean(t.category_match);
+
                       return (
                         <div
                           key={t.id}
                           onClick={() => {
                             setSelectedNewTeamId(t.id);
-                            setSelectedNewLeaderId(t.temporary_leader_id || t.members?.[0]?.id || '');
+                            setSelectedNewLeaderId(t.temporary_leader_id || t.members?.[0]?.id || t.leader_id || '');
                           }}
-                          className={`p-3 rounded-2xl border-2 cursor-pointer transition flex items-center justify-between gap-3 ${
+                          className={`p-3.5 rounded-2xl border-2 cursor-pointer transition space-y-2 relative ${
                             isSelected
-                              ? 'border-[#095c54] bg-[#f0faf7] shadow-xs'
+                              ? 'border-[#095c54] bg-[#f0faf7] shadow-sm ring-1 ring-[#095c54]/30'
+                              : isTop
+                              ? 'border-emerald-300 bg-white hover:border-emerald-400'
                               : 'border-slate-200 bg-white hover:border-slate-300'
                           }`}
                         >
-                          <div className="min-w-0 space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-black text-[#0f2925] truncate">
-                                {t.team_name || t.name}
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
-                                Ward {t.ward_number || 3}
-                              </span>
+                          {isTop && (
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-400 to-amber-500 text-slate-900 shadow-2xs mb-1">
+                              <Sparkles className="w-3 h-3 text-slate-900 fill-slate-900" />
+                              <span>AI Top Recommendation · Best Match</span>
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              <span className="inline-flex items-center gap-1 font-semibold text-[#095c54]">
-                                👑 Leader: {leaderName}
-                              </span>
-                              <span>·</span>
-                              <span>{memberCount} worker{memberCount !== 1 ? 's' : ''}</span>
+                          )}
+
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-black text-[#0f2925] truncate">
+                                  {t.team_name || t.name}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                                  Ward {t.ward_number || 3}
+                                </span>
+                                {score !== null && (
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    score >= 80
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                      : score >= 50
+                                      ? 'bg-teal-100 text-teal-800 border border-teal-300'
+                                      : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    {score}% Match
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+                                <span className="inline-flex items-center gap-1 font-semibold text-[#095c54]">
+                                  👑 Leader: {leaderName}
+                                </span>
+                                <span>·</span>
+                                <span>{memberCount} worker{memberCount !== 1 ? 's' : ''}</span>
+                              </div>
+
+                              {/* Match Factors Badges */}
+                              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  hasCatMatch
+                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                    : 'bg-slate-50 text-slate-600 border border-slate-200'
+                                }`}>
+                                  {hasCatMatch ? '🎯 Category Specialized' : '🔧 General Sanitation'}
+                                </span>
+
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  isAvail
+                                    ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                                }`}>
+                                  {isAvail ? '🟢 Available' : '🟡 Active on Task'}
+                                </span>
+
+                                {distanceLabel && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                    📍 {distanceLabel}
+                                  </span>
+                                )}
+
+                                {t.active_tasks_count !== undefined && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700">
+                                    ⚡ {t.active_tasks_count} active
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Algorithmic Reasons */}
+                              {Array.isArray(t.match_reasons) && t.match_reasons.length > 0 && (
+                                <p className="text-[10px] text-slate-500 italic pt-0.5 leading-tight">
+                                  {t.match_reasons.join(' · ')}
+                                </p>
+                              )}
                             </div>
-                          </div>
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                            isSelected ? 'border-[#095c54] bg-[#095c54] text-white' : 'border-slate-300'
-                          }`}>
-                            {isSelected && <Check className="w-3 h-3" />}
+
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${
+                              isSelected ? 'border-[#095c54] bg-[#095c54] text-white' : 'border-slate-300'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3" />}
+                            </div>
                           </div>
                         </div>
                       );

@@ -11,7 +11,8 @@ import {
   HelpCircle,
   Bell,
   User,
-  X
+  X,
+  MessageSquareHeart
 } from 'lucide-react';
 import { Language, translations } from '../i18n/translations.js';
 

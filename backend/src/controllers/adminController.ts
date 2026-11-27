@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { store } from '../data/store.js';
 import { DbRepository } from '../data/dbRepository.js';
+import { pool, isDbConnected } from '../data/db.js';
 import { Profile, CitizenAuthProfile, WardOfficerRecord, ComplaintCategory, Ward } from '../types/index.js';
 import { DEFAULT_NAVSARI_CITY_BOUNDARY, NAVSARI_WARDS } from '../utils/postgis.js';
 import { AIAnalyticsService } from '../services/aiAnalyticsService.js';
@@ -19,6 +20,8 @@ export const ALL_WARD_OFFICER_TABS = [
   'approvals',
   'posts',
   'community_problems',
+  'citizen_feedback',
+  'feedback',
   'ai_analytics',
   'notifications',
   'settings'
@@ -457,10 +460,168 @@ export class AdminController {
         }
       }
 
+      if (isDbConnected()) {
+        await pool.query(
+          `UPDATE wards SET 
+             ward_name = COALESCE($1, ward_name),
+             ward_name_gu = COALESCE($2, ward_name_gu),
+             office_address = COALESCE($3, office_address),
+             ward_officer_phone = COALESCE($4, ward_officer_phone),
+             ward_officer_name = COALESCE($5, ward_officer_name)
+           WHERE id = $6 OR ward_number = $7`,
+          [ward.ward_name, ward.ward_name_gu, ward.office_address, ward.contact_phone, ward.ward_officer_name, ward.id, ward.ward_number]
+        ).catch(() => {});
+      }
+
       res.status(200).json({
         success: true,
         message: `Ward ${ward.ward_number} details updated successfully.`,
         data: ward
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * POST /api/admin/wards
+   */
+  public static async createWard(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const {
+        ward_number,
+        ward_name,
+        ward_name_gu,
+        office_address,
+        contact_phone,
+        officer_id,
+        center_latitude,
+        center_longitude,
+        population,
+        area_sq_km,
+        zone,
+        boundary_coordinates
+      } = req.body;
+
+      if (!ward_number || !ward_name) {
+        res.status(400).json({ success: false, error: 'Ward number and ward name are required.' });
+        return;
+      }
+
+      const num = Number(ward_number);
+      const existing = store.wards.find(w => Number(w.ward_number) === num);
+      if (existing) {
+        res.status(400).json({ success: false, error: `Ward number ${num} already exists (${existing.ward_name}).` });
+        return;
+      }
+
+      const wardId = `ward-${String(num).padStart(2, '0')}`;
+      let assignedOfficerName = 'Unassigned';
+      let officerPhone = contact_phone || 'N/A';
+
+      if (officer_id) {
+        const officer = store.wardOfficers.find(o => o.id === officer_id || o.user_id === officer_id);
+        if (officer) {
+          assignedOfficerName = officer.full_name;
+          officerPhone = officer.phone || officerPhone;
+          if (!Array.isArray(officer.assigned_wards)) officer.assigned_wards = [];
+          if (!officer.assigned_wards.includes(num)) {
+            officer.assigned_wards.push(num);
+          }
+          await DbRepository.saveWardOfficerToDb(officer).catch(() => {});
+        }
+      }
+
+      const centerLat = center_latitude ? Number(center_latitude) : 20.9350;
+      const centerLng = center_longitude ? Number(center_longitude) : 72.9350;
+
+      const coords: [number, number][] = Array.isArray(boundary_coordinates) && boundary_coordinates.length >= 3
+        ? boundary_coordinates
+        : [
+            [centerLng - 0.007, centerLat - 0.007],
+            [centerLng + 0.007, centerLat - 0.007],
+            [centerLng + 0.007, centerLat + 0.007],
+            [centerLng - 0.007, centerLat + 0.007],
+            [centerLng - 0.007, centerLat - 0.007]
+          ];
+
+      const newWard: any = {
+        id: wardId,
+        ward_number: num,
+        ward_name: ward_name.trim(),
+        ward_name_gu: ward_name_gu?.trim() || ward_name.trim(),
+        office_address: office_address?.trim() || `NMC Ward Office ${num}, Navsari`,
+        ward_officer_name: assignedOfficerName,
+        contact_phone: officerPhone,
+        cleanliness_score: 95.0,
+        center_latitude: centerLat,
+        center_longitude: centerLng,
+        population: population ? Number(population) : 25000,
+        area_sq_km: area_sq_km ? Number(area_sq_km) : 3.5,
+        zone: zone?.trim() || 'Central Zone',
+        boundary_coordinates: coords,
+        total_complaints_count: 0,
+        active_complaints_count: 0,
+        resolved_complaints_count: 0,
+        total_workers_count: 0,
+        created_at: new Date().toISOString()
+      };
+
+      if (isDbConnected()) {
+        try {
+          await pool.query(
+            `INSERT INTO wards (
+               id, ward_number, ward_name, ward_name_gu, ward_officer_name, ward_officer_phone,
+               office_address, center_latitude, center_longitude, cleanliness_score, is_active,
+               boundary_coordinates, population, area_sq_km, zone
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             ON CONFLICT (ward_number) DO UPDATE SET
+               ward_name = EXCLUDED.ward_name,
+               ward_name_gu = EXCLUDED.ward_name_gu,
+               office_address = EXCLUDED.office_address,
+               boundary_coordinates = EXCLUDED.boundary_coordinates,
+               population = EXCLUDED.population,
+               area_sq_km = EXCLUDED.area_sq_km,
+               zone = EXCLUDED.zone`,
+            [
+              newWard.id,
+              newWard.ward_number,
+              newWard.ward_name,
+              newWard.ward_name_gu,
+              newWard.ward_officer_name,
+              newWard.contact_phone,
+              newWard.office_address,
+              newWard.center_latitude,
+              newWard.center_longitude,
+              newWard.cleanliness_score,
+              true,
+              JSON.stringify(coords),
+              newWard.population,
+              newWard.area_sq_km,
+              newWard.zone
+            ]
+          );
+        } catch (err: any) {
+          console.error('[DB REPO ERROR - createWard]:', err.message);
+        }
+      }
+
+      store.wards.push(newWard);
+
+      await DbRepository.recordBoundaryHistory({
+        boundary_type: 'ward',
+        ward_id: newWard.id,
+        ward_number: newWard.ward_number,
+        ward_name: newWard.ward_name,
+        coordinates: coords,
+        location_summary: `Initial Boundary Setup — Ward ${newWard.ward_number} (${newWard.ward_name})`,
+        saved_by: req.user?.full_name || 'Super Admin'
+      }).catch(() => {});
+
+      res.status(201).json({
+        success: true,
+        message: `Ward ${newWard.ward_number} (${newWard.ward_name}) created successfully!`,
+        data: newWard
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -526,7 +687,12 @@ export class AdminController {
         return;
       }
 
-      const ward = store.wards.find(w => w.id === id || String(w.ward_number) === String(id));
+      const ward = store.wards.find(w => 
+        w.id === id ||
+        String(w.ward_number) === String(id) ||
+        String(w.id).toLowerCase() === String(id).toLowerCase() ||
+        String(w.id).replace('ward-', '') === String(id).replace('ward-', '')
+      );
       if (!ward) {
         res.status(404).json({ success: false, error: `Ward not found with ID or number: ${id}` });
         return;
@@ -561,6 +727,18 @@ export class AdminController {
       }
       store.adminBoundarySettings.ward_boundary_overrides[ward.id] = boundary_coordinates;
       store.adminBoundarySettings.last_updated = new Date().toISOString();
+
+      // Persist to PostgreSQL wards table
+      if (isDbConnected()) {
+        try {
+          await pool.query(
+            `UPDATE wards SET boundary_coordinates = $1 WHERE id = $2 OR ward_number = $3`,
+            [JSON.stringify(boundary_coordinates), ward.id, ward.ward_number]
+          );
+        } catch (err: any) {
+          console.error('[DB REPO ERROR - updateWardBoundary]:', err.message);
+        }
+      }
 
       const savedRecord = await DbRepository.recordBoundaryHistory({
         boundary_type: 'ward',
@@ -2334,6 +2512,20 @@ export class AdminController {
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message || 'Failed to load complaint tracking details' });
+    }
+  }
+
+  /**
+   * GET /api/admin/seasonal-predictions/ward-wise
+   * Super Admin Ward-wise Breakdown of Seasonal Predictions & 15/30-day Proactive Lead Alerts
+   */
+  public static async getWardWiseSeasonalPredictions(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const leadDays = Number(req.query.lead_days) === 15 ? 15 : Number(req.query.lead_days) === 30 ? 30 : undefined;
+      const data = await AIAnalyticsService.getWardWiseSeasonalPredictions(leadDays as 15 | 30 | undefined);
+      res.status(200).json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to load ward-wise seasonal predictions' });
     }
   }
 }

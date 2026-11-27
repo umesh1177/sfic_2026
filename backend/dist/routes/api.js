@@ -58,6 +58,7 @@ exports.apiRouter.post('/complaints/check-duplicates', softAuthenticate, complai
 exports.apiRouter.post('/complaints/validate-location', softAuthenticate, complaintsController_js_1.ComplaintsController.validateLocation);
 exports.apiRouter.post('/complaints', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.createComplaint);
 exports.apiRouter.get('/complaints/my', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.getMyComplaints);
+exports.apiRouter.get('/complaints/feedback', softAuthenticate, complaintsController_js_1.ComplaintsController.getCitizenFeedbackList);
 exports.apiRouter.get('/complaints/:id', softAuthenticate, complaintsController_js_1.ComplaintsController.getComplaintById);
 exports.apiRouter.delete('/complaints/:id', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.deleteComplaint);
 exports.apiRouter.post('/complaints/:id/feedback', auth_js_1.authenticate, complaintsController_js_1.ComplaintsController.submitFeedback);
@@ -192,6 +193,8 @@ exports.apiRouter.post('/ward/complaints/:id/add-worker', softAuthenticate, ward
 exports.apiRouter.post('/ward/complaints/:id/remove-worker', softAuthenticate, wardOfficerController_js_1.WardOfficerController.removeWorkerFromComplaintSquad);
 exports.apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishComplaintToCommunity);
 exports.apiRouter.post('/ward/complaints/:id/geofence-override', softAuthenticate, wardOfficerController_js_1.WardOfficerController.toggleGeofenceOverride);
+exports.apiRouter.get('/ward/complaints/:id/suggested-teams', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getSuggestedTeamsForComplaint);
+exports.apiRouter.get('/ward/citizen-feedback', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCitizenFeedbackList);
 exports.apiRouter.get('/ward/hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getHotspots);
 exports.apiRouter.get('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAssignments);
 exports.apiRouter.post('/ward/assignments', softAuthenticate, wardOfficerController_js_1.WardOfficerController.createAssignment);
@@ -212,6 +215,8 @@ exports.apiRouter.get('/ward/approvals', softAuthenticate, wardOfficerController
 exports.apiRouter.post('/ward/approvals/:id/review', softAuthenticate, wardOfficerController_js_1.WardOfficerController.reviewApproval);
 exports.apiRouter.get('/ward/completed-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCompletedDrives);
 exports.apiRouter.post('/ward/drives/:id/publish-completion', softAuthenticate, wardOfficerController_js_1.WardOfficerController.publishDriveCompletion);
+exports.apiRouter.delete('/ward/drives/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteDrive);
+exports.apiRouter.delete('/ward/drives-seed/clean-all', softAuthenticate, wardOfficerController_js_1.WardOfficerController.cleanSeedDrives);
 exports.apiRouter.get('/ward/organization-drives', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getOrganizationDrives);
 exports.apiRouter.post('/ward/organization-drives/:id/evidence/verify-all', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyAllDriveEvidence);
 exports.apiRouter.post('/ward/organization-drives/:id/evidence/:evidenceId/verify', softAuthenticate, wardOfficerController_js_1.WardOfficerController.verifyDriveEvidence);
@@ -226,8 +231,11 @@ exports.apiRouter.post('/ward/community-problems/:id/reopen', softAuthenticate, 
 exports.apiRouter.delete('/ward/community-problems/:id', softAuthenticate, wardOfficerController_js_1.WardOfficerController.deleteCommunityProblem);
 exports.apiRouter.get('/ward/cleanliness-score', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getCleanlinessScore);
 exports.apiRouter.get('/ward/reports', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getReports);
-// AI Analytics Suite Routes
+// AI / Civic Analytics Suite Routes
 exports.apiRouter.get('/ward/ai-analytics/seasonal-predictions', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAISeasonalPredictions);
+exports.apiRouter.get('/ward/ai-analytics/seasonal-settings', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getSeasonalAlertSettings);
+exports.apiRouter.post('/ward/ai-analytics/seasonal-settings', softAuthenticate, wardOfficerController_js_1.WardOfficerController.updateSeasonalAlertSettings);
+exports.apiRouter.get('/ward/ai-analytics/complaints-trend', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getComplaintsTrend);
 exports.apiRouter.get('/ward/ai-analytics/performers-suggestions', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAIPerformersSuggestions);
 exports.apiRouter.get('/ward/ai-analytics/chronic-hotspots', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getAIChronicHotspots);
 exports.apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, wardOfficerController_js_1.WardOfficerController.executeAIQuickAction);
@@ -235,7 +243,10 @@ exports.apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, ward
 // NMC ADMIN DASHBOARD ROUTES (Navsari Municipal Corporation)
 // ============================================================================
 exports.apiRouter.get('/admin/overview', softAuthenticate, adminController_js_1.AdminController.getOverview);
+exports.apiRouter.get('/admin/seasonal-predictions/ward-wise', softAuthenticate, adminController_js_1.AdminController.getWardWiseSeasonalPredictions);
+exports.apiRouter.get('/admin/ai-analytics/complaints-trend', softAuthenticate, wardOfficerController_js_1.WardOfficerController.getComplaintsTrend);
 exports.apiRouter.get('/admin/wards', softAuthenticate, adminController_js_1.AdminController.getWards);
+exports.apiRouter.post('/admin/wards', softAuthenticate, adminController_js_1.AdminController.createWard);
 exports.apiRouter.put('/admin/wards/:id', softAuthenticate, adminController_js_1.AdminController.updateWard);
 exports.apiRouter.get('/admin/wards/:wardNumber/officer-history', softAuthenticate, adminController_js_1.AdminController.getWardOfficerHistory);
 exports.apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, adminController_js_1.AdminController.updateWardBoundary);

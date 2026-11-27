@@ -16,16 +16,46 @@ import {
   Eye,
   ExternalLink,
   Layers,
-  Lock
+  Lock,
+  Filter,
+  Globe
 } from 'lucide-react';
 import { api } from '../../services/api.js';
+
+const NAVSARI_WARD_NAMES: Record<number, string> = {
+  1: 'Lunsikui - Tower Road',
+  2: 'Station Road - Fuwara',
+  3: 'Dudhiya Talao - Ashapuri',
+  4: 'Kaliawadi - Sayaji Road',
+  5: 'Jalalpore Road - Shanta Devi',
+  6: 'Vijalpore North - Eru Char Rasta',
+  7: 'Vijalpore South - GIDC',
+  8: 'Madhumati - Parsi Wad',
+  9: 'Sandhkuva - Junathana',
+  10: 'Chhapra Road - Vejalpore',
+  11: 'Vansda Road - Italva',
+  12: 'Mahuva Highway - Chikhli Approach',
+  13: 'Dandi Coastal Corridor'
+};
 
 interface ApprovalManagementViewProps {
   wardNumber?: number;
 }
 
 export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ wardNumber }) => {
+  const [selectedWard, setSelectedWard] = useState<string | number>(wardNumber || 'all');
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [counts, setCounts] = useState<{
+    community_registrations: number;
+    cleanliness_drives: number;
+    total_citywide_cleanliness_drives?: number;
+    total_citywide_community_registrations?: number;
+  }>({
+    community_registrations: 0,
+    cleanliness_drives: 0,
+    total_citywide_cleanliness_drives: 0,
+    total_citywide_community_registrations: 0
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'community_registration' | 'activity'>('community_registration');
   const [actionMessage, setActionMessage] = useState<string>('');
@@ -41,13 +71,21 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
   const [rejectReason, setRejectReason] = useState<string>('');
   const [submittingAction, setSubmittingAction] = useState<boolean>(false);
 
-  const fetchApprovals = async () => {
+  const fetchApprovals = async (targetWard?: string | number) => {
+    const wardToQuery = targetWard !== undefined ? targetWard : selectedWard;
     setLoading(true);
     setErrorMessage('');
     try {
-      const res = await api.getWardApprovals(wardNumber);
+      const res = await api.getWardApprovals(wardToQuery);
       const list = res.data || [];
       setApprovals(list);
+      if (res.counts) {
+        setCounts(res.counts);
+        // Smart auto-tab: If there are cleanliness drives pending and 0 community registrations, auto-switch to activity tab
+        if (res.counts.cleanliness_drives > 0 && res.counts.community_registrations === 0) {
+          setActiveTab('activity');
+        }
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to load approval queue.');
     } finally {
@@ -56,8 +94,18 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
   };
 
   useEffect(() => {
-    fetchApprovals();
+    if (wardNumber) {
+      setSelectedWard(wardNumber);
+      fetchApprovals(wardNumber);
+    } else {
+      fetchApprovals('all');
+    }
   }, [wardNumber]);
+
+  const handleWardSelect = (ward: string | number) => {
+    setSelectedWard(ward);
+    fetchApprovals(ward);
+  };
 
   const communityRequests = approvals.filter(a => a.type === 'community_registration');
   const driveRequests = approvals.filter(a => a.type === 'activity');
@@ -134,27 +182,72 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
       {/* Header */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e2e8f0] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-[#095c54] border border-teal-200 text-[10px] font-black uppercase tracking-wider">
-              Ward {wardNumber || 3} Approval Desk
+              {selectedWard === 'all'
+                ? 'Navsari Citywide Approval Desk'
+                : `Ward ${selectedWard} Approval Desk`}
             </span>
             <span className="text-[11px] font-bold text-slate-400">
-              {approvals.length} Total Pending
+              {approvals.length} Pending Here
             </span>
+            {selectedWard !== 'all' && (counts.total_citywide_cleanliness_drives || 0) > 0 && (
+              <span className="text-[10px] font-extrabold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
+                {counts.total_citywide_cleanliness_drives} Drives Citywide
+              </span>
+            )}
           </div>
           <h2 className="text-xl font-extrabold text-[#0f2925] tracking-tight">
             Approval Management
           </h2>
         </div>
 
-        <button
-          onClick={fetchApprovals}
-          className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#095c54]' : ''}`} />
-          <span>Refresh Queue</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          {/* Ward Selector Filter */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-2xs">
+            <Filter className="w-3.5 h-3.5 text-[#095c54] shrink-0" />
+            <select
+              value={selectedWard}
+              onChange={e => handleWardSelect(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="bg-transparent text-xs font-extrabold text-[#0f2925] outline-none cursor-pointer max-w-[200px] truncate"
+            >
+              <option value="all">🌟 All Wards (Navsari Citywide)</option>
+              {Object.entries(NAVSARI_WARD_NAMES).map(([wNum, name]) => (
+                <option key={wNum} value={wNum}>
+                  Ward {wNum}: {name} {Number(wNum) === wardNumber ? '(Your Ward)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => fetchApprovals()}
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#095c54]' : ''}`} />
+            <span>Refresh Queue</span>
+          </button>
+        </div>
       </div>
+
+      {/* Helpful banner when viewing specific ward with 0 drives but citywide drives exist */}
+      {selectedWard !== 'all' && driveRequests.length === 0 && (counts.total_citywide_cleanliness_drives || 0) > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              No pending drives currently in Ward {selectedWard}. However, <strong>{counts.total_citywide_cleanliness_drives} Cleanliness Drive proposal(s)</strong> are awaiting approval across Navsari.
+            </span>
+          </div>
+          <button
+            onClick={() => handleWardSelect('all')}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold transition self-start sm:self-auto shrink-0 shadow-2xs flex items-center gap-1.5"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>View All Wards</span>
+          </button>
+        </div>
+      )}
 
       {actionMessage && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
@@ -225,10 +318,10 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
       {loading ? (
         <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0]">
           <RefreshCw className="w-6 h-6 text-[#095c54] animate-spin mx-auto" />
-          <p className="text-xs font-bold text-slate-500 mt-2">Loading Ward {wardNumber || 3} approval requests...</p>
+          <p className="text-xs font-bold text-slate-500 mt-2">Loading {selectedWard === 'all' ? 'Navsari Citywide' : `Ward ${selectedWard}`} approval requests...</p>
         </div>
       ) : visibleItems.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-2">
+        <div className="p-12 text-center bg-white rounded-3xl border border-[#e2e8f0] space-y-3">
           <CheckCircle2 className="w-9 h-9 text-emerald-600 mx-auto opacity-75" />
           <h4 className="text-sm font-extrabold text-[#0f2925]">
             {activeTab === 'community_registration'
@@ -237,9 +330,18 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
           </h4>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
             {activeTab === 'community_registration'
-              ? `All self-registered organizations for Ward ${wardNumber || 3} have been reviewed.`
-              : `All cleanliness drive requests for Ward ${wardNumber || 3} are up to date.`}
+              ? `All self-registered organizations for ${selectedWard === 'all' ? 'Navsari City' : `Ward ${selectedWard}`} have been reviewed.`
+              : `All cleanliness drive requests for ${selectedWard === 'all' ? 'Navsari City' : `Ward ${selectedWard}`} are up to date.`}
           </p>
+          {selectedWard !== 'all' && (counts.total_citywide_cleanliness_drives || 0) > 0 && (
+            <button
+              onClick={() => handleWardSelect('all')}
+              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#095c54] text-white text-xs font-bold hover:bg-[#074741] transition"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>View All Wards ({counts.total_citywide_cleanliness_drives} Pending Drives)</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -383,7 +485,7 @@ export const ApprovalManagementView: React.FC<ApprovalManagementViewProps> = ({ 
                           Cleanliness Drive Proposal
                         </span>
                         <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
-                          Ward {item.ward_number}
+                          Ward {item.ward_number} · {NAVSARI_WARD_NAMES[item.ward_number] || `Ward ${item.ward_number}`}
                         </span>
                         {hasLinkedProblem && (
                           <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold">

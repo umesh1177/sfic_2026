@@ -8,6 +8,7 @@ import { CleanlinessDrives } from './components/CleanlinessDrives.js';
 import { CitizenCertificatesView } from './components/CitizenCertificatesView.js';
 import { RewardsRecognition } from './components/RewardsRecognition.js';
 import { FeedbackSupport } from './components/FeedbackSupport.js';
+import { CitizenFeedbackView } from './components/common/CitizenFeedbackView.js';
 import { MyProfile } from './components/MyProfile.js';
 import { NotificationCenter } from './components/NotificationCenter.js';
 import { AuthPage } from './components/AuthPage.js';

@@ -65,7 +65,7 @@ export const StaffManagement: React.FC<StaffManagementProps> = ({ lang }) => {
     { id: 'approvals', label: '7. Approval Management' },
     { id: 'posts', label: '8. Community & Citizen Posts' },
     { id: 'community_problems', label: '9. Add Problem for Community' },
-    { id: 'ai_analytics', label: '10. AI Analytics' },
+    { id: 'ai_analytics', label: '10. Analytics' },
     { id: 'notifications', label: '11. Notifications' },
     { id: 'settings', label: '12. Settings' }
   ];

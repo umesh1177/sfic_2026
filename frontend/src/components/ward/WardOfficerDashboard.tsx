@@ -21,8 +21,10 @@ import {
   Sparkles,
   ArrowRightLeft,
   HeartHandshake,
-  BrainCircuit
+  BrainCircuit,
+  MessageSquareHeart
 } from 'lucide-react';
+import { CitizenFeedbackView } from '../common/CitizenFeedbackView.js';
 import { Profile } from '../../types/index.js';
 import { Language, translations } from '../../i18n/translations.js';
 import { SwachhSetuIcon } from '../SwachhSetuLogo.js';
@@ -136,13 +138,16 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
     { id: 'approvals', rawLabel: t.wo_nav_approvals, icon: ShieldCheck },
     { id: 'posts', rawLabel: t.wo_nav_posts, icon: Megaphone },
     { id: 'community_problems', rawLabel: t.wo_nav_community_problems, icon: HeartHandshake },
-    { id: 'ai_analytics', rawLabel: t.wo_nav_ai_analytics || 'AI Analytics', icon: BrainCircuit },
+    { id: 'citizen_feedback', rawLabel: t.wo_nav_citizen_feedback || 'Citizen Feedback', icon: MessageSquareHeart },
+    { id: 'ai_analytics', rawLabel: t.wo_nav_ai_analytics || 'Analytics', icon: BarChart3 },
     { id: 'notifications', rawLabel: t.wo_nav_notifications, icon: Bell },
     { id: 'settings', rawLabel: t.wo_nav_settings, icon: Settings }
   ];
 
-  const isTabAllowed = (tabId: string) =>
-    !allowedTabs || allowedTabs.length === 0 || allowedTabs.includes(tabId);
+  const isTabAllowed = (tabId: string) => {
+    if (tabId === 'citizen_feedback' || tabId === 'feedback') return true;
+    return !allowedTabs || allowedTabs.length === 0 || allowedTabs.includes(tabId);
+  };
 
   const navItems = allNavItems
     .filter(item => isTabAllowed(item.id))
@@ -359,7 +364,7 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
           {activeTab === 'workers' && <WorkerManagementView />}
 
-          {activeTab === 'teams' && <TeamManagementView />}
+          {activeTab === 'teams' && <TeamManagementView wardNumber={userWardNum} />}
 
           {activeTab === 'activities' && <WardCommunityActivities wardNumber={userWardNum} />}
 
@@ -369,6 +374,14 @@ export const WardOfficerDashboard: React.FC<WardOfficerDashboardProps> = ({
 
           {activeTab === 'community_problems' && (
             <WardCommunityProblemsView wardNumber={userWardNum} officerName={officerName} lang={lang} />
+          )}
+
+          {(activeTab === 'citizen_feedback' || activeTab === 'feedback') && (
+            <CitizenFeedbackView
+              wardNumber={userWardNum}
+              lang={lang}
+              onNavigateComplaint={handleNavigateToCatalogue}
+            />
           )}
 
           {activeTab === 'ai_analytics' && (

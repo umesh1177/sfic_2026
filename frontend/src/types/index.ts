@@ -1125,7 +1125,29 @@ export interface CommunityProblem {
   updated_at: string;
 }
 
-// AI Analytics Interfaces
+// AI & Civic Analytics Interfaces
+export interface MonthOccurrence {
+  month: string;
+  month_number: number;
+  count: number;
+  is_peak: boolean;
+  percentage: number;
+}
+
+export interface SeasonalMathematicalModel {
+  model_name: string;
+  baseline_monthly_avg: number;
+  peak_month: string;
+  peak_count: number;
+  surge_multiplier: number;
+  annual_category_total: number;
+  days_until_surge: number;
+  is_alert_active: boolean;
+  alert_lead_days: 15 | 30;
+  alert_message: string;
+  confidence_formula: string;
+}
+
 export interface SeasonalPrediction {
   id: string;
   season_code: 'monsoon' | 'post_monsoon_festive' | 'winter_uttarayan' | 'summer_pre_monsoon';
@@ -1146,6 +1168,111 @@ export interface SeasonalPrediction {
   preventive_actions: string[];
   recommended_squad_type: string;
   urgency: 'high' | 'medium';
+  monthwise_distribution: MonthOccurrence[];
+  mathematical_model: SeasonalMathematicalModel;
+}
+
+export interface ComplaintTrendCandle {
+  timestamp: string;
+  label: string;
+  date_formatted?: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  resolved_volume: number;
+  raised_count?: number;
+  fallen_count?: number;
+  net_change?: number;
+  cumulative_pending?: number;
+  velocity_change_pct?: number;
+  is_surge_peak?: boolean;
+  is_clearance_trough?: boolean;
+  top_category?: string;
+  top_area?: string;
+  sma_7: number;
+  sma_30: number;
+  change_pct: number;
+  is_bullish: boolean;
+}
+
+export type ComplaintTrendPoint = ComplaintTrendCandle;
+
+export interface MathematicalTrendInference {
+  model_name: string;
+  filter_mode: 'month' | 'year' | 'range' | 'timeframe';
+  selected_period_label: string;
+  total_raised: number;
+  total_fallen: number;
+  net_backlog_shift: number;
+  overall_clearance_rate: number;
+  mean_arrivals: number;
+  std_dev_arrivals: number;
+  trajectory_direction: 'RISING' | 'FALLING' | 'STABLE';
+  peak_surge: {
+    period_label: string;
+    raised_count: number;
+    baseline_avg: number;
+    surge_pct: number;
+    z_score: number;
+    category: string;
+    area: string;
+    inference_narrative: string;
+  };
+  peak_fall: {
+    period_label: string;
+    resolved_count: number;
+    reduction_pct: number;
+    category: string;
+    area: string;
+    inference_narrative: string;
+  };
+  executive_summary: string;
+}
+
+export interface ComplaintsTrendResult {
+  ticker: string;
+  asset_name: string;
+  ward_numbers: number[];
+  timeframe?: 'weekly' | 'monthly' | 'yearly';
+  filter_mode?: 'month' | 'year' | 'range' | 'timeframe';
+  selected_category: string;
+  current_level: number;
+  change_pct: number;
+  period_high: number;
+  period_low: number;
+  total_volume: number;
+  total_resolved: number;
+  total_raised?: number;
+  total_fallen?: number;
+  net_backlog_delta?: number;
+  clearance_velocity_pct: number;
+  rsi_momentum: number;
+  trend_sentiment: string;
+  trend_direction?: 'RISING' | 'FALLING' | 'STABLE';
+  series: ComplaintTrendCandle[];
+  category_breakdown: Array<{ category: string; count: number; percentage: number }>;
+  mathematical_inference?: MathematicalTrendInference;
+}
+
+export interface WardWiseSeasonalItem {
+  ward_number: number;
+  ward_name: string;
+  total_predictions: number;
+  top_category: string;
+  peak_month: string;
+  surge_multiplier: number;
+  is_alert_active: boolean;
+  days_until_surge: number;
+  alert_message: string;
+  predictions: SeasonalPrediction[];
+}
+
+export interface WardWiseSeasonalResult {
+  lead_days: 15 | 30;
+  total_wards: number;
+  wards: WardWiseSeasonalItem[];
 }
 
 export interface WorkerPerformerSuggestion {

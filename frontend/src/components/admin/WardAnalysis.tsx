@@ -31,7 +31,8 @@ import {
   Filter,
   ChevronRight,
   Check,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Bell
 } from 'lucide-react';
 import {
   MapContainer,
@@ -47,6 +48,10 @@ import L from 'leaflet';
 import { api } from '../../services/api.js';
 import { Language } from '../../i18n/translations.js';
 import { TablePagination } from '../common/TablePagination.js';
+import { ComplaintsTrendView } from '../ward/ComplaintsTrendView.js';
+import { ChronicHotspotsMapView } from '../ward/ChronicHotspotsMapView.js';
+import { SeasonalPredictionView } from '../ward/SeasonalPredictionView.js';
+import { WardWiseSeasonalResult } from '../../types/index.js';
 
 interface WardAnalysisProps {
   lang: Language;
@@ -230,9 +235,38 @@ export const WardAnalysis: React.FC<WardAnalysisProps> = ({
   const [mapFocusPoint, setMapFocusPoint] = useState<[number, number] | null>(null);
   const [hotspotPage, setHotspotPage] = useState<number>(1);
 
-  // AI sub-tab state
-  const [aiView, setAiView] = useState<'seasonal' | 'chronic' | 'performers'>('seasonal');
+  // Analytics sub-tab state
+  const [aiView, setAiView] = useState<'seasonal' | 'trend' | 'chronic' | 'performers'>('seasonal');
   const [performerTab, setPerformerTab] = useState<'workers' | 'communities' | 'citizens'>('workers');
+  const [wardWiseSeasonal, setWardWiseSeasonal] = useState<WardWiseSeasonalResult | null>(null);
+  const [adminLeadDays, setAdminLeadDays] = useState<15 | 30>(30);
+  const [loadingWardWise, setLoadingWardWise] = useState<boolean>(false);
+
+  const fetchWardWiseSeasonal = async (leadDaysVal: 15 | 30 = adminLeadDays) => {
+    setLoadingWardWise(true);
+    try {
+      const res = await api.getWardWiseSeasonalPredictions(leadDaysVal);
+      if (res?.success && res.data) {
+        setWardWiseSeasonal(res.data);
+        if (res.data.lead_days) setAdminLeadDays(res.data.lead_days);
+      }
+    } catch (err) {
+      console.error('Failed to load ward-wise seasonal data:', err);
+    } finally {
+      setLoadingWardWise(false);
+    }
+  };
+
+  const handleUpdateAdminLeadDays = async (newDays: 15 | 30) => {
+    if (newDays === adminLeadDays) return;
+    try {
+      await api.updateSeasonalAlertSettings(newDays);
+      setAdminLeadDays(newDays);
+      fetchWardWiseSeasonal(newDays);
+    } catch (err) {
+      console.error('Failed to update lead days from admin:', err);
+    }
+  };
 
   // Problems list filters & pagination
   const [problemSearch, setProblemSearch] = useState<string>('');
@@ -298,6 +332,12 @@ export const WardAnalysis: React.FC<WardAnalysisProps> = ({
   useEffect(() => {
     fetchWardAnalysis(selectedWardNumber);
   }, [selectedWardNumber]);
+
+  useEffect(() => {
+    if (activeSubTab === 'ai_analytics') {
+      fetchWardWiseSeasonal(adminLeadDays);
+    }
+  }, [activeSubTab, adminLeadDays]);
 
   const openComplaintTracking = async (complaintId: string) => {
     setTrackingComplaintId(complaintId);
@@ -693,9 +733,9 @@ export const WardAnalysis: React.FC<WardAnalysisProps> = ({
               },
               {
                 id: 'ai_analytics',
-                label: 'AI Insights',
-                fullLabel: 'AI Analytics',
-                icon: BrainCircuit,
+                label: 'Analytics',
+                fullLabel: 'Analytics',
+                icon: BarChart3,
                 badge: aiData?.seasonal?.predictions?.length || 0
               },
               {
@@ -1538,13 +1578,18 @@ export const WardAnalysis: React.FC<WardAnalysisProps> = ({
                 </div>
               </div>
 
-              {/* AI Suite Sub-Switcher */}
+              {/* Analytics Sub-Switcher Strip */}
               <div className="flex flex-wrap items-center gap-2">
                 {[
                   {
                     id: 'seasonal',
-                    label: `Seasonal Risk Forecast (${aiData.seasonal?.predictions?.length || 0})`,
+                    label: `Seasonal Risk Matrix (${wardWiseSeasonal?.total_wards || 14} Wards)`,
                     icon: CloudRain
+                  },
+                  {
+                    id: 'trend',
+                    label: 'Complaint Trajectory Trend (Raise & Fall)',
+                    icon: TrendingUp
                   },
                   {
                     id: 'chronic',
@@ -1576,134 +1621,179 @@ export const WardAnalysis: React.FC<WardAnalysisProps> = ({
                 })}
               </div>
 
-              {/* AI View A: Seasonal Predictions */}
+              {/* Analytics View A: WARD-WISE SEASONAL RISK MATRIX & MATHEMATICAL PREDICTIONS */}
               {aiView === 'seasonal' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {(aiData.seasonal?.predictions || []).map((pred: any) => (
-                    <div
-                      key={pred.id}
-                      className="p-4 sm:p-5 bg-white rounded-2xl sm:rounded-3xl border border-[#e2e8f0] shadow-xs space-y-3"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black mb-1.5 ${
-                              pred.risk_level === 'CRITICAL'
-                                ? 'bg-red-100 text-red-700'
-                                : pred.risk_level === 'HIGH'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-teal-50 text-[#095c54]'
-                            }`}
-                          >
-                            {pred.risk_level} RISK · {pred.probability_score}% PROBABILITY
+                <div className="space-y-4">
+                  {/* Proactive Notification Lead Time Settings Banner */}
+                  <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-[#095c54] text-white p-4 sm:p-5 rounded-3xl shadow-lg border border-teal-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Bell className="w-4 h-4 text-amber-300 animate-bounce" />
+                          <span className="text-xs font-black text-amber-300 uppercase tracking-wider">
+                            Citywide Early Warning Notification Lead Time
                           </span>
-                          <h4 className="text-sm font-black text-[#0f2925]">{pred.season_name}</h4>
-                          <p className="text-[11px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3 text-[#095c54] shrink-0" />
-                            <span className="truncate">{pred.primary_location}</span>
-                          </p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-lg font-black text-[#095c54]">
-                            {pred.historical_incidents_count}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400 block">Incidents</span>
-                        </div>
+                        <h3 className="text-base sm:text-lg font-black tracking-tight text-white">
+                          Automated Seasonal Warning Lead: {adminLeadDays} Days Prior to Surge
+                        </h3>
+                        <p className="text-xs text-teal-100 max-w-2xl font-medium">
+                          Ward Officers and Headquarters receive proactive alerts <strong>15 days</strong> or <strong>30 days</strong> before cyclical historical problem peaks (e.g. July waterlogging alerts triggered June 1st or mid-June).
+                        </p>
                       </div>
 
-                      <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        {pred.ai_root_cause}
-                      </p>
+                      {/* Lead Days Toggle Buttons */}
+                      <div className="flex items-center gap-2 bg-black/30 p-1.5 rounded-2xl border border-white/10 shrink-0">
+                        <button
+                          onClick={() => handleUpdateAdminLeadDays(30)}
+                          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                            adminLeadDays === 30
+                              ? 'bg-amber-400 text-slate-950 shadow-md scale-105'
+                              : 'text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>30 Days Before</span>
+                        </button>
 
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-black uppercase text-slate-400">
-                          Recommended Preventive Actions
-                        </div>
-                        {(pred.preventive_actions || []).map((act: string, aIdx: number) => (
-                          <div key={aIdx} className="text-xs font-semibold text-slate-700 flex items-start gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                            <span>{act}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
-                        <span>Window: {pred.predicted_window}</span>
-                        <span className="text-[#095c54]">{pred.recommended_squad_type}</span>
+                        <button
+                          onClick={() => handleUpdateAdminLeadDays(15)}
+                          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                            adminLeadDays === 15
+                              ? 'bg-amber-400 text-slate-950 shadow-md scale-105'
+                              : 'text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>15 Days Before</span>
+                        </button>
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Navsari Citywide WARD-WISE Seasonal Breakdown Matrix */}
+                  <div className="bg-white rounded-3xl border border-[#e2e8f0] shadow-sm overflow-hidden space-y-3 p-4 sm:p-5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+                          <CloudRain className="w-4 h-4 text-[#095c54]" />
+                          <span>Navsari Citywide Ward-Wise Seasonal Analysis & Alert Matrix</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Comparing cyclical mathematical predictions and proactive alert trigger states across all 14 wards
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-slate-400">
+                        Active Lead: {adminLeadDays} Days
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs font-sans border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-slate-400 uppercase font-black tracking-wider text-[10px]">
+                            <th className="py-2.5 px-3">Ward</th>
+                            <th className="py-2.5 px-3">Top Risk Category</th>
+                            <th className="py-2.5 px-3">Peak Month</th>
+                            <th className="py-2.5 px-3">Surge Multiplier</th>
+                            <th className="py-2.5 px-3">Days to Surge</th>
+                            <th className="py-2.5 px-3">Proactive Alert State</th>
+                            <th className="py-2.5 px-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(wardWiseSeasonal?.wards || []).map(w => {
+                            const isCurrentWard = w.ward_number === selectedWardNumber;
+                            return (
+                              <tr
+                                key={w.ward_number}
+                                className={`hover:bg-slate-50/80 transition ${
+                                  isCurrentWard ? 'bg-teal-50/50 font-bold' : ''
+                                }`}
+                              >
+                                <td className="py-3 px-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-lg bg-[#095c54]/10 text-[#095c54] font-black text-[11px] flex items-center justify-center shrink-0">
+                                      W{w.ward_number}
+                                    </span>
+                                    <span className="font-extrabold text-slate-800">{w.ward_name}</span>
+                                    {isCurrentWard && (
+                                      <span className="px-1.5 py-0.2 rounded-md bg-[#095c54] text-white text-[9px] font-black">
+                                        Current
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <span className="font-bold text-slate-700">{w.top_category}</span>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-black">
+                                    {w.peak_month}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <span className="font-mono font-black text-rose-600">
+                                    {w.surge_multiplier}x
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <span className="font-mono text-slate-600">
+                                    {w.days_until_surge} days
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3">
+                                  {w.is_alert_active ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse">
+                                      <AlertTriangle className="w-3 h-3 text-amber-700" />
+                                      <span>SURGE ALERT ({adminLeadDays}d Lead)</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      <span>Scheduled ({w.days_until_surge}d)</span>
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-right">
+                                  <button
+                                    onClick={() => setSelectedWardNumber(w.ward_number)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                                      isCurrentWard
+                                        ? 'bg-[#095c54] text-white'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {isCurrentWard ? 'Viewing' : 'Inspect'}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Selected Ward Interactive Seasons & Months Prediction */}
+                  <div className="pt-3">
+                    <SeasonalPredictionView wardNumber={selectedWardNumber} />
+                  </div>
                 </div>
               )}
 
-              {/* AI View B: Chronic Recurring Hotspots */}
+              {/* Analytics View B: COMPLAINT TRENDS (STOCK MARKET CANDLESTICK CHART) */}
+              {aiView === 'trend' && (
+                <ComplaintsTrendView wardNumber={selectedWardNumber} />
+              )}
+
+              {/* Analytics View C: CHRONIC HOTSPOTS GEOSPATIAL MAP */}
               {aiView === 'chronic' && (
-                <div className="space-y-3">
-                  {(aiData.chronic?.chronic_hotspots || []).length === 0 ? (
-                    <div className="p-8 bg-white rounded-3xl border border-[#e2e8f0] text-center space-y-2">
-                      <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
-                      <h4 className="text-sm font-black text-[#0f2925]">
-                        No Chronic Recurring Hotspots in Ward {wardInfo.ward_number}
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Live spatial clustering did not find recurring complaint accumulation spots in this ward yet.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {aiData.chronic.chronic_hotspots.map((ch: any) => (
-                        <div
-                          key={ch.id}
-                          className="p-4 sm:p-5 bg-white rounded-2xl sm:rounded-3xl border border-[#e2e8f0] shadow-xs space-y-3"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <span
-                                className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black mb-1 ${
-                                  ch.severity === 'CRITICAL_CHRONIC'
-                                    ? 'bg-red-100 text-red-700'
-                                    : ch.severity === 'RECURRENT'
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-blue-50 text-blue-700'
-                                }`}
-                              >
-                                {String(ch.severity).replace(/_/g, ' ')}
-                              </span>
-                              <h4 className="text-sm font-black text-[#0f2925] truncate">
-                                {ch.location_name}
-                              </h4>
-                              <p className="text-[11px] font-semibold text-slate-500">
-                                Primary Issue: {ch.primary_category} · Last reported {ch.last_reported_date}
-                              </p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="text-lg font-black text-red-600">{ch.incident_count}</div>
-                              <div className="text-[10px] font-bold text-slate-400">
-                                {ch.reopen_rate_pct}% reopen
-                              </div>
-                            </div>
-                          </div>
-
-                          <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                            {ch.ai_root_cause_diagnosis}
-                          </p>
-
-                          <div className="space-y-1">
-                            <div className="text-[10px] font-black uppercase text-slate-400">
-                              Permanent Remediation Plan
-                            </div>
-                            {(ch.ai_permanent_remediation || []).map((rem: string, rIdx: number) => (
-                              <div key={rIdx} className="text-xs font-semibold text-slate-700 flex items-start gap-1.5">
-                                <Wrench className="w-3.5 h-3.5 text-[#095c54] shrink-0 mt-0.5" />
-                                <span>{rem}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <ChronicHotspotsMapView
+                  wardNumber={selectedWardNumber}
+                  hotspots={aiData.chronic?.chronic_hotspots || []}
+                  onCreateCommunityProblem={() => {}}
+                />
               )}
 
               {/* AI View C: Real Ward Performers */}

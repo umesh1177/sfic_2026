@@ -959,60 +959,8 @@ const initialComplaints = [
         ]
     }
 ];
-// Seed Cleanliness Drives
-const initialDrives = [
-    {
-        id: 'drive-01',
-        title: 'Dudhiya Talao Lakefront Mega Swachhata Drive',
-        description: 'Join Navsari municipal staff and civic youth in deep-cleaning the lake walking track, seating benches, and flowerbeds.',
-        ward_id: 'ward-03',
-        ward_name: 'Dudhiya Talao - Ashapuri',
-        location_name: 'Dudhiya Talao North Gate, Navsari',
-        start_time: '2026-11-02T07:00:00+05:30',
-        end_time: '2026-11-02T10:30:00+05:30',
-        registration_deadline: '2026-11-01T20:00:00+05:30',
-        organiser_name: 'Navsari Municipal Youth Taskforce & NMC',
-        status: 'upcoming',
-        banner_url: 'https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: 150,
-        registered_volunteers_count: 94,
-        is_registered: true
-    },
-    {
-        id: 'drive-02',
-        title: 'Lunsikui Ground & Sports Complex Cleanup',
-        description: 'Post-festival cleaning and plastic segregator bin installation drive around Lunsikui circle.',
-        ward_id: 'ward-01',
-        ward_name: 'Lunsikui - Tower Road',
-        location_name: 'Lunsikui Ground Pavilion, Navsari',
-        start_time: '2026-11-05T06:30:00+05:30',
-        end_time: '2026-11-05T09:30:00+05:30',
-        registration_deadline: '2026-11-04T18:00:00+05:30',
-        organiser_name: 'Navsari Green Club',
-        status: 'upcoming',
-        banner_url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: 80,
-        registered_volunteers_count: 42,
-        is_registered: false
-    },
-    {
-        id: 'drive-03',
-        title: 'Historic Dandi Beach Heritage Cleanliness Action',
-        description: 'Preserving the Father of the Nation Mahatma Gandhi heritage path: cleanup along coastal road approaching Dandi.',
-        ward_id: 'ward-13',
-        ward_name: 'Dandi Coastal Corridor',
-        location_name: 'Dandi Salt Memorial Entrance',
-        start_time: '2026-11-08T07:00:00+05:30',
-        end_time: '2026-11-08T11:00:00+05:30',
-        registration_deadline: '2026-11-07T21:00:00+05:30',
-        organiser_name: 'NMC Swachhata Cell & Gujarat Tourism',
-        status: 'upcoming',
-        banner_url: 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80',
-        max_volunteers: 200,
-        registered_volunteers_count: 168,
-        is_registered: false
-    }
-];
+// Dynamic Cleanliness Drives (Created by Citizens / Communities / Ward Officers in real-time)
+const initialDrives = [];
 // Seed Challenges
 const initialChallenges = [
     {
@@ -2019,17 +1967,7 @@ exports.store = {
     categories: initialCategories,
     complaints: initialComplaints,
     drives: initialDrives,
-    driveRegistrations: [
-        {
-            id: 'reg-seed-01',
-            drive_id: 'drive-01',
-            citizen_id: defaultCitizenId,
-            registration_number: 'REG-NAV-1001',
-            registration_status: 'registered',
-            attendance_status: 'not_marked',
-            registered_at: '2026-10-28T14:10:00Z'
-        }
-    ],
+    driveRegistrations: [],
     activityRegistrations: [],
     activityQuestions: [],
     activityEvidence: [],

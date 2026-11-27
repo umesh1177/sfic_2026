@@ -60,6 +60,7 @@ apiRouter.post('/complaints/check-duplicates', softAuthenticate, ComplaintsContr
 apiRouter.post('/complaints/validate-location', softAuthenticate, ComplaintsController.validateLocation);
 apiRouter.post('/complaints', authenticate, ComplaintsController.createComplaint);
 apiRouter.get('/complaints/my', authenticate, ComplaintsController.getMyComplaints);
+apiRouter.get('/complaints/feedback', softAuthenticate, ComplaintsController.getCitizenFeedbackList);
 apiRouter.get('/complaints/:id', softAuthenticate, ComplaintsController.getComplaintById);
 apiRouter.delete('/complaints/:id', authenticate, ComplaintsController.deleteComplaint);
 apiRouter.post('/complaints/:id/feedback', authenticate, ComplaintsController.submitFeedback);
@@ -216,6 +217,8 @@ apiRouter.post('/ward/complaints/:id/add-worker', softAuthenticate, WardOfficerC
 apiRouter.post('/ward/complaints/:id/remove-worker', softAuthenticate, WardOfficerController.removeWorkerFromComplaintSquad);
 apiRouter.post('/ward/complaints/:id/publish-community', softAuthenticate, WardOfficerController.publishComplaintToCommunity);
 apiRouter.post('/ward/complaints/:id/geofence-override', softAuthenticate, WardOfficerController.toggleGeofenceOverride);
+apiRouter.get('/ward/complaints/:id/suggested-teams', softAuthenticate, WardOfficerController.getSuggestedTeamsForComplaint);
+apiRouter.get('/ward/citizen-feedback', softAuthenticate, WardOfficerController.getCitizenFeedbackList);
 apiRouter.get('/ward/hotspots', softAuthenticate, WardOfficerController.getHotspots);
 apiRouter.get('/ward/assignments', softAuthenticate, WardOfficerController.getAssignments);
 apiRouter.post('/ward/assignments', softAuthenticate, WardOfficerController.createAssignment);
@@ -238,6 +241,8 @@ apiRouter.get('/ward/approvals', softAuthenticate, WardOfficerController.getAppr
 apiRouter.post('/ward/approvals/:id/review', softAuthenticate, WardOfficerController.reviewApproval);
 apiRouter.get('/ward/completed-drives', softAuthenticate, WardOfficerController.getCompletedDrives);
 apiRouter.post('/ward/drives/:id/publish-completion', softAuthenticate, WardOfficerController.publishDriveCompletion);
+apiRouter.delete('/ward/drives/:id', softAuthenticate, WardOfficerController.deleteDrive);
+apiRouter.delete('/ward/drives-seed/clean-all', softAuthenticate, WardOfficerController.cleanSeedDrives);
 apiRouter.get('/ward/organization-drives', softAuthenticate, WardOfficerController.getOrganizationDrives);
 apiRouter.post('/ward/organization-drives/:id/evidence/verify-all', softAuthenticate, WardOfficerController.verifyAllDriveEvidence);
 apiRouter.post('/ward/organization-drives/:id/evidence/:evidenceId/verify', softAuthenticate, WardOfficerController.verifyDriveEvidence);
@@ -253,8 +258,11 @@ apiRouter.delete('/ward/community-problems/:id', softAuthenticate, WardOfficerCo
 apiRouter.get('/ward/cleanliness-score', softAuthenticate, WardOfficerController.getCleanlinessScore);
 apiRouter.get('/ward/reports', softAuthenticate, WardOfficerController.getReports);
 
-// AI Analytics Suite Routes
+// AI / Civic Analytics Suite Routes
 apiRouter.get('/ward/ai-analytics/seasonal-predictions', softAuthenticate, WardOfficerController.getAISeasonalPredictions);
+apiRouter.get('/ward/ai-analytics/seasonal-settings', softAuthenticate, WardOfficerController.getSeasonalAlertSettings);
+apiRouter.post('/ward/ai-analytics/seasonal-settings', softAuthenticate, WardOfficerController.updateSeasonalAlertSettings);
+apiRouter.get('/ward/ai-analytics/complaints-trend', softAuthenticate, WardOfficerController.getComplaintsTrend);
 apiRouter.get('/ward/ai-analytics/performers-suggestions', softAuthenticate, WardOfficerController.getAIPerformersSuggestions);
 apiRouter.get('/ward/ai-analytics/chronic-hotspots', softAuthenticate, WardOfficerController.getAIChronicHotspots);
 apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, WardOfficerController.executeAIQuickAction);
@@ -263,7 +271,10 @@ apiRouter.post('/ward/ai-analytics/quick-action', softAuthenticate, WardOfficerC
 // NMC ADMIN DASHBOARD ROUTES (Navsari Municipal Corporation)
 // ============================================================================
 apiRouter.get('/admin/overview', softAuthenticate, AdminController.getOverview);
+apiRouter.get('/admin/seasonal-predictions/ward-wise', softAuthenticate, AdminController.getWardWiseSeasonalPredictions);
+apiRouter.get('/admin/ai-analytics/complaints-trend', softAuthenticate, WardOfficerController.getComplaintsTrend);
 apiRouter.get('/admin/wards', softAuthenticate, AdminController.getWards);
+apiRouter.post('/admin/wards', softAuthenticate, AdminController.createWard);
 apiRouter.put('/admin/wards/:id', softAuthenticate, AdminController.updateWard);
 apiRouter.get('/admin/wards/:wardNumber/officer-history', softAuthenticate, AdminController.getWardOfficerHistory);
 apiRouter.put('/admin/wards/:id/boundary', softAuthenticate, AdminController.updateWardBoundary);
